@@ -4529,6 +4529,86 @@ One was rejected. **#3** (the host's fields "mutate") is a stateful service hold
 Tests and teeth: [module_tests.md](../research/module_tests.md), the `client archive*`, `command wslCare.chooseArchiveFolder` /
 `stopArchiving` and `message …` rows, and *What each E10.S1a guarantee rests on*.
 
+#### E10.S1b build notes (2026-10-10): *Archive now*
+
+> Status: **plan only, 2026-10-10 — E10.S1b not started.** Branch `feat/wc-e10s1b-archive-now`, from `main` 6c5f148 (E10.S1a
+> merged). The paths are `src_vs_code/`'s unless named otherwise.
+
+**Goal.** One panel button, *Archive now*, runs A13 at once: the daemon's own action, through the cleanup controller as it is.
+It previews as root, shows a modal naming each agent's sessions and bytes, persists the run, and confirms
+`act A13 --confirm --manual --detach --json`. The run then lives in the daemon's own unit and is followed to its result across a
+reload. No new root argv word, no new root op and no new journal field: A13 is one more id of the compiled registry
+(`contracts/actions.json`), which the controller already takes (`cleanupController.ts:148-261`, `rootCall.ts:90-113`).
+
+**What changes:**
+
+1. **The capability sets** (`root/cleanupController.ts:109-115`).
+   - A preview that includes A13 also needs `archive.preview`.
+   - A confirm that includes A13 needs `confirmA13` = BASE + `act.detach` + `archive.run`.
+   - The fresh-status gate stays the authority: the ids are the registry ∩ `status.actions`.
+2. **The preview's ceiling** (`client/ceilings.ts` `shareS`, `client/worstCases.ts` `otherRowShareS`). A13's share is the
+   `wslCare.timeouts.archivePreviewSeconds` setting (630 s by default). Its worst case is the daemon's `archive.previewTimeoutSeconds`
+   at its maximum (600 s), because A13's preview is ONE `archive preview` child under that key
+   (`ArchiveAction.PreviewAsync`, `ArchiveChildren.Preview`). It is no Docker row's snapshot. `ceilings.test.ts` holds it strictly
+   above.
+3. **The preview's items, read whole** (`root/rootAnswers.ts` `figuresOf`, `root/rootOutcome.ts` `PreviewedAction`). Each item
+   keeps its `name`, `bytes` and `note` (`ActionItem(Kind, Name, Bytes, Note)` in the daemon). A13's items are per agent:
+   `agent`, the agent id, the due bytes, "N session(s) due, M file(s)". Every string goes through `safeText`. The A4 reading
+   (names only, the bound list) is unchanged.
+4. **Its own words** (`cleanup/modalText.ts`, `cleanup/resultText.ts`, `cleanup/cleanupView.ts`).
+   - The modal: "Archive the aged AI sessions in "<distro>"?", one line per agent with its sessions and bytes, and how the move
+     is made (as the target user, the product's own binary, nothing removed before its copy is verified). Confirm label:
+     *Archive*.
+   - No second modal: A13 moves, it does not delete.
+   - The hand-off and terminal notices say "the archive run", never "Cleaning A13". The in-flight state reads "Archiving…".
+   - The words are chosen by the entry's actions being exactly `['A13']`. Nothing new is persisted.
+5. **The flow** (`cleanup/cleanFlow.ts`): `archive()` runs the same transaction as `clean()` — one flow at a time, preview,
+   modal, the age re-check, the journal entry BEFORE the call, the confirm, the follower — over the ids `['A13']` and the
+   archive words. `cleanupHost.ts` gets `archiveNow()` behind the same detached edge, refused (told) while the cleanup controls
+   are greyed.
+6. **The button** (the archive section, `archive/archiveView.ts`, `media/panel.js`, D11).
+   - *Archive now* carries `data-archive-action="archiveNow"` and posts the bare `archiveNow` (`panel/messages.ts`).
+   - It is also the command `wslCare.archiveNow` (`package.json`, `commandButtons.ts`, `manifest.test.ts`, the catalogue).
+   - It is enabled only when:
+     - the daemon advertises `archive.run` and `act.detach`;
+     - `status.actions` holds A13;
+     - a base folder is set;
+     - no archive flow is busy;
+     - the cleanup controls are enabled (no run in flight, the journal not full).
+   - `ArchiveHost` reads those last two from the cleanup host it is handed, and re-renders on its changes.
+7. **The fake and the golden.**
+   - The daemon's `GoldenContracts` gains `act-a13-preview.json`: `act A13 --preview --json` over the captured morning tree,
+     whatever that tree yields (likely the skip *no archive configured*).
+   - The strict fake answers A13's preview from that golden. A scenario may give an answers folder whose A13 entry carries
+     per-agent items in the daemon's `ActionItem` shape.
+   - The fake's root shapes take A13 only with `archive.preview` (preview) or `archive.run` (confirm) advertised, and never
+     beside another id.
+
+**Build order:** the golden (daemon) → capabilities + ceiling → items → words → flow + host → view + button + message + command →
+fake → scenario → docs.
+
+**RED first** — each test below is seen red, for its own symptom, before the code it pins:
+- a preview or confirm with A13 is refused without `archive.preview` / `archive.run`;
+- A13's preview ceiling is A13's, not a Docker row's;
+- the modal names each agent's sessions and bytes and reads *Archive*;
+- the notices say "the archive run";
+- *Archive now* survives a reload: the cleanup scenario harness starts A13, reloads, sees "Archiving…" from `status.running`,
+  then the result from `runs show`;
+- a dead run ends interrupted, never stuck;
+- the button is greyed exactly when its conditions do not hold;
+- the bare message and the command;
+- the fake refuses A13 beside another id, or without its capability.
+
+**Not in it:** restoring (A20, E10.S2). A live root A13 run is the owner's (the morning list).
+
+**DoD:**
+- A13 through the existing controller only.
+- No new root argv word: the bundle scan's root literal set is unchanged.
+- Every check above is red first.
+- An own review on Fable (owner 2026-10-10, root-touching).
+- The coai plan and code rounds.
+- The docs: `module_vs_code.md`, `module_tests.md`, README, this section's *as built*.
+
 #### Definition of Done
 
 - [ ] E10.S0, E10.S1, E10.S2 merged, each with its gate rounds, an own review and break-it checks recorded in `module_tests.md`.
