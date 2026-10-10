@@ -324,7 +324,7 @@ internal static partial class BeneathWrites
         return length == 0 || length >= buffer.Length ? string.Empty : WithoutDevicePrefix(new string(buffer, 0, (int)length));
     }
 
-    private static string WithoutDevicePrefix(string path) =>
+    internal static string WithoutDevicePrefix(string path) =>
         path.StartsWith(@"\\?\UNC\", StringComparison.Ordinal) ? @"\\" + path[8..]
         : path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path[4..]
         : path;

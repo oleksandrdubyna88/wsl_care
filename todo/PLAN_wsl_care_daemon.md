@@ -4026,11 +4026,13 @@ Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5`
 | own 6 | the Restart Manager leaves out processes it may not query | **Accepted:** said in the view's note |
 | own 7–9 | `ExtendedPath` edge inputs; the per-question task; CA1416 | **Noted:** the inputs are full paths of judged folders and fail closed otherwise; the abandoned worker is the stall latch's case; the one constructor of `RealWindowsSide` is behind `OperatingSystem.IsWindows()` |
 
-**Owed:** the E9 live gate's Windows steps (8), and the release carrying E9.
+**Owed:** the release carrying E9. The E9 live gate's Windows step 8 RAN on 2026-10-10 on the owner's NAS, through the fix below.
+Its results — both spellings judged and used, the holder kept, the idle rule, phase 2 over the share — are in
+[module_archive.md](../research/module_archive.md), *The live gate on the NAS*.
 
 #### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
 
-> Status: **built, 2026-10-09 (its PR open).** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
+> Status: **built, 2026-10-09; merged 2026-10-10 (#78).** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
 > `Archive/Liveness.cs`, `Archive/Selection.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveRun.cs`, a new `Archive/WindowsIdle.cs`,
 > `Config/ConfigKeys.cs` + `default.json` (two keys), the tests, `research/module_archive.md`, `research/module_tests.md`, README.
 > Branch `fix/wc-e9s5-windows-idle`, its own PR, before E10 goes on. It OVERRIDES the E9.S5 text above where they differ.
@@ -4129,6 +4131,54 @@ file is kept, naming `archive.windowsIdleDays`.
 **DoD.** The plan gate (this section), the code gate, an own Opus review (data safety: what may move while Claude runs), the teeth
 recorded in `module_tests.md`, `module_archive.md` and the README's archive text updated, all suites on Windows and WSL, a PR merged by
 squash.
+
+#### E9 live gate step 8, first run (2026-10-10): a base on the NAS refused — the fix
+
+> Status: **built, 2026-10-10 (its PR open).** Scope: `Files/PhysicalFileSystem.Archive.Windows.cs`, `Files/BeneathWrites.cs`,
+> `Files/PhysicalFileSystem.Archive.cs` (the folder flush), `Archive/SideLease.cs` (the refusal's reason), tests, `research/module_archive.md`,
+> `research/module_tests.md`. Branch `fix/wc-e9-network-base`, its own PR. It OVERRIDES the E9.S2a/E9.S5 text above where they differ.
+
+**What step 8 found** (the owner's NAS, `V:` = `\\192.168.1.113\Shared_Drive_Work`; throwaway sessions in sandboxes, one new subfolder
+`V:\connectOtherAis\wsl-care-archive-livegate-20261010T0831Z`).
+- `archive check-base` accepted both spellings: `V:\…` reads as *network NTFS* and the UNC path as *network*.
+- `archive preview` saw the live Claude Code (`claude.exe`) and kept the 20-day session by the idle rule. It listed the two 40-day
+  sessions as due.
+- `archive run` REFUSED both legs before it touched anything. The refusal named no reason, because the lease's refusal dropped it.
+  With the reason restored:
+  - **the drive leg:** "`base-drive` was reached through a link (the open file is not where its path says)".
+    `GetFinalPathNameByHandle` answers a mapped drive's files as `\\?\UNC\server\share\…`. The in-place check compares that answer with
+    the `V:\…` spelling, so every folder on a mapped network drive reads as reached through a link.
+  - **the UNC leg:** "its new entry could not be flushed (error 1)". `FlushFileBuffers` on a FOLDER handle answers
+    `ERROR_INVALID_FUNCTION` over SMB: the redirector does not flush directories. This is the live-gate item the E9.S2a own review
+    left unmeasured, and it is now measured.
+
+**Design.**
+- **N1 — the mapped drive is its UNC root, not a link.** The in-place check accepts the final path when it equals the judged path
+  OR the judged path with its drive letter replaced by the drive's network root.
+  - The network root comes from `WNetGetConnectionW`, asked only for a drive `GetDriveTypeW` reports `DRIVE_REMOTE`.
+  - A real link inside the share is still refused: the comparison is exact after the one prefix swap.
+  - The comparison is a pure function (`InPlace(actual, judged, networkRootOf)`) and its tests hold it.
+- **N2 — a folder flush over SMB.** On a NETWORK path (UNC, or a remote drive), `ERROR_INVALID_FUNCTION` from `FlushFileBuffers` on a
+  folder handle counts as done: the server commits the entry it created, and the client has no folder flush to give.
+  - Any other error, and error 1 on a local volume, still refuses.
+  - The files themselves are still written through and flushed by their own handles, which SMB honours.
+  - Pure function `FolderFlushed(error, remote)`.
+  - **Why this is safe (the plan round, finding 0 — rejected with this reason):** the archive never rests on the folder flush alone.
+    No source is removed until phase 2, a separate run at least `archive.removeAfterHours` later in a new process with fresh
+    handles, re-opens every archived copy in the base and re-hashes it against its index line (`ArchiveRemove.CopyProblem`). A missing
+    or different copy marks the entry damaged, and the SOURCE STAYS. An entry an SMB server lost would cost a retry, never data.
+    Refusing would make every SMB base unusable, and the owner's only share is SMB.
+- **N3 — a refusal says why.** `SideLease` carries the folder's own reason ("… could not be opened in the base (<why>)"). This is how
+  the run found the two defects.
+
+**RED first.**
+- `InPlace` refuses today's mapped-drive answer and accepts it after the fix. It still refuses a different final path (a link) and
+  `\\server\other` for `V:`.
+- `FolderFlushed(1, remote: true)` is done; `(1, remote: false)` and `(5, remote: true)` are failed.
+- The lease refusal names the folder's reason.
+- The live gate step 8 is re-run with the fixed binary, both legs, the holder, and phase 2 after `archive.removeAfterHours`.
+
+**Break-it** on product code only: the prefix swap removed, the remote condition removed, the reason dropped.
 
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
 
