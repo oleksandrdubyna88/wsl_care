@@ -226,6 +226,36 @@ flowchart LR
   `[experimental] autoMemoryReclaim=dropcache` advised only when `.wslconfig` was read without it ("already set" when it is,
   "not known" when the file could not be read), and `wsl --shutdown` named as the last resort that ends every WSL session.
   `.wslconfig` is read through `HealthCollector.AuditWslConfig(files, file)` — the same audit `collect` uses, no command runner.
+
+### The Windows CPU ledger (E14 S7b.1, 2026-10-10) — READ-ONLY
+
+S1's ledger (`McpCpuLedger`) as it is, on Windows. An instance whose identity has a point in the Windows binary's own ledger
+between `mcpServers.cpuIntervalMinSeconds` and `cpuIntervalMaxMinutes` old is measured over the REAL interval since it
+(`cpuBasis: interval`). A server that bursts between two short windows is therefore still seen. The rest are measured across
+the window (`cpuBasis: window`), and the wait is paid only when one needs it. Measured 2026-10-09: over 16.4 min, all 22
+`creds-mcp.exe` used exactly 0 ms and the 6 `coai-mcp.exe` of live sessions 0.9–3.3 s.
+
+```mermaid
+flowchart LR
+    boot["IWindowsBoot (Win32Boot)<br/>RegGetValueW PrefetchParameters\\BootId → windows-&lt;n&gt;<br/>QueryUnbiasedInterruptTime (stops in sleep)"] --> col["WindowsMcpCollector"]
+    ledger["%LOCALAPPDATA%\\wsl-care\\mcp-cpu.json<br/>McpCpuLedgerPlace.WindowsState<br/>written unelevated, read-only elevated"] <--> col
+    col --> basis["per instance: interval (from the ledger) or window<br/>cpuBasis · cpuIntervalSeconds · cpuBaseline"]
+```
+
+- **The identity** is the pid AND the creation time as FILETIME ticks; `CpuTicks` are `GetProcessTimes`' 100-ns kernel + user
+  time; the denominator is `QueryUnbiasedInterruptTime`, which stops while the host sleeps, as `CLOCK_MONOTONIC` does in the
+  distro. A reused pid never takes another process's baseline.
+- **The boot id** is Windows' own boot counter (`HKLM\SYSTEM\…\PrefetchParameters\BootId`, readable unelevated; 117 on
+  2026-10-09), as `windows-<n>`. Unreadable means no baseline: everything is measured across the window and nothing is recorded.
+- **The place** is `McpCpuLedgerPlace.ForWindowsStatus`. An unelevated `status` reads and writes it; an elevated one reads it
+  and writes nothing (`ReadOnlyElevated`), because it is the user's file. It is read as the distro's own-state ledger (regular,
+  capped, through no link) and written atomically, privately, only when it changed.
+- **The wire:** additive — `instances[].cpuBasis`, `instances[].cpuIntervalSeconds` and the block's
+  `cpuBaseline {file, recorded, reason}`, S1's names. The text line says how many instances were measured over their last
+  interval and how many over the window.
+- **Not here:** `collect` on the Windows binary (no Windows run records anything yet); S7b's idle history and stop;
+  `node.exe` / `wslhost.exe` children and `playwright-mcp` on Windows.
+
 ## Residuals and what it does not cover
 
 - A link swapped in between the lstat checks and the listing (inherited from `SessionGlob`'s other users): names only,

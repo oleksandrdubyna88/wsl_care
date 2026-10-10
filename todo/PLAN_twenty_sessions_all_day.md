@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S3b built (A11 on by default with `language-servers`, the owner's Q14/Q15 of 2026-10-09, PR #75); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4 measured and decided (documentation only: `nice` works in WSL, the planned scope backfires — [2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)); S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-10: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S3b built (A11 on by default with `language-servers`, the owner's Q14/Q15 of 2026-10-09, PR #75); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4 measured and decided (documentation only: `nice` works in WSL, the planned scope backfires — [2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)); S7b.1 built (the Windows side's MCP CPU ledger, read-only); S7b (a stop on Windows as a safety net, the owner's decisions D1–D4; the interop route waits for Q-S7b-3) and S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -1138,6 +1138,222 @@ exclusions** for build and tool folders are a security trade-off: Q6, never auto
     the owner differs.- **Residuals:** counted in `status` only (`collect`'s run detail is unchanged); CPU across the window only; an interop
   child's caller is invisible from Windows, so the W9 accumulation shows as one big `owners[]` group, not as orphans;
   `playwright-mcp` is not matched on Windows (no command line read); no Windows verdict and no stop (the owner's decision).
+
+#### S7b — as to be built (2026-10-09, branch `feat/wc-s7b-windows-stop`): a stop on Windows, as a SAFETY NET
+
+**Why.** S7a counts the Windows side's MCP servers and stops nothing. W9 (2026-10-07) counted 85 `creds-mcp.exe` (66
+orphaned, 1.32 GB). The owner fixes `creds-mcp`'s own exit in its own repository; this story is the safety net for
+whatever still leaks, from any server.
+
+**The owner's decisions (2026-10-09), binding:**
+- **D1 — targets:** orphaned Windows MCP servers, or ones idle past the SAME configurable thresholds as A19.
+- **D2 — interop:** an interop child under a LIVE `wsl.exe` is never stopped unless it is idle past the threshold AND its WSL client can be shown gone.
+- **D3 — controls:** an auto switch, default ON; every number a config key; a dry run and a preview; an extension stop button.
+- **D4 — identity:** by pid AND creation time only, never by image name. Plan gate first, own Opus reviewer in parallel.
+
+**Measured first** (2026-10-09 18:46Z, read-only; [2026-10-09_interop_relays.md](../research/2026-10-09_interop_relays.md)):
+- **Windows side.** 16 `creds-mcp.exe` sit under VS Code's `wsl.exe -d Ubuntu`, and 12 under six `claude.exe`.
+- **Distro side.** There are exactly 16 interop relays (`/proc/<pid>/exe` = `/init`, argv `/init <program>`):
+  - 6 are children of a live caller (the `creds-mcp` shim under `claude`);
+  - 10 were re-parented to the session's `Relay(1402)` init.
+- **Clocks.** The guest's wall clock is stepped; it reads about 12 minutes apart from Windows.
+
+**Plan round (coai session `1bc694ea`, epic 14/14, 1 of 2 reviewers — Gemini's quota is exhausted — plus the own Opus review):**
+- **Accepted — interop is cut from this story.**
+  - Pairing relays and Windows children by ORDER is not an identity proof. A slow launch (Defender scanning the `.exe`, a cold interop server) can invert two children outside any tie window. The Windows creation time is a steppable wall clock. The Windows snapshot and the distro read are seconds apart, so a child exiting and another starting between them shifts every pair.
+  - "Client gone = re-parented to the session init" also misfires unsafely:
+    - a relay run as `wsl.exe`'s top-level command is born under `Relay(n)` while its Windows-side client lives;
+    - a daemonising caller (`setsid`, `nohup &`) re-parents the relay while a live process still holds its pipe;
+    - any user process can name itself `init`.
+  - **So A21 NEVER stops an interop child in this story** (D2 is kept by never claiming the proof). The exact route is Q-S7b-3: the relay itself, in the distro, by pid and start ticks. It is measured before it is designed.
+- **Accepted (own review):**
+  - the privilege gate is per side (item 4);
+  - the child guard and the user-program-orphan rule of A19 (items 3, 4);
+  - "orphaned" on Windows needs care (item 3);
+  - where the thresholds live (item 6);
+  - an idle budget measured, not exact tick equality (item 2);
+  - the bundling's supply chain (item 1);
+  - the architecture scanner widened (item 4);
+  - the shown key defined (item 4);
+  - the token user checked (item 4);
+  - A21 in every list of ids (item 5).
+- **Accepted (coai):**
+  - the extension runner's coverage stated (item 5);
+  - the records' retention (item 7).
+- **Rejected (coai 1):** "CPU silence is no proof that nothing is in flight; require a work signal". D1 sets the A19 thresholds, and A19 carries the same residual, which the owner accepted in S2a. The child guard covers the measured long-running case (`coai-mcp`'s reviewer CLIs are its children). The preview says it in every item.
+
+**Design.**
+
+1. **The Windows binary reaches the machine — E7.S3's bundling, the plan of record** ([PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) §15g M5, finding #13).
+   - `release-extension.yml`'s build downloads `wsl-care-<v>-win-x64.zip`, where `<v>` is `installDaemon` of the committed `src_vs_code/min-daemon.json`.
+   - It runs `gh attestation verify --repo oleksandrdubyna88/wsl_care --cert-identity <the exact release.yml@refs/tags/daemon-v<v> URL> --source-ref refs/tags/daemon-v<v> --deny-self-hosted-runners`. The `.sha256` beside it adds nothing and is not relied on.
+   - It computes the exe's SHA-256 in that job and packs `bin/win-x64/wsl-care.exe` with `--target win32-x64`.
+   - `check-vsix` admits exactly that one binary, at the digest the same job computed.
+   - The extension finds it beside itself (`context.extensionPath`), never on `PATH`.
+   - **Smart App Control is enforced on the owner's machine** (an unsigned fresh build was blocked with 0x800711C7). A blocked start is reported in the panel by its code, never swallowed.
+   - **Assumption A1** (the owner's alternative is Q-S7b-1).
+2. **A Windows CPU history for idle.** File `{windows state}/windows-mcp-cpu.json`.
+   - **Identity:** pid + creation FILETIME (100 ns since 1601, an integer).
+   - **Value per identity:** the CPU 100-ns ticks; `firstSeen` and `lastSeen` on two clocks (wall, and `QueryUnbiasedInterruptTime`, which stops while the host sleeps — a sleep is not idle time); `idleSince`; the owner kind and parent first seen and last seen (item 3).
+   - **Idle rule.** Windows charges CPU in scheduler quanta, so a sleeping server's small wakeups are not "work". Idle for T means CPU spent ≤ `mcpWatchdog.windowsIdleCpuMsPerHour` per hour across a dense chain covering T. The chain breaks at a gap longer than `mcpWatchdog.windowsMaxGapMinutes`; missing history is "not idle".
+   - **The budget's default comes from a measurement**, taken before the code: two reads of every `creds-mcp.exe` / `coai-mcp.exe` CPU time, minutes apart, recorded in the research note. It never comes from a guess.
+   - **Shared code.** The chain logic is extracted from `AgentCpuHistory` (`AgentCpuHistory.cs:41-53`) into one helper both use (reuse-first step 2), so the Linux rule stays exact ticks and the Windows one takes the budget.
+   - **Caps:** `agentCpu.maxEntries` / `agentCpu.maxBytes`.
+   - **Writes:** only the Windows `watch` writes the file; a preview merges "now" in memory.
+3. **Who is a target (A21).** ALL of the following:
+   - (a) an instance of a CATALOGUE server (`coai-mcp`, `creds-mcp`). A user program (`mcpServers.programs`) is a target only when its owner is a live agent. On Windows a bare exe name can collide with any application, and launchers leave every program parent-less. This is A19's "never an orphan of a user program" rule (`McpServerStop.cs:179,194`).
+   - (b) the current user's process — the token user SID read on the same handle (`OpenProcessToken`). An unreadable owner is kept.
+   - (c) not this process or an ancestor.
+   - (d) **no live child** — no process whose parent pid is the target and that was created after it. This is checked from a fresh Toolhelp snapshot just before the stop, as A19 does (`McpServerStop.cs:171-187, 242-249`).
+   - (e) **never interop:** an identity the history EVER saw with a `wsl.exe` parent is kept for its whole life, even after that `wsl.exe` is gone. Closing VS Code makes its interop children orphans, while their clients in the distro (`claude` in tmux) may still live.
+   - (f) one of:
+     - **orphaned** (parent gone or reused) and idle ≥ `mcpWatchdog.orphanIdleMinutes` — ONLY if the history saw it with a live non-interop parent that then went. An instance first seen already orphaned (a launcher shim that exited, which Windows' lack of `exec` makes normal) needs the full idle time;
+     - **agent** or **other** owner and idle ≥ `mcpWatchdog.idleMinutes`.
+
+   There is no busy half on Windows: "busy without activity" needs log evidence the Windows side does not have.
+4. **A21 `WindowsMcpStop` and its stop.**
+   - **Sides.** A21 is the first action with `Sides = [HostSide.Windows]`.
+   - **Privilege is per side.** `ActCommand`'s `NotRoot` (`ActCommand.cs:95-98`) and `WatchCommand`'s root check (`WatchCommand.cs:53`) demand root, which on Windows means elevated (`ProcessPrivilege.cs:30-33`). For a Windows-side action they become the opposite: refuse ELEVATED, run unelevated. A Windows request is never refused as "needs root". `OtherSide`'s text names the side the action belongs to (`ActCommand.cs:112`).
+   - **The stop seam.** A new seam, `IWindowsProcessStop`, with a real `Win32ProcessStop` (win-x64 only), runs these steps on ONE handle:
+     1. `OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, pid)`;
+     2. `GetProcessTimes` — the creation FILETIME must equal the shown one exactly, and the CPU must still be within the idle budget since the preview;
+     3. `OpenProcessToken` — the user SID must be this user's;
+     4. `TerminateProcess(handle, 0xC5A1)`, a distinctive exit code;
+     5. `WaitForSingleObject` up to `processes.termGraceSeconds`;
+     6. `CloseHandle`.
+
+     Because the check and the stop share one handle, a reused pid can never be hit. There is no graceful step (a console-less server has no Ctrl+C channel), and the preview says so.
+   - **The scanner.** `ArchitectureTests`' signal scan (`ArchitectureTests.cs:65-78`) is widened to unquoted names: `TerminateProcess`, `NtTerminateProcess`, `ZwTerminateProcess`, `TerminateJobObject`, `taskkill`, `Stop-Process`, and `Process.Kill` of a process the product did not start. `Win32ProcessStop` is the only allowed site. The S7a reader stays free of stop calls.
+   - **The shown key** is `pid:<creation FILETIME integer>`, taken from A21's preview only, never rebuilt from the status block's `created`. A value with sub-millisecond digits must round-trip through the extension. A button run takes `--process` with these pairs (`ActionId.ShownProcessIds`, `ActionId.cs:69`, gains A21). The timer binds to its own fresh preview, as A19's watch does.
+5. **Ids, the Windows watch and its runner.**
+   - **Ids.** A21 joins `ActionId.ExecutionOrder` (`ActionId.cs:61-65`), `contracts/actions.json`, the extension's `ACTION_IDS`, and a new Windows-side id list. It never joins `ROOT_OPS` or the `wsl.exe -u root` road.
+   - **The watch.** `wsl-care.exe watch [--timer] [--json]` (refused on Windows today, `WatchCommand.cs:52`) samples the history. With `auto.A21` on, it runs A21 under `DryRunWindow.Decide` (`DryRunWindow.cs:41`) on the WINDOWS state directory — its own first-week window — and `dryRun`. A second runner holding the lock exits 75, which counts as normal (every VS Code window has a timer).
+   - **The runner (assumption A2):** the extension, every `mcpWatchdog.periodMinutes` while VS Code runs. A new `WindowsCareClient.ts` is the only module that starts the bundled exe (`CREATE_NO_WINDOW`), mirroring `WslCareClient.ts:16`.
+   - **Coverage, said plainly (coai 2):** while VS Code is closed nothing on Windows is stopped. An orphan left then is judged at VS Code's next start, as an instance first seen orphaned — so it waits the full idle time. A per-user scheduled task that runs without VS Code is E11's, and owner question Q-S7b-2.
+6. **Where the thresholds live (own review 8).**
+   - The Windows binary reads its own layers (`%APPDATA%\wsl-care\config.json`, `%ProgramData%`; `WindowsHostPaths.cs:67-69`), not the distro's. "The same threshold" (D1) is therefore the same KEYS with the same defaults and ranges, set per side. The owner has the Windows layer's `wsl-care.exe config set`.
+   - The panel names the values the Windows side applies and whether its `dryRun` / first-week window holds. While either holds, the timer stops nothing.
+   - The extension does not edit config (no such path exists today); that would be its own story.
+7. **The record.**
+   - One action record per stop in the Windows state directory, in the engine's run shape: pid, creation, server, owner, idle time, private bytes. Kept targets go in `notRemoved` with their reason.
+   - **Retention (coai 3)** is the engine's existing history sweep (`logging.retentionDays`, 14 days) on the Windows state directory. A record is about 1 KB; at the default period (5 min) and the measured worst case (16 stops a run), a day is under 5 MB and 14 days under 70 MB. The bound is the sweep, never growth.
+8. **Keys** (every number a key; trust as A19's — a user layer may only make stopping rarer):
+   - **Reused:** `mcpWatchdog.idleMinutes`, `mcpWatchdog.orphanIdleMinutes`, `mcpWatchdog.periodMinutes`, `processes.termGraceSeconds`, `agentCpu.maxEntries` / `maxBytes`, `logging.retentionDays`.
+   - **New:**
+     - `auto.A21`, default **true** (D3);
+     - `mcpWatchdog.windowsMaxGapMinutes`, 1–1440, default 30, `SafeDirection.Lower`;
+     - `mcpWatchdog.windowsIdleCpuMsPerHour`, 0–60000, its default from the measurement, `SafeDirection.Lower`.
+   - `contracts/config-keys.json` is regenerated.
+
+**Never:**
+- stop by image name;
+- stop when the creation time, owner SID or CPU differs from the preview;
+- stop an interop child, or any identity once seen interop;
+- stop an orphan of a user program;
+- stop a target with a live child;
+- run elevated;
+- touch another account's process;
+- act while `auto.A21` is off, `dryRun` is on or the Windows first-week window runs (timer).
+
+**RED (written before the product code):**
+- `An_orphan_seen_with_a_live_parent_is_a_target_after_the_orphan_minutes_by_pid_and_creation`
+- `An_instance_first_seen_orphaned_needs_the_full_idle_minutes`
+- `An_agent_owned_server_needs_the_full_idle_minutes_and_missing_history_is_not_idle`
+- `Cpu_within_the_budget_is_idle_and_above_it_resets_the_chain`
+- `A_host_sleep_is_not_idle_time`
+- `An_interop_child_is_never_a_target_even_after_its_wsl_exe_is_gone`
+- `An_orphan_of_a_user_program_is_kept`
+- `A_windows_server_with_a_live_child_is_kept`
+- `Another_users_or_an_unreadable_owner_is_kept`
+- `The_stop_rechecks_creation_owner_and_cpu_on_the_same_handle_and_a_reused_pid_is_never_terminated`
+- `A_button_run_ends_only_what_its_modal_showed`
+- `The_shown_key_round_trips_sub_millisecond_creation_ticks`
+- `Auto_A21_is_on_and_the_windows_dry_run_window_stops_nothing`
+- `The_unelevated_windows_act_A21_is_not_refused_as_needs_root`
+- `The_elevated_binary_refuses_A21`
+- `A_second_watch_holding_the_lock_exits_75_as_normal`
+- `The_architecture_scan_finds_an_unquoted_TerminateProcess_outside_the_stop`
+- the extension: `the stop button sends exactly the shown pairs`, `the timer runs the bundled exe only`, `a blocked exe start is reported`
+- `check-vsix`: `the one binary is the attested wsl-care.exe at the job's digest`
+
+`Win32ProcessStop` is exercised on a child process the test itself starts — never a process it did not start — as S2a's flow does on Linux.
+
+**Build order:**
+1. The idle-budget measurement and its research entry.
+2. The shared history helper and the Windows history.
+3. The per-side privilege gate.
+4. `IWindowsProcessStop` + `Win32ProcessStop` and the widened scanner.
+5. A21 + the Windows `watch`.
+6. E7.S3's bundling.
+7. The extension client, timer, panel block and button.
+8. Docs and contracts.
+
+Steps 1–5 land with the daemon (nothing runs A21 until step 7); steps 6–7 with the next extension release.
+
+**Definition of Done:**
+- [ ] Each RED test seen red for the right reason, then green. Break-it on product code (the same-handle creation check off, the once-interop rule off, the child guard off, the budget compared as exact ticks) turns its test red.
+- [ ] The own Opus review of the code finds no wrong-process route.
+- [ ] Windows suites green locally; CI's Linux and Windows legs green.
+- [ ] `module_mcp_servers.md`, `module_daemon.md`, `module_vs_code.md`, `architecture.md`, `module_tests.md`, `contracts/` updated.
+- [ ] A dry run on the owner's machine: the preview keeps all 16 interop children and names the reason of each kept or selected `claude.exe` child, before any stop.
+
+**Owner questions (non-blocking; the assumptions above stand until answered):**
+- **Q-S7b-1:** the exe in a `win32-x64` `.vsix` (assumed), or a typed install command like *Install daemon*?
+- **Q-S7b-2:** the runner — the extension while VS Code runs (assumed), or a per-user scheduled task now (E11)?
+- **Q-S7b-3:** may one client-gone relay be ended by hand (by pid and start) to measure whether its Windows child exits with it? If it does, the interop case closes in the distro by exact identity (A19's family) with no cross-OS pairing. Nothing is assumed: it is a real stop on the owner's machine.
+
+#### S7b.1 — as to be built (2026-10-09, same branch): the Windows CPU ledger, READ-ONLY
+
+**Why now.** Every S7b route needs it, whatever Q-S7b-3 shows, and the coordinator queued it on its own ("the Windows-side
+S1-style CPU ledger"). S7a measures a Windows server only across one short window, so a server that wakes for a burst every
+few minutes looks idle in a 1 s window — the S1 defect (2026-10-07 M1–M3) on Windows. Nothing here stops or changes a process.
+
+**Measured** (2026-10-09, read-only; `Get-Process` CPU time twice, 16.4 min apart):
+- all 22 `creds-mcp.exe` used exactly **0 ms**;
+- the 6 `coai-mcp.exe` of live sessions used **0.9–3.3 s** each.
+
+**Design — S1's ledger as it is** (`Mcp/McpCpuLedger.cs`; reuse-first step 1, no second ledger):
+1. **The reading.**
+   - Identity: (pid, creation time as a FILETIME integer) in `McpCpuReading.StartTicks`.
+   - `CpuTicks`: kernel + user 100-ns ticks (`GetProcessTimes`).
+   - `MonotonicMs`: `QueryUnbiasedInterruptTime`, which stops while the host sleeps, as Linux's `CLOCK_MONOTONIC` does.
+2. **Boot id:** Windows' own boot counter — `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters\BootId` (a DWORD, readable unelevated; measured 117) — as `windows-<n>`.
+   - It is read through a new read-only seam, `IWindowsBoot`.
+   - Unreadable means no baseline: the window answers, as S1 does for an unreadable boot id.
+3. **Place:** `{%LOCALAPPDATA%\wsl-care}\mcp-cpu.json` (the Windows binary's state directory), a new `McpCpuLedgerPlace.WindowsState(Directory, File, Writes)`.
+   - An unelevated `status` reads and writes it; an elevated one only reads, since it is the user's file.
+   - It is read as S1's own-state ledger (regular, capped by `records.maxStateFileBytes`, reached through no link) and written atomically and privately, only when it changed.
+4. **`WindowsMcpCollector`.**
+   - An instance with a usable baseline (between `mcpServers.cpuIntervalMinSeconds` and `mcpServers.cpuIntervalMaxMinutes`, S1's keys) is measured over the real interval since it: `cpuBasis: interval`.
+   - The rest are measured across the window (`cpuBasis: window`), and the wait is paid only when one needs it.
+   - "Idle" keeps S7a's rule over whichever basis answered.
+   - The sample's readings go into the ledger by S1's two-point rule.
+5. **Wire, additive:**
+   - `windowsMcpServers.instances[]` gains `cpuBasis` and `cpuIntervalSeconds` (S1's names);
+   - the block gains `cpuBaseline {file, recorded, reason}`;
+   - the text line names the basis.
+   - The Windows golden is regenerated; the Linux answers are unchanged (the block is absent there).
+6. **Not here:**
+   - `collect` on the Windows binary: no Windows run records anything yet;
+   - S7b's idle history and stop;
+   - `node.exe` / `wslhost.exe` children and `playwright-mcp` on Windows (known limits).
+
+**Keys:** S1's, unchanged. No new number.
+
+**RED tests:**
+- `A_windows_instance_with_a_ledger_point_in_bounds_is_measured_over_the_interval`
+- `A_windows_instance_without_one_is_measured_across_the_window_and_recorded`
+- `A_reused_pid_never_takes_another_processs_baseline`
+- `Another_boot_or_an_unreadable_boot_id_is_no_baseline`
+- `An_elevated_status_reads_the_ledger_and_writes_nothing`
+- `The_real_boot_id_and_unbiased_clock_read_on_windows` (Windows only, read-only)
+- `The_windows_block_carries_cpu_basis_and_the_baseline`
+
+**DoD:**
+- [ ] RED, then green.
+- [ ] Break-it on product code turns the tests red: the creation time dropped from the identity; the boot id ignored.
+- [ ] Windows suites and CI green.
+- [ ] `module_mcp_servers.md`, `module_daemon.md`, `module_tests.md` and `contracts/` updated.
 
 ### S8 — the 24 h × 20 sessions soak campaign
 

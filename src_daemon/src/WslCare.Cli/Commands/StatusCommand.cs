@@ -63,7 +63,9 @@ internal static class StatusCommand
             return report;
         }
 
-        var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
+        // E14 S7b.1: S1's ledger on the Windows side — this user's own file; an elevated status reads it and writes nothing.
+        var ledger = new WindowsCpuLedger.Kept(host.Files, McpCpuLedgerPlace.ForWindowsStatus(windows, host.Privilege.IsRoot), host.WindowsBoot);
+        var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait, ledger).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
         var wslConfig = Reading.Of(HealthCollector.AuditWslConfig(host.Files, windows.WslConfigFile));
         var advice = VmmemAdvice.For(sample.Host.Bind(h => h.VmmemWorkingSetBytes), sample.Host.Bind(h => h.Memory), wslConfig, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb));
         return report with
@@ -115,7 +117,7 @@ internal static class StatusText
     private static string McpServers(McpServersReport? mcp) => mcp switch
     {
         null => "mcp servers: not read",
-        { Available: true } => Invariant($"mcp servers: {mcp.Count} ({(mcp.Listed < mcp.Count ? Invariant($"of the {mcp.Listed} listed: ") : string.Empty)}{mcp.IdleCount} idle, {mcp.BusyWithoutActivityCount} busy without a log write), {Number(mcp.CpuCores!)} cores{CpuBases(mcp)}, {mcp.HeldBytes / BytesPerGibibyte:0.00} GiB; starts ") + string.Join(", ", mcp.Servers!.Select(s => Invariant($"{s.Name} {(s.Starts.Available ? Invariant($"{s.Starts.Value:0}") : "?")} in {s.StartsWindowMinutes} min"))),
+        { Available: true } => Invariant($"mcp servers: {mcp.Count} ({(mcp.Listed < mcp.Count ? Invariant($"of the {mcp.Listed} listed: ") : string.Empty)}{mcp.IdleCount} idle, {mcp.BusyWithoutActivityCount} busy without a log write), {Number(mcp.CpuCores!)} cores{CpuBases((mcp.Instances ?? []).Select(i => i.CpuBasis), mcp.WindowMilliseconds)}, {mcp.HeldBytes / BytesPerGibibyte:0.00} GiB; starts ") + string.Join(", ", mcp.Servers!.Select(s => Invariant($"{s.Name} {(s.Starts.Available ? Invariant($"{s.Starts.Value:0}") : "?")} in {s.StartsWindowMinutes} min"))),
         _ => $"mcp servers: unavailable ({mcp.Reason})",
     };
 
@@ -123,19 +125,19 @@ internal static class StatusText
     /// (42 read); 36 under wsl.exe (pid 38052), 2 under claude.exe (pid 27852)</c>.</summary>
     private static string WindowsMcpServers(WindowsMcpServersReport mcp) => mcp switch
     {
-        { Available: true } => Invariant($"windows mcp servers: {mcp.Count} ({mcp.IdleCount} idle, {mcp.OrphanedCount} orphaned), {Number(mcp.CpuCores!)} cores, {Gib(mcp.Held!)} private ({mcp.MemoryRead} read)")
+        { Available: true } => Invariant($"windows mcp servers: {mcp.Count} ({mcp.IdleCount} idle, {mcp.OrphanedCount} orphaned), {Number(mcp.CpuCores!)} cores{CpuBases((mcp.Instances ?? []).Select(i => i.CpuBasis), mcp.WindowMilliseconds)}, {Gib(mcp.Held!)} private ({mcp.MemoryRead} read)")
             + string.Concat((mcp.Owners ?? []).Take(TopShown).Select((o, i) => Invariant($"{(i == 0 ? "; " : ", ")}{o.Count} under {o.Parent}"))),
         _ => $"windows mcp servers: unavailable ({mcp.Reason})",
     };
 
-    /// <summary>What the CPU figures were measured over (plan E14 S1): <c> (3 over their last interval, 1 over a 1000 ms window)</c>;
-    /// empty when nothing was measured.</summary>
-    private static string CpuBases(McpServersReport mcp)
+    /// <summary>What the CPU figures were measured over (plan E14 S1; the Windows line since S7b.1): <c> (3 over their last interval, 1
+    /// over a 1000 ms window)</c>; empty when nothing was measured.</summary>
+    private static string CpuBases(IEnumerable<string> bases, int? windowMilliseconds)
     {
-        var instances = mcp.Instances ?? [];
-        var interval = instances.Count(i => i.CpuBasis == McpInstanceReport.BasisName(McpCpuBasis.Interval));
-        var window = instances.Count(i => i.CpuBasis == McpInstanceReport.BasisName(McpCpuBasis.Window));
-        return interval + window == 0 ? string.Empty : Invariant($" ({interval} over their last interval, {window} over a {mcp.WindowMilliseconds} ms window)");
+        var listed = bases.ToList();
+        var interval = listed.Count(b => b == McpInstanceReport.BasisName(McpCpuBasis.Interval));
+        var window = listed.Count(b => b == McpInstanceReport.BasisName(McpCpuBasis.Window));
+        return interval + window == 0 ? string.Empty : Invariant($" ({interval} over their last interval, {window} over a {windowMilliseconds} ms window)");
     }
 
     /// <summary><c>running: none</c>, or the state and what it means (<c>running: wedged - run … is wedged: …</c>).</summary>

@@ -151,6 +151,8 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Mcp/Win32ProcessTable.cs: AccessDenied"] = "a Win32 contract: a flag, access right or error code Windows defines, never a choice (E14 S7a)",
         ["WslCare.Core/Mcp/Win32ProcessTable.cs: InvalidParameter"] = "a Win32 contract: a flag, access right or error code Windows defines, never a choice (E14 S7a)",
         ["WslCare.Core/Mcp/Win32ProcessTable.cs: NoMoreFiles"] = "a Win32 contract: a flag, access right or error code Windows defines, never a choice (E14 S7a)",
+        ["WslCare.Core/Mcp/Win32Boot.cs: OnlyDword"] = "a Win32 contract: RegGetValueW's RRF_RT_REG_DWORD flag, never a choice (E14 S7b.1)",
+        ["WslCare.Core/Mcp/Win32Boot.cs: TicksPerMillisecond"] = "a unit: QueryUnbiasedInterruptTime counts 100-ns ticks (E14 S7b.1)",
         ["WslCare.Core/Actions/Memory/MemoryPressureShadow.cs: Hundredths"] = "a format: a whole-number fact holds avg60 to two decimals (E14 S5)",
         ["WslCare.Core/Actions/Engine/RequestSweep.cs: [..16]"] = "a run id's timestamp part (yyyyMMddTHHmmssZ, 16 characters) — the id's format",
         ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs: <= 255"] = "the kernel's longest file name (NAME_MAX)",

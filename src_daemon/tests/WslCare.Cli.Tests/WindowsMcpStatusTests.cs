@@ -56,4 +56,71 @@ public sealed class WindowsMcpStatusTests
         lines.Should().Contain(l => l.StartsWith("windows mcp servers: 3 (3 idle, 0 orphaned)", StringComparison.Ordinal) && l.Contains("2 under wsl.exe (pid 500)", StringComparison.Ordinal));
         lines.Should().Contain(l => l.StartsWith("vmmem advice: vmmemWSL holds 34.0 GiB", StringComparison.Ordinal));
     }
+
+    /// <summary>Windows' boot counter and unbiased clock, scripted (E14 S7b.1).</summary>
+    private sealed class ScriptedBoot : IWindowsBoot
+    {
+        public long Milliseconds { get; set; } = 7_200_000;
+
+        public Reading<string> BootId() => Reading.Of("windows-117");
+
+        public Reading<long> UnbiasedMilliseconds() => Reading.Of(Milliseconds);
+    }
+
+    private static CliHost WindowsHost(WindowsHostPaths paths, IWindowsBoot boot, List<TimeSpan> waits, bool elevated)
+    {
+        var clock = new FixedTimeProvider(Now);
+        return new CliHost(paths, new Core.Files.PhysicalFileSystem(paths), clock, new RecordingCommandRunner())
+        {
+            Probe = new FakeProbe(HostSide.Windows, clock),
+            WindowsProcesses = new ScriptedTable(),
+            WindowsBoot = boot,
+            Privilege = new ProcessPrivilege(elevated, "a test says so"),
+            Wait = (window, _) =>
+            {
+                waits.Add(window);
+                return Task.CompletedTask;
+            },
+        };
+    }
+
+    private static Core.Status.WindowsMcpServersReport WindowsMcp(string stdout) =>
+        System.Text.Json.JsonSerializer.Deserialize(stdout, Core.Json.WslCareJsonContext.Default.StatusReport)!.WindowsMcpServers!;
+
+    /// <summary>E14 S7b.1: the second status, five minutes (on the unbiased clock) after the first, measures every instance over the
+    /// interval since it — from the ledger the first one wrote in the Windows state directory — and waits no window.</summary>
+    [Fact]
+    public void A_second_windows_status_measures_over_the_interval_from_its_own_ledger()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "a CliHost over a Windows layout is built on Windows only");
+        using var root = new TempRoot("windows-mcp-ledger");
+        var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
+        var boot = new ScriptedBoot();
+        var waits = new List<TimeSpan>();
+
+        var (exit, first, stderr) = CliRun.Over(WindowsHost(paths, boot, waits, elevated: false), "status", "--json");
+        boot.Milliseconds += 300_000;
+        var (_, second, _) = CliRun.Over(WindowsHost(paths, boot, waits, elevated: false), "status", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var ledger = paths.Rules.Join(paths.StateDirectory, McpCpuLedger.FileName);
+        WindowsMcp(first).CpuBaseline.Should().Be(new Core.Status.McpCpuBaselineReport(ledger, true, null));
+        WindowsMcp(first).Instances!.Should().OnlyContain(i => i.CpuBasis == "window");
+        WindowsMcp(second).Instances!.Should().OnlyContain(i => i.CpuBasis == "interval" && i.CpuIntervalSeconds.Value == 300);
+        waits.Should().HaveCount(1, "only the first status, with no baseline, waited the window");
+    }
+
+    [Fact]
+    public void An_elevated_windows_status_writes_no_ledger()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "a CliHost over a Windows layout is built on Windows only");
+        using var root = new TempRoot("windows-mcp-elevated");
+        var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
+
+        var (exit, stdout, stderr) = CliRun.Over(WindowsHost(paths, new ScriptedBoot(), [], elevated: true), "status", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        WindowsMcp(stdout).CpuBaseline!.Recorded.Should().BeFalse();
+        File.Exists(paths.Rules.Join(paths.StateDirectory, McpCpuLedger.FileName)).Should().BeFalse("an elevated status never writes the user's ledger");
+    }
 }

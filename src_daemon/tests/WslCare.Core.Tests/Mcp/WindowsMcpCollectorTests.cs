@@ -14,7 +14,7 @@ namespace WslCare.Core.Tests.Mcp;
 /// VS Code <c>wsl.exe</c> connection. Counted by exe name without case; an orphan is a parent gone or a parent created AFTER the
 /// child (a reused pid, the ancestors checked too); CPU over the window, matched by pid AND creation time.
 /// </summary>
-public sealed class WindowsMcpCollectorTests
+public sealed partial class WindowsMcpCollectorTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 9, 12, 20, 0, TimeSpan.Zero);
 
@@ -61,7 +61,7 @@ public sealed class WindowsMcpCollectorTests
             table.SecondRead = true;
             clock.Advance(window);
             return Task.CompletedTask;
-        }).SampleAsync(config ?? Defaults(), CancellationToken.None);
+        }, new WindowsCpuLedger.None("a test of the window alone keeps no ledger")).SampleAsync(config ?? Defaults(), CancellationToken.None);
         return reading.Should().BeOfType<Reading<WindowsMcpSample>.Available>().Subject.Value;
     }
 
