@@ -186,7 +186,7 @@ public sealed partial class PhysicalFileSystem
 
     private static int FlushError(OpenedFolder folder) =>
         OperatingSystem.IsLinux() ? BeneathWrites.Sync(folder.Descriptor) is { Failed: true } failed ? failed.Errno : 0
-        : OperatingSystem.IsWindows() ? BeneathWrites.FlushWindows(folder.Handle)
+        : OperatingSystem.IsWindows() ? NetworkPaths.FolderFlushed(BeneathWrites.FlushWindows(folder.Handle), NetworkPaths.IsRemote(folder.Path, NetworkPaths.NetworkRootOf))
         : -1;
 
     /// <summary>A target on its REAL, link-free path (own review round, security m1): the file system's root it hangs from, every

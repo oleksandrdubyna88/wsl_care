@@ -44,15 +44,19 @@ public static class SideLease
     public static LeaseTaken Take(IArchiveFiles files, string baseFolder, string side, LeaseRecord me, IProcessTable processes, Action<TimeSpan>? settle = null)
     {
         var scope = new DeletionScope(baseFolder, "A13");
-        if (files.OpenFolderBeneath(baseFolder, [Folder, Sides], scope) is not FolderBeneath.Ready { Folder: var folder })
+        var opened = files.OpenFolderBeneath(baseFolder, [Folder, Sides], scope);
+        if (opened is not FolderBeneath.Ready { Folder: var folder })
         {
-            return new LeaseTaken.Refused($"the lease folder {Folder}/{Sides} could not be opened in the base");
+            return new LeaseTaken.Refused($"the lease folder {Folder}/{Sides} could not be opened in the base ({WhyNot(opened)})");
         }
 
         var name = side + ".lease";
         var first = Create(files, folder, name, me, scope, note: string.Empty);
         return first is LeaseTaken.Refused { Why: ExistsMark } ? TakeOver(files, folder, name, me, scope, processes, settle ?? Thread.Sleep) : Disposed(first, folder);
     }
+
+    /// <summary>Why a folder beneath the base is not ready — said with the refusal, not swallowed (the E9 live gate, 2026-10-10).</summary>
+    private static string WhyNot(FolderBeneath opened) => opened is FolderBeneath.Refused refused ? refused.Why : "it is missing";
 
     /// <summary>The lease removed — only the file this run created.</summary>
     public static void Release(IArchiveFiles files, LeaseTaken.Held held, string baseFolder)
