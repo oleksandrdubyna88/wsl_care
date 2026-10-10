@@ -170,11 +170,14 @@ function buttons(ids: readonly GuardAction[], enabled: boolean): GuardView['butt
   return ids.map((id) => ({ id, label: GUARD_LABELS[id], enabled }));
 }
 
-/** The summary fields that hold a duration, and how many leading tokens of a line may hold one: `trigger=boot enabled=True
- * delay=PT1M`, `trigger=time enabled=True interval=PT4H`, `settings limit=PT5M …` — a subscription or an action argument, which
- * come later in their line, is never read as one (coai plan round 990e7d9a). */
+/** The summary fields that hold a duration: `trigger=boot enabled=True delay=PT1M`, `trigger=time enabled=True interval=PT4H`,
+ * `settings limit=PT5M …`. */
 const DURATION_FIELDS = ['delay=', 'interval=', 'limit='] as const;
-const DURATION_HEAD = 3;
+
+/** The summary fields whose value is FREE TEXT and runs to the end of its line (`SUMMARY_FUNCTION`): from the first of them on,
+ * nothing is read as a duration — a subscription or an action argument is compared as text (coai plan round 990e7d9a), wherever
+ * the structured fields before it stand (code round: tied to the line's schema, not to a token count). */
+const FREE_TEXT_FIELDS = ['subscription=', 'path=', 'args='] as const;
 
 /** One summary token with a duration field's value as its length in seconds (`delay=60s`); any other token as it is. */
 function canonicalToken(token: string): string {
@@ -185,7 +188,11 @@ function canonicalToken(token: string): string {
 }
 
 function canonicalLine(line: string): string {
-  return line.split(' ').map((token, i) => (i < DURATION_HEAD ? canonicalToken(token) : token)).join(' ');
+  const tokens = line.split(' ');
+  const freeText = tokens.findIndex((token) => FREE_TEXT_FIELDS.some((f) => token.startsWith(f)));
+  const structured = freeText === -1 ? tokens.length : freeText;
+
+  return tokens.map((token, i) => (i < structured ? canonicalToken(token) : token)).join(' ');
 }
 
 /**

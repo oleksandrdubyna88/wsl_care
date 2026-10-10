@@ -97,7 +97,7 @@ test('a guard Task Scheduler registered — its delay stored as PT1M — reads a
 });
 
 test('an install that ends with the registered form completes the pending run', () => {
-  assert.equal(finishedBy(parseGuardAnswer(presentAnswer({ summary: registeredForm() })), { op: 'install' } as never, OPTIONS), true);
+  assert.equal(finishedBy(parseGuardAnswer(presentAnswer({ summary: registeredForm() })), { op: 'install' }, OPTIONS), true);
 });
 
 test('a duration reads as its length in seconds; anything else is no duration', () => {
@@ -128,6 +128,9 @@ test('durations compare by value only in the delay, interval and limit fields; a
   const subscriptionRespelled = guardSummary(OPTIONS).map((l) => (l.includes('subscription=') ? `${l} delay=PT1M` : l));
   assert.equal(summariesMatch(inSubscription, subscriptionRespelled), false, 'only the trigger\'s own delay field is a duration — text in the subscription is compared as text');
   assert.equal(summariesMatch(registeredForm(), guardSummary(OPTIONS)), true);
+  // Code round: a structured token added before the delay keeps the delay a duration field (the line's schema, not a count).
+  const widened = (lines: readonly string[]): string[] => lines.map((l) => l.replace('trigger=boot enabled=True', 'trigger=boot source=x enabled=True'));
+  assert.equal(summariesMatch(widened(registeredForm()), widened(guardSummary(OPTIONS))), true);
 });
 
 test('disabled, unreadable, unknown and a failing last run each say so', () => {
