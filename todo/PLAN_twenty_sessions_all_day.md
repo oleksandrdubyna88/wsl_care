@@ -1368,7 +1368,7 @@ So the leak S7b exists for is closed EXACTLY from the distro side. The relay is 
 identified by pid and start ticks, and its "client gone" evidence is local to `/proc`. This **supersedes** S7b's "no interop
 stop": D2 is met by showing, per relay, that its client is gone. The Windows-side stop of S7b items 3–5 (for orphaned or
 agent-owned Windows servers that have no relay) stays a later story, S7b.3, and its bundled exe is E7.S5a
-([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)).
+(`todo/PLAN_bundle_windows_binary.md` (PR #86)).
 
 **Design — A21 `InteropRelayStop`**, a distro action beside A19 (`Actions/Suspects/`), sharing A19's machinery:
 1. **A relay** is a process of the snapshot that meets all of these:
