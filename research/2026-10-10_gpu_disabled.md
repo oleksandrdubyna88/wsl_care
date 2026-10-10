@@ -2,7 +2,7 @@
 
 > Measured 2026-10-10 14:20–14:35Z on the owner's machine, read-only (no elevation, nothing enabled), with
 > PowerShell 7.6.4 (`pwsh -NoProfile -File <script>`; the scripts were scratch files, not committed). What
-> [PLAN_gpu_health.md](../todo/PLAN_gpu_health.md) starts from.
+> [PLAN_gpu_health.md](PLAN_gpu_health.md) starts from.
 
 ## G1 — the adapters as Windows reports them
 
