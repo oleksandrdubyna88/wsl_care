@@ -3016,7 +3016,8 @@ untrusted answer was being read as a damaged copy.
 
 **Teeth** (`G-01`, `G-02`, `G-04`–`G-11`, product code only, each restored byte for byte, on Windows): all red; G-09–G-11 from the own review — the GUID match
 removed, the command-line keep skipped, the session id never recognised, the offline flag ignored, an unknown answer trusted,
-phase 2 marking an untrusted copy damaged (two ways).
+phase 2 marking an untrusted copy damaged (two ways). G-03, the distro leg dropped, ran in WSL: red
+(`Expected seen.ClaudeOnCommandLine(Key) "" to contain "on its command line"`).
 
 **The own review round** (an Opus reviewer in parallel, data safety):
 
