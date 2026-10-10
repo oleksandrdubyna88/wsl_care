@@ -259,6 +259,17 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "auto.A21",
+      "shape": "bool",
+      "default": true,
+      "safeDirection": "off",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "volumes.anonymousMaxCount",
       "shape": "int",
       "min": 0,
@@ -2558,6 +2569,19 @@
       "max": 1000,
       "default": 200,
       "safeDirection": "none",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "processes.fdScanMilliseconds",
+      "shape": "int",
+      "min": 100,
+      "max": 30000,
+      "default": 2000,
+      "safeDirection": "lower",
       "rootEffective": true,
       "tightenOnlyForRoot": false,
       "machineOnly": true,

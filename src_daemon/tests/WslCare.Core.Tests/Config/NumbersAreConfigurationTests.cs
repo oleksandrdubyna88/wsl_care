@@ -252,6 +252,20 @@ public sealed class NumbersAreConfigurationTests
         RunBudget.WatchRunWorstCase(defaults).Should().BeLessThan(TimeSpan.FromMinutes(defaults.Int(ConfigKeys.McpWatchdog.RunLimitMinutes)));
     }
 
+    /// <summary>Plan E14 S7b.2: the watch runs A19 AND A21, so its worst case counts two signal graces and A21's two fd-table scans
+    /// (the preview and the re-check) — each a key, each moving the derived worst case by exactly its own share.</summary>
+    [Fact]
+    public void The_watch_worst_case_counts_the_second_grace_and_the_two_fd_scans()
+    {
+        var defaults = Load("{}").Config;
+        var slower = Load("""{ "processes": { "termGraceSeconds": 20, "fdScanMilliseconds": 3000 } }""").Config;
+
+        (RunBudget.WatchRunWorstCase(slower) - RunBudget.WatchRunWorstCase(defaults)).Should().Be(
+            (TimeSpan.FromSeconds(10) * 2) + (TimeSpan.FromMilliseconds(1000) * 2),
+            "termGraceSeconds 10 -> 20 counts twice (A19's and A21's), fdScanMilliseconds 2000 -> 3000 counts twice");
+        RunBudget.WatchKeys.Should().Contain(ConfigKeys.Processes.FdScanMilliseconds, "the coupled rule re-checks when the scan budget changes");
+    }
+
     /// <summary>Plan E14 S2b: a watch period at or past the interval maximum means no watch sample ever finds a baseline, so A19
     /// could never see a busy server — a machine layer that sets it is an error, never in force.</summary>
     [Fact]

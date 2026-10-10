@@ -48,6 +48,15 @@ public interface IProcessSignals
     /// <summary><c>SIGTERM</c> to every process, ONE shared deadline of <paramref name="grace"/> across all of them, then
     /// <c>SIGKILL</c> to the survivors (gate finding #9); the outcomes in the order of <paramref name="processes"/>.</summary>
     Task<IReadOnlyList<SignalOutcome>> TerminateAllAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken);
+
+    /// <summary><c>SIGTERM</c> ONLY (plan E14 S7b.2: an interop relay is never killed): one <c>SIGTERM</c> each, ONE shared grace,
+    /// and a survivor reported <see cref="SignalOutcome.StillRunning"/> — never a <c>SIGKILL</c>. A sender that does not
+    /// implement it REFUSES, so no sender can reach the escalating call through it by accident.</summary>
+    Task<IReadOnlyList<SignalOutcome>> TerminateOnlyAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<SignalOutcome>>([.. processes.Select(_ => new SignalOutcome.Refused(NoTermOnlyMode))]);
+
+    /// <summary>Why a sender without a SIGTERM-only mode signals nothing through it.</summary>
+    const string NoTermOnlyMode = "this sender has no SIGTERM-only mode, so it signals nothing (it never falls back to SIGKILL)";
 }
 
 /// <summary>One process through <see cref="IProcessSignals.TerminateAllAsync"/>.</summary>
@@ -150,6 +159,25 @@ public sealed class PidfdProcessSignals : IProcessSignals
 
             await WaitAsync(slots, KillWait, neededKill: true, cancellationToken).ConfigureAwait(false);
             return [.. slots.Select(s => s.Outcome ?? new SignalOutcome.StillRunning($"pid {s.Process.Pid} did not end within {KillWait.TotalSeconds:0} s of SIGKILL (uninterruptible I/O?)"))];
+        }
+        finally
+        {
+            foreach (var slot in slots.Where(s => s.Fd >= 0))
+            {
+                _calls.Close(slot.Fd);
+            }
+        }
+    }
+
+    /// <summary>SIGTERM ONLY (plan E14 S7b.2): the same pins and the same one grace, and the survivors reported still running —
+    /// no SIGKILL, no kill wait.</summary>
+    public async Task<IReadOnlyList<SignalOutcome>> TerminateOnlyAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken)
+    {
+        var slots = processes.Select(Pin).ToList();
+        try
+        {
+            await WaitAsync(slots, grace, neededKill: false, cancellationToken).ConfigureAwait(false);
+            return [.. slots.Select(s => s.Outcome ?? new SignalOutcome.StillRunning(string.Create(CultureInfo.InvariantCulture, $"pid {s.Process.Pid} did not end within {grace.TotalSeconds:0} s of SIGTERM; no SIGKILL is sent")))];
         }
         finally
         {

@@ -1568,6 +1568,35 @@ real process**):
 - [ ] A dry-run preview on the owner's machine names its relays, each target with its reasons and each kept relay with its
   reason, before any stop.
 
+#### S7b.2 as built (2026-10-10, the daemon half)
+
+Built as designed above, RED first. Every break-it on product code went red and was restored. The record is in
+[module_mcp_servers.md](../research/module_mcp_servers.md) § *A21* and [module_tests.md](../research/module_tests.md).
+
+**Deviations and additions:**
+- **The extension's button is NOT in this change** (item 9's row, button and modal). It moves to **S7b.2b**, because the
+  extension has no `--process` road at all yet: A18 and A19 have no button either.
+  - What S7b.2b needs is a root op with a `--process` tail tied to the shown list, a modal, and a gate on
+    `act.processList`.
+  - The daemon half ships now, so it can be released before 2026-10-12: the `interopRelays` status block and the
+    `act.processList` capability.
+  - The extension gains only `A21` in `ACTION_IDS` (the contract-equality test) and in `BUTTON_ONLY_IDS` (kept out of the
+    cleanup gate).
+  - Until S7b.2b ships, A21 runs from the timer and the watch, and by `wsl-care act A21 --preview|--confirm --process …` in a
+    terminal.
+- **A19's shown-list binding is extracted** to `ShownProcessBinding`, shared with A21 (reuse-first: a second copy would drift).
+- **`SuspectSignals.TermOnlyAsync`** is the one re-check path with SIGTERM only. It shares `SignalAllAsync` with the escalating
+  `EndAllAsync`.
+- **`AgentCpuHistory.Record(…, EffectiveConfig)`** is the one writer overload, used by both product writers (the timer's full
+  run and the watch). A writer that left relays out would drop their entries.
+- **The fd scan is bounded** by the new key `processes.fdScanMilliseconds` (100–30000, default 2000, machine-only, lower is
+  safer). Past it the scan is inconclusive and every relay is kept. The watch's worst case counts it twice.
+- **Two capabilities, appended:** `act.processList` and `status.interopRelays`. `ActEntryStdinTests`' "last capability" check
+  became an order check.
+
+**Not done here:** S7b.2b (the button), S7b.3 (A22, the Windows-side stop), and the socket peer through `sock_diag` (only if
+the dry-run preview shows that relays sit on sockets).
+
 ### S8 — the 24 h × 20 sessions soak campaign
 
 **What is sampled, every `soak.periodMinutes` (10):** `wsl-care status --json` (the S1 MCP block, S5/S6 verdicts, memory,
