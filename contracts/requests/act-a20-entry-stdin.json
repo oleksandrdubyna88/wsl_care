@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "description": "The ONE shape of an A20 restore the extension sends (plan §15s D6, D7): the daemon's argv after the binary, and the entry ids on stdin, one per line. The daemon's ActEntryStdinTests parse exactly these bytes; the extension's rootCall test emits exactly these from the same selection; the fake wsl.exe compares against this file. Neither half may change it alone.",
+  "entries": [
+    "00000000000000aa",
+    "0123456789abcdef",
+    "fedcba9876543210"
+  ],
+  "stdin": "0123456789abcdef\nfedcba9876543210\n00000000000000aa\n",
+  "preview": [
+    "act",
+    "A20",
+    "--preview",
+    "--entry",
+    "-",
+    "--json"
+  ],
+  "confirm": [
+    "act",
+    "A20",
+    "--confirm",
+    "--manual",
+    "--detach",
+    "--entry",
+    "-",
+    "--json"
+  ]
+}

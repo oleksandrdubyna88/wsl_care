@@ -99,7 +99,7 @@ internal static class ArchiveRunCommand
             return (int)ExitCode.NotAsRoot;
         }
 
-        var report = ArchiveList.List(Input(host, loaded, request.Agent, TimeSpan.MaxValue, cancellationToken), new ArchiveListRequest(request.Agent, request.Month, request.RunId) { Restorable = request.Restorable });
+        var report = ArchiveList.List(Input(host, loaded, request.Agent, TimeSpan.MaxValue, cancellationToken), new ArchiveListRequest(request.Agent, request.Month, request.RunId) { Restorable = request.Restorable, EntryIds = request.EntryIds });
         _ = Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveListReport) : RenderList(report));
         return report.Outcome is RunOutcomes.Done or RunOutcomes.NoBase ? (int)ExitCode.Ok : (int)ExitCode.RunFailed;
     }

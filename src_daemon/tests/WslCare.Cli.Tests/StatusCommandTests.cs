@@ -5,6 +5,7 @@ using FluentAssertions;
 using WslCare.Cli;
 using WslCare.Core;
 using WslCare.Core.Collectors;
+using WslCare.Core.Files;
 using WslCare.Core.Json;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
@@ -17,14 +18,34 @@ namespace WslCare.Cli.Tests;
 public sealed class StatusCommandTests
 {
     private const long KiB = 1024;
+    private const long GiB = 1024 * 1024 * KiB;
 
-    private static (CliHost Host, RecordingCommandRunner Runner) FixtureHost(SandboxHost sandbox, DateTimeOffset now)
+    /// <summary>The root volume the captured tree is measured on: half full, below <c>thresholds.rootUsedWarnPercent</c> (80).
+    /// Fixed, because the probe would otherwise measure the REAL drive holding the fixture — on 2026-10-10 the owner's D: at
+    /// 83 % turned <c>disk.root</c> warn and failed a test about the verdict line, for a reason that test does not guard.</summary>
+    private static readonly VolumeReadResult.Measured HalfFullRoot = new(100 * GiB, 50 * GiB, 50 * GiB);
+
+    /// <summary>A root volume 90 % used: above the 80 % warn, so <c>disk.root</c> warns.</summary>
+    private static readonly VolumeReadResult.Measured NinetyPercentFullRoot = new(100 * GiB, 10 * GiB, 10 * GiB);
+
+    private static (CliHost Host, RecordingCommandRunner Runner) FixtureHost(SandboxHost sandbox, DateTimeOffset now) =>
+        FixtureHost(sandbox, now, HalfFullRoot);
+
+    private static (CliHost Host, RecordingCommandRunner Runner) FixtureHost(SandboxHost sandbox, DateTimeOffset now, VolumeReadResult root)
     {
         var paths = ProcfsFixture.PathsAt(ProcfsFixture.Root);
         var clock = new FixedTimeProvider(now);
         var runner = new RecordingCommandRunner();
-        var probe = new LinuxProbe(ProcfsFixture.LinkOverlay(new Core.Files.PhysicalFileSystem(paths), ProcfsFixture.Root), paths, clock);
+        var files = new FixedRootVolume(ProcfsFixture.LinkOverlay(new Core.Files.PhysicalFileSystem(paths), ProcfsFixture.Root), paths.FilesystemRoot, root);
+        var probe = new LinuxProbe(files, paths, clock);
         return (new CliHost(sandbox.Paths, sandbox.Files, clock, runner) { Probe = probe }, runner);
+    }
+
+    /// <summary>Answers ONE path's volume — the distro root's — with a fixed reading, and hands everything else on.</summary>
+    private sealed class FixedRootVolume(IFileSystem inner, string root, VolumeReadResult answer) : DelegatingFileSystem(inner)
+    {
+        public override VolumeReadResult MeasureVolume(string path) =>
+            string.Equals(path, root, StringComparison.Ordinal) ? answer : base.MeasureVolume(path);
     }
 
     private static StatusReport Report(string stdout) =>
@@ -122,6 +143,19 @@ public sealed class StatusCommandTests
 
         var line = lines.Should().ContainSingle(l => l.StartsWith("verdicts: ", StringComparison.Ordinal)).Subject;
         line.Should().Contain("warn (memory.available)").And.Contain(" ok").And.Contain(" unknown");
+    }
+
+    [Fact]
+    public void Status_without_json_names_every_warn_verdict_in_the_line_a_full_root_disk_too()
+    {
+        using var sandbox = new SandboxHost("status-text-verdicts-full-root");
+        var (host, _) = FixtureHost(sandbox, ProcfsFixture.CapturedAt, NinetyPercentFullRoot);
+        CliRun.Over(host, "config", "set", "thresholds.memAvailableWarnPercent", "70").Exit.Should().Be((int)ExitCode.Ok);
+
+        var lines = CliRun.Lines(CliRun.Over(host, "status").Stdout);
+
+        var line = lines.Should().ContainSingle(l => l.StartsWith("verdicts: ", StringComparison.Ordinal)).Subject;
+        line.Should().Contain("2 warn (memory.available, disk.root)", "a root volume 90 % used is above the 80 % warn, and the line names every warn verdict");
     }
 
     [Fact]

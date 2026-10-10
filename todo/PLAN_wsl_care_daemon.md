@@ -4054,6 +4054,158 @@ consult was owed.
 | 12, 18 | `archive list` should stream and bound its memory | **Rejected for now:** one month's index is bounded by `archive.maxStateFileBytes`, and the list reads months one at a time. Streaming the answer would change its JSON contract (the golden); recorded for E9.S5 should a real base reach that size | — |
 | 15 | `InflightBook` should be a record | **Rejected:** it is a stateful service over the in-flight file (load, change, write under the lease) — the convention keeps those as classes | — |
 
+### 15s. E10 split and design — the AI-session archive in the extension
+
+> Status: **in progress, 2026-10-09 — E10.S0 (the daemon half) built; E10.S1 and E10.S2 (the extension) not started.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
+> ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
+> daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),
+> [module_vs_code.md](../research/module_vs_code.md).
+
+#### The goal, and what stands in its way
+
+**Goal.** A person with the extension can choose where the archive lives, see what it would move and what it holds, archive
+now, restore what they pick, and read what the timer's archive did — without a terminal. The daemon half (E9) answers every
+question already; today the extension asks none of them.
+
+**What the extension is today (verified 2026-10-09, `main` c002c00):**
+- It speaks to the daemon through ONE client (`src/client/WslCareClient.ts:100` `daemonArgv`, `:128` `run`, `:174` `read`) whose
+  verbs are a closed allowlist (`src/client/verbs.ts:14-24`: `status --json`, `preview --all --json`, `doctor --json`, `--version`;
+  `:72-94` the run reads), held EXACTLY by `src/test/structure.test.ts:103`.
+- Root calls come from ONE module (`src/root/rootCall.ts:39` `ROOT_OPS`, `:106` `confirmTail` = `act <ids> --confirm --manual --detach
+  [--only -] --json`, A4's list on stdin `:116`), imported only by `src/root/cleanupController.ts` (`:186` one root op per distro,
+  `:203` the gate + root check, `:328` an unknown detach outcome followed, never failed).
+- `src/root/actionGate.ts:46` lets an id through when it is compiled (`rootIds.ts:16`), reported in `status.actions`, and not
+  button-only (`rootIds.ts:29` `['A18','A19','A20']`); A13 passes the gate but is no button (`src/cleanup/rowIds.ts:11`: A4–A9).
+- Durable button state: the journal (`src/cleanup/journal.ts:43`, ops `:64`), the follower (`src/cleanup/runFollower.ts`), the view
+  (`src/cleanup/cleanupView.ts`) — a press survives a reload and never sticks.
+- The word `config` is banned everywhere (`structure.test.ts:182`, `bundleScan.test.ts:51`, `fakeWsl.ts:110`/`:378`): E7.S3 —
+  settings mirrored to the daemon's config through ONE user-layer writer (§15q D5, items 5 and 7) — is not built.
+- The extension never runs `wsl-care.exe` (`src/wsl/wslExecutable.ts`); E7.S3 bundles it and E11 installs the Windows side.
+- The Logs page renders any action generically (`src/logsPage/runDetail.ts:38`, `:55`): A13 / A20 rows read as ids, not words.
+
+#### Decisions (each overrides the archive plan's §5 / §6 where it differs)
+
+- **D1 — no VS Code setting mirrors the archive.** The daemon's `archive.baseFolder` (user layer, judged by the base rules,
+  §15r D7) is the only truth: the extension READS it (`archive status --json`, `archive preview --json`) and WRITES it through the
+  one user-layer writer (D2). The archive plan's `wslCare.archive.*` settings (§5) are dropped: `enabled` is "a base is set",
+  `olderThanDays` / `agents` stay daemon keys a person sets with `wsl-care config set` until E7.S3's settings mirror carries them.
+- **D2 — the ONE user-layer writer arrives with E10, scoped to the archive's base.** `src/config/configCall.ts` is the only module
+  that spells `config set` / `config reset`; it runs as the user (no `-u`), takes keys from a closed list (here
+  `archive.baseFolder` only) and values only from the extension host (a picker's answer, judged first by `archive check-base`),
+  never from a webview. It is built to §15q D5's rules (items 5 and 7) so that E7.S3 WIDENS it — adds keys and the mirror — rather
+  than writing a second one (reuse-first, step 2.1). The structural bans move from "no `config`" to "`config` only in
+  `configCall.ts`, `set`/`reset` only, never with `-u root`". The module's name is the one E7.S3's row already gives it, so
+  E7.S3 widens the same file (the cadence consultation, 2026-10-09).
+- **D3 — the folder picker.** *AI OS Care: Choose the archive folder…* opens `showOpenDialog` (folders only, one), sends the
+  Windows path to `archive check-base <path> --json` as the user — the daemon places a drive path at its drvfs mount — shows the
+  verdict (accepted with its warnings, or refused with its rule) in a modal, and on *Use this folder* writes the JUDGED folder
+  (the report's `folder`, the distro's spelling) with `config set archive.baseFolder <folder>`. A refused folder is never
+  written. *Stop archiving* writes an EXPLICIT EMPTY value (`config set archive.baseFolder ""` — empty means "no archive",
+  `TextRule.AbsolutePathOrEmpty`), never a reset: a reset only removes the user's override, and a machine-layer base would then
+  apply again and the next timer would still archive (the cadence consultation, 2026-10-09, verified against
+  `UserConfigWriter.Reset` and `ConfigKeys.Archive.BaseFolder`). Acceptance: *Stop* with an inherited machine base → `archive
+  status` says none is configured. Whether an empty argument survives `wsl.exe`'s argv is measured in E10.S1 before it is relied
+  on; if it does not, E10.S1 stops and the shape is decided then.
+- **D4 — the archive section of the panel.** From `archive preview --json` and `archive status --json` (both as the user, both
+  capability-gated: `archive.preview`, `archive.run`): the base folder and its warnings; per agent the due sessions, files and
+  bytes, the effective age, the agent's own retention and a **retention badge** when the agent would delete before the archive
+  moves (the preview's `retention` and `effectiveAgeDays`); the side's lock state and the last run. Read on the panel's own
+  refresh, never more often.
+- **D5 — *Archive now*** is A13 through the root path that exists: the controller's preview (`act A13 --preview --json`, the
+  modal names per agent the count, the bytes and what stays in use) → confirm (`act A13 --confirm --manual --detach --json`) →
+  the journal and the follower, exactly as a cleanup row. `rowIds.ts` stays the cleanup rows; A13 gets its own button in the
+  archive section, gated on `archive.run` and on A13 in `status.actions`.
+- **D6 — the Archive page** (a new webview page, like Logs): `archive list --json` as the user → agent → month → entries (key,
+  files, bytes, status, verified). Restore takes a selection (entries, or a whole month): only VERIFIED entries removed at their
+  source are selectable; an unverified one is marked and says "restore it in a terminal with `--accept-unverified`" (§15r D6).
+  Restore is A20 through the root path: preview `act A20 --preview --entry - --json` and confirm `act A20 --confirm --manual
+  --detach --entry - --json`, the ids on STDIN (D7), the journal and the follower as any button. **The ceiling (plan round,
+  finding 1):** the list answer carries `restoreCeiling` — the effective `archive.maxRestoreEntries` (E10.S0); the page counts the
+  selection and past the ceiling disables *Restore* and says "N selected — one restore takes at most M, pick fewer"; a whole month
+  above the ceiling selects its newest M and says so. The daemon's own refusal stays the backstop.
+- **D7 — entry ids on stdin (E10.S0, daemon).** `act … --entry -` reads the ids from stdin, one per line, under the same checks
+  as the flag (16 hex, no duplicate, at most `archive.maxRestoreEntries`' ceiling, A20 among the actions) — the A4 precedent
+  (`--only -`, `CommandLine.cs:517`). Reason: a Windows command line holds 32 767 characters; `--entry <id>` costs 25 each, so a
+  month of sessions would not fit. A new capability `act.entryStdin` gates it; the extension never sends `--entry <id>` argv.
+  **One request, both sides (plan round, finding 0):** `contracts/requests/act-a20-entry-stdin.json` holds the exact argv and the
+  exact stdin bytes; the daemon's Cli test parses exactly those and asserts the ids, the extension's test asserts `rootCall` emits
+  exactly those from a selection, and the fake `wsl.exe` compares against it — neither half can drift alone. The live run through
+  the real daemon needs `wsl -u root`, which agents do not run: it is a named step of the owner's live gate.
+- **D8 — the Logs page names the archive.** A13 rows read "AI sessions archived", A20 rows "archived sessions restored"; the run
+  detail's per-agent table (the run's `removed` items are agents with counts and bytes) gets its own headings. Goldens gain A13
+  and A20 runs.
+- **D9 — the Windows side waits for its binary.** The extension runs no `wsl-care.exe` until E7.S3 bundles it; the Windows
+  archive (its preview, run, restore) is not shown by E10; the section and the page say "this distribution's archive only — the
+  Windows archive is shown by a later version" (bundling the binary does not render it; E13's Windows group does). Two rendering
+  cases hold the label: no Windows binary, and a Windows binary present without E13's UI.
+- **D10 — one-liner carried (the owner's open question 4, the coordinator's instruction):** `archive check-base --json <path>` is
+  accepted in either order (`ArchiveArguments.cs` `ParseArchiveCheckBase`, one arm).
+- **D11 — every action is a panel button (owner rule 2026-10-09, standing).** *Choose the archive folder…* (with its check-base
+  verdict), *Stop archiving*, *Archive now* and *Restore* each ship as a BUTTON in the panel (the archive section, the Archive
+  page); a command-palette entry may duplicate one, never be its only way. A test pinning "every contributed command has a panel
+  button" is landing from another story — E10.S1 rebases onto it and its commands pass it.
+
+#### Stories and build order
+
+| Story | What | Files | RED first |
+|---|---|---|---|
+| **E10.S0** (daemon) | D7 `--entry -` on stdin + `act.entryStdin` + the shared request fixture; `restoreCeiling` on the list answer; D10 the flag order | `WslCare.Cli/CommandLine.cs`, `ArchiveArguments.cs`, `StdinList.cs`, `Core/Status/Capabilities.cs`, `Core/Archive/ArchiveList.cs`, contracts | stdin ids accepted and bounded and checked like the flag; a duplicate / a bad id / no A20 refused; the fixture's bytes parse to its ids; the list carries the effective ceiling; `--json` first accepted |
+| **E10.S1** (extension) | the read verbs `archive status --json`, `archive preview --json`, `archive check-base <path> --json` (as the user, allowlisted, the fake taught); D2 the writer; D3 the picker; D4 the panel section with the badge; D5 *Archive now* | `src/client/verbs.ts`, `src/config/configCall.ts` (new), `src/archive/*` (new), `src/panel/*`, `src/root/*`, `package.json`, `media/panel.js`, tests | the client refuses any other archive argv; the writer refuses a key not listed, a value not judged, `-u root`; a refused folder is never written; *Stop* writes an explicit empty value and an inherited machine base no longer applies; *Archive now* survives a reload and never sticks; the badge shows exactly when retention < effective age |
+| **E10.S2** (extension) | D6 the Archive page with restore; D8 the Logs words | `src/archivePage/*` (new), `media/archive.js` (new), `src/root/*`, `src/logsPage/*`, goldens | an unverified entry is never sent; ids reach the daemon on stdin only; a restore survives a reload; the Logs rows say what A13 / A20 did |
+
+Each story: its own commit series and PR, a plan-gated scope (this section), the code gate on its diff, an own Opus review in
+parallel for the root and the writing paths (D2, D5, D6, D7), break-it checks on product code only, docs in the same change.
+
+#### Test plan
+
+- **Structural** (`structure.test.ts`, `bundleScan.test.ts`, `fakeWsl.ts`): the new verbs are the only archive argv the client
+  sends; `config` appears only in `configCall.ts`, never next to `-u root`; `--entry` appears only as `--entry -` in `rootCall.ts`;
+  every new page message is closed and indexed (never an id or a path from a webview).
+- **The fake `wsl.exe`** answers the new verbs from `contracts/golden/head/archive-*.json` and refuses any other shape; root
+  shapes `act A13 …` and `act A20 … --entry -` with stdin checked.
+- **Flows** (`src/test/scenarios`): choose a folder → check-base → write → status shows it; a refused folder → nothing written;
+  *Archive now* preview → confirm → follow → done, across a reload; restore of a month → stdin ids = the month's verified
+  entries; an unverified entry not selectable; a selection past `restoreCeiling` cannot be confirmed and says so.
+- **Daemon (E10.S0)**: `ActCommandTests` rows for `--entry -` (bounded, checked, A20 required); `ArchiveRestoreCommandTests` for
+  the flag order; the capability in `status.json`'s golden.
+- **Catalogue**: `research/module_tests.md` rows for every new verb, op, message and command (`catalogue.test.ts`).
+
+#### The plan round (coai session 82e14bdf, 2026-10-09)
+
+`proceed`, 2 gating of threshold 6, one of two reviewers (the other was out of quota). Both accepted and written into D6 / D7
+above: **0** — the stdin request is tested on both halves against ONE fixture, the live run is the owner's (root); **1** — a
+selection past `archive.maxRestoreEntries` is counted and refused in the page, from the ceiling the list answer carries.
+
+**The cadence consultation for E10–E12** (consultation 4bbc392d, codex): keep E10 → E11 → E12. Three points, each verified and
+taken: *Stop archiving* is an explicit empty value, not a reset (D3 — a reset lets a machine-layer base apply again); the writer is
+named `src/config/configCall.ts`, the module E7.S3 already names (D2); D9's label says "this distribution's archive only", since
+the bundled binary does not render the Windows archive. A fourth — W-A12's confirm re-check contradicts the shutdown it confirms —
+is E12's and is written into [PLAN_windows_care.md](PLAN_windows_care.md) for its plan round.
+
+#### As built — E10.S0 (2026-10-09)
+
+`act … --entry -` (`ActCommand.EntriesOf`, `ArchiveArguments.StdinEntries`, `ShownEntriesFailure` moved beside the archive's other
+rules — `CommandLine.cs` stays under 800 lines): the ids read with the `--only -` reader (1 MiB, 10 s), one per line, a trailing
+CR tolerated, judged by the SAME `CountProblem` the flag's list takes (none twice, at most the ceiling), a bad line named by number
+and never echoed, an empty list refused. Refused: `--entry -` without A20, beside `--entry <id>`, twice, beside `--only -`.
+`ArchiveListReport.RestoreCeiling` on every answer, the stopped ones included. `archive check-base --json <path>` (a second arm).
+Capability `act.entryStdin` (it names all three). The shared request: `contracts/requests/act-a20-entry-stdin.json`, read by the
+Cli tests through a stamped `WslCare.ContractsDirectory`. **The own review round** changed A20 itself: its preview asked the
+bounded window (`archive list --restorable`, the newest `archive.maxRestoreEntries`) and silently dropped an older shown entry —
+it now asks `archive list --restorable --entry <shown>` (`ArchiveChildren.ListShown`), refuses more shown entries than the ceiling
+IN FORCE before the child is asked, and the act verb holds that ceiling and the shown-list cap on the entries too (a coupled-limit
+rule was tried and dropped: it made every machine with a lowered `act.maxShownNames` observe-only). Tests and teeth: [module_tests.md](../research/module_tests.md), *The
+daemon half of the extension's archive*.
+
+#### Definition of Done
+
+- [ ] E10.S0, E10.S1, E10.S2 merged, each with its gate rounds, an own review and break-it checks recorded in `module_tests.md`.
+- [ ] Every new root or writing path held by a structural test; no webview supplies a key, a value, a path or an id.
+- [ ] `module_vs_code.md`, `module_archive.md`, README and this section's *as built* updated; the archive plan's §6 marked done.
+- [ ] The extension release (`extension-v0.5.0`) is release-please's, not this epic's; the archive plan is promoted once the E9
+      live gate and E10 are both done.
+
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
 Every epic is its own branch from the previous epic's final commit, one review-gate code round over its

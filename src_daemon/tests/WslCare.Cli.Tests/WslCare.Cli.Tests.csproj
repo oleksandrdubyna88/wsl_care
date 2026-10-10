@@ -23,6 +23,9 @@
     <!-- The shipped units, read where they live: UnitSuccessExitTests holds each unit's SuccessExitStatus to the exits the
          program's recorded endings return (retro round over PR #11). -->
     <AssemblyMetadata Include="WslCare.SystemdDirectory" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\systemd'))" />
+    <!-- Plan §15s D7: the request both halves send and parse (contracts/requests/), read where it lives so the daemon's test and
+         the extension's test hold the SAME bytes. -->
+    <AssemblyMetadata Include="WslCare.ContractsDirectory" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\contracts'))" />
   </ItemGroup>
 
   <ItemGroup>

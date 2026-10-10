@@ -69,6 +69,14 @@ public static class ArchiveChildren
     /// round's finding 4: the answer stays inside the cap however large the archive grows).</summary>
     public static readonly CommandTemplate List = Self("archive-list", [Literal("archive"), Literal("list"), Literal("--restorable"), Literal("--json")], new CommandLimits.Keyed(ConfigKeys.Archive.PreviewTimeoutSeconds, ConfigKeys.Archive.ChildOutputCapBytes));
 
+    /// <summary><c>archive list --restorable --entry &lt;id&gt;[,&lt;id&gt;…] --json</c>: what A20's preview asks when the panel SHOWED entries — those
+    /// only, so an entry older than the newest <c>archive.maxRestoreEntries</c> is never lost to the window (the E10.S0 own review,
+    /// finding 1). The ids are ONE argument, at most the key's range: 5000 × 17 bytes, far below the kernel's per-argument limit.</summary>
+    public static readonly CommandTemplate ListShown = Self(
+        "archive-list-shown",
+        [Literal("archive"), Literal("list"), Literal("--restorable"), Literal("--entry"), new ArgPart.Slot("entries", new SlotKind.HexList(16, ConfigKeys.Archive.MaxRestoreEntries.Max)), Literal("--json")],
+        new CommandLimits.Keyed(ConfigKeys.Archive.PreviewTimeoutSeconds, ConfigKeys.Archive.ChildOutputCapBytes));
+
     /// <summary><c>archive restore --entry &lt;id&gt;[,&lt;id&gt;…] --json</c>: button-only and STREAMED (the S4 plan round's amendment 2).</summary>
     public static readonly CommandTemplate Restore = Self(
         "archive-restore",

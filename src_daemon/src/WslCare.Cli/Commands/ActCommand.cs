@@ -51,22 +51,17 @@ internal static class ActCommand
             return (int)refused.Code;
         }
 
-        var shown = ShownVolumes(request, host);
-        if (shown.Failure.Length == 0 && PastTheCap(shown.List, request.Processes) is { Length: > 0 } past)
+        var lists = Lists(request, host, loaded.Config);
+        if (lists.Failure.Length > 0)
         {
-            shown = (shown.List, past);
-        }
-
-        if (shown.Failure.Length > 0)
-        {
-            log.Warning("act refused: {Reason}", shown.Failure);
-            Output.Note(stderr, shown.Failure);
+            log.Warning("act refused: {Reason}", lists.Failure);
+            Output.Note(stderr, lists.Failure);
             return (int)ExitCode.Usage;
         }
 
         if (request.Detach)
         {
-            return DetachedRuns.Detach(request, Trigger(request), shown.List, ShownProcesses(request), ShownEntries(request), host, stdout, stderr, log);
+            return DetachedRuns.Detach(request, Trigger(request), lists.Volumes, ShownProcesses(request), lists.Entries, host, stdout, stderr, log);
         }
 
         var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions)
@@ -74,13 +69,26 @@ internal static class ActCommand
             Signals = host.Signals,
             InterruptCause = host.InterruptCause,
         });
-        var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List, ShownProcesses = ShownProcesses(request), ShownEntries = ShownEntries(request) };
+        var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = lists.Volumes, ShownProcesses = ShownProcesses(request), ShownEntries = lists.Entries };
         LogStart(log, request);
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = Dispatch(engine, act, cancellationToken).GetAwaiter().GetResult();
         Log(log, result);
         Output.Answer(stdout, Answer(result, request.Json));
         return Exit(result, stderr);
+    }
+
+    /// <summary>The lists a preview showed, read before anything acts: A4's volumes, A20's entries — or the first refusal.</summary>
+    private sealed record ActLists(ShownList Volumes, ShownList Entries, string Failure);
+
+    /// <summary>A4's volumes (flag and <c>--only</c>), the cap in force, then A20's entries (flag or stdin, plan §15s D7). One list
+    /// ever reads stdin — the parser refuses <c>--only -</c> beside <c>--entry -</c>.</summary>
+    private static ActLists Lists(Request.Act request, CliHost host, EffectiveConfig config)
+    {
+        var shown = ShownVolumes(request, host);
+        var entries = shown.Failure.Length > 0 ? (List: ShownList.None, Failure: string.Empty) : EntriesOf(request, host);
+        var failure = new[] { shown.Failure, entries.Failure, PastTheCap(shown.List, request.Processes, entries.List), PastTheCeiling(entries.List, config) }.FirstOrDefault(f => f.Length > 0) ?? string.Empty;
+        return failure.Length > 0 ? new ActLists(ShownList.None, ShownList.None, failure) : new ActLists(shown.List, entries.List, string.Empty);
     }
 
     private static Task<ActResult> Dispatch(ActionEngine engine, ActRequest act, CancellationToken cancellationToken) =>
@@ -134,10 +142,18 @@ internal static class ActCommand
         : RunTrigger.Cli;
 
     /// <summary>The parser holds the compile-time ceiling (<see cref="CommandLine.MaxShownVolumes"/>); the verb holds the value in
-    /// force (<c>act.maxShownNames</c>, coai E7 code round #4) — empty when both lists are inside it.</summary>
-    private static string PastTheCap(ShownList volumes, IReadOnlyList<string> processes) =>
-        volumes.Names.Count > ShownList.MaxNames || processes.Count > ShownList.MaxNames
+    /// force (<c>act.maxShownNames</c>, coai E7 code round #4) — empty when every list is inside it. A20's entries are a shown list of
+    /// the request file too (the E10.S0 own review, finding 3): a detach is never accepted for a request its unit would not read.</summary>
+    private static string PastTheCap(ShownList volumes, IReadOnlyList<string> processes, ShownList entries) =>
+        new[] { volumes.Names.Count, processes.Count, entries.Names.Count }.Max() > ShownList.MaxNames
             ? $"act: a shown list holds at most {ShownList.MaxNames} names (act.maxShownNames); nothing was done"
+            : string.Empty;
+
+    /// <summary>The verb holds the restore ceiling IN FORCE (the parser can only hold the key's range — the E10.S0 own review, finding
+    /// 2), as <see cref="PastTheCap"/> holds <c>act.maxShownNames</c>: empty when the entries fit.</summary>
+    private static string PastTheCeiling(ShownList entries, EffectiveConfig config) =>
+        entries.Names.Count > config.Int(ConfigKeys.Archive.MaxRestoreEntries)
+            ? string.Create(CultureInfo.InvariantCulture, $"act: one restore takes at most {config.Int(ConfigKeys.Archive.MaxRestoreEntries)} entries ({ConfigKeys.Archive.MaxRestoreEntries.Name}); {entries.Names.Count} were given; nothing was done")
             : string.Empty;
 
     /// <summary>The processes A18's preview showed (<c>--process</c>, E7.S2b review A-H1); none given = none.</summary>
@@ -145,6 +161,21 @@ internal static class ActCommand
 
     /// <summary>The archived entries A20's preview showed (<c>--entry</c>, plan §15r E9.S4); none when not given.</summary>
     internal static ShownList ShownEntries(Request.Act request) => request.Entries.Count > 0 ? ShownList.Of(request.Entries) : ShownList.None;
+
+    /// <summary>The archived entries A20's preview showed: the <c>--entry</c> ids, or with <c>--entry -</c> (plan §15s D7) the ids on
+    /// stdin, read as ROOT under the stdin list's byte cap and time ceiling and judged by the flag's rules — or why not, never
+    /// echoing a line.</summary>
+    internal static (ShownList List, string Failure) EntriesOf(Request.Act request, CliHost host)
+    {
+        if (!request.EntriesOnStdin)
+        {
+            return (ShownEntries(request), string.Empty);
+        }
+
+        var read = StdinList.Read(host.StandardInput(), StdinList.MaxBytes, host.StdinCeiling);
+        var (ids, failure) = read is FileReadResult.Content content ? ArchiveArguments.StdinEntries(Encoding.UTF8.GetString(content.Bytes)) : ([], $"the entry list on stdin {Unusable(read)}");
+        return failure.Length > 0 ? (ShownList.None, $"act: {CommandLine.Printable(failure)}; nothing was done") : (ShownList.Of(ids), string.Empty);
+    }
 
     /// <summary>The volumes A4's preview showed, from <c>--volume</c> and the <c>--only</c> file together — or why the file
     /// cannot be used (it is read as root: its content is validated line by line and never echoed).</summary>
