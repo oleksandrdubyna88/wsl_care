@@ -52,13 +52,20 @@ name: release · extension
 # Personal Access Token of the publisher's Azure DevOps account with scope Marketplace (Manage) and organisation "All
 # accessible organizations" — a GLOBAL PAT, which Azure DevOps decommissions on 2026-12-01 (creation is no longer blocked
 # before that date; microsoft/vsmarketplace#2121 — org-scoped PATs for the Marketplace — is open). So the PAT's expiry
-# is recorded in POST_DEPLOY.md and cannot be later than 2026-12-01. THE OIDC ALTERNATIVE, no stored secret: an Entra
-# application (or user-assigned managed identity) added as a member of the Marketplace publisher, with a federated
-# credential for `repo:oleksandrdubyna88/wsl_care:environment:marketplace`; then in publish-marketplace add
-# `id-token: write`, an `azure/login` step (client-id / tenant-id / allow-no-subscriptions: true, SHA-pinned) before the
-# publish, and replace `VSCE_PAT` with `--azure-credential` on `vsce show` and `vsce publish`. That gives a second job
-# (beside attest) `id-token`, which ReleaseWorkflowTests and ReleaseExtensionWorkflowTests pin — change both in one PR
-# (docs/repo-settings.md, step 9).
+# is recorded in POST_DEPLOY.md and cannot be later than 2026-12-01. THE OIDC ALTERNATIVE, no stored secret
+# (todo/PLAN_marketplace_entra_publish.md, aligned with the coai and CredsForDevs plans): the family's SHARED user-assigned
+# managed identity, a member of the Marketplace publisher, with one federated credential per repository. This repository
+# emits GitHub's IMMUTABLE OIDC subject, so the credential's subject is
+# `repo:oleksandrdubyna88@71817001/wsl_care@1401318131:environment:marketplace` (checked 2026-10-10:
+# actions/oidc/customization/sub says use_immutable_subject) — the name form would be accepted by Entra and never match.
+# Then publish-marketplace gains `id-token: write`, an `azure/login` step (client-id / tenant-id / allow-no-subscriptions:
+# true, SHA-pinned) and `--azure-credential` on `vsce publish` ONLY — `vsce show` is the gallery's public query and takes no
+# credential. A `VSCE_PAT` in a step's environment silently beats `--azure-credential` (vsce reads `--pat`, defaulting to
+# VSCE_PAT, first), so every command carrying `--azure-credential` runs as `env -u VSCE_PAT …`; and `vsce verify-pat`
+# succeeds for ANY publisher role, Reader included, so it proves membership, not the right to publish. An Environment
+# variable `MARKETPLACE_AUTH` (entra | pat | manual) picks the road, and a one-time probe workflow dry-checks the login.
+# That gives a second job (beside attest) `id-token`, which ReleaseWorkflowTests and ReleaseExtensionWorkflowTests pin —
+# change both in one PR (docs/repo-settings.md, step 9).
 # ---------------------------------------------------------------------------
 
 on:

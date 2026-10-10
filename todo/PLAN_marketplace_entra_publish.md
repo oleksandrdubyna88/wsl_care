@@ -1,6 +1,6 @@
 # PLAN — the extension's Marketplace publish through Entra ID, before global PATs die
 
-> Status: **plan only, 2026-10-09, nothing implemented yet.** Scope: `.github/workflows/release-extension.yml`'s
+> Status: **plan only, 2026-10-09 (aligned with the coai and CredsForDevs plans 2026-10-10, § 8), nothing implemented yet.** Scope: `.github/workflows/release-extension.yml`'s
 > `publish-marketplace` job, `docs/repo-settings.md` step 9, `POST_DEPLOY.md` item 12, the release workflow tests.
 >
 > Related docs: [docs/repo-settings.md](../docs/repo-settings.md) step 9, [architecture.md](../research/architecture.md)
@@ -37,27 +37,49 @@
 
 ## 3. Design
 
-1. **Entra, the owner's browser steps** (recorded in `docs/repo-settings.md` step 9, nothing in code):
-   - an app registration;
-   - a federated credential:
+1. **Entra, the owner's browser steps** (recorded in `docs/repo-settings.md` step 9, nothing in code). Aligned 2026-10-10
+   with the coai and CredsForDevs plans (coai #725, CredsForDevs #199, both merged; § 8):
+   - the family's SHARED user-assigned managed identity (`remsoftdev-marketplace-publisher`, made once by whichever
+     repository goes first and reused by the others), not an app registration of this repository's own;
+   - ONE federated credential for this repository on that identity:
      - issuer `https://token.actions.githubusercontent.com`;
-     - subject `repo:oleksandrdubyna88/wsl_care:environment:marketplace`;
+     - subject **`repo:oleksandrdubyna88@71817001/wsl_care@1401318131:environment:marketplace`**. This repository emits
+       GitHub's IMMUTABLE subject (`gh api repos/oleksandrdubyna88/wsl_care/actions/oidc/customization/sub` →
+       `use_immutable_subject: true`, prefix `repo:oleksandrdubyna88@71817001/wsl_care@1401318131`, checked 2026-10-10;
+       <https://learn.microsoft.com/en-us/entra/workload-id/workload-identities-github-immutable-subjects>). The name form
+       `repo:oleksandrdubyna88/wsl_care:environment:marketplace`, which this plan carried until 2026-10-10, would be accepted
+       by Entra and never match a token;
      - audience `api://AzureADTokenExchange`;
-   - the app added to the publisher `remsoftdev` (*Manage → Members*, role Contributor). Whether a service principal can be
-     a member, and with which role, is checked first. The Marketplace's own docs must say so; if they do not, the plan
-     stops there and asks.
+   - the identity a member of the publisher `remsoftdev` (*Manage → Members*). Whether a managed identity can be a member,
+     and with which role, is checked first. The Marketplace's own docs must say so; if they do not, the plan stops there and
+     asks.
 2. **The job.** `publish-marketplace` gains:
    - `id-token: write`;
    - an `azure/login` step, SHA-pinned, with `client-id` / `tenant-id` from Environment VARIABLES (not secrets) and
      `allow-no-subscriptions: true`, before the publish;
    - `--azure-credential` on `vsce publish` only. `vsce show` stays as it is: it is the gallery's PUBLIC query, and
      vsce 4.0.0's `show` has no such option (`vsce publish --help` lists `--azure-credential`, `vsce show --help` does not;
-     checked 2026-10-09).
+     checked 2026-10-09). The workflow's header comment said otherwise until 2026-10-10; corrected.
+   - **every command carrying `--azure-credential` runs as `env -u VSCE_PAT …`** (from vsce's source, coai plan F5): `--pat`
+     defaults to `process.env.VSCE_PAT` and a PAT is tried FIRST, so a `VSCE_PAT` left in a step's environment silently
+     wins and the Entra road would never be exercised — until 2026-12-01, when it breaks.
+   - a membership preflight `env -u VSCE_PAT vsce verify-pat remsoftdev --azure-credential` before the publish. It proves the
+     identity is a MEMBER, not that it may publish: `verify-pat` succeeds for any role, Reader included (coai plan F6). Only
+     the first real publish proves the right.
 
-   **No inline PAT fallback** (plan round 2026-10-09, findings 2 and 4): a fallback step cannot run after a failed publish
-   step, and a PAT that still publishes would hide a broken OIDC path. So the same PR removes `VSCE_PAT` from the publish
-   step, and the OIDC path must publish once with the PAT UNAVAILABLE to the job. The stored secret stays in the Environment,
-   unread, only as a manual rollback (revert the PR), and is deleted after that first OIDC publish.
+   **The road is a switch, not a fallback** (aligned with coai's § 3.4): an Environment variable `MARKETPLACE_AUTH` in
+   `marketplace` — `entra` | `pat` | `manual` — picks ONE road per run. A run never falls back from one road to another (the
+   plan round's findings 2 and 4 stand: a PAT that still publishes would hide a broken Entra road). Rolling back is setting
+   `MARKETPLACE_AUTH=pat` and re-running the failed job (only before 2026-12-01), or `manual` (the attested `.vsix` uploaded by
+   hand, step 9). The stored `VSCE_PAT` is deleted after the first Entra publish; `pat` is then no road at all.
+
+   **A one-time probe workflow** (coai's § 3.5): dispatched on `main` against the `marketplace` Environment, it runs
+   `azure/login` and the membership preflight and publishes nothing — the owner's dry check after the browser steps, before
+   any release depends on them. **It proves the LOGIN and the MEMBERSHIP only** (plan round `bafae73a`): a Reader passes it
+   too. So the publishing ROLE is its own prerequisite — the identity listed under the publisher's *Manage → Members* with
+   **Contributor** or **Owner**, checked by the owner in that page — and `MARKETPLACE_AUTH` is set to `entra` only after it.
+   The first Entra release is what proves the right to publish; until then `pat` (before 2026-12-01) or `manual` stays the
+   road.
 3. **The tests.** `ReleaseExtensionWorkflowTests` and `ReleaseWorkflowTests` allow `id-token: write` on `publish-marketplace`
    too. The pin stays exact, so a third job asking for it fails. A test also holds `azure/login` SHA-pinned, holds
    `--azure-credential` on `vsce publish`, and holds that no step of the job reads `secrets.VSCE_PAT`.
@@ -99,3 +121,27 @@
   - (1) writing the PAT's expiry into `POST_DEPLOY.md` here: only the owner knows the date. Step 9 asks for it.
   - (3, 5) plans in the coai and CredsForDevs repositories: those are other repositories, and this task is scoped to
     wsl_care. The need and the deadline are named here and handed to the coordinator.
+
+## 8. Aligned with the coai and CredsForDevs plans (2026-10-10, plan only — no workflow behaviour changed)
+
+The coai plan (dew_flow_connect_other_ais #725) and the CredsForDevs plan (dew_flow_creds_for_devs #199), both merged,
+found two errors in this plan's first sketch and three facts it lacked. Corrected above:
+
+- **The subject.** This repository emits the IMMUTABLE OIDC subject, so the federated credential's subject is
+  `repo:oleksandrdubyna88@71817001/wsl_care@1401318131:environment:marketplace`, not the name form (§ 3.1; verified here with
+  `gh api repos/oleksandrdubyna88/wsl_care/actions/oidc/customization/sub`).
+- **`vsce show` takes no credential.** The workflow's header comment put `--azure-credential` on it. Only `vsce publish` takes it.
+- **A `VSCE_PAT` in the environment beats `--azure-credential`**, so every such command runs as `env -u VSCE_PAT …` (§ 3.2).
+- **`verify-pat` succeeds for any publisher role**, so it is a membership preflight, not proof of the right to publish (§ 3.2).
+- **One shared managed identity, one switch, one probe:** the family's user-assigned managed identity with one federated
+  credential per repository; `MARKETPLACE_AUTH` (`entra` | `pat` | `manual`) as the per-run road; a one-time probe workflow
+  as the dry check (§ 3.1, § 3.2).
+
+**The boundary — what wsl_care does and does not do** (plan round `bafae73a`):
+- **wsl_care makes:** ONE federated credential, its own, with the subject above.
+- **The shared identity:** wsl_care provisions it only if no other repository already has. The coai plan's operator steps say
+  the same from their side ("if another repository did this first, reuse that identity").
+- **Other repositories' plans:** this plan does not edit them. That is the owner's, and the CredsForDevs repository is not
+  this agent's to change.
+
+The `docs/repo-settings.md` step 9 text and the workflow change itself come with the build (§ 4), not here.
