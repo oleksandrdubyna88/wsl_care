@@ -6,7 +6,7 @@ import { ARCHIVE_CAPABILITY, deriveArchive, NO_ARCHIVE, retentionBadge, type Arc
 import type { ReadOutcome } from '../client/outcome';
 import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
-import { goldenOutcomes } from './support/outcomes';
+import { goldenSnapshot } from './support/outcomes';
 import { Element, runPageScript } from './support/pageHarness';
 import { goldenFile, PAGE_SCRIPT } from './support/paths';
 
@@ -19,9 +19,9 @@ function read(read: 'archiveStatus' | 'archivePreview', body: Record<string, unk
   return { kind: 'read', read, distro: 'Ubuntu', body };
 }
 
-/** The panel snapshot of a refreshed panel over the head goldens — typed, no cast. */
+/** The panel snapshot of a refreshed panel over the head goldens — typed, no cast (the shared factory). */
 function answeredSnapshot(): Snapshot {
-  return { checking: false, ...goldenOutcomes() };
+  return goldenSnapshot();
 }
 
 const CAPABLE = [ARCHIVE_CAPABILITY, 'archive.preview', 'archive.run'];

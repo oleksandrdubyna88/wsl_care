@@ -4655,6 +4655,15 @@ As planned, with these specifics:
   - `research/architecture.md` carries the S1b wiring (round #1).
   Not taken: `sizeText(999 950)` reads "1000.0 kB" (cosmetic; Fable #8), and `'A13'` is spelled in seven modules — a shared
   constant outside `root/` is a later tidy (Fable #9).
+- **The third code round** (the same session, `again` over the whole branch; codex's four roles; `proceed`, 3 findings): two
+  accepted — the branch's own `withoutCapability` fixture and the two registry / capability tests in `fakeWsl.test.ts` read
+  `status.json` through `bodyOf` / `stringsAt`, and `commandButtons.test.ts` builds its snapshots with the shared `goldenSnapshot()`
+  (`support/outcomes.ts`; `archiveView.test.ts` uses it too) instead of `as Snapshot`. One REJECTED: "A13 previews can silently drop
+  malformed items and still be confirmed" — the modal's figures come from the daemon's own `what` sentence and `count` / `bytes`,
+  not from the items; the extension never chooses what A13 moves (the daemon re-selects at run time under its gates — A4's piped
+  names are a selection, A13 carries none); the item shape is pinned on both sides by the golden; the lenient list read is E6.S3's
+  convention for every action, and an unreadable preview (`available: false`) is refused already. The pre-S1b `as unknown as
+  Snapshot` of a hand-built verdicts status in `commandButtons.test.ts` stays (not this story's).
 - **A first archive over a slow network folder can outrun the follow ceiling** (`wslCare.cleanup.followCeilingMinutes`, 30 by
   default; Fable #12): the notice then says *state unknown* and names `runs show`, while the daemon's own `status.running` keeps
   the controls at *Archiving…* until the run ends — never stuck. The extension README says so.

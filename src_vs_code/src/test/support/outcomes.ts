@@ -1,6 +1,7 @@
 import { parseAnswer, parseDaemonVersion } from '../../client/handshake';
 import type { Failure, VerbOutcome } from '../../client/outcome';
 import type { Verb } from '../../client/verbs';
+import type { Snapshot } from '../../state/outcomeStore';
 import type { Body } from './body';
 import { golden } from './paths';
 
@@ -35,6 +36,11 @@ export function failed(verb: Verb, failure: Failure): VerbOutcome {
 /** The three answered outcomes of one golden set, as a refreshed panel holds them. */
 export function goldenOutcomes(set = 'head'): { status: VerbOutcome; preview: VerbOutcome; doctor: VerbOutcome } {
   return { status: answered('status', headBody('status', set)), preview: answered('preview', headBody('preview', set)), doctor: answered('doctor', headBody('doctor', set)) };
+}
+
+/** The panel's snapshot of a refreshed panel over one golden set — typed, never `as Snapshot` (TypeScript doctrine §3). */
+export function goldenSnapshot(set = 'head'): Snapshot {
+  return { checking: false, ...goldenOutcomes(set) };
 }
 
 function parentOf(body: Body, path: string): { parent: Record<string, unknown>; key: string } {

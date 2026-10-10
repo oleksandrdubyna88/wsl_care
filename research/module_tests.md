@@ -3639,6 +3639,13 @@ scratch script that restores each file byte for byte (checked after every run).
 | **A13's preview ceiling is strictly above its worst case with the defaults AND with every setting at its minimum** (Fable #4: the N-2 loop iterated `ROW_IDS` only, and A13 is no row — the docs' pin overclaimed) | `ceilings.test.ts` (N-2 and #17, `selections()` + `['A13']`) | green at once (structurally true: the setting's minimum 610 s and the `Math.max` floor each hold it); teeth: **N11** (A13's share → `statusSeconds`) red only in `archiveNow.test.ts` (`610000 !== 650000` — the floor still held N-2), **N12** (the share AND the floor) red in N-2 with the defaults (`A13: 40000 ms`) and at the minimums (`A13: 24000 ms`), and in #17 |
 | **the fake refuses an answers folder without the daemon's A13 line, naming the file — never a crash** (Fable #11) | `fakeWsl.test.ts` (*root: an answers folder without the daemon's A13 line REFUSES …*) | red: `ENOENT … act-a13-preview-action.json`, exit `1 !== 98`; green |
 
+The third code round (codex's four roles, `proceed`, 3 findings) moved the branch's remaining fixture casts to the checked helpers —
+`fakeWsl.test.ts`'s `status.json` edits through `bodyOf` / `stringsAt`, the panel snapshots of `commandButtons.test.ts` and
+`archiveView.test.ts` through the shared `goldenSnapshot()` — and one finding was rejected with its reason in the plan's *As built —
+E10.S1b* (a malformed A13 item list cannot change what the daemon archives, and the modal's figures are the daemon's own sentence).
+The pre-S1b casts in files this branch did not write (`archiveFlow`, `archiveHost`'s older tests, `cleanupView`,
+`cleanupController`, `client` tests; the hand-built verdicts status in `commandButtons.test.ts`) stay — a later tidy.
+
 ### What the service-account fix of the `.vsix` leak check rests on (release PR #47, 2026-10-08)
 
 Release PR #47 (extension 0.2.0) was red on both CI legs (run 37751902435): release-please's CHANGELOG section said

@@ -6,6 +6,7 @@ import { test } from 'node:test';
 
 import type { ProcessResult } from '../process/runner';
 import { FAKE_EXIT, missingBinaryStderr, NO_SUCH_DISTRO, OLD_GLIBC_STDERR } from './fake/fakeWsl';
+import { bodyOf, stringsAt } from './support/body';
 import { fakeWorld, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from './support/fakeWorld';
 import { GOLDEN_ROOT, goldenFile } from './support/paths';
 
@@ -296,8 +297,8 @@ test('root: an id outside the contract registry ∩ the daemon\'s status.actions
     for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
       fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(answers, file));
     }
-    const status = JSON.parse(fs.readFileSync(path.join(answers, 'status.json'), 'utf8')) as { actions: string[] };
-    fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify({ ...status, actions: status.actions.filter((id) => id !== 'A13') }));
+    const status = bodyOf(JSON.parse(fs.readFileSync(path.join(answers, 'status.json'), 'utf8')), 'status.json');
+    fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify({ ...status, actions: stringsAt(status, 'actions').filter((id) => id !== 'A13') }));
     world.rewrite({ answers });
     // A4,A13 is refused earlier since E10.S1b (A13 never beside another id): the mixed case is held by A4,A99 here.
     for (const ids of ['A13', 'A99', 'A4,A99', 'a4']) {
@@ -330,8 +331,8 @@ test('root: an op whose capability the scenario daemon does not advertise is ref
     for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
       fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(answers, file));
     }
-    const status = JSON.parse(fs.readFileSync(path.join(answers, 'status.json'), 'utf8')) as { capabilities: string[] };
-    fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify({ ...status, capabilities: status.capabilities.filter((c) => c !== 'act.detach' && c !== 'act.stop') }));
+    const status = bodyOf(JSON.parse(fs.readFileSync(path.join(answers, 'status.json'), 'utf8')), 'status.json');
+    fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify({ ...status, capabilities: stringsAt(status, 'capabilities').filter((c) => c !== 'act.detach' && c !== 'act.stop') }));
     world.rewrite({ answers });
     for (const tail of [['collect', '--detach', '--json'], ['act', 'A10', '--confirm', '--manual', '--detach', '--json'], ['act', '--stop', RUN, '--json']]) {
       const { code, stderr } = exitOf(await rootAsk(world, tail));
@@ -541,8 +542,8 @@ function withoutCapability(world: FakeWorld, capability: string): string {
   for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
     fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(folder, file));
   }
-  const status = JSON.parse(fs.readFileSync(path.join(folder, 'status.json'), 'utf8')) as { capabilities: string[] };
-  fs.writeFileSync(path.join(folder, 'status.json'), JSON.stringify({ ...status, capabilities: status.capabilities.filter((c) => c !== capability) }));
+  const status = bodyOf(JSON.parse(fs.readFileSync(path.join(folder, 'status.json'), 'utf8')), 'status.json');
+  fs.writeFileSync(path.join(folder, 'status.json'), JSON.stringify({ ...status, capabilities: stringsAt(status, 'capabilities').filter((c) => c !== capability) }));
   return folder;
 }
 
