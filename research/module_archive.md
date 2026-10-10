@@ -349,6 +349,10 @@ flowchart TD
   - **On the unc leg,** the Restart Manager was asked about the session on the share in its `\\?\UNC\` form and named the holder. The
     copy itself is refused, because a file on the share is owned by the NAS's account, not this one. That is the source rules
     working, not a defect.
+  - **Phase 2,** one hour after the copies (`archive.removeAfterHours` 1 for the gate), re-read every archived copy through the share
+    and removed the two idle sessions at their source on both the drive and uncbase legs. `recent1` stayed. `archive list` shows
+    both entries `sourceRemoved` and verified.
+  - **The test data stays** in the one subfolder and in the scratch sandboxes, as the owner asked. Nothing was deleted.
 
 ## External dependencies
 
