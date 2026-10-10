@@ -20,7 +20,8 @@ public static class RunBudget
     /// <summary>The keys the budgets read — a layer that sets one of them can break the rules that hold the budgets.</summary>
     public static IReadOnlyList<ConfigKey.IntKey> Keys { get; } =
         [.. ConfigKeys.All.OfType<ConfigKey.IntKey>().Where(k => k.Name.Contains("TimeoutSeconds", StringComparison.OrdinalIgnoreCase)),
-            ConfigKeys.Commands.DrainGraceMilliseconds, ConfigKeys.Walk.MaxSeconds, ConfigKeys.Agents.WalkBudgetSeconds, ConfigKeys.Archive.ProgressSilenceSeconds];
+            ConfigKeys.Commands.DrainGraceMilliseconds, ConfigKeys.Walk.MaxSeconds, ConfigKeys.Agents.WalkBudgetSeconds, ConfigKeys.Archive.ProgressSilenceSeconds,
+            ConfigKeys.Timer.BootDelayMinutes, ConfigKeys.Timer.BusyWaitMinutes, ConfigKeys.Timer.BusyCheckSeconds];
 
     /// <summary>Every template once at its ceiling with its drains — but a BUDGETED or button-only one (plan §15r D8: the archive
     /// run takes the slack, the restore is never in a timer run) — the two walks, the margin.</summary>
@@ -29,9 +30,14 @@ public static class RunBudget
         using (Tuning.Use(config))
         {
             var buttons = OnButtonsOnly();
-            return Sum(Templates().Where(t => !buttons.Contains(t))) + Tuning.Current.Seconds(ConfigKeys.Walk.MaxSeconds) + Tuning.Current.Seconds(ConfigKeys.Agents.WalkBudgetSeconds) + Margin;
+            return Sum(Templates().Where(t => !buttons.Contains(t))) + Tuning.Current.Seconds(ConfigKeys.Walk.MaxSeconds) + Tuning.Current.Seconds(ConfigKeys.Agents.WalkBudgetSeconds) + Settle() + Margin;
         }
     }
+
+    /// <summary>The settle step's longest wait before a timer run starts (PLAN_boot_settle.md): the boot delay, the busy bound, and
+    /// one more check that may straddle it.</summary>
+    private static TimeSpan Settle() =>
+        Tuning.Current.Minutes(ConfigKeys.Timer.BootDelayMinutes) + Tuning.Current.Minutes(ConfigKeys.Timer.BusyWaitMinutes) + Tuning.Current.Seconds(ConfigKeys.Timer.BusyCheckSeconds);
 
     /// <summary>The keys a watch run's worst case reads (plan E14 S2b).</summary>
     public static IReadOnlyList<ConfigKey.IntKey> WatchKeys { get; } =

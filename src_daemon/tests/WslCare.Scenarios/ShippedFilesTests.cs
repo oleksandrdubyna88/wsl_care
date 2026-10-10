@@ -352,7 +352,7 @@ public sealed partial class ShippedFilesTests
         using (Tuning.Use(loaded.Config))
         {
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.timer")).Should().Contain(("OnCalendar", "*-*-* 00/6:00:00"));
-            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Should().Equal(("Nice", "10"), ("MemoryMax", "2048M"), ("TimeoutStopSec", "60"), ("TimeoutStartSec", "240min"));
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Should().Equal(("Nice", "10"), ("MemoryMax", "2048M"), ("TimeoutStopSec", "60"), ("TimeoutStartSec", "276min"));
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-act@.service")).Should().Equal([.. DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Where(s => s.Key != "TimeoutStartSec")], "one hardening set; a confirm keeps its infinity");
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-events.service")).Should().Equal(("RestartSec", "45"), ("MemoryMax", "2048M"));
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-watch.timer")).Should().Equal(("OnActiveSec", "3min"), ("OnUnitActiveSec", "3min"));

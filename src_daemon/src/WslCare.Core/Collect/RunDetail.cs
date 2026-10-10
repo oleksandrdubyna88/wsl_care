@@ -62,6 +62,11 @@ public sealed record RunDetail(
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Config.ConfigValueReport>? Config { get; init; }
 
+    /// <summary>How long a TIMER run waited before it started — for the boot to settle, then while the machine was busy
+    /// (PLAN_boot_settle.md). Absent on a run the timer did not start.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public RunSettledReport? Settled { get; init; }
+
     /// <summary>User values this run did not take (plan §15q); absent when none.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Config.ConfigNoticeReport>? ConfigNotices { get; init; }

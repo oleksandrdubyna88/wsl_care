@@ -12,7 +12,8 @@ namespace WslCare.Core.Tests.Config;
 /// <summary>
 /// Plan §15r D8, E9.S4 — the archive in the run's two derived budgets: the run child is BUDGETED (it takes the run limit's slack)
 /// and the restore a button only, so neither is a term of a timer run's worst case; both are STREAMED, so the longest step counts
-/// their line silence, not their ceiling — a long archive is progress, and <c>timer.runLimitMinutes</c> stays 240.
+/// their line silence, not their ceiling — a long archive is progress. <c>timer.runLimitMinutes</c> was 240; PLAN_boot_settle.md
+/// raised it to 276 by exactly the settle step's waits, so the slack D8 takes is what it was.
 /// </summary>
 public sealed class RunBudgetArchiveTests
 {
@@ -30,7 +31,7 @@ public sealed class RunBudgetArchiveTests
         var wide = Machine("""{ "archive": { "runBudgetMinutes": 55, "finishGraceMinutes": 30, "restoreLimitMinutes": 59 } }""");
 
         RunBudget.TimerRunWorstCase(wide).Should().Be(RunBudget.TimerRunWorstCase(Defaults));
-        RunBudget.TimerRunWorstCase(Defaults).Should().BeLessThan(TimeSpan.FromMinutes(Defaults.Int(ConfigKeys.Timer.RunLimitMinutes)), "timer.runLimitMinutes stays 240 (D8)");
+        RunBudget.TimerRunWorstCase(Defaults).Should().BeLessThan(TimeSpan.FromMinutes(Defaults.Int(ConfigKeys.Timer.RunLimitMinutes)), "the run limit stays above the worst case (D8's slack; 276 since PLAN_boot_settle.md)");
     }
 
     [Fact]

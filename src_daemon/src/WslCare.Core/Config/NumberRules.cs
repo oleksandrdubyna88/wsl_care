@@ -85,7 +85,7 @@ public static class NumberRules
             c => $"{ConfigKeys.Events.RetryMaxSeconds.Name} must be at least {ConfigKeys.Events.RetryFirstSeconds.Name}"),
         new([ConfigKeys.Timer.RunLimitMinutes, .. RunBudget.Keys],
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Timer.RunLimitMinutes)) >= RunBudget.TimerRunWorstCase(c),
-            c => $"{ConfigKeys.Timer.RunLimitMinutes.Name} ({I(c, ConfigKeys.Timer.RunLimitMinutes)}) must be at least the derived worst case of a timer run ({Math.Ceiling(RunBudget.TimerRunWorstCase(c).TotalMinutes)} min: every command template once at its ceiling with its drains, the two walks, {RunMarginMinutes} min more)"),
+            c => $"{ConfigKeys.Timer.RunLimitMinutes.Name} ({I(c, ConfigKeys.Timer.RunLimitMinutes)}) must be at least the derived worst case of a timer run ({Math.Ceiling(RunBudget.TimerRunWorstCase(c).TotalMinutes)} min: every command template once at its ceiling with its drains, the two walks, the settle step's waits, {RunMarginMinutes} min more)"),
         // Plan E14 S2b: the watch samples more often than the interval maximum, or no sample finds a baseline and A19 sees no busy server.
         new([ConfigKeys.McpWatchdog.PeriodMinutes, ConfigKeys.McpServers.CpuIntervalMaxMinutes],
             c => I(c, ConfigKeys.McpWatchdog.PeriodMinutes) < I(c, ConfigKeys.McpServers.CpuIntervalMaxMinutes),
