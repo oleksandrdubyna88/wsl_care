@@ -453,6 +453,16 @@ while true; do
 done
 ```
 
+**Then run the heavy step at low priority** (E14 S4, measured 2026-10-09 —
+[research/2026-10-09_cpu_fairness.md](research/2026-10-09_cpu_fairness.md)): `nice -n 19 <command…>`, and for `dotnet build`,
+`publish`, `pack` or `run`, `--disable-build-servers` as well (an MSBuild worker already alive at nice 0 could otherwise do
+the build's work at normal priority). `dotnet test` under the Microsoft Testing Platform does not take that option: build
+first with it, then run the test executable (or `dotnet test --no-build`) under `nice -n 19`. In this WSL every session and everything it starts share one cgroup (`/init.scope`) and
+the kernel has no autogroup, so `nice` really works there: a nice-19 loop got 1.4 % of a contended CPU beside a nice-0 one.
+Do **not** use `systemd-run --user --scope -p CPUWeight=…`: it moves the job into another cgroup, where it got 7–21 times
+MORE CPU than a session's process (three runs). No `wsl-care low` verb exists, because `nice` already does the job; `ionice` and
+`IOWeight` have nothing to act on (every disk's scheduler is `none`, `io.cost` is not configured).
+
 ## Events follow — container starts
 
 ```bash

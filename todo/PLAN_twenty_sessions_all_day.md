@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S3b built (A11 on by default with `language-servers`, the owner's Q14/Q15 of 2026-10-09); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4, S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S3b built (A11 on by default with `language-servers`, the owner's Q14/Q15 of 2026-10-09, PR #75); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4 measured and decided (documentation only: `nice` works in WSL, the planned scope backfires — [2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)); S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -765,6 +765,69 @@ CPUWeight=<lowCpu.cpuWeight> -p IOWeight=<lowCpu.ioWeight> -- <cmd…>` through 
 (the command's own argv passed as data, never a shell string) — or documentation only (Q4). Agent prompts (the family's
 rules) then say: heavy builds and test runs go through it.
 
+#### S4 — revised after the measurement (2026-10-09, branch `feat/wc-s4-cpu-fairness`)
+
+The owner, 2026-10-09: "good idea. check it. choose the best implementation option together with the consultant" —
+approving Q3 (the drop-in) and Q4 (a `wsl-care low` verb) **if the measurement shows they are needed**. It shows they
+are not ([2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)):
+
+- **The premise was false.** Its reason is literally true (`system.slice` delegates no `cpu`) but irrelevant: `cpu` is already delegated to `user@1000.service` (systemd 255's default
+  `DelegateControllers=cpu memory pids`); every session, the VS Code server, `coai-mcp` and every build run in
+  `/init.scope` (159 processes), and the kernel has no autogroup. So `nice` works between a build and the sessions: a
+  nice-19 loop got 1.4 % of a contended CPU beside a nice-0 one (68.1 : 1, the kernel's 68.3).
+- **The planned design backfires.** A `systemd-run --user --scope -p CPUWeight=10` job leaves `/init.scope` for `user.slice`
+  and got 89.6 % / 94.4 % / 86.7 % of the CPU against a session-like loop's 9.7 % / 4.5 % / 12.9 % (three runs) — the
+  "low" job ran 7–21 times faster than the session (9× in E4), not ten times slower. Why it is that lopsided is not established
+  (the first explanation was refuted by the consultant's check, E8); the direction held every time.
+- **I/O has nothing to weigh.** Every disk runs the `none` scheduler and `io.cost` is not configured, so neither `ionice`
+  nor `IOWeight` would act; the drop-in would only enable `io` in a subtree where no session lives.
+
+**Options weighed with the coai consultant** (codex, consultation `7d262d06`, two turns, closed *solved*):
+(a) documentation only, `nice -n 19`; (b) the original drop-in + `systemd-run` scope — measured counterproductive;
+(c) a `wsl-care low` verb that sets the niceness in place and `exec`s the argv — no scheduling benefit over `nice`, and it
+would tie a family-wide rule to a tool installed only here; (d) docs plus a doctor check of the premise — deferred: a check
+worth having inspects the actual workers' CPU groups, not its own cgroup. **Chosen: (a).** The consultant's corrections,
+each checked before it was taken — measured where a row is cited, from documentation otherwise: `io.weight` also works
+under `io.cost` (documentation; not configured here — the record's G13); SCHED_IDLE is
+"a much smaller share", not "only idle time" (true, E6: 0.3 %), and is not recommended for builds (a build others wait on
+would be delayed further, nothing donates priority back); persistent build servers can carry a niced build's work at
+nice 0 (three `/nodeReuse:true /low:false` MSBuild workers at nice 0 were alive at 19:55Z — a risk, the hand-off itself
+not observed), so .NET builds add `--disable-build-servers` (in `dotnet build`'s help, SDK 10.0.112; a real `nice -n 19 dotnet build
+--disable-build-servers` was then watched — the plan round's finding 0 — and its driver and `csc` ran at nice 19 while the
+nice-0 workers' CPU ticks did not move, record § 3c; its build-time cost against a server-backed build NOT measured —
+S8 will see it); the Windows form `start /belownormal` is PowerShell's `Start-Process` alias and, under `cmd`, lost a
+child's exit code 37 → 0 (measured), so no Windows form is proposed.
+
+**Decided:** no drop-in (**Q3: not needed**), no verb (**Q4: not needed** — documentation only), the daemon's units
+unchanged (their `Nice=19` orders the root run only inside `system.slice`; recorded, not acted on: no daemon run was
+measured under load), no new configuration key (nothing in the product reads a number for this). What ships: the research
+record and its row in `research/README.md`, this section, the README's note (its *Busy* section), and the notes in
+`research/module_daemon.md` and `research/architecture.md`. **Own review** (one reviewer, `feature-dev:code-reviewer` on
+Opus, read-only; 11 findings, all accepted): `dotnet test` under MTP does NOT take `--disable-build-servers` — checked,
+SDK 10.0.400 lists it for `build`, `publish`, `pack`, `run` only (record B3), so the rule builds first and runs the tests
+without building; the rule's scope is WSL (the evidence is one WSL machine; native Linux usually has autogroup); the
+ratios stated as measured (68.1 vs 68.3; 7–21× across the three runs) instead of "exactly" and "nine times"; E5 stated as
+observed, without a mechanism; the io.cost read and `app.slice`'s `subtree_control` as rows (G12, G13); `todo/README.md`'s
+S4 entry; the record's header (it wrote under `/tmp`), cross-references and method list.
+
+**The rule text proposed for the family's shared agent rules** (the conventions repository; an outward-facing change,
+for the coordinator to carry — NOT edited from here):
+
+> **Heavy work runs at reduced CPU priority in WSL** (measured 2026-10-09 in wsl_care's
+> `research/2026-10-09_cpu_fairness.md`). In WSL, start a build, a test run, a benchmark or any other CPU-heavy command as
+> `nice -n 19 <command…>`, in the same shell the session gives you — never through `systemd-run --user --scope` (that
+> moves the job out of the sessions' cgroup and it then runs FASTER than they do). For `dotnet build`, `publish`, `pack`
+> and `run`, also pass `--disable-build-servers`, so the work stays in processes that inherit the priority. `dotnet test`
+> does not take that option under the Microsoft Testing Platform: build first
+> (`nice -n 19 dotnet build --disable-build-servers`), then run the tests without building — the repository's prescribed
+> runner (a built test executable, started as `nice -n 19 <exe>`) or `nice -n 19 dotnet test --no-build` — and keep its
+> concurrency limits. Do not use `chrt -i` / `SCHED_IDLE` for builds. On native Linux and macOS `nice -n 19` is harmless,
+> but its effect there is not measured (autogroup or per-app cgroups can neutralise it). On Windows hosts no form is
+> prescribed yet (the obvious `start /belownormal` loses the exit code).
+
+**Tests:** none — no product code, key or behaviour changes (the plan's DoD item "every new number a key" has no number to
+hold). The measurement is the evidence; its scripts are described in the record's § 6.
+
 ### S5 — memory and swap before the evening
 
 **Problem.** L3: 2.4 GB of 12 GB swap left, `Committed_AS` above `MemTotal`, at 21:30. `memory.swap` warns on swap USED
@@ -1103,7 +1166,7 @@ good as the record (finding 7).
 | open catalogue names (Q-M2 there) | E7.S2d's Q-M2 | S7's `creds-mcp.exe` waits on it |
 | Windows process collector, Windows stop actions | [PLAN_windows_care.md](PLAN_windows_care.md) E11 / E12 | S7 names what they must include for MCP servers |
 | `.wslconfig` advice | the parent plan's `wslconfig.memory` (exists) | S5 extends the report, never writes |
-| agents waiting on "machine busy" (S6), heavy steps through `wsl-care low` (S4) | the verb and its exit code: this plan | the CONSUMER is the family's shared agent rules and prompts (the conventions repository), outside this one — an outward-facing change proposed there, never edited from here |
+| agents waiting on "machine busy" (S6), heavy steps at `nice -n 19` (S4, revised 2026-10-09: no verb) | the verb and its exit code: this plan | the CONSUMER is the family's shared agent rules and prompts (the conventions repository), outside this one — an outward-facing change proposed there, never edited from here |
 
 Disjoint otherwise. Order: S1 first (S2 and S3 read its ledger); E11 before S7's Windows half.
 
@@ -1122,7 +1185,7 @@ Disjoint otherwise. Order: S1 first (S2 and S3 read its ledger); E11 before S7's
 2. S6 (the busy signal; small, read-only) and S5 (verdicts; read-only).
 3. S2 (after its measurement; reads S1's ledger).
 4. S3 (after its measurement).
-5. S4 (after its measurement and Q3/Q4).
+5. S4 (after its measurement and Q3/Q4) — measured 2026-10-09: documentation only.
 6. S7 inside E11/E12.
 7. S8 — first with S1+S5+S6 shipped (a baseline day), again after S2–S4.
 
@@ -1154,8 +1217,8 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
   watched list (validated); an MCP server whose agent died stays counted and is a stop candidate; the E7.S2d defaults stay,
   all settings; `status` keeps its extra CPU wait.
 - **Q2 — what "restart" means** once S2's measurement says what Claude Code does with an ended server.
-- **Q3 — cgroup delegation:** may `install.sh` write `user@.service.d/50-wsl-care-delegate.conf` (a system setting)?
-- **Q4 — `wsl-care low`:** a verb, or documentation of the `systemd-run` line only?
+- **Q3 — ANSWERED (owner, 2026-10-09: yes IF needed; measured: NOT needed — `cpu` is already delegated and the scope design backfires, S4 revised).** Cgroup delegation: may `install.sh` write `user@.service.d/50-wsl-care-delegate.conf` (a system setting)?
+- **Q4 — ANSWERED (owner, 2026-10-09: a verb IF needed; measured: NOT needed — documentation of `nice -n 19`, S4 revised; the rule text is proposed there for the conventions repository).** `wsl-care low`: a verb, or documentation of the `systemd-run` line only?
 - **Q5 — `.wslconfig` advice:** confirm "shown, never written"; which of memory cap, swap size, `autoMemoryReclaim` to advise.
 - **Q6 — Defender exclusions:** advise them at all? (A security trade-off; never automatic.)
 - **Q7 — upstream reports:** may an agent open issues in ConnectOtherAIs (`coai-mcp` start path under load) and CredsForDevs
