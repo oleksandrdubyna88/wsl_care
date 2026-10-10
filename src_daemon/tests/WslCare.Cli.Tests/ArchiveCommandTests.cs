@@ -125,6 +125,23 @@ public sealed class ArchiveCommandTests : IDisposable
         set.Exit.Should().Be((int)ExitCode.Ok, set.Stderr);
     }
 
+    /// <summary>Plan §15s D3, the E10.S1 plan round's finding 1: the extension's <i>Stop archiving</i> writes the EXPLICIT empty value — and
+    /// it must win over a machine-layer base, or the next timer would still archive. Through the real CLI: a machine base, the user's
+    /// empty value, then the effective base is none.</summary>
+    [Fact]
+    public void The_users_empty_base_folder_wins_over_a_machine_layer_base()
+    {
+        Folder("/mnt/v/ai-archive");
+        _sandbox.Write("/etc/wsl-care/config.json", """{ "archive": { "baseFolder": "/mnt/v/ai-archive" } }""");
+        CliRun.Over(Host(), "config", "get", "archive.baseFolder").Stdout.Should().Contain("/mnt/v/ai-archive", "the machine layer sets it");
+
+        var set = CliRun.Over(Host(), "config", "set", "archive.baseFolder", "");
+        var effective = CliRun.Over(Host(), "config", "get", "archive.baseFolder");
+
+        set.Exit.Should().Be((int)ExitCode.Ok, set.Stderr);
+        effective.Stdout.Should().NotContain("/mnt/v/ai-archive", "the user's empty value is the effective one: no archive");
+    }
+
     /// <summary>E9.S1: the preview answers per agent what is due, oldest first, as this user — the fixed clock of the host is the
     /// "now" the ages are taken against.</summary>
     [Fact]
