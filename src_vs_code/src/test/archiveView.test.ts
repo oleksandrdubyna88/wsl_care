@@ -24,10 +24,15 @@ function read(read: 'archiveStatus' | 'archivePreview', body: Record<string, unk
   return { kind: 'read', read, distro: 'Ubuntu', body };
 }
 
+/** The panel snapshot of a refreshed panel over the head goldens — typed, no cast. */
+function answeredSnapshot(): Snapshot {
+  return { checking: false, ...goldenOutcomes() };
+}
+
 const CAPABLE = [ARCHIVE_CAPABILITY, 'archive.preview', 'archive.run'];
 
 function state(overrides: Partial<ArchiveState> = {}): ArchiveState {
-  return { status: read('archiveStatus', golden('archive-status.json')), preview: read('archivePreview', golden('archive-preview.json')), capabilities: CAPABLE, busy: '', ...overrides };
+  return { status: read('archiveStatus', golden('archive-status.json')), preview: read('archivePreview', golden('archive-preview.json')), capabilities: CAPABLE, busy: '', reading: false, asked: true, unavailable: '', ...overrides };
 }
 
 function enabled(controls: ReturnType<typeof deriveArchive>): Record<string, boolean> {
@@ -87,7 +92,7 @@ test('a daemon string is made printable and short before it reaches the view', (
 });
 
 test('the page renders the archive in the AI agents section — text only — and its buttons post their bare ids, a greyed one nothing', () => {
-  const view = buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, undefined, deriveArchive(state({ status: read('archiveStatus', { ...golden('archive-status.json'), baseFolder: '' }) })));
+  const view = buildPanelView(answeredSnapshot(), undefined, undefined, deriveArchive(state({ status: read('archiveStatus', { ...golden('archive-status.json'), baseFolder: '' }) })));
   const root = new Element('MAIN');
   const page = runPageScript(fs.readFileSync(PAGE_SCRIPT, 'utf8'), { panel: root });
   page.message({ type: 'view', view: structuredClone(view) });
@@ -99,4 +104,43 @@ test('the page renders the archive in the AI agents section — text only — an
   assert.equal(page.posted.length, before, 'a greyed Stop archiving posts nothing');
   page.click(section.one('button[data-archive-action="chooseArchiveFolder"]'));
   assert.deepEqual(page.posted.at(-1), { type: 'chooseArchiveFolder' });
+});
+
+// ---- the code round (coai 237ecc90): findings 5 and 6 ----
+
+test('code round #6: a FAILED preview is said, never shown as nothing due', () => {
+  const controls = deriveArchive(state({ preview: { kind: 'timedOut', timeoutMs: 630_000, read: 'archivePreview' } }));
+  assert.deepEqual(controls.agents, []);
+  assert.equal(controls.previewNote, 'What is due: timed out');
+});
+
+test('code round #6: an agent whose figures are missing reads "unknown", never "nothing older than 0 d"', () => {
+  const preview = golden('archive-preview.json');
+  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { id: 'claude-code', name: 'Claude Code', enabled: true } : a));
+  const line = deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0];
+  assert.equal(line?.due, 'what is due is unknown — update the daemon to see this');
+  assert.equal(line?.badge, '');
+});
+
+test('code round #6: a daemon that was not asked for its preview says so', () => {
+  assert.equal(deriveArchive(state({ preview: undefined })).previewNote, 'What is due: not asked yet');
+  assert.equal(deriveArchive(state()).previewNote, '');
+});
+
+test('code round #5: while the reads are in flight the panel says the lines are the previous answer', () => {
+  assert.equal(deriveArchive(state({ reading: true })).reading, 'Asking the daemon about the archive again — the lines below are its previous answer');
+  assert.equal(deriveArchive(state()).reading, '');
+});
+
+// ---- the own review on Fable: finding 1 ----
+
+test('own review #1: a panel whose status failed reads "unavailable" with its reason — never a lasting "checking…"', () => {
+  const stopped = deriveArchive(state({ status: undefined, preview: undefined, capabilities: undefined, unavailable: 'WSL stopped' }));
+  assert.equal(stopped.line, 'Archive: unavailable — WSL stopped');
+  assert.equal(stopped.level, 'unknown');
+});
+
+test('own review #1: a daemon that answered no archive status after a refresh says so; before the first refresh it is checking', () => {
+  assert.equal(deriveArchive(state({ status: undefined, asked: true })).line, 'Archive: this daemon does not report its archive status — update the daemon');
+  assert.equal(deriveArchive(state({ status: undefined, asked: false })).line, 'Archive: checking…');
 });

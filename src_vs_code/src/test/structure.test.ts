@@ -290,3 +290,32 @@ test('the writer\'s import scan finds a planted import of configCall.ts outside 
   ];
   assert.deepEqual(importersOf(planted, CONFIG_CALL), [ARCHIVE_FLOW, 'src/panel/viewModel.ts']);
 });
+
+// ---- E10.S1 own review on Fable, finding 4: the JudgedFolder brand is held by more than the types ----
+
+/** Files that assert a value INTO `JudgedFolder` (`x as JudgedFolder`, `<JudgedFolder>x`), read with the parser — casts are erased
+ * from the bundle, so this is the one place a forged folder could be seen. */
+function judgedFolderCasters(all: readonly Source[]): string[] {
+  return all.filter((s) => {
+    let found = false;
+    const visit = (node: ts.Node): void => {
+      found ||= (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && /\bJudgedFolder\b/.test(node.type.getText());
+      ts.forEachChild(node, visit);
+    };
+    visit(ts.createSourceFile('scan.ts', s.text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS));
+    return found;
+  }).map((s) => s.file);
+}
+
+test('only judgedFolder.ts makes a JudgedFolder — no shipped module casts a value into one', () => {
+  assert.deepEqual(judgedFolderCasters(sources()), ['src/archive/judgedFolder.ts']);
+});
+
+test('the brand scan finds a planted cast, in both spellings, and ignores a mention in a comment or a type annotation', () => {
+  const planted: Source[] = [
+    { file: 'src/archive/archiveFlow.ts', text: "const f = picked as JudgedFolder;" },
+    { file: 'src/panel/x.ts', text: 'const f = <JudgedFolder>(picked);' },
+    { file: 'src/z.ts', text: '// never `x as JudgedFolder` here\nlet f: JudgedFolder | undefined;' },
+  ];
+  assert.deepEqual(judgedFolderCasters(planted), ['src/archive/archiveFlow.ts', 'src/panel/x.ts']);
+});

@@ -211,7 +211,7 @@
           "minimum": 10,
           "maximum": 600,
           "scope": "application",
-          "markdownDescription": "How long `runs show`, `runs` and `logs` may take, in seconds."
+          "markdownDescription": "How long `runs show`, `runs` and `logs` may take, in seconds — and the archive calls that start no child: `archive status`, `archive check-base` and the archive folder write (`config set archive.baseFolder`, which judges the folder again). Raise it when the archive folder is on a slow network share."
         },
         "wslCare.timeouts.detachSeconds": {
           "type": "integer",

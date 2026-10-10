@@ -260,6 +260,9 @@
   function archivePart(archive) {
     const box = element('div', undefined, { archive: '' });
     box.appendChild(element('p', archive.line, { 'archive-line': '', level: archive.level }));
+    // The host's own words while the daemon is asked again, and why the per-agent lines are missing — never "nothing due".
+    box.appendChild(element('p', archive.reading, { 'archive-reading': '' }));
+    box.appendChild(element('p', archive.previewNote, { 'archive-preview-note': '' }));
     const list = element('ul', undefined, { 'archive-agents': '' });
     archive.agents.forEach(function (agent) { list.appendChild(archiveAgent(agent)); });
     box.appendChild(list);

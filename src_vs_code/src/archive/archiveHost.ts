@@ -1,6 +1,7 @@
 import type { Failure, ReadOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
 import type { Runner } from '../process/runner';
+import { failureText } from '../failureText';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 import type { OutcomeStore } from '../state/outcomeStore';
@@ -40,6 +41,13 @@ export function capabilitiesOf(outcomes: OutcomeStore): readonly string[] | unde
   return Array.isArray(listed) ? listed.filter((c): c is string => typeof c === 'string') : [];
 }
 
+/** The short label of the panel's own `status` failure, or '' — what the archive line says instead of a lasting "checking…" (own review #1). */
+export function statusFailureOf(outcomes: OutcomeStore): string {
+  const status = outcomes.snapshot().status;
+
+  return status === undefined || status.kind === 'answered' ? '' : failureText(status).label;
+}
+
 function statusBody(outcomes: OutcomeStore): Readonly<Record<string, unknown>> | undefined {
   const status = outcomes.snapshot().status;
 
@@ -51,6 +59,12 @@ const READS: readonly { readonly request: RunRead; readonly capability: string }
   { request: { read: 'archiveStatus' }, capability: 'archive.run' },
   { request: { read: 'archivePreview' }, capability: 'archive.preview' },
 ];
+
+/**
+ * After which flow endings the daemon is asked again (code round #4): a write, a write whose ending is unknown (timed out — the
+ * key may be in force) and a failure (it may have been the write's). Not after a cancel or a refused folder: nothing was written.
+ */
+const ASKED_AGAIN: ReadonlySet<ArchiveFlowOutcome> = new Set<ArchiveFlowOutcome>(['written', 'unknown', 'failed']);
 
 /** Every archive surface through the one road (`cleanupHost.ts`' rule): a notification sanitised and unlinked, a modal unlinked. */
 function sanitised(ui: ArchiveUi): ArchiveUi {
@@ -69,6 +83,8 @@ export class ArchiveHost {
   private status: ReadOutcome | undefined;
   private preview: ReadOutcome | undefined;
   private busyText = '';
+  /** A refresh finished at least once (own review #1: after it, a missing answer is no longer "checking"). */
+  private asked = false;
   private flowRunning = false;
   private refreshing: Promise<void> | undefined;
   private readonly listeners = new Set<() => void>();
@@ -79,7 +95,12 @@ export class ArchiveHost {
   }
 
   view(): ArchiveControls {
-    return deriveArchive({ status: this.status, preview: this.preview, capabilities: capabilitiesOf(this.options.outcomes), busy: this.busyText });
+    const outcomes = this.options.outcomes;
+
+    return deriveArchive({
+      status: this.status, preview: this.preview, capabilities: capabilitiesOf(outcomes), busy: this.busyText,
+      reading: this.refreshing !== undefined, asked: this.asked, unavailable: statusFailureOf(outcomes),
+    });
   }
 
   onChange(listener: () => void): () => void {
@@ -89,7 +110,11 @@ export class ArchiveHost {
 
   /** The panel's refresh: both reads, of a daemon that advertises them; a refresh already running is shared. */
   refresh(): Promise<void> {
-    this.refreshing ??= this.reads().finally(() => { this.refreshing = undefined; this.changed(); });
+    if (this.refreshing === undefined) {
+      this.refreshing = this.reads().finally(() => { this.refreshing = undefined; this.changed(); });
+      // The panel says the lines are the previous answer while the reads run (code round #5: a preview may take minutes).
+      this.changed();
+    }
 
     return this.refreshing;
   }
@@ -109,6 +134,7 @@ export class ArchiveHost {
     const [status, preview] = await Promise.all(READS.map((r) => (capabilities.includes(r.capability) ? this.options.read(r.request) : Promise.resolve(undefined))));
     this.status = status;
     this.preview = preview;
+    this.asked = true;
   }
 
   /** One flow at a time: a second press while one runs is told, and starts nothing. */
@@ -129,7 +155,7 @@ export class ArchiveHost {
   private async ran(what: string, run: (deps: ArchiveFlowDeps) => Promise<ArchiveFlowOutcome>): Promise<ArchiveFlowOutcome | undefined> {
     try {
       const outcome = await run(this.deps());
-      await (outcome === 'written' ? this.refresh() : Promise.resolve());
+      await (ASKED_AGAIN.has(outcome) ? this.refresh() : Promise.resolve());
       return outcome;
     } catch (error) {
       this.options.log(`archive: ${what} failed: ${reasonOf(error)}`);

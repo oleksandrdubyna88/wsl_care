@@ -313,7 +313,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.window.registerWebviewViewProvider(PanelProvider.viewId, panel),
     vscode.commands.registerCommand(OPEN_PANEL, () => vscode.commands.executeCommand(`${PanelProvider.viewId}.focus`)),
     vscode.commands.registerCommand('wslCare.refresh', () => refreshAll()),
-    vscode.commands.registerCommand('wslCare.startWsl', () => poller.refreshPanel({ startIfStopped: true })),
+    vscode.commands.registerCommand('wslCare.startWsl', () => refreshAll({ startIfStopped: true })),
     vscode.commands.registerCommand('wslCare.installDaemon', install),
     vscode.commands.registerCommand('wslCare.startWindowsTime', windowsTime),
     vscode.commands.registerCommand('wslCare.installWindowsTimeGuard', installGuard),

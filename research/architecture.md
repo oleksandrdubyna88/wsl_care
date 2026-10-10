@@ -110,7 +110,13 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   the typed ids, the root words), `src/text/safeText.ts` (the one sanitiser), `src/client/enumValue.ts`, and the runner's
   stdin (section *The extension: the root boundary* of [architecture-extension-e6.md](architecture-extension-e6.md)); since E6.S3 `src/cleanup/` (the cleanup buttons' host transaction,
   the `globalState` journal, the durable poll, the controls' derivation, the modals' and results' words) and the client's two
-  run reads (section *The extension: the cleanup buttons* of [architecture-extension-e6.md](architecture-extension-e6.md)).
+  run reads (section *The extension: the cleanup buttons* of [architecture-extension-e6.md](architecture-extension-e6.md)); since
+  E10.S1a `src/archive/` (the AI-session archive's host, flows, view and its folder dialog) and `src/config/configCall.ts` — a
+  NEW extension → daemon interaction: besides the reads (`archive status`, `archive preview`, `archive check-base <path>`, all
+  unprivileged), the extension WRITES one daemon setting, `config set archive.baseFolder <folder | "">`, as the person's own user
+  (never `-u`). The folder is one the daemon itself judged and accepted, and the daemon judges it again on the write
+  (`ConfigCommand.SetBaseFolderAsUser`), so the extension decides nothing about a base folder the daemon would not. The bundle
+  scan holds the writer to its own region, exactly as the root region is held ([module_vs_code.md](module_vs_code.md), plan §15s).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,

@@ -45,7 +45,8 @@ export interface ArchiveFlowDeps {
   readonly busy: (text: string) => void;
 }
 
-export type ArchiveFlowOutcome = 'cancelled' | 'refused' | 'failed' | 'written';
+/** `unknown`: the write's call timed out — the daemon may have written the key before it was stopped (code round #4). */
+export type ArchiveFlowOutcome = 'cancelled' | 'refused' | 'failed' | 'unknown' | 'written';
 
 export const USE_FOLDER_LABEL = 'Use this folder';
 export const STOP_LABEL = 'Stop archiving';
@@ -101,6 +102,10 @@ async function told(deps: ArchiveFlowDeps, op: ConfigOp, outcome: ConfigOutcome)
   if (outcome.kind === 'written') {
     await deps.ui.notify('info', (WRITTEN[op.op] as (op: ConfigOp) => string)(op));
     return 'written';
+  }
+  if (outcome.kind === 'timedOut') {
+    await deps.ui.notify('warn', `The archive setting may or may not have been written: the daemon did not answer within ${Math.round(outcome.timeoutMs / 1000)} s. The panel shows the folder the daemon reads now.`);
+    return 'unknown';
   }
   await deps.ui.notify('error', `The archive setting was not written: ${failureText(outcome).sentence}`);
 

@@ -36,6 +36,10 @@ export interface ArchiveControls {
   readonly line: string;
   readonly level: ArchiveLevel;
   readonly agents: readonly ArchiveAgentLine[];
+  /** '' — or why the per-agent lines are missing: the preview failed, or was not asked. */
+  readonly previewNote: string;
+  /** '' — or that the daemon is being asked again right now (the lines above are the previous answer). */
+  readonly reading: string;
   /** "No archive run in progress", "Archive run: held by run …". */
   readonly lock: string;
   /** "Last archive run: done — 1 copied, 0 removed, 0.0 GB, <time>", or ''. */
@@ -50,6 +54,12 @@ export interface ArchiveState {
   readonly capabilities: readonly string[] | undefined;
   /** '' — or what the flow is doing now ("Checking the folder…"). */
   readonly busy: string;
+  /** The two reads are in flight. */
+  readonly reading: boolean;
+  /** A refresh has finished at least once (until then a missing read is still "checking"). */
+  readonly asked: boolean;
+  /** '' — or the short label of the panel's own `status` failure (WSL stopped, daemon not installed …). */
+  readonly unavailable: string;
 }
 
 type Body = Readonly<Record<string, unknown>>;
@@ -99,7 +109,16 @@ function headLine(state: ArchiveState): { line: string; level: ArchiveLevel } {
     return { line: state.busy, level: 'none' };
   }
 
-  return state.status === undefined ? { line: 'Archive: checking…', level: 'none' } : folderLine(state.status);
+  if (state.unavailable !== '') {
+    return { line: `Archive: unavailable — ${state.unavailable}`, level: 'unknown' };
+  }
+
+  return state.status === undefined ? notReported(state.asked) : folderLine(state.status);
+}
+
+/** No `archive status` answer: still being asked before the first refresh ends — after it, a daemon that does not answer one (own review #1). */
+function notReported(asked: boolean): { line: string; level: ArchiveLevel } {
+  return asked ? { line: 'Archive: this daemon does not report its archive status — update the daemon', level: 'warn' } : { line: 'Archive: checking…', level: 'none' };
 }
 
 function line(state: ArchiveState): { line: string; level: ArchiveLevel } {
@@ -112,11 +131,33 @@ function line(state: ArchiveState): { line: string; level: ArchiveLevel } {
 
 // ---- per agent ----
 
-function dueText(agent: Body): string {
-  const age = `older than ${count(agent, 'effectiveAgeDays')} d`;
-  const units = count(agent, 'dueUnits');
+/** The figures a due line needs — or none, when the daemon did not send every one (an absent figure is never a 0). */
+const DUE_KEYS = ['dueUnits', 'dueFiles', 'dueBytes', 'effectiveAgeDays'] as const;
 
-  return units === 0 ? `nothing ${age}` : `${plural(units, 'session')} · ${plural(count(agent, 'dueFiles'), 'file')} · ${gb(count(agent, 'dueBytes'))} ${age}`;
+type Due = { readonly [K in (typeof DUE_KEYS)[number]]: number };
+
+function dueFigures(agent: Body): Due | undefined {
+  const entries = DUE_KEYS.map((key) => [key, figure(agent, key)] as const);
+
+  return entries.every(([, value]) => value !== undefined) ? (Object.fromEntries(entries) as Due) : undefined;
+}
+
+function figure(body: Body, key: string): number | undefined {
+  const value = body[key];
+
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+export const UNKNOWN_DUE = 'what is due is unknown — update the daemon to see this';
+
+function dueText(agent: Body): string {
+  const due = dueFigures(agent);
+  if (due === undefined) {
+    return UNKNOWN_DUE;
+  }
+  const age = `older than ${due.effectiveAgeDays} d`;
+
+  return due.dueUnits === 0 ? `nothing ${age}` : `${plural(due.dueUnits, 'session')} · ${plural(due.dueFiles, 'file')} · ${gb(due.dueBytes)} ${age}`;
 }
 
 function retentionOf(agent: Body): { known: boolean; days: number } {
@@ -181,12 +222,31 @@ function buttons(state: ArchiveState): ArchiveControls['buttons'] {
   ];
 }
 
+/** Why there are no per-agent lines to trust: the preview was not asked, or failed (code round #6 — never "nothing due"). */
+function previewNote(preview: ReadOutcome | undefined): string {
+  if (preview === undefined) {
+    return 'What is due: not asked yet';
+  }
+
+  return preview.kind === 'read' ? '' : `What is due: ${failureText(preview).label}`;
+}
+
+export const READING = 'Asking the daemon about the archive again — the lines below are its previous answer';
+
 /** The archive's controls. Pure. */
 export function deriveArchive(state: ArchiveState): ArchiveControls {
   const status = bodyOf(state.status);
 
-  return { ...line(state), agents: agents(bodyOf(state.preview)), lock: lockText(status), lastRun: lastRunText(status), buttons: buttons(state) };
+  return {
+    ...line(state),
+    agents: agents(bodyOf(state.preview)),
+    previewNote: previewNote(state.preview),
+    reading: state.reading ? READING : '',
+    lock: lockText(status),
+    lastRun: lastRunText(status),
+    buttons: buttons(state),
+  };
 }
 
 /** The controls before the host derived any: every button greyed. */
-export const NO_ARCHIVE: ArchiveControls = deriveArchive({ status: undefined, preview: undefined, capabilities: undefined, busy: '' });
+export const NO_ARCHIVE: ArchiveControls = deriveArchive({ status: undefined, preview: undefined, capabilities: undefined, busy: '', reading: false, asked: false, unavailable: '' });

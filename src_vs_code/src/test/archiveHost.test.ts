@@ -117,3 +117,43 @@ test('the page may ask for the two flows only as BARE messages — a path or any
   assert.equal(parsePageMessage({ type: 'chooseArchiveFolder', path: 'V:\\x' }), undefined);
   assert.equal(parsePageMessage({ type: 'stopArchiving', value: '' }), undefined);
 });
+
+// ---- the code round (coai 237ecc90): findings 4 and 5 ----
+
+test('code round #4: after a write whose ending is unknown or failed, the daemon is asked again', async () => {
+  for (const ending of [{ kind: 'timedOut' as const, timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, exited(70, '', 'wsl-care: internal error: x\n')]) {
+    const reads: string[] = [];
+    const recorder = newArchiveRecorder();
+    recorder.answer = true;
+    const store = new OutcomeStore();
+    store.set('status', goldenOutcomes().status);
+    const h = new ArchiveHost({
+      read: (request) => { reads.push(request.read); return Promise.resolve({ kind: 'read', read: request.read, distro: 'Ubuntu', body: golden(FILES[request.read] ?? '') }); },
+      target: () => Promise.resolve({ wsl: 'w', distro: 'Ubuntu' }), runner: () => Promise.resolve(ending), outcomes: store, ui: recordingArchiveUi(recorder), log: () => undefined,
+    });
+    await h.stop();
+    assert.deepEqual(reads, ['archiveStatus', 'archivePreview'], ending.kind);
+  }
+});
+
+test('code round #5: the view says "reading" while the two reads are in flight, and not after', async () => {
+  let release: () => void = () => undefined;
+  const holds = new Promise<void>((resolve) => { release = resolve; });
+  const h = host({ readHolds: holds });
+  const refreshing = h.archive.refresh();
+  assert.notEqual(h.archive.view().reading, '');
+  release();
+  await refreshing;
+  assert.equal(h.archive.view().reading, '');
+});
+
+test('own review #1: with the panel\'s status failed, the archive line says why after a refresh', async () => {
+  const store = new OutcomeStore();
+  store.set('status', { kind: 'stopped', verb: 'status', distro: 'Ubuntu' });
+  const h = new ArchiveHost({
+    read: () => Promise.reject(new Error('never asked')), target: () => Promise.resolve({ wsl: 'w', distro: 'Ubuntu' }), runner: () => Promise.resolve(exited(0, '')),
+    outcomes: store, ui: recordingArchiveUi(newArchiveRecorder()), log: () => undefined,
+  });
+  await h.refresh();
+  assert.equal(h.view().line, 'Archive: unavailable — WSL stopped');
+});

@@ -131,3 +131,15 @@ test('pickedPath: a lower-case drive letter is raised; UNC and other paths are k
   assert.equal(pickedPath('V:\\a'), 'V:\\a');
   assert.equal(pickedPath('\\\\nas\\share\\a'), '\\\\nas\\share\\a');
 });
+
+// ---- the code round (coai 237ecc90): finding 4 ----
+
+test('code round #4: a write that TIMED OUT is "unknown", not "failed" — the setting may be in force', async () => {
+  const w = world();
+  w.recorder.picked = 'V:\\ai-archive';
+  w.recorder.answer = true;
+  const timedOut: ArchiveFlowDeps = { ...w.deps, runner: () => Promise.resolve({ kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }) };
+  assert.equal(await chooseArchiveFolder(timedOut), 'unknown');
+  assert.equal(w.recorder.notices.at(-1)?.level, 'warn');
+  assert.match(w.recorder.notices.at(-1)?.sentence ?? '', /^The archive setting may or may not have been written/);
+});

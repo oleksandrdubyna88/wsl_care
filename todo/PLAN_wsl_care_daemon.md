@@ -4506,8 +4506,28 @@ The S1a deviations from the build notes:
   `IsPathArgument` plus the key's 1024 limit.
 - **The archive section sits in *AI agents*** (`EXTRAS.aiAgents` in `media/panel.js`). The badge text names both numbers.
 
+**The code round** was coai session 237ecc90 (`proceed`, 7 gating). Only codex answered: the local engine refused for want of a
+model, and gemini was out of quota. Six findings were accepted:
+- **#0:** `architecture.md` names the new interaction.
+- **#1:** a scenario test, `scenarios/archiveFlows.test.ts`.
+- **#2:** the cast in a test fixture is gone.
+- **#4:** a write whose ending is unknown (timed out) is `unknown`, not `failed`, and the reads run again after any write that may
+  have happened.
+- **#5:** the panel says while it asks again.
+- **#6:** a failed preview reads *What is due: <failure>*, and missing figures read *unknown*, never 0.
+
+One was rejected. **#3** (the host's fields "mutate") is a stateful service holding immutable answers that are replaced whole, as
+`CleanupHost` and `WindowsTimeGuardHost` hold theirs.
+
+**The own review** ran on Fable (owner 2026-10-10: the root-touching parts get a Fable reviewer). All four findings were taken:
+- **#1:** a failed panel `status`, or a daemon that answers no archive status, no longer leaves a lasting *checking…*.
+- **#2:** the write-readback half is the code round's #4; `wslCare.timeouts.runReadSeconds`' description now names the archive
+  calls it bounds.
+- **#3:** the palette's *Start WSL and check* goes through the same refresh as the panel's button.
+- **#4:** `structure.test.ts` pins that only `judgedFolder.ts` casts into the brand.
+
 Tests and teeth: [module_tests.md](../research/module_tests.md), the `client archive*`, `command wslCare.chooseArchiveFolder` /
-`stopArchiving` and `message …` rows.
+`stopArchiving` and `message …` rows, and *What each E10.S1a guarantee rests on*.
 
 #### Definition of Done
 
