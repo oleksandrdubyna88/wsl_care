@@ -13,8 +13,8 @@ public interface IWindowsBoot
     Reading<string> BootId();
 
     /// <summary>Milliseconds since boot that do NOT advance while the host sleeps — the ledger's denominator, as Linux's
-    /// <c>CLOCK_MONOTONIC</c> is in the distro.</summary>
-    long UnbiasedMilliseconds();
+    /// <c>CLOCK_MONOTONIC</c> is in the distro — or why it could not be read (never 0 for "unread", coai code round 1bc694ea).</summary>
+    Reading<long> UnbiasedMilliseconds();
 }
 
 /// <summary>A boot that reads nothing — what every host off Windows and a host built by a test hold: without a boot id the ledger
@@ -23,12 +23,21 @@ public sealed class UnreadWindowsBoot(string why) : IWindowsBoot
 {
     public Reading<string> BootId() => Reading.Missing<string>(why);
 
-    public long UnbiasedMilliseconds() => 0;
+    public Reading<long> UnbiasedMilliseconds() => Reading.Missing<long>(why);
 }
 
-/// <summary>Where the Windows side's MCP CPU ledger lives and what reads it (E14 S7b.1): S1's ledger, its place, and the boot.</summary>
-public sealed record WindowsCpuLedger(IFileSystem Files, McpCpuLedgerPlace Place, IWindowsBoot Boot)
+/// <summary>Whether the Windows side's MCP sample keeps a CPU ledger (E14 S7b.1) — a closed set, no null (coai code round 1bc694ea):
+/// <see cref="Kept"/> names S1's ledger, its place and the boot; <see cref="None"/> says why there is none (every instance is then
+/// measured across the window, and nothing is recorded).</summary>
+public abstract record WindowsCpuLedger
 {
-    /// <summary>No ledger: every instance is measured across the window, and nothing is recorded.</summary>
-    public static WindowsCpuLedger None(IFileSystem files, string why) => new(files, new McpCpuLedgerPlace.None(why), new UnreadWindowsBoot(why));
+    private WindowsCpuLedger()
+    {
+    }
+
+    /// <summary>S1's ledger at <paramref name="Place"/>, read through <paramref name="Files"/>, keyed by <paramref name="Boot"/>.</summary>
+    public sealed record Kept(IFileSystem Files, McpCpuLedgerPlace Place, IWindowsBoot Boot) : WindowsCpuLedger;
+
+    /// <summary>No ledger, and why.</summary>
+    public sealed record None(string Reason) : WindowsCpuLedger;
 }

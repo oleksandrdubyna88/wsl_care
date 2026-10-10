@@ -25,9 +25,11 @@ public sealed partial class WindowsMcpCollectorTests
 
         public long Milliseconds { get; set; } = 3_600_000;
 
+        public bool ClockReadable { get; set; } = true;
+
         public Reading<string> BootId() => Id.Length > 0 ? Reading.Of(Id) : Reading.Missing<string>("the BootId value could not be read");
 
-        public long UnbiasedMilliseconds() => Milliseconds;
+        public Reading<long> UnbiasedMilliseconds() => ClockReadable ? Reading.Of(Milliseconds) : Reading.Missing<long>("QueryUnbiasedInterruptTime failed");
     }
 
     /// <summary>A ledger place in a sandbox folder (the Windows state directory's stand-in), the boot, and a count of window waits.</summary>
@@ -43,7 +45,7 @@ public sealed partial class WindowsMcpCollectorTests
 
         public string File => _tree.Paths.Rules.Join(Directory, McpCpuLedger.FileName);
 
-        public WindowsCpuLedger Ledger(bool writes = true) => new(_tree.Files, new McpCpuLedgerPlace.WindowsState(Directory, File, writes), Boot);
+        public WindowsCpuLedger Ledger(bool writes = true) => new WindowsCpuLedger.Kept(_tree.Files, new McpCpuLedgerPlace.WindowsState(Directory, File, writes), Boot);
 
         public async Task<WindowsMcpSample> Sample(FakeTable table, bool writes = true)
         {
@@ -128,6 +130,23 @@ public sealed partial class WindowsMcpCollectorTests
         }
     }
 
+    /// <summary>coai code round 1bc694ea: an unread unbiased clock was a 0 point — a baseline at "0 ms since boot". It is now no
+    /// baseline and no record, with the reason.</summary>
+    [Fact]
+    public async Task An_unreadable_unbiased_clock_is_no_baseline_and_records_nothing_never_a_0_point()
+    {
+        using var h = new LedgerHarness();
+        await h.Sample(OneServer(10));
+        h.Boot.Milliseconds += 300_000;
+        h.Boot.ClockReadable = false;
+
+        var later = await h.Sample(OneServer(40));
+
+        later.Instances.Single().CpuBasis.Should().Be(McpCpuBasis.Window);
+        later.Baseline.Recorded.Should().BeFalse();
+        later.Baseline.Reason.Should().Contain("unbiased clock cannot be read");
+    }
+
     [Fact]
     public async Task An_elevated_status_reads_the_ledger_and_writes_nothing()
     {
@@ -164,9 +183,9 @@ public sealed partial class WindowsMcpCollectorTests
         Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows' boot counter and unbiased clock exist on Windows only");
 #pragma warning disable CA1416 // guarded by the skip above
         var boot = new Win32Boot();
-        var first = boot.UnbiasedMilliseconds();
+        var first = boot.UnbiasedMilliseconds().Should().BeOfType<Reading<long>.Available>().Subject.Value;
         var id = boot.BootId();
-        var second = boot.UnbiasedMilliseconds();
+        var second = boot.UnbiasedMilliseconds().Should().BeOfType<Reading<long>.Available>().Subject.Value;
 #pragma warning restore CA1416
 
         id.Should().BeOfType<Reading<string>.Available>().Which.Value.Should().MatchRegex("^windows-[0-9]+$");

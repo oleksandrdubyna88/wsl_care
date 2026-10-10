@@ -95,7 +95,8 @@ public sealed partial class ArchitectureTests
         // (review finding 2: ReadStateFile trusts root's files only).
         // The orphan sweep (coai plan round finding 3) lists the ledger's own folder — names only, nothing opened, in either
         // place (root's state folder or this account's), so the stricter metadata class holds for both.
-        ["WslCare.Core/Mcp/McpCpuLedger.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState), ["ReadUserFile"] = (1, ReadClass.OwnUnprivileged), ["ListFiles"] = (1, ReadClass.TargetHomeMetadata) },
+        // E14 S7b.1: the second ReadUserFile is the Windows binary's own ledger (%LOCALAPPDATA%\wsl-care) — also this account's own file.
+        ["WslCare.Core/Mcp/McpCpuLedger.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState), ["ReadUserFile"] = (2, ReadClass.OwnUnprivileged), ["ListFiles"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Collectors/Procfs/SampleTime.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         // E14 S6: /proc/loadavg for `wsl-care busy` — the kernel's file.
         ["WslCare.Core/Collectors/Procfs/LoadAverageFile.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },

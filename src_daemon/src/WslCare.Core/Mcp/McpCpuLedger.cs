@@ -124,6 +124,8 @@ public static partial class McpCpuLedger
         McpCpuLedgerPlace.RootState root => Parse(files.ReadStateFile(root.File, maxBytes)),
         // Review finding 2: this account's own file, owner-checked and reached through no link — ReadStateFile trusts root's only.
         McpCpuLedgerPlace.OwnState own => Parse(files.ReadUserFile(own.File, maxBytes, RegularFiles.EffectiveUid(), own.Directory)),
+        // E14 S7b.1 (coai code round 1bc694ea): off Linux this reader checks no owner (BeneathFiles.ReadOther → RegularFiles.ReadOtherNoLink)
+        // — no reparse point on the way from the state directory, a regular file, capped; %LOCALAPPDATA%\wsl-care's ACLs are the boundary.
         McpCpuLedgerPlace.WindowsState windows => Parse(files.ReadUserFile(windows.File, maxBytes, RegularFiles.EffectiveUid(), windows.Directory)),
         _ => McpCpuFile.Empty,
     };

@@ -64,7 +64,7 @@ internal static class StatusCommand
         }
 
         // E14 S7b.1: S1's ledger on the Windows side — this user's own file; an elevated status reads it and writes nothing.
-        var ledger = new WindowsCpuLedger(host.Files, McpCpuLedgerPlace.ForWindowsStatus(windows, host.Privilege.IsRoot), host.WindowsBoot);
+        var ledger = new WindowsCpuLedger.Kept(host.Files, McpCpuLedgerPlace.ForWindowsStatus(windows, host.Privilege.IsRoot), host.WindowsBoot);
         var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait, ledger).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
         var wslConfig = Reading.Of(HealthCollector.AuditWslConfig(host.Files, windows.WslConfigFile));
         var advice = VmmemAdvice.For(sample.Host.Bind(h => h.VmmemWorkingSetBytes), sample.Host.Bind(h => h.Memory), wslConfig, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb));

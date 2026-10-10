@@ -36,7 +36,10 @@ public sealed partial class Win32Boot : IWindowsBoot
             : Reading.Missing<string>("the Windows boot counter (PrefetchParameters\\BootId) could not be read: error " + status.ToString(CultureInfo.InvariantCulture));
     }
 
-    public long UnbiasedMilliseconds() => QueryUnbiasedInterruptTime(out var ticks) ? (long)(ticks / TicksPerMillisecond) : 0;
+    public Reading<long> UnbiasedMilliseconds() =>
+        QueryUnbiasedInterruptTime(out var ticks)
+            ? Reading.Of((long)(ticks / TicksPerMillisecond))
+            : Reading.Missing<long>("QueryUnbiasedInterruptTime failed: the unbiased clock could not be read");
 
     [LibraryImport("advapi32.dll", StringMarshalling = StringMarshalling.Utf16)]
     private static partial int RegGetValueW(nint key, string subKey, string value, uint flags, nint type, out uint data, ref uint dataSize);

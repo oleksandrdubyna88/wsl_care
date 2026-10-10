@@ -64,7 +64,7 @@ public sealed class WindowsMcpStatusTests
 
         public Reading<string> BootId() => Reading.Of("windows-117");
 
-        public long UnbiasedMilliseconds() => Milliseconds;
+        public Reading<long> UnbiasedMilliseconds() => Reading.Of(Milliseconds);
     }
 
     private static CliHost WindowsHost(WindowsHostPaths paths, IWindowsBoot boot, List<TimeSpan> waits, bool elevated)

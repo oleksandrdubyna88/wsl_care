@@ -61,7 +61,7 @@ public sealed partial class WindowsMcpCollectorTests
             table.SecondRead = true;
             clock.Advance(window);
             return Task.CompletedTask;
-        }).SampleAsync(config ?? Defaults(), CancellationToken.None);
+        }, new WindowsCpuLedger.None("a test of the window alone keeps no ledger")).SampleAsync(config ?? Defaults(), CancellationToken.None);
         return reading.Should().BeOfType<Reading<WindowsMcpSample>.Available>().Subject.Value;
     }
 

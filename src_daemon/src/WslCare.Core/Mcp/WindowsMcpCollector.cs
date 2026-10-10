@@ -17,7 +17,7 @@ namespace WslCare.Core.Mcp;
 /// round 2026-10-09 finding 2). This sample's readings become the next one's baselines (S1's two-point rule).</para>
 /// <para>Without a ledger, or without a boot id, every instance is measured across the window and nothing is recorded.</para>
 /// </remarks>
-public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, WindowsCpuLedger? ledger = null)
+public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, WindowsCpuLedger ledger)
 {
     public async Task<Reading<WindowsMcpSample>> SampleAsync(EffectiveConfig config, CancellationToken cancellationToken)
     {
@@ -61,8 +61,13 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
     /// <summary>One instance's CPU: the figure, over what it was measured, and how long.</summary>
     private sealed record Cpu(Reading<double> Percent, McpCpuBasis Basis, TimeSpan Over);
 
-    /// <summary>The round's CPU per pid, the boot it was read in, the ledger before it, and this sample's readings for the next one.</summary>
-    private sealed record CpuRound(IReadOnlyDictionary<int, Cpu> Cpu, string Boot, McpCpuFile Before, IReadOnlyList<McpCpuReading> Readings);
+    /// <summary>The round's CPU per pid, the boot it was read in (empty: no baseline, nothing recorded — <paramref name="Why"/>), the
+    /// ledger before it, and this sample's readings for the next one.</summary>
+    private sealed record CpuRound(IReadOnlyDictionary<int, Cpu> Cpu, string Boot, McpCpuFile Before, IReadOnlyList<McpCpuReading> Readings, string Why);
+
+    /// <summary>Where the ledger stands at this sample: the boot it is keyed by (empty when it cannot be — and why), the clock point,
+    /// and the ledger as it was.</summary>
+    private sealed record LedgerNow(string Boot, McpCpuPoint At, McpCpuFile Before, string Why);
 
     /// <summary>One read per pid in this sample: an instance's ancestor walk and its CPU's first read see the same answer.</summary>
     private WindowsProcessDetails FirstRead(Dictionary<int, WindowsProcessDetails> first, int pid)
@@ -79,17 +84,34 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
     /// <summary>Each instance's CPU: over the interval since its ledger point when it has one in bounds, otherwise across the window.</summary>
     private async Task<CpuRound> CpuAsync(IReadOnlyList<Matched> matched, McpSettings settings, CancellationToken cancellationToken)
     {
-        var boot = ledger?.Boot.BootId() is Reading<string>.Available { Value: var id } ? id : string.Empty;
-        var before = ledger is null || boot.Length == 0 ? McpCpuFile.Empty : McpCpuLedger.Read(ledger.Files, ledger.Place, settings.LedgerMaxBytes);
-        var at = new McpCpuPoint(0, clock.GetUtcNow(), ledger?.Boot.UnbiasedMilliseconds() ?? 0);
-        var readings = matched.Select(m => ReadingOf(m, at)).OfType<McpCpuReading>().ToList();
+        var (boot, at, before, why) = Now(settings);
+        List<McpCpuReading> readings = boot.Length == 0 ? [] : [.. matched.Select(m => ReadingOf(m, at)).OfType<McpCpuReading>()];
         var fromLedger = readings
             .Select(r => (r.Pid, Cpu: McpCpuLedger.Baseline(before, boot, r, settings.Bounds) is { } from ? Interval(r.At, from) : null))
             .Where(r => r.Cpu is not null)
             .ToDictionary(r => r.Pid, r => r.Cpu!);
         var windowed = await WindowAsync([.. matched.Where(m => !fromLedger.ContainsKey(m.Entry.Pid))], settings.Window, cancellationToken).ConfigureAwait(false);
-        return new CpuRound(matched.ToDictionary(m => m.Entry.Pid, m => fromLedger.GetValueOrDefault(m.Entry.Pid) ?? windowed[m.Entry.Pid]), boot, before, readings);
+        return new CpuRound(matched.ToDictionary(m => m.Entry.Pid, m => fromLedger.GetValueOrDefault(m.Entry.Pid) ?? windowed[m.Entry.Pid]), boot, before, readings, why);
     }
+
+    /// <summary>The ledger at this sample. Without a ledger, without a boot id or without the unbiased clock there is no baseline and
+    /// nothing is recorded — and the reason says which (an unread clock is never a 0 point, coai code round 1bc694ea).</summary>
+    private LedgerNow Now(McpSettings settings) => ledger switch
+    {
+        WindowsCpuLedger.Kept kept => Now(kept, settings),
+        WindowsCpuLedger.None none => Unkept(none.Reason),
+        _ => throw new System.Diagnostics.UnreachableException("WindowsCpuLedger is a closed set"),
+    };
+
+    private LedgerNow Now(WindowsCpuLedger.Kept kept, McpSettings settings) => (kept.Boot.BootId(), kept.Boot.UnbiasedMilliseconds()) switch
+    {
+        (Reading<string>.Available { Value: var boot }, Reading<long>.Available { Value: var ms }) =>
+            new(boot, new McpCpuPoint(0, clock.GetUtcNow(), ms), McpCpuLedger.Read(kept.Files, kept.Place, settings.LedgerMaxBytes), string.Empty),
+        (Reading<string>.Available, var clockUnread) => Unkept($"the unbiased clock cannot be read, so no interval can be measured: {clockUnread.ReasonOrEmpty}"),
+        (var bootUnread, _) => Unkept($"the Windows boot id cannot be read, so no reading can name its process across samples: {bootUnread.ReasonOrEmpty}"),
+    };
+
+    private LedgerNow Unkept(string why) => new(string.Empty, new McpCpuPoint(0, clock.GetUtcNow(), 0), McpCpuFile.Empty, why);
 
     /// <summary>This instance as the ledger keys it — pid, creation time as FILETIME ticks, CPU in 100-ns ticks — or <c>null</c> when its
     /// creation time or CPU could not be read (nothing can name it across samples).</summary>
@@ -143,10 +165,11 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
     /// <summary>This sample's readings into the ledger by S1's two-point rule — or why they are not recorded.</summary>
     private McpCpuBaseline Record(CpuRound round, McpSettings settings) => (ledger, round) switch
     {
-        (null, _) => McpCpuBaseline.NotRecorded(string.Empty, "no CPU ledger"),
-        ({ } l, { Boot.Length: 0 }) => McpCpuBaseline.NotRecorded(l.Place.FileOrEmpty, "the Windows boot id cannot be read, so no reading can name its process across samples"),
-        ({ } l, { Readings.Count: 0 }) => McpCpuBaseline.NotRecorded(l.Place.FileOrEmpty, "no MCP server instance to record"),
-        ({ } l, _) => McpCpuLedger.Record(l.Files, l.Place, round.Before, McpCpuLedger.Next(round.Before, round.Boot, round.Readings, settings.Bounds, McpCpuLedger.MaxEntries(settings.LedgerMaxBytes)), new McpCpuSweep(clock.GetUtcNow(), settings.Bounds.Min)),
+        (WindowsCpuLedger.None none, _) => McpCpuBaseline.NotRecorded(string.Empty, none.Reason),
+        (WindowsCpuLedger.Kept k, { Boot.Length: 0 }) => McpCpuBaseline.NotRecorded(k.Place.FileOrEmpty, round.Why),
+        (WindowsCpuLedger.Kept k, { Readings.Count: 0 }) => McpCpuBaseline.NotRecorded(k.Place.FileOrEmpty, "no MCP server instance to record"),
+        (WindowsCpuLedger.Kept k, _) => McpCpuLedger.Record(k.Files, k.Place, round.Before, McpCpuLedger.Next(round.Before, round.Boot, round.Readings, settings.Bounds, McpCpuLedger.MaxEntries(settings.LedgerMaxBytes)), new McpCpuSweep(clock.GetUtcNow(), settings.Bounds.Min)),
+        _ => throw new System.Diagnostics.UnreachableException("WindowsCpuLedger is a closed set"),
     };
 
     private static WindowsMcpInstance Instance(Matched m, WindowsMcpOwner owner, Cpu cpu, DateTimeOffset agesAt, McpSettings settings) =>
