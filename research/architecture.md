@@ -949,8 +949,9 @@ flowchart TB
 
 **The never-list** (`NeverList.Rules`, each a named rule with a known instance in `CommandPolicyTests`): a control
 character in any argument; a SHELL in any form (`sh`, `bash`, `dash`, `zsh`, …, `cmd` — plan §15c #3, no shell
-anywhere, so not only `-c` / `-ic`); PowerShell with anything but the fixed Windows clock probe (E2.S3's one PowerShell
-argv, a literal with no slot); an interpreter given inline code (`python -c`, `perl -e`, `node -e`, `awk`, …);
+anywhere, so not only `-c` / `-ic`); PowerShell with anything but an EXACT member of its closed set,
+`HealthCommands.FixedScripts` — the Windows clock probe (E2.S3) and, since E15.S1, the Windows disk script, program and
+arguments alike, no slot ([module_daemon.md](module_daemon.md) § *The Windows disk script*); an interpreter given inline code (`python -c`, `perl -e`, `node -e`, `awk`, …);
 `git worktree prune`; `docker system prune` in ANY form; `docker volume prune` in any form; `vm.drop_caches` with any
 value but `1`, and any argument naming `/proc/sys/vm/drop_caches`; `sysctl` loading a file (`-p`, `--load`,
 `--system`); `wsl --shutdown` / `--terminate` / `--unregister`; deleting or moving by command (`rm`, `rmdir`, `unlink`,
@@ -1038,7 +1039,7 @@ state unreadable (since 2026-10-03) · 130 interrupted.
 
 - The never-list is broader than §5 (every shell, every delete-by-command, every `docker system prune`, every command
   wrapper, every argument path under a protected folder), and PowerShell is allowed only as the clock probe's literal
-  argv — the one interpreter E2 already started.
+  argv — the one interpreter E2 already started (since E15.S1 a closed set of two: the clock probe and the disk script).
 - The action ids include `A5Testcontainers` and `A6Unused` (plan §5 gives A5 and A6 two switches each); an id is its
   `auto` key, so the registry and the switches cannot drift.
 - ~~The timer pass is not scheduled yet: `collect` (the timer's target) does not run the engine; E3.S3 wires it with
@@ -2604,7 +2605,8 @@ flowchart LR
   the run's last STEP (`Actions/Engine/RunProgress.cs`: a command started or ended, a stretch of a walk, an action begun); a run
   with none for `running.noProgressMinutes` reads WEDGED although its heartbeat beats, so `act --stop` can end it. wsl-care.service
   ends a timer run at `timer.runLimitMinutes` (276), kept above the run's derived worst case (`Config/RunBudget.cs`: every command
-  template once at its ceiling with its drains, the two walks, the settle step's waits, a margin — 259 min with the defaults); a detached confirm stays
+  template once at its ceiling with its drains, the two walks, the settle step's waits, a margin — 260 min with the defaults since
+  E15.S1's Windows disk script added its 30 s ceiling and two drains, 259 before); a detached confirm stays
   `infinity`.
 
 ## The extension: E6 — the root boundary, the cleanup buttons, the Logs page

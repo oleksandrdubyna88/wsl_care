@@ -69,6 +69,7 @@ flowchart TB
 | `DeletionPolicy`, `ProtectedRoots` | `Core/Files/Deletion` | the one judge of every delete and move: agent folders, `~/git`, Claude's temp folder, memory, and their ancestors |
 | `RunningFile`, `FirstTimerRun` | `Core/Actions/Engine` | `running.json` (pid + start + heartbeat) and the start of the timer's 7-day dry run |
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
+| `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
 
 ## Entry points
 
@@ -87,8 +88,8 @@ run's derived worst case, so `timer.runLimitMinutes` rose from 240 to 276 by exa
 ## External dependencies
 
 Read: `/proc`, cgroup v2, `/etc/passwd`, `/etc/wsl.conf`, `docker` (read verbs, each with a ceiling), `systemctl show`,
-`journalctl`, `timedatectl` (`show`, `timesync-status`), `powershell.exe` (the Windows clock and the Windows Time service,
-one literal argv), `curl` (one HEAD for the clock reference's `Date`, a slotted template; since 2026-10-08). Act: `docker` prunes and removals,
+`journalctl`, `timedatectl` (`show`, `timesync-status`), `powershell.exe` (a closed set of two fixed scripts: the Windows
+clock and the Windows Time service; since E15.S1 the Windows disk facts, full run only), `curl` (one HEAD for the clock reference's `Date`, a slotted template; since 2026-10-08). Act: `docker` prunes and removals,
 `sysctl -w` (two literal keys), `runuser -u <user> --` for user-scoped tools, `npm` / `pnpm` / `uv` / `pip` / `dotnet
 nuget`, `snap`, `fstrim`, `chronyc` / `hwclock`, pidfd signals (A11, A18). Packages: Serilog only (CLI); `WslCare.Core`
 has none.
@@ -115,6 +116,7 @@ has none.
 | the Windows side's MCP servers and the vmmem advice (`Core/Mcp/WindowsMcp*`, `Win32ProcessTable`, `Health/VmmemAdvice`; the Windows `status --json` `windowsMcpServers` and `host.vmmemAdvice`, read-only) | [module_mcp_servers.md](module_mcp_servers.md) § *The Windows side* (E14 S7a, 2026-10-09) |
 | tests and the harness | [module_tests.md](module_tests.md), architecture.md *The scenario harness (E1.S3)* |
 | the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
+| the Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) §3.1, the measurement [2026-10-10_disk.md](2026-10-10_disk.md) |
 
 ## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
 
@@ -219,3 +221,63 @@ flowchart TB
   and the fix.
 - **The fix is the extension's** (*Start Windows Time*, [module_vs_code.md](module_vs_code.md)); the SYSTEM scheduled task
   that would restart the service by itself is the plan's story 2, not built.
+
+## The Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10)
+
+The first story of [PLAN_disk_health.md](../todo/PLAN_disk_health.md) (§3.1, Road 1): the full run reads the SLOW Windows facts
+through a second fixed interop script, as it reads the Windows clock. It only collects and records; no verdict judges these
+facts yet (E15.S2, S4, S5, S8 do).
+
+```mermaid
+flowchart LR
+    collect["collect (full run only)<br/>HealthCollector.CollectAsync"]
+    clock["powershell.exe clock probe<br/>+ the clock reference"]
+    disk["powershell.exe -NoProfile -NonInteractive -Command<br/>WindowsDiskCommands.Script<br/>(two clamped integers, no slot)"]
+    policy["CommandPolicy: never-list closed set<br/>HealthCommands.FixedScripts<br/>+ template ReadCommandTemplates.WindowsDisk"]
+    parse["WindowsDiskParsers.Parse<br/>by tag · end=1 last · malformed counted"]
+    sample["HealthSample.WindowsDisk<br/>WindowsDiskSample(SampledAt, Elapsed, Facts)"]
+    detail["run detail<br/>health.windowsDisk (WindowsDiskReport)"]
+
+    collect --> clock --> disk
+    disk --> policy
+    disk --> parse --> sample --> detail
+```
+
+- **What it reads, each line TAGGED** (`WindowsDiskCommands`' `*Tag` constants, a test holds every one printed by the script):
+  per distro in `HKCU\…\Lxss` its VHDX path, size, sparse bit and last write (UTC); Docker's data disk at
+  `%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx` (no distro, so not under Lxss); each lettered volume with its filesystem,
+  size, free space, label and disk number (`Get-Partition`); each physical disk (number, bus, health, operational status,
+  firmware, model); the reliability counters, attempted — unelevated they are refused, and the refusal is the answer; the
+  System log's events of `disk`, `stornvme`, `Ntfs`, `volmgr`, `storahci` with ids 7, 11, 51, 129, 153, 157 of the last
+  `disk.eventsSinceDays` (60) days, at most `disk.eventsMaxRead` (5000), AGGREGATED inside PowerShell per UTC day, provider,
+  id and `HarddiskN` (one line per event was 64 of 75 lines, D10); commit charge and limit
+  (`Win32_PerfRawData_PerfOS_Memory`); the Memory Compression process's working set; EditionID, DisplayVersion,
+  CurrentBuild.UBR, InstallDate; MachineGuid; each display adapter's problem code, PNP device id and name (for G2). The
+  last line is `end=1`.
+- **The script is one line of ASCII**, no double quote, no control character, none of the never-list's words; its only
+  varying parts are the two event numbers, written as invariant integers clamped to their keys' ranges — never text from the
+  configuration. Free-text fields (a distro's name, a label, a model, an adapter's name) come LAST on their line.
+- **The parser** reads by tag. An answer whose last line is not `end=1` is cut: the whole sample is unavailable. A
+  non-zero exit, a timeout (the runner kills the tree at `health.windowsDiskTimeoutSeconds`, 30), a refusal or a failed start
+  is the same, with `ToolAnswers`' sentence. A line it cannot read is counted (`malformedLines`) and skipped. An empty field is
+  an answer — a file "is not there", a volume "is on no partition" — never a 0. A calendar day is stamped UTC, never converted.
+- **Where it runs.** Only `collect`, after the clock probe and its reference (so its seconds never sit between the two
+  clocks' readings), once, under its own ceiling; never `status` (a scenario holds it), never the watch. The Windows binary
+  does not run it: its detail says the distro reads these facts. The full run's worst case (`RunBudget`) grew by the
+  ceiling and two drains: 260 min with the defaults, under `timer.runLimitMinutes` (276).
+- **Measured** (research/2026-10-10_disk.md D10, and 2026-10-10 18:29Z for the product's own text): Windows PowerShell
+  5.1, unelevated, 2.4–3.3 s warm, 10.7 s cold; 26 lines on the owner's machine. The captured answer, anonymised, is the
+  fixture `tests/fixtures/health/windows-disk-2026-10-10`.
+- **The closed set.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell (`powershell` or `pwsh`, any path)
+  that is not EXACTLY one of `HealthCommands.FixedScripts` — the clock probe and the disk script, program AND arguments,
+  under the configuration in force. A third script, a one-word variant of either, `-File`, `-EncodedCommand`, a trailing
+  argument and the right arguments under `pwsh` are all refused (`PowerShellClosedSetTests`). The read template is not
+  `CommandTemplate.Fixed` (it freezes an argv at first use): its one slot, `SlotKind.WindowsDiskScript`, accepts exactly the
+  script the configuration in force builds.
+- **Which PowerShell: 5.1, for now.** The owner's preference (2026-10-10) is `pwsh` 7, falling back to 5.1. The Store `pwsh`
+  is an app-execution alias under the USER's profile — a file the Windows user can replace — while the system drive's
+  fallback starts only programs in administrator-only folders, from a closed list. Admitting the alias would let the root
+  daemon start a user-writable program; that is a policy decision, not a setting, and it is left as a follow-up
+  (PLAN_disk_health.md, *E15.S1 as built*). The clock probe's program is unchanged.
+- **What the detail holds** is the machine's own facts (profile paths, the machine id). The detail stays on this machine;
+  the redacted statistics export is E17.S3's.

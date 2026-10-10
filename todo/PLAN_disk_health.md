@@ -1,6 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **plan only, nothing implemented yet, 2026-10-10.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-10 — E15.S1 built on its branch `feat/wc-e15s1-windows-disk` (*E15.S1 as built* at the
+> end); E15.S2 onwards not started.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -363,3 +364,49 @@ consultants first.
 - [ ] Statistics carry the machine id, build and install date; the share is a verified copy; no record is lost offline.
 - [ ] Docs, module maps, the research index and this plan's as-built are updated; each finished story is recorded here;
       the epic's last PR closes #87; the plan is promoted when its last story ships.
+
+## E15.S1 as built (2026-10-10, branch `feat/wc-e15s1-windows-disk`)
+
+**What shipped.** `Health/WindowsDiskCommands.cs` — the second fixed interop script, one line of ASCII with no slot (only
+`disk.eventsSinceDays` and `disk.eventsMaxRead`, clamped integers), TAGGED lines and a last `end=1`; it reads the Lxss map and
+each distro's VHDX (size, sparse bit, last write), Docker's data disk at its default path, the lettered volumes with their disk
+numbers, the physical disks, the reliability counters (refused unelevated, the refusal kept), the System log's storage events
+aggregated per UTC day, provider, id and `HarddiskN` inside PowerShell, commit / limit, Memory Compression, the edition /
+version / build / install date, the MachineGuid and the display adapters' problem codes. `Health/WindowsDiskSample.cs` (every
+figure a `Reading<T>`), `Health/WindowsDiskParsers.cs` (by tag; a cut answer unavailable as a whole; a malformed line counted
+and skipped), `HealthCollector.MeasureWindowsDiskAsync` run by the full run once, after the clock probe and its reference,
+`HealthSample.WindowsDisk`, and the run detail's `health.windowsDisk` (`Collect/WindowsDiskReport.cs`). The never-list's
+`powershell` rule is a CLOSED SET (`HealthCommands.FixedScripts`: the clock probe and the disk script, program AND arguments,
+under the configuration in force); the read template `ReadCommandTemplates.WindowsDisk` has one slot,
+`SlotKind.WindowsDiskScript`, that accepts exactly the current script. Keys `health.windowsDiskTimeoutSeconds` (5–120, 30,
+machine-only), `disk.eventsSinceDays` (1–365, 60), `disk.eventsMaxRead` (100–100 000, 5000, machine-only);
+`contracts/config-keys.json` regenerated; the derived timer worst case grew from 259 to 260 min (still under 276). The anonymised
+capture is `src_daemon/tests/fixtures/health/windows-disk-2026-10-10`; the scenarios are `WindowsDiskFlows`; the live contract
+gained the script through interop. Measured first (18:29Z, the product's own text, Windows PowerShell 5.1 unelevated): 2.4–3.3 s
+warm, 10.7 s cold, 26 lines.
+
+**Deviations.**
+
+1. **Windows PowerShell 5.1, not `pwsh` 7 — a follow-up, not a setting.** The owner's preference is `pwsh` first. The Store
+   `pwsh` is an app-execution alias under the USER's profile (`%LOCALAPPDATA%\Microsoft\WindowsApps`), a file the Windows user can
+   replace; the resolver's system-drive fallback starts only programs from a closed list in administrator-only folders, after
+   checking root-owned ancestors and the `MZ` header (an alias is a reparse point, not checked). Admitting it would let the root
+   daemon start a user-writable program — a policy decision for the owner and the gate. Also, as of this story the distro's own
+   PATH answered `command -v pwsh.exe` with nothing (only `powershell.exe`), unlike D9. The clock probe's program is unchanged.
+2. **Not measured as root.** The implementer may not run anything as root on the owner's machine: the script was timed as the
+   Windows user from Windows, and the live contract runs it as the distro's user. The first timer run is the first root run.
+3. **The sample is in the run detail only** — not in `SlowParts` / the history line, and `status` is unchanged. E15.S2 decides how
+   `status` carries it (`basis: fullRun` + age).
+4. **The never-list is stricter than before on the PROGRAM**: `pwsh` (or an absolute `powershell.exe`) with the clock probe's
+   exact arguments used to pass; it is refused now. Nothing in the product spells either.
+5. **A parameterised template with a new slot kind**, not `CommandTemplate.Fixed`: `Fixed` freezes an argv at first use, and two
+   of the script's integers are configuration (the clock reference's reason).
+6. `disk.eventsSinceDays` is a display key (a user layer may set it; the work stays bounded by the machine-only `eventsMaxRead`).
+
+**RED first** (against stubs): *Expected Broken(Disk) to be &lt;null&gt; because the Windows disk script is the second member of
+the closed set, but found "powershell"*; *Expected Broken([program, .. HealthCommands.WindowsClock.Arguments]) to be
+"powershell" because the closed set names the program too, but found &lt;null&gt;*; *Expected rule.Description "PowerShell with
+anything but the fixed Windows clock probe" to contain "closed set"*; the parser and collector tests *"not built yet" to contain
+"cut"* / *"did not answer within 30 s; its process tree was killed"*. **Break-its**, each restored: the never-list line back to
+the clock's arguments (5 red), the sample not stored (2 red), the end-line check removed (4 red), the template removed (3 red) —
+messages in [module_tests.md](../research/module_tests.md) *E15.S1*.
