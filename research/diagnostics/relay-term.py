@@ -4,6 +4,11 @@ pid AND start ticks, SIGTERM only, and time its exit. Identity is held through a
 the same process. Refuses (exit 3) on any mismatch. Deletes nothing, writes nothing but stdout.
 
 usage: relay-term.py <pid> <start-ticks>
+
+Kept in the repository as the record of the Q-S7b-3 run (research/2026-10-09_interop_relays.md section 5). The checks marked
+"S7b.2" were added AFTER that run (coai code round 2026-10-10, finding 2) so the kept copy refuses everything A21 refuses: a
+relay born under its own Relay(n), stdio that is not two pipes, a socket on fd 0-2, an unreadable fd link. Do not run it as a
+tool: A21 is the product's road.
 """
 import os
 import re
@@ -51,6 +56,7 @@ def links_of(pid):
 
 
 def holders(targets, relay):
+    """Every other process holding one of the targets; an fd table that cannot be read refuses (S7b.2)."""
     found = []
     for entry in os.listdir('/proc'):
         if not entry.isdigit() or int(entry) == relay:
@@ -61,10 +67,14 @@ def holders(targets, relay):
                     if os.readlink(f'/proc/{entry}/fd/{fd}') in targets:
                         found.append(entry)
                         break
-                except OSError:
+                except FileNotFoundError:
                     pass
-        except OSError:
+                except OSError as e:
+                    refuse(f"pid {entry}'s fd {fd} could not be read ({e}): a holder there cannot be ruled out")  # S7b.2
+        except FileNotFoundError:
             pass
+        except OSError as e:
+            refuse(f"pid {entry}'s fd table could not be read ({e}): a holder there cannot be ruled out")  # S7b.2
     return found
 
 
@@ -90,8 +100,15 @@ def main():
         pcomm = f.read().strip()
     if not re.fullmatch(r'Relay\(\d+\)', pcomm) or uid_of(ppid) != 0:
         refuse(f"parent {ppid} is '{pcomm}' (uid {uid_of(ppid)}): the client may be alive")
+    m = re.fullmatch(r'Relay\((\d+)\)', pcomm)
+    if m and int(m.group(1)) == pid:
+        refuse(f"born under its own {pcomm}: wsl.exe's top-level command, its Windows caller may live")  # S7b.2
     links = links_of(pid)
-    targets = {v for v in links.values() if v.startswith(('pipe:', 'socket:'))}
+    if not (links['0'].startswith('pipe:') and links['1'].startswith('pipe:')):
+        refuse(f"fd 0 and fd 1 are not both pipes: {links}")  # S7b.2
+    if any(v.startswith('socket:') for v in links.values()):
+        refuse(f"a socket on its stdio: its peer cannot be told from /proc: {links}")  # S7b.2
+    targets = {v for v in links.values() if v.startswith('pipe:')}
     others = holders(targets, pid)
     print(f"{now()} checks: parent={ppid} '{pcomm}' uid 0; stdio={links}; other readable holders={others}")
     if others:

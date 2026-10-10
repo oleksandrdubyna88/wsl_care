@@ -506,4 +506,29 @@ public sealed class InteropRelayStopTests : IDisposable
         (on.AutoStop, on.Command).Should().Be((true, "wsl-care config set auto.A21 false"));
         (off.AutoStop, off.Command).Should().Be((false, "wsl-care config set auto.A21 true"));
     }
+
+    /// <summary>The coai code round 2026-10-10, finding 4: the process list itself is read under the scan's budget — a list that
+    /// cannot be read (or is cut) makes the scan inconclusive, and every relay is kept.</summary>
+    [Fact]
+    public async Task An_unreadable_process_list_keeps_every_relay()
+    {
+        Init();
+        RelayOnProc();
+        _files.UnreadableDirectories.Add(_sandbox.Paths.ProcRoot.Replace('\\', '/'));
+
+        var preview = await IdleFor(PastTheWindow, [Entry()]);
+
+        preview.Count.Should().Be(0, "no holder can be ruled out when the process list was not read");
+        preview.Basis.Should().Contain("inconclusive").And.Contain("process list");
+    }
+
+    /// <summary>The coai code round 2026-10-10, finding 1: ONE public history writer, the one that takes the configuration — a
+    /// writer with a narrower set would drop the relays' entries and reset their idle time.</summary>
+    [Fact]
+    public void The_cpu_history_has_one_writer_and_it_takes_the_configuration()
+    {
+        var writers = typeof(AgentCpuHistory).GetMethods().Where(m => m.Name == nameof(AgentCpuHistory.Record) && m.IsPublic).ToList();
+
+        writers.Should().ContainSingle().Which.GetParameters().Last().ParameterType.Should().Be<EffectiveConfig>();
+    }
 }

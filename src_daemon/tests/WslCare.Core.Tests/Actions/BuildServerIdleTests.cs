@@ -49,7 +49,7 @@ public sealed class BuildServerIdleTests : IDisposable
 
     /// <summary>What every timer run does before its pass: record the CPU history by identity.</summary>
     private void Record(IReadOnlyList<ProcessEntry> processes) =>
-        AgentCpuHistory.Record(_world.Sandbox.Paths, _world.Sandbox.Files, processes, SampleTime.Of(_clock)).Should().BeEmpty();
+        AgentCpuHistory.Record(_world.Sandbox.Paths, _world.Sandbox.Files, processes, SampleTime.Of(_clock), ConfigLoader.Load(_world.Sandbox.Paths, _world.Sandbox.Files).Config).Should().BeEmpty();
 
     private async Task<(ActionPreview Preview, TriggerDecision Trigger)> Timer(IReadOnlyList<ProcessEntry> processes, string userConfig = "{}")
     {

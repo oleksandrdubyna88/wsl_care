@@ -185,11 +185,12 @@ flowchart LR
     - `StdioHolders` reads every process's fd table. Any other holder of one of the relay's pipes (fd 0–2) keeps it, including
       a root process and `Relay(n)` itself.
     - A process that vanished mid-scan holds nothing. A table or link that exists and cannot be read makes the whole scan
-      inconclusive, and every relay is kept that run. So does passing `processes.fdScanMilliseconds`.
+      inconclusive, and every relay is kept that run. So does a `/proc` list that cannot be read or is cut (it is read under the
+      scan's own bounds), and so does passing `processes.fdScanMilliseconds`.
 - **Idle** is a freshness floor, not evidence: the CPU must be unmoved for `mcpWatchdog.orphanIdleMinutes`, by
   `AgentCpuHistory`.
-  - The history records relays at both writers (`ActionEngine.RecordAgentCpu` and `WatchRun`, through
-    `AgentCpuHistory.Record(…, config)`). A writer that left them out would drop their entries.
+  - The history records relays at both writers (`ActionEngine.RecordAgentCpu` and `WatchRun`), through
+    `AgentCpuHistory.Record(…, config)`, the ONLY public writer. A writer that left them out would drop their entries.
   - Its bound is the existing one: live identities only, at most `agentCpu.maxEntries` (512).
 - **The account:** the target user's (the real uid), never root's, no terminal, not a zombie, and the process the snapshot saw.
 - **The stop is SIGTERM only.** `IProcessSignals.TerminateOnlyAsync` is a separate method. By default it refuses (the

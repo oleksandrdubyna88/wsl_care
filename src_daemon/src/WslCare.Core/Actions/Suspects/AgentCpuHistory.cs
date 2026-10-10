@@ -164,24 +164,12 @@ public static class AgentCpuHistory
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
         Sample(paths, files, processes, Mcp.McpServerCatalogue.Servers);
 
-    /// <summary>One root run's record (the timer's full run): sample, merge, write. Empty when written.</summary>
-    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at) =>
-        Record(paths, files, processes, at, Mcp.McpServerCatalogue.Servers);
-
     /// <summary>One root run's record as THIS configuration has it (the timer's full run and the watch, plan E14 S7b.2): the watched
     /// MCP servers and the catalogued servers' interop relays. Every writer records the same set — an identity a writer leaves out
-    /// is dropped from the history, which would reset its idle time. Empty when written.</summary>
+    /// is dropped from the history, which would reset its idle time — so this is the ONLY writer (coai code round 2026-10-10,
+    /// finding 1: the overloads that took a narrower set are gone). Empty when written.</summary>
     public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at, EffectiveConfig config) =>
         Record(paths, files, processes, at, Mcp.McpSettings.From(config).Watched, InteropRelays.Servers(config));
-
-    /// <summary>One root run's record over the WATCHED MCP servers (the timer passes <c>mcpServers.watched</c>). Empty when written.</summary>
-    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at, IReadOnlyList<Mcp.McpServerEntry> watched)
-    {
-        var boot = BootIdentity.Read(paths, files);
-        return boot.Length == 0
-            ? "the boot id cannot be read; the AI-agent CPU history is not recorded"
-            : Write(paths, files, Next(Read(paths, files), boot, Sample(paths, files, processes, watched), at));
-    }
 
     private static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at, IReadOnlyList<Mcp.McpServerEntry> watched, IReadOnlyList<Mcp.McpServerEntry> relays)
     {
