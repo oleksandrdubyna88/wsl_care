@@ -3031,6 +3031,12 @@ phase 2 marking an untrusted copy damaged (two ways). G-03, the distro leg dropp
 | 6 | test gaps: the real handle hooks, the resume path, the lease refusal, `RemoveVerified` | the hooks are held by the live NAS run and the pure function; the lease refusal and the resume path are named as untested in `module_archive.md` |
 | nits | a `node.exe` line needed only the word `claude`; `int.Parse` on a pid name | fixed: a node line must run the `claude-code` package (`A_node_line_must_run_claude_code_to_keep_a_session`, teeth G-09); `TryParse` |
 
+**The coai code round** (session dcff3401, `proceed`, 1 gating of threshold 5; one vendor answered). Both findings were rejected with
+reasons:
+- **a per-pass snapshot of the command lines:** freshness per question is the E9.S5 rule for the same reason, a Claude Code
+  started mid-run, and the cost is bounded by the asker and the budget, failing closed;
+- **the scan's local list mutated:** it is the same local accumulator the open-file and project sets beside it are.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
