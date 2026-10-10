@@ -60,6 +60,9 @@ public sealed record CollectContext(
 
     /// <summary>What the settle step waited before this TIMER run started (PLAN_boot_settle.md); <c>null</c> on any other run.</summary>
     public RunSettled? Settled { get; init; }
+
+    /// <summary>Where the settle step says what it waits for, before each wait (the run's log; a test captures it).</summary>
+    public Action<string> Say { get; init; } = static _ => { };
 }
 
 /// <summary>How a full run ended for its records, and its detail (none when another run held the lock).</summary>
@@ -135,7 +138,10 @@ public static class CollectRun
         }
 
         var probe = SettleProbe.ForDistro(c.Files, linux, BusyLimits.From(c.Loaded.Config));
-        return c with { Settled = await RunSettle.WaitAsync(probe, SettleSettings.From(c.Loaded.Config), c.Wait, cancellationToken).ConfigureAwait(false) };
+        var settings = SettleSettings.From(c.Loaded.Config);
+        var settled = await RunSettle.WaitAsync(probe, settings, c.Wait, cancellationToken, c.Say).ConfigureAwait(false);
+        // coai code round aebbaafd: a run that took the lock during the wait delays this one, within the busy bound, never turns it away.
+        return c with { Settled = settled, LockWait = RunSettle.LockWaitAfter(settled, settings, c.LockWait) };
     }
 
     /// <summary>

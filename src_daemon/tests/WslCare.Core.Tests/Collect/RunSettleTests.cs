@@ -101,6 +101,43 @@ public sealed class RunSettleTests
         settled.BusyAtEnd.Should().BeFalse();
     }
 
+    /// <summary>coai code round aebbaafd: a manual run that took the lock during the settle wait would turn the timer run away as
+    /// busy (its lock wait was only <c>requests.lockWaitSeconds</c>) — a settled timer run waits for the lock for what is left of the
+    /// busy bound, never less than the accepted-run wait, inside the bound the run budget already counts.</summary>
+    [Fact]
+    public void A_settled_timer_run_waits_for_the_lock_for_what_is_left_of_the_busy_bound()
+    {
+        var accepted = TimeSpan.FromSeconds(30);
+
+        RunSettle.LockWaitAfter(RunSettled.None, Defaults, accepted).Should().Be(TimeSpan.FromMinutes(20), "no busy wait: the whole bound is left");
+        RunSettle.LockWaitAfter(RunSettled.None with { BusyWait = TimeSpan.FromMinutes(15) }, Defaults, accepted).Should().Be(TimeSpan.FromMinutes(5));
+        RunSettle.LockWaitAfter(RunSettled.None with { BusyWait = TimeSpan.FromMinutes(20) }, Defaults, accepted).Should().Be(accepted, "never less than before");
+        RunSettle.LockWaitAfter(RunSettled.None, Defaults with { BusyWait = TimeSpan.Zero }, accepted).Should().Be(accepted, "the bound off: as before");
+    }
+
+    [Fact]
+    public async Task A_busy_note_is_kept_once_however_often_it_is_asked()
+    {
+        var script = new Script(Reading.Of(TimeSpan.FromHours(3)), Busy);
+
+        var settled = await Settle(script, Defaults with { BusyWait = TimeSpan.FromSeconds(180) });
+
+        settled.Notes.Should().ContainSingle(n => n.StartsWith("the machine is busy: cpu avg60 40 > 25", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Each_wait_is_said_before_it_starts()
+    {
+        var said = new List<string>();
+        var script = new Script(Reading.Of(TimeSpan.FromSeconds(120)), Busy, Calm);
+
+        await RunSettle.WaitAsync(script.Probe, Defaults, script.Wait, CancellationToken.None, said.Add);
+
+        said.Should().HaveCount(2);
+        said[0].Should().Contain("waiting 13 min for the boot to settle");
+        said[1].Should().Contain("the machine is busy: cpu avg60 40 > 25");
+    }
+
     [Fact]
     public async Task An_unread_busy_signal_or_uptime_is_no_wait()
     {

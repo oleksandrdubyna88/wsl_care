@@ -40,21 +40,34 @@ public sealed record RunSettled(TimeSpan BootWait, TimeSpan BusyWait, bool BusyA
 /// it waits until it has (2026-10-10: the catch-up ran 07:44–07:48Z while Docker started 12 containers). Then, at any time, while S6
 /// (<see cref="MachineBusy"/>) says busy, it waits <c>timer.busyCheckSeconds</c> and asks again, for at most
 /// <c>timer.busyWaitMinutes</c>; then it runs anyway — a wait never skips the run. An unread uptime or an unread busy signal is no
-/// wait (S6: "cannot say" means go), and each is noted.
+/// wait (S6: "cannot say" means go), and each is noted. Each wait is said through <c>say</c> before it starts (the run's log: a
+/// waiting run is never silent). A run that took the lock DURING the wait does not turn the timer run away: the settled run waits for
+/// the lock for what is left of the busy bound (<see cref="LockWaitAfter"/>, coai code round aebbaafd).
 /// </summary>
 public static class RunSettle
 {
-    public static async Task<RunSettled> WaitAsync(SettleProbe probe, SettleSettings settings, Func<TimeSpan, CancellationToken, Task> wait, CancellationToken cancellationToken)
+    public static async Task<RunSettled> WaitAsync(SettleProbe probe, SettleSettings settings, Func<TimeSpan, CancellationToken, Task> wait, CancellationToken cancellationToken, Action<string>? say = null)
     {
         var notes = new List<string>();
+        var tell = say ?? (static _ => { });
         var boot = BootWait(probe.Uptime(), settings.BootDelay, notes);
         if (boot > TimeSpan.Zero)
         {
+            tell(FormattableString.Invariant($"collect --timer: waiting {Math.Ceiling(boot.TotalMinutes)} min for the boot to settle (timer.bootDelayMinutes {settings.BootDelay.TotalMinutes})"));
             await wait(boot, cancellationToken).ConfigureAwait(false);
         }
 
-        var (busyWait, busyAtEnd) = await BusyAsync(probe, settings, wait, notes, cancellationToken).ConfigureAwait(false);
+        var (busyWait, busyAtEnd) = await BusyAsync(probe, settings, wait, notes, tell, cancellationToken).ConfigureAwait(false);
         return new RunSettled(boot, busyWait, busyAtEnd, notes);
+    }
+
+    /// <summary>How long a settled timer run waits for the run lock: what is left of <c>timer.busyWaitMinutes</c> after the busy wait,
+    /// never less than the accepted-run wait it had before (<c>requests.lockWaitSeconds</c>) — so a manual run that took the lock
+    /// during the settle wait delays the timer run instead of turning it away, inside the bound the run budget already counts.</summary>
+    public static TimeSpan LockWaitAfter(RunSettled settled, SettleSettings settings, TimeSpan accepted)
+    {
+        var left = settings.BusyWait - settled.BusyWait;
+        return left > accepted ? left : accepted;
     }
 
     /// <summary>How long until the machine has been up the boot delay; zero when it has, when the delay is off, or when the uptime
@@ -72,10 +85,10 @@ public static class RunSettle
 
     /// <summary>The busy wait: ask, and while busy wait one step (never past the bound) and ask again. Returns how long it waited
     /// and whether the machine was still busy when the bound ran out.</summary>
-    private static async Task<(TimeSpan Waited, bool BusyAtEnd)> BusyAsync(SettleProbe probe, SettleSettings settings, Func<TimeSpan, CancellationToken, Task> wait, List<string> notes, CancellationToken cancellationToken)
+    private static async Task<(TimeSpan Waited, bool BusyAtEnd)> BusyAsync(SettleProbe probe, SettleSettings settings, Func<TimeSpan, CancellationToken, Task> wait, List<string> notes, Action<string> tell, CancellationToken cancellationToken)
     {
         var waited = TimeSpan.Zero;
-        while (StillBusy(probe.Busy(), notes))
+        while (StillBusy(probe, notes))
         {
             if (waited >= settings.BusyWait)
             {
@@ -83,6 +96,11 @@ public static class RunSettle
             }
 
             var step = Min(settings.BusyCheck, settings.BusyWait - waited);
+            if (waited == TimeSpan.Zero)
+            {
+                tell(FormattableString.Invariant($"collect --timer: waiting while {notes[^1]} (at most timer.busyWaitMinutes {settings.BusyWait.TotalMinutes})"));
+            }
+
             await wait(step, cancellationToken).ConfigureAwait(false);
             waited += step;
         }
@@ -90,12 +108,20 @@ public static class RunSettle
         return (waited, false);
     }
 
-    /// <summary>Busy means wait; calm means go; "cannot say" means go, and the note says why (S6's rule).</summary>
-    private static bool StillBusy(BusyJudgement judgement, List<string> notes)
+    /// <summary>Busy means wait; calm means go; "cannot say" means go, and the note says why (S6's rule). A note is kept once,
+    /// however many times it is asked.</summary>
+    private static bool StillBusy(SettleProbe probe, List<string> notes)
     {
-        if (judgement.State == BusyState.Unknown)
+        var judgement = probe.Busy();
+        var why = judgement.State switch
         {
-            notes.Add($"the busy signal cannot say, so the run goes: {string.Join("; ", judgement.Unread)}");
+            BusyState.Busy => "the machine is busy: " + string.Join("; ", judgement.Reasons.Select(r => FormattableString.Invariant($"{r.Resource} {r.Window} {r.Value:0.##} > {r.Limit:0.##} ({r.Key})"))),
+            BusyState.Unknown => "the busy signal cannot say, so the run goes: " + string.Join("; ", judgement.Unread),
+            _ => string.Empty,
+        };
+        if (why.Length > 0 && !notes.Contains(why))
+        {
+            notes.Add(why);
         }
 
         return judgement.State == BusyState.Busy;

@@ -76,7 +76,7 @@ The CLI verbs, as `CommandLine.Commands` spells them — the derived verb regist
 § *The derived verb register* fails on a verb missing there. The systemd units (`src_daemon/systemd/`) start
 `collect --timer` (the timer), `events follow` (the follower) and the `wsl-care-act@` template (detached runs).
 
-**A timer run settles first** (`Core/Collect/RunSettle.cs`, [PLAN_boot_settle.md](../todo/PLAN_boot_settle.md)): before the run
+**A timer run settles first** (`Core/Collect/RunSettle.cs`, [PLAN_boot_settle.md](PLAN_boot_settle.md)): before the run
 lock and before `running.json`, so its wait blocks nothing, a `collect --timer` in the distro waits until the machine has been up
 `timer.bootDelayMinutes` (15), then — at any time — while S6's `MachineBusy` says busy, in `timer.busyCheckSeconds` (60) steps
 for at most `timer.busyWaitMinutes` (20); then it runs anyway. An unread uptime or busy signal is no wait, noted. The run

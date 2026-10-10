@@ -1,11 +1,23 @@
 # PLAN — the 4-hour run waits for the machine to settle after a boot
 
-> Status: **plan only, nothing implemented yet (2026-10-10).** Scope: `wsl-care collect --timer`, `RunBudget`, `NumberRules`,
-> `UnitDropIns`, the timer keys.
+> Status: **IMPLEMENTED, 2026-10-10.** Scope: `wsl-care collect --timer`, `RunBudget`, `NumberRules`, the timer keys, the shipped
+> `wsl-care.service`. **Deviations** (coai code round `aebbaafd`, all four gating findings acted on):
 >
-> Related docs: [module_daemon.md](../research/module_daemon.md), [architecture.md](../research/architecture.md),
-> [2026-10-08_windows_time_stopped.md](../research/2026-10-08_windows_time_stopped.md) (the 2026-10-10 boot),
-> [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) § S6 (the "machine busy" signal reused here).
+> - **The lock.** A manual run that took the lock during the settle wait would have turned the timer run away as busy, because
+>   its lock wait was only `requests.lockWaitSeconds`. A settled timer run now waits for the lock for what is left of
+>   `timer.busyWaitMinutes`, never less than before (`RunSettle.LockWaitAfter`). That stays inside the bound the budget counts.
+> - **A waiting run says so** in its log before each wait (`collect --timer: waiting 13 min for the boot to settle …`). A
+>   persisted "settling" state was REJECTED: the wait holds no lock and changes nothing, and a second running-state protocol
+>   (sweep, staleness, the extension's rendering) for it is a follow-up the owner may ask for.
+> - **A scenario over the built CLI** (`BootSettleFlows`) was added. The captured `/proc` says 177 s of uptime, so the other
+>   timer flows turn the settle off in their machine layer (`LogsFlows.SettleOff`).
+> - **`timer.runLimitMinutes` 240 → 276**, by exactly the waits, so D8's archive slack is unchanged.
+> - **Open tail:** the defaults are provisional. After a week of `settled` records, revisit them with figures in `research/`.
+>   `timer.busyCheckSeconds` is `SafeDirection.None` (machine-only), as planned.
+>
+> Related docs: [module_daemon.md](module_daemon.md), [architecture.md](architecture.md),
+> [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) (the 2026-10-10 boot),
+> [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md) § S6 (the "machine busy" signal reused here).
 
 ## 1. Symptom
 
