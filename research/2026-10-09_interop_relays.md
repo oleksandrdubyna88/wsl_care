@@ -62,6 +62,35 @@ refuted it, and the refutation is part of this record:
   - a daemonising caller re-parents it while still holding its pipe;
   - any process can name itself `init`.
 
-So S7b stops no interop child at all. The 10 client-gone relays above remain a measured fact, not a proof per Windows
-process. The exact route — ending the client-gone relay itself in the distro, by pid and start ticks — needs one fact first,
-which is not measured and never assumed: whether ending a relay ends its Windows child too (owner question Q-S7b-3).
+So the Windows side pairs nothing and stops no interop child. The 10 client-gone relays above remained a measured fact, not
+a proof per Windows process. The exact route — ending the client-gone relay ITSELF in the distro, by pid and start ticks —
+needed one fact first: whether ending a relay ends its Windows child. §5 measures it. **The route works**, which corrects
+this section's first conclusion ("the interop route refuted": only the cross-OS PAIRING was refuted, not the distro route).
+
+## 5. Q-S7b-3, measured 2026-10-10 — the Windows child exits with its relay
+
+The owner approved the experiment, and the coordinator ran it. This agent ran nothing on the machine; the scripts were the
+ones prepared for it (`relay-list.sh`, `win-sampler.ps1`, `relay-term.py`).
+
+| time (UTC) | side | what |
+|---|---|---|
+| 13:59:54Z | distro | `relay-list.sh`: 2 `creds-mcp.exe` relays. Pid **12062**, start ticks 36501, parent `Relay(7411)` (uid 0), **client gone**. Pid 13226, parent `creds-mcp`, client alive |
+| 14:00:26.426Z | Windows | sampler START: 2 `creds-mcp.exe` under `wsl.exe` 17372 — `34248@09:49:55.699667Z`, `40308@09:50:23.631016Z` |
+| 14:01:23.532Z | distro | `relay-term.py 12062 36501`: every check passed (same start ticks, parent a uid-0 `Relay(n)`, exe `/init`, program `creds-mcp.exe`, this user's, no other holder of its stdio); **SIGTERM** sent through the pidfd |
+| 14:01:23.558Z | distro | the relay exited, **26 ms** after SIGTERM. No SIGKILL was needed or sent |
+| 14:01:23.735Z | Windows | sampler CHANGE: `gone=[34248]`, **about 0.2 s** after the relay's SIGTERM |
+| 14:02:26Z | Windows | sampler END: count 1. `40308`, whose relay has a live client, untouched |
+
+**Conclusion:**
+- A Windows interop child exits within about 0.2 s of its distro relay ending on SIGTERM.
+- The relay of a live client, and its Windows child, are not affected.
+- So the leak is closed EXACTLY from the distro side: the relay is the user's own Linux process, identified by pid and start
+  ticks, and its "client gone" evidence is local to `/proc`. No cross-OS pairing is needed.
+- S7b.2 (in [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) builds that route.
+
+**Not covered by this one sample:**
+- a relay that ignores SIGTERM;
+- a relay born under `Relay(n)` (`wsl.exe`'s top-level command);
+- a daemonising caller.
+
+The design keeps all three: TERM only, foreign-session only, and no other stdio holder.

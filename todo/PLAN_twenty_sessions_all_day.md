@@ -1166,6 +1166,7 @@ whatever still leaks, from any server.
     - a daemonising caller (`setsid`, `nohup &`) re-parents the relay while a live process still holds its pipe;
     - any user process can name itself `init`.
   - **So A21 NEVER stops an interop child in this story** (D2 is kept by never claiming the proof). The exact route is Q-S7b-3: the relay itself, in the distro, by pid and start ticks. It is measured before it is designed.
+  - **Superseded 2026-10-10 by S7b.2.** Q-S7b-3 was measured — the Windows child exits within ~0.2 s of its relay. The id **A21** now names the DISTRO relay stop (S7b.2). The Windows-side stop designed below is renumbered **A22** and becomes S7b.3, for Windows servers with no relay (orphaned or agent-owned).
 - **Accepted (own review):**
   - the privilege gate is per side (item 4);
   - the child guard and the user-program-orphan rule of A19 (items 3, 4);
@@ -1354,6 +1355,107 @@ few minutes looks idle in a 1 s window — the S1 defect (2026-10-07 M1–M3) on
 - [ ] Break-it on product code turns the tests red: the creation time dropped from the identity; the boot id ignored.
 - [ ] Windows suites and CI green.
 - [ ] `module_mcp_servers.md`, `module_daemon.md`, `module_tests.md` and `contracts/` updated.
+
+#### S7b.2 — as to be built (2026-10-10, branch `feat/wc-s7b-relay-stop`): the distro-side relay stop, A21
+
+**Why this route.** Q-S7b-3 was measured on 2026-10-10 (the owner approved it, the coordinator ran it; recorded in
+[2026-10-09_interop_relays.md](../research/2026-10-09_interop_relays.md) § 5):
+- SIGTERM to one client-gone `creds-mcp.exe` relay (pid 12062) ended it in 26 ms;
+- its Windows child `creds-mcp.exe` 34248 was gone about 0.2 s later;
+- the other relay, which had a live client, and its Windows child were untouched.
+
+So the leak S7b exists for is closed EXACTLY from the distro side. The relay is the target user's own Linux process,
+identified by pid and start ticks, and its "client gone" evidence is local to `/proc`. This **supersedes** S7b's "no interop
+stop": D2 is met by showing, per relay, that its client is gone. The Windows-side stop of S7b items 3–5 (for orphaned or
+agent-owned Windows servers that have no relay) stays a later story, S7b.3, and its bundled exe is E7.S5a
+([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)).
+
+**Design — A21 `InteropRelayStop`**, a distro action beside A19 (`Actions/Suspects/`), sharing A19's machinery:
+1. **A relay** is a process of the snapshot that meets all of these:
+   - `/proc/<pid>/exe` is `/init`;
+   - `argv[0]` is `/init`;
+   - `argv[1]` is a `/mnt/<drive>/…` path ending in `.exe` (no case fold);
+   - its program name (the basename without `.exe`) is a server of the Windows catalogue (`WindowsMcpCatalogue.Servers`:
+     `coai-mcp` when watched, `creds-mcp`, the user's `mcpServers.programs`). These are the Windows programs this product
+     already counts, and the same name rule applies.
+2. **"Client gone"** requires ALL of the following, read from `/proc` (a new reader in `Collectors/Procfs`, read-only):
+   - **re-parented:** the parent's `comm` matches exactly `Relay(<digits>)` and the parent's uid is 0. That is the WSL
+     session's init.
+   - **a foreign session:** the relay's session id (`stat` field 6) is neither its own pid nor its parent's. A relay run as
+     `wsl.exe`'s top-level command is born under `Relay(n)` with a live Windows-side caller, and is not foreign
+     (the S7b own review, finding 3a).
+   - **no other holder:** no process but the relay holds the pipe or socket that is the relay's fd 0 or 1. Root reads every
+     `/proc/*/fd`. A daemonising caller still holding the pipe keeps the relay (finding 3b). **The session init itself counts
+     as a holder too.** Whether `Relay(n)` holds the relay's stdio is NOT measured — the experiment read as the user — and a
+     relay it holds is kept with that reason, so the dry-run preview shows it before anything stops.
+   - **idle:** the relay's CPU has not moved for at least `mcpWatchdog.orphanIdleMinutes`. This is A19's orphan rule ("nobody
+     can talk to it any more", D1's same threshold), over the CPU history: `AgentCpuHistory`, widened to record relays by
+     identity, as it was widened to MCP servers in S2a.
+3. **The target user's**, as for A18 and A19: never root's, never another account's, not a zombie, no controlling terminal.
+4. **The stop: SIGTERM ONLY**, through the pidfd, by pid AND start ticks.
+   - `IProcessSignals` gains a TERM-only mode. A process that outlives `processes.termGraceSeconds` is reported `StillRunning`
+     ("did not end on SIGTERM; no SIGKILL is sent to a relay"). There is never a SIGKILL.
+   - Just before the signal, every condition of 1–3 is re-read on a fresh table and fresh `/proc` reads, so a client that
+     returned or a reused pid stops nothing.
+5. **The controls:**
+   - `auto.A21`, default **true** (D3);
+   - the daemon's dry-run rules: `dryRun`, and the first-week window;
+   - the watch timer (`wsl-care-watch`, every `mcpWatchdog.periodMinutes`) runs A21 after A19, under the same gates;
+   - the 4-hour timer runs it too;
+   - a button run is bound to the shown list, `--process <pid:start>` (`ActionId.ShownProcessIds` gains A21).
+6. **The preview and the record.** Each item gives: the pid and start, the program, the Windows path, the parent
+   `Relay(n)`, the session id, the idle time, and why the client is gone. Each kept relay gives its reason. The run record
+   carries the outcome for each signalled relay: `Ended`, `StillRunning` or `NotTheSame`.
+7. **The panel button** (the owner's standing rule: every action is a button). The panel shows:
+   - a "Windows MCP relays" row: how many relays, and how many client-gone;
+   - a **Stop client-gone relays** button. Its modal lists exactly the preview's items (pid, program, idle time), and
+     confirming runs `act A21 --process …` through the root call with exactly the shown pairs;
+   - A21's auto switch in the extension's settings (`wslCare.…`), mirrored to `auto.A21` the way other switches are.
+
+   Where the extension has no path that writes a daemon key, the setting is SHOWN, with the command that changes it — never
+   silently out of step.
+
+**Keys:**
+- reused: `mcpWatchdog.orphanIdleMinutes`, `processes.termGraceSeconds`, `mcpWatchdog.periodMinutes`;
+- new: `auto.A21` (default true).
+
+Every new number is a key; there are none besides these.
+
+**Never:**
+- stop by name;
+- stop a relay whose client is not shown gone on ALL four counts (re-parented, foreign session, no other holder, idle);
+- send SIGKILL to a relay;
+- stop anything that is not `/init` with a catalogued Windows program;
+- stop root's or another account's process;
+- stop when `auto.A21` is off, `dryRun` is on, or the first-week window runs (timer).
+
+**RED tests** (fixtures: synthetic `/proc` trees; the signals are a fake — **no test ever signals a real process**):
+- `A_client_gone_idle_relay_of_a_catalogued_program_is_a_target_by_pid_and_start`
+- `A_relay_with_a_live_caller_is_kept`
+- `A_relay_born_under_the_session_init_is_kept` (its own session)
+- `A_relay_whose_stdio_another_process_holds_is_kept` (the session init counted too)
+- `A_relay_that_used_cpu_within_the_orphan_window_or_has_no_history_is_kept`
+- `A_relay_of_an_uncatalogued_program_or_a_non_init_exe_is_never_a_target`
+- `A_non_root_parent_named_Relay_is_not_the_session_init`
+- `Another_users_or_roots_relay_is_never_a_target`
+- `The_stop_is_SIGTERM_only_and_a_survivor_is_reported_still_running_never_killed`
+- `A_client_that_returned_or_a_reused_pid_before_the_signal_stops_nothing`
+- `A_button_run_ends_only_what_its_modal_showed`
+- `Auto_A21_is_on_and_the_dry_run_rules_stop_nothing`
+- `The_watch_runs_A21_after_A19`
+- the extension: the row, the button's modal sends exactly the shown pairs, `commandButtons`' rule holds
+- a scenario over the built CLI: `act A21 --preview` on a fixture tree
+
+**Break-it on product code**, each red and then restored:
+- the foreign-session check off;
+- the holder scan off;
+- TERM-only escalating to KILL;
+- the fresh re-check before the signal off.
+
+**DoD:**
+- [ ] RED, then green; break-it red, restored.
+- [ ] Docs: `module_mcp_servers.md`, `module_daemon.md`, `module_vs_code.md`, `module_tests.md`, `contracts/`.
+- [ ] A dry-run preview on the owner's machine names its client-gone relays, each with its four reasons, before any stop.
 
 ### S8 — the 24 h × 20 sessions soak campaign
 
