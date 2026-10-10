@@ -43,6 +43,7 @@ export function gpuParts(context: vscode.ExtensionContext, testMode: boolean, nu
     durable: context.globalState,
     nowUtcMs: () => Date.now(),
     every: REAL_TIMERS,
+    after: (ms, run) => { const handle = setTimeout(run, ms); return () => clearTimeout(handle); },
     formatTime: (utcMs) => new Date(utcMs).toLocaleTimeString(),
   });
   const run = (index: number): void => { void host.enable(index).catch((e: unknown) => { log(`Enable GPU failed: ${String(e)}`); }); };

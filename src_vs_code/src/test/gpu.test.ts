@@ -188,7 +188,7 @@ test('the elevated script re-checks the device as administrator before it acts: 
   const order = ['Import-Module', 'Get-PnpDevice', "$d.Class -ne 'Display'", `[int]$d.ConfigManagerErrorCode -ne ${DISABLED_CODE}`, 'Enable-PnpDevice'].map((s) => script.indexOf(s));
   assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > (order[i - 1] ?? -1))), `the checks come before the enable, in order: ${order.join(',')}`);
   assert.match(script, /^\$env:PSModulePath = "\$PSHOME\\Modules"/, 'the module path is cut first: a user\'s Documents folder supplies nothing');
-  assert.match(script, /System32\\WindowsPowerShell\\v1\.0\\Modules\\PnpDevice/, 'PnpDevice by absolute path (research G6)');
+  assert.ok(script.includes("Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\Modules\\PnpDevice'"), 'PnpDevice by absolute path under GetSystemDirectory (research G6, own review M1)');
   for (const code of Object.values(ENABLE_EXIT).filter((c) => c !== 0)) {
     assert.ok(script.includes(`exit ${code}`), `exit ${code} is reachable`);
   }
@@ -277,7 +277,7 @@ test('after a TIMEOUT the pending record stands until its deadline (the UAC prom
 });
 
 test('the modal shows the exact elevated script and names the device and its id', () => {
-  const prompt = enablePrompt(r9700(), 3);
+  const prompt = enablePrompt(r9700(), 3, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
   assert.equal(prompt.message, 'Enable AMD Radeon AI PRO R9700?');
   assert.ok(prompt.detail.includes(enableScript(R9700_ID, 3)));
   assert.ok(prompt.detail.includes(R9700_ID));
@@ -356,15 +356,16 @@ test('the tail is bounded, a missing log is no line, and the path is Ollama\'s u
 
 // ---- the host ----
 
-function hostDeps(over: Partial<GpuHostDeps> = {}): GpuHostDeps & { readonly recorder: ReturnType<typeof newGpuRecorder>; readonly timers: number[] } {
+function hostDeps(over: Partial<GpuHostDeps> = {}): GpuHostDeps & { readonly recorder: ReturnType<typeof newGpuRecorder>; readonly timers: number[]; readonly deadlines: number[] } {
   const recorder = newGpuRecorder();
   recorder.queryResult = exited(0, MEASURED);
   const timers: number[] = [];
+  const deadlines: number[] = [];
   return {
     env: ENV, platform: 'win32', exists: () => false, queryTimeoutMs: () => 20_000, enableTimeoutMs: () => 120_000, enableSettleSeconds: () => 3, ollamaTailBytes: () => 4096, checkMinutes: () => 15,
     ui: { confirm: (p) => { recorder.prompts.push(p); return Promise.resolve(recorder.answer); }, run: (r) => { recorder.requests.push(r); return Promise.resolve(recorder.result); }, query: (r) => { recorder.queries.push(r); return Promise.resolve(recorder.queryResult); }, report: (m, f) => { recorder.reports.push({ message: m, failed: f }); } },
-    durable: new MemoryStore(), nowUtcMs: () => AT, every: (ms) => { timers.push(ms); return () => undefined; }, formatTime: () => '14:31', readTail: () => ({ kind: 'text', text: `${OLLAMA_CPU}\n` }),
-    recorder, timers, ...over,
+    durable: new MemoryStore(), nowUtcMs: () => AT, every: (ms) => { timers.push(ms); return () => undefined; }, after: (ms) => { deadlines.push(ms); return () => undefined; }, formatTime: () => '14:31', readTail: () => ({ kind: 'text', text: `${OLLAMA_CPU}\n` }),
+    recorder, timers, deadlines, ...over,
   };
 }
 
@@ -443,4 +444,54 @@ test('code round: the HOST carries an unreadable Ollama log to the alert (not on
   const host = new GpuHost(deps);
   await host.refresh();
   assert.match(host.view().alerts[0]?.consequence ?? '', /Ollama's log could not be read \(EACCES\)\.$/);
+});
+
+// ---- own review (Fable, 2026-10-10): the elevated path's minor findings ----
+
+test('own review M1: the modal names the PROGRAM it elevates, and the elevated script finds System32 without the environment', () => {
+  const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  assert.ok(enablePrompt(r9700(), 3, pwsh).detail.includes(pwsh), 'the modal names the elevated program');
+  const script = enableScript(R9700_ID, 3);
+  assert.ok(script.includes('[Environment]::SystemDirectory'), 'System32 from GetSystemDirectory, not $env:SystemRoot');
+  assert.equal(script.includes('$env:SystemRoot'), false);
+});
+
+test('own review M6: a device NAME that carries a newline cannot shadow its id or code — the name is printed last', () => {
+  const hostile = ['adapter=0', `id.0=${R9700_ID}`, 'code.0=22', 'driver.0=1', 'name.0=Evil', 'id.0=PCI\\OTHER', 'code.0=0', 'adapters=1'].join('\n');
+  const state = parseGpuAnswer(hostile, AT);
+  assert.equal(state.kind === 'read' ? state.adapters[0]?.id : '', R9700_ID);
+  assert.equal(state.kind === 'read' ? state.adapters[0]?.code : -1, 22);
+  const order = ['id.', 'code.', 'driver.', 'name.'].map((t) => QUERY_SCRIPT.indexOf(`'${t}'`));
+  assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > (order[i - 1] ?? -1))), `the query prints the name LAST: ${order.join(',')}`);
+});
+
+test('own review: a settle value that is not a number becomes 0 in the elevated script, never NaN', () => {
+  assert.match(enableScript(R9700_ID, Number.NaN), /\nStart-Sleep -Seconds 0\n/);
+});
+
+test('own review M3: the palette says an enable is already waiting, instead of doing nothing', async () => {
+  const busy = enableDeps();
+  await busy.store.update(GPU_PENDING_KEY, { name: 'AMD Radeon AI PRO R9700', id: R9700_ID, startedAtUtcMs: AT, deadlineUtcMs: AT + 60_000 });
+  assert.equal(await enableGpu(r9700(), busy), 'busy');
+  assert.match(busy.log.at(-1) ?? '', /^info: An enable of AMD Radeon AI PRO R9700 is already waiting/);
+});
+
+test('own review M2: after a timed-out enable the host schedules ONE re-render at the pending deadline, so "Waiting…" ends on screen', async () => {
+  const deps = hostDeps();
+  const host = new GpuHost(deps);
+  await host.refresh();
+  deps.recorder.answer = true;
+  deps.recorder.result = { kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  await host.enable(1);
+  assert.deepEqual(deps.deadlines, [120_000 + 60_000 + 1]);
+});
+
+test('own review M4: a press on an adapter no longer at 22 reads Windows again, as its sentence says', async () => {
+  const deps = hostDeps();
+  const host = new GpuHost(deps);
+  await host.refresh();
+  const queries = deps.recorder.queries.length;
+  await host.enable(0);
+  assert.ok(deps.recorder.queries.length > queries, 'Windows was read again');
+  assert.match(deps.recorder.reports.at(-1)?.message ?? '', /Windows is read again/);
 });

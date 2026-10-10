@@ -4,7 +4,7 @@ import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
 import { CONFIRM_LABEL, EXIT, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { clearGpuPending, PENDING_GRACE_MS, readGpuPending, writeGpuPending } from './gpuPending';
-import { DISABLED_CODE, ENABLE_EXIT, enableRequest, enableScript } from './gpuScripts';
+import { DISABLED_CODE, elevatedProgramFor, ENABLE_EXIT, enableRequest, enableScript } from './gpuScripts';
 import { canEnable, meaningOf, type Adapter, type GpuState } from './gpuState';
 
 /**
@@ -108,11 +108,12 @@ export function enableSentence(adapter: Adapter, exit: EnableExit, state: GpuSta
   return { sentence: noticeText([head.text, now.sentence].filter((t) => t !== '').join(' ')), failed: head.failed || now.failed };
 }
 
-export function enablePrompt(adapter: Adapter, settleSeconds: number): FixPrompt {
+export function enablePrompt(adapter: Adapter, settleSeconds: number, elevated: string): FixPrompt {
   return {
     message: `Enable ${adapter.name}?`,
     detail: [
       `Windows reports it as disabled (code ${DISABLED_CODE}). One PowerShell runs ELEVATED — Windows asks you first (UAC) — and runs exactly this:`,
+      `The elevated program: ${elevated}`,
       '',
       enableScript(adapter.id, settleSeconds),
       '',
@@ -147,10 +148,12 @@ function offered(adapter: Adapter | undefined): adapter is Adapter {
 /** Why nothing may start, or the one request — checked in this order: offered, not already running, buildable. */
 function precondition(adapter: Adapter | undefined, deps: EnableDeps, timeoutMs: number): { readonly stop: EnableResult } | { readonly adapter: Adapter; readonly request: ProcessRequest } {
   if (!offered(adapter)) {
-    deps.report(noticeText('No disabled GPU is at that place any more — the panel is read again.'), false);
+    deps.report(noticeText('No disabled GPU is at that place any more — Windows is read again.'), false);
     return { stop: 'notOffered' };
   }
-  if (readGpuPending(deps.durable, deps.nowUtcMs()) !== undefined) {
+  const pending = readGpuPending(deps.durable, deps.nowUtcMs());
+  if (pending !== undefined) {
+    deps.report(noticeText(`An enable of ${pending.name} is already waiting for its UAC prompt (or its end) — nothing else is started.`), false);
     return { stop: 'busy' };
   }
   const request = enableRequest(deps.env, adapter.id, timeoutMs, deps.exists, deps.settleSeconds());
@@ -171,7 +174,7 @@ export async function enableGpu(chosen: Adapter | undefined, deps: EnableDeps): 
     return ready.stop;
   }
   const { adapter, request } = ready;
-  if (!(await deps.confirm(enablePrompt(adapter, deps.settleSeconds())))) {
+  if (!(await deps.confirm(enablePrompt(adapter, deps.settleSeconds(), elevatedProgramFor(deps.env, deps.exists))))) {
     return 'declined';
   }
   const startedAtUtcMs = deps.nowUtcMs();

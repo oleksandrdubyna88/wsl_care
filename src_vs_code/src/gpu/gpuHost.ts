@@ -28,6 +28,8 @@ export interface GpuHostDeps {
   readonly durable: DurableStore;
   readonly nowUtcMs: () => number;
   readonly every: (ms: number, run: () => void) => () => void;
+  /** ONE call after `ms` — the pending enable's deadline (own review M2); answers its cancel. */
+  readonly after: (ms: number, run: () => void) => () => void;
   /** The presentation edge's local-time formatter. */
   readonly formatTime: (utcMs: number) => string;
   readonly readTail?: (file: string, bytes: number) => TailRead;
@@ -45,6 +47,7 @@ export class GpuHost {
   private again = false;
   private enabling = false;
   private stopTimer: (() => void) | undefined;
+  private stopDeadline: (() => void) | undefined;
   private timerMinutes = 0;
   private readonly listeners = new Set<() => void>();
 
@@ -81,6 +84,8 @@ export class GpuHost {
   dispose(): void {
     this.stopTimer?.();
     this.stopTimer = undefined;
+    this.stopDeadline?.();
+    this.stopDeadline = undefined;
   }
 
   current(): GpuState {
@@ -121,23 +126,42 @@ export class GpuHost {
     }
     this.enabling = true;
     try {
-      const adapter = this.state.kind === 'read' ? this.state.adapters[index] : undefined;
-      return await enableGpu(adapter, {
-        env: this.deps.env,
-        exists: this.deps.exists,
-        timeoutMs: this.deps.enableTimeoutMs,
-        settleSeconds: this.deps.enableSettleSeconds,
-        confirm: this.deps.ui.confirm,
-        run: this.deps.ui.run,
-        report: this.deps.ui.report,
-        durable: { get: (key) => this.deps.durable.get(key), update: async (key, value) => { await this.deps.durable.update(key, value); this.changed(); } },
-        nowUtcMs: this.deps.nowUtcMs,
-        reread: async () => { await this.refresh(); return this.state; },
-      });
+      const result = await this.enableAt(index);
+      if (result === 'notOffered') {
+        void this.refresh();
+      }
+      return result;
     } finally {
       this.enabling = false;
+      this.watchDeadline();
       this.changed();
     }
+  }
+
+  /**
+   * A pending enable that outlived the launcher (a timeout: its UAC prompt may still be open) leaves "Waiting…" on the panel
+   * until its deadline — one re-render AT the deadline ends it, also with `wslCare.gpu.checkMinutes` 0 (own review M2).
+   */
+  private watchDeadline(): void {
+    this.stopDeadline?.();
+    const pending = readGpuPending(this.deps.durable, this.deps.nowUtcMs());
+    this.stopDeadline = pending === undefined ? undefined : this.deps.after(pending.deadlineUtcMs - this.deps.nowUtcMs() + 1, () => this.changed());
+  }
+
+  private enableAt(index: number): Promise<EnableResult> {
+    const adapter = this.state.kind === 'read' ? this.state.adapters[index] : undefined;
+    return enableGpu(adapter, {
+      env: this.deps.env,
+      exists: this.deps.exists,
+      timeoutMs: this.deps.enableTimeoutMs,
+      settleSeconds: this.deps.enableSettleSeconds,
+      confirm: this.deps.ui.confirm,
+      run: this.deps.ui.run,
+      report: this.deps.ui.report,
+      durable: { get: (key) => this.deps.durable.get(key), update: async (key, value) => { await this.deps.durable.update(key, value); this.changed(); } },
+      nowUtcMs: this.deps.nowUtcMs,
+      reread: async () => { await this.refresh(); return this.state; },
+    });
   }
 
   private async queries(): Promise<void> {

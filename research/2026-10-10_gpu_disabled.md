@@ -87,3 +87,7 @@ The shipped `QUERY_SCRIPT`, run ten times as the extension runs it (`powershell.
 375–656 ms of one core (median ≈ 450 ms), 11 lines each time (both adapters and the count). At the default
 `wslCare.gpu.checkMinutes` (15) that is 96 reads a day, about 45 s of one core per day, plus one read per panel open or
 *Refresh*.
+
+After the own review (2026-10-10 15:50Z), the elevated script finds System32 through `[Environment]::SystemDirectory`
+(GetSystemDirectory) instead of `$env:SystemRoot`: the same read half, unelevated, printed `sysdir=C:\WINDOWS\system32
+cmd=PnpDevice` under `pwsh` 7.6.4 (Core) and under 5.1 (Desktop), exit 0 both.

@@ -270,3 +270,15 @@ Seven findings, all accepted, each fixed test-first (RED observed against a stub
 | the palette said "No GPU is disabled" after a failed check | `noChoiceMessage`: a check that could not run says why |
 | `Start-Sleep -Seconds 3` was a literal in the elevated script | `wslCare.gpu.enableSettleSeconds` (default 3, 0–60), clamped to an integer before it reaches the script |
 | a test fixture cast to `Snapshot` | a typed `GOLDEN_SNAPSHOT` (the neighbouring fixtures in `commandButtons.test.ts` still cast — named, not rewritten) |
+
+### The own review (Fable, the elevated path, 2026-10-10: no Critical, no Major, six Minor)
+
+| Finding | Done |
+|---|---|
+| M1: the elevated program's path and the inner script's System32 come from the environment | the modal now names the elevated PROGRAM; the inner script imports `PnpDevice` under `[Environment]::SystemDirectory` (re-verified under both editions, research G6). `%ProgramFiles%` / `%SystemRoot%` for the program path stay the accepted residual of the Windows Time launcher (§9); the same `SystemDirectory` change would harden `windowsTimeFix.ts:36` — proposed, not done here |
+| M2: "Waiting…" could stay on screen past the pending deadline | the host schedules one re-render AT the deadline (`after`, cleared on dispose) |
+| M3: the palette was silent while an enable stood | it says an enable is already waiting |
+| M4: "the panel is read again" without a read | a press on an adapter no longer at 22 reads Windows again |
+| M5: the `role="alert"` container is re-inserted on every render | not changed: the same pattern as the notice's live region, which the harness cannot judge either; recorded for the epic's webview work (#87) |
+| M6: a name with a newline could shadow its id | the query prints the NAME last, so the parser's first-wins keeps the real id and code |
+| (note) a NaN settle value | `wholeSeconds` reads NaN as 0 |

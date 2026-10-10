@@ -19,13 +19,14 @@ export const TAGS = { adapter: 'adapter', name: 'name', id: 'id', code: 'code', 
 
 /**
  * The UNELEVATED query (D1): `Win32_VideoController`, which lists a disabled adapter too (research G1), one tagged block per
- * adapter. `$ProgressPreference` keeps Windows PowerShell's "Preparing modules for first use" off stderr (research G5).
+ * adapter, its NAME printed last: a name carrying a newline cannot shadow its id or code, because the parser keeps a tag's FIRST
+ * value (own review M6). `$ProgressPreference` keeps Windows PowerShell's "Preparing modules for first use" off stderr (research G5).
  * It changes nothing — no word of the tripwire's mutating list is in it (asserted).
  */
 export const QUERY_SCRIPT = [
   "$ProgressPreference = 'SilentlyContinue'",
   '$i = 0',
-  `foreach ($a in @(Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop)) { '${TAGS.adapter}=' + $i; '${TAGS.name}.' + $i + '=' + $a.Name; '${TAGS.id}.' + $i + '=' + $a.PNPDeviceID; '${TAGS.code}.' + $i + '=' + $a.ConfigManagerErrorCode; '${TAGS.driver}.' + $i + '=' + $a.DriverVersion; $i++ }`,
+  `foreach ($a in @(Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop)) { '${TAGS.adapter}=' + $i; '${TAGS.id}.' + $i + '=' + $a.PNPDeviceID; '${TAGS.code}.' + $i + '=' + $a.ConfigManagerErrorCode; '${TAGS.driver}.' + $i + '=' + $a.DriverVersion; '${TAGS.name}.' + $i + '=' + $a.Name; $i++ }`,
   `'${TAGS.count}=' + $i`,
   'exit 0',
 ].join('\n');
@@ -51,21 +52,34 @@ export const DISABLED_CODE = 22;
  * administrator, that the device exists, is a display adapter and is still disabled — so an index that went stale between
  * the panel's render and the click acts on nothing it should not — and only then runs `Enable-PnpDevice`. `PnpDevice` comes
  * by absolute path because the module path is cut to `$PSHOME\Modules` (a user's Documents folder supplies nothing), where
- * `pwsh` 7 does not hold it (research G6). It waits `settleSeconds` (`wslCare.gpu.enableSettleSeconds`) after the enable, so the
+ * `pwsh` 7 does not hold it (research G6); System32 is `[Environment]::SystemDirectory` — GetSystemDirectory, not an
+ * environment variable the elevated process inherits from the person's registry (own review M1). It waits `settleSeconds` (`wslCare.gpu.enableSettleSeconds`) after the enable, so the
  * re-read that follows sees the driver started rather than starting — a NUMBER from a setting, clamped, never text.
  */
 export function enableScript(id: string, settleSeconds: number): string {
   return [
     "$env:PSModulePath = \"$PSHOME\\Modules\"; $ProgressPreference = 'SilentlyContinue'",
-    `try { Import-Module -Name (Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\Modules\\PnpDevice') -ErrorAction Stop } catch { exit ${ENABLE_EXIT.importFailed} }`,
+    `try { Import-Module -Name (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\Modules\\PnpDevice') -ErrorAction Stop } catch { exit ${ENABLE_EXIT.importFailed} }`,
     `$id = '${id}'`,
     `try { $d = Get-PnpDevice -InstanceId $id -ErrorAction Stop } catch { exit ${ENABLE_EXIT.absent} }`,
     `if ($d.Class -ne 'Display') { exit ${ENABLE_EXIT.notDisplay} }`,
     `if ([int]$d.ConfigManagerErrorCode -ne ${DISABLED_CODE}) { exit ${ENABLE_EXIT.notDisabled} }`,
     `try { Enable-PnpDevice -InstanceId $id -Confirm:$false -ErrorAction Stop } catch { exit ${ENABLE_EXIT.enableFailed} }`,
-    `Start-Sleep -Seconds ${Math.max(0, Math.trunc(settleSeconds))}`,
+    `Start-Sleep -Seconds ${wholeSeconds(settleSeconds)}`,
     `exit ${ENABLE_EXIT.done}`,
   ].join('\n');
+}
+
+/** A whole, non-negative number of seconds; NaN reads as 0 (own review). */
+export function wholeSeconds(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
+/** The program the enable elevates, as the modal names it (own review M1): the MSI `pwsh` when present, else Windows PowerShell. */
+export function elevatedProgramFor(env: Readonly<Record<string, string | undefined>>, exists: (file: string) => boolean): string {
+  const windows = powerShellOf(env);
+
+  return elevatedPowerShellFor(env, exists) ?? (typeof windows === 'string' ? windows : '');
 }
 
 /** The MSI PowerShell 7, the one the enable prefers ELEVATED — an administrator-only folder (the Store `pwsh` is an alias). */
