@@ -434,7 +434,10 @@ function withProcesses(shown: readonly VolumeName[] | undefined, processes: { re
  * by the daemon), never past the cap in force.
  */
 function heldProcesses(preview: HeldPreview, cap: number): { readonly names: readonly ShownProcess[] } | RootFailure {
-  const names = preview.processes?.names ?? [];
+  if (preview.processes === undefined) {
+    return { kind: 'shownListInvalid', reason: 'its preview carried no process list (the daemon could not read the relays it would stop)' };
+  }
+  const names = preview.processes.names;
   const valid = names.flatMap((name) => shownProcessOf(name) ?? []);
   const problem = processProblem(names.length, valid.length, cap);
 

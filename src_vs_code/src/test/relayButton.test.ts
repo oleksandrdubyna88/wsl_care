@@ -270,3 +270,45 @@ test('an available preview WITHOUT a shown list is no empty selection — it is 
   assert.match(recorded.notices.at(-1)?.sentence ?? '', /^The daemon's preview carried no relay list/);
   assert.doesNotMatch(recorded.notices.at(-1)?.sentence ?? '', /No relay's client is shown gone/);
 });
+
+test('own review #3: a Stop of the daemon\'s OWN A21 run (the watch, trigger timer) never adopts the panel\'s unresolved A21 entry', async () => {
+  const store = new MapStore();
+  const journal = new CleanupJournal(store, () => Date.parse('2026-10-11T12:00:00.000Z'));
+  await journal.add({ kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A21'], since: '2026-10-11T11:59:00.000Z' });
+  const stop = `${ROOT} act --stop ${RUN} --json`;
+  const c = controller({ [stop]: exited(0, JSON.stringify({ schemaVersion: 1, result: 'stopping', kind: 'act', runId: RUN, unit: `wsl-care-act@${RUN}.service`, productVersion: '0.4.0' })) });
+  const { flow } = flowOver(c, store);
+  await flow.stop({ runId: runId(RUN), actions: ['A21'], trigger: 'timer' });
+  assert.ok(journal.entries().some((e) => e.kind === 'unresolved' && e.actions.join() === 'A21'), 'the panel\'s own entry stays unresolved, for its own run');
+});
+
+test('own review #4: a confirm of a preview that carried no process list says so — not "nothing to stop"', async () => {
+  const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody([], { available: false, reason: 'the boot id cannot be read' }))) });
+  const previewed = await c.controller.preview(['A21']);
+  assert.ok(previewed.kind === 'previewed');
+  const outcome = await c.controller.confirm(previewed.preview);
+  assert.equal(outcome.kind, 'shownListInvalid');
+  assert.match(JSON.stringify(outcome), /carried no process list/);
+});
+
+test('own review #5: a done relay stop whose runs show has no line says "is done." — never "ended 0 relays"', () => {
+  const done = goldenFile('runs-show-done.json');
+  const show = parseRunShow({ ...done, run: undefined });
+  assert.equal(resultNotice({ kind: 'run', entry: relayEntry(), show }, 0).sentence, 'Run 20000101T000000Z-1 (the relay stop) is done.');
+});
+
+test('own review #6: a non-object interopRelays shows no button AND refuses the command — the two agree', () => {
+  for (const odd of [null, 'yes', 3]) {
+    const snapshot = snapshotWith({ ...headBody('status'), interopRelays: odd });
+    assert.equal(deriveRelays(snapshot, FREE).button, undefined, JSON.stringify(odd));
+    assert.match(stopRelaysBlocker(snapshot, FREE), /publishes no interop relays/, JSON.stringify(odd));
+  }
+});
+
+test('own review #8: a shown list that names a relay twice refuses the preview', async () => {
+  const keys = relayKeys(1);
+  const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody([...keys, ...keys]))) });
+  const outcome = await c.controller.preview(['A21']);
+  assert.equal(outcome.kind, 'shownListInvalid');
+  assert.match(JSON.stringify(outcome), /names an entry twice/);
+});

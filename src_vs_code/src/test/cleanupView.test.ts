@@ -65,7 +65,7 @@ test('§15j M4: a wedged run of the daemon\'s units gets a Stop (index 0 into th
   const wedged = goldenStatus('status-running-wedged.json');
   const { controls, stoppable } = deriveCleanup(snapshot(wedged), IDLE);
   assert.deepEqual(controls.stop, { index: 0, label: 'Stop run 20000101T000000Z-1' });
-  assert.deepEqual(stoppable, [{ runId: '20000101T000000Z-1', actions: ['A5', 'A4'] }]);
+  assert.deepEqual(stoppable.map(({ runId, actions }) => ({ runId, actions })), [{ runId: '20000101T000000Z-1', actions: ['A5', 'A4'] }]);
   assert.equal(controls.enabled, false);
   assert.match(controls.state, /^Wedged: run 20000101T000000Z-1/);
   const cli = deriveCleanup(snapshot({ ...wedged, running: { ...(wedged.running as Body), trigger: 'cli' } }), IDLE);

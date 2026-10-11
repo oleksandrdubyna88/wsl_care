@@ -222,7 +222,7 @@ function stoppableOf(running: RunningBlock | undefined, capabilities: readonly s
     return [];
   }
 
-  return inDaemonUnits(running, capabilities) ? [{ runId: running.runId, actions: running.actions }] : [];
+  return inDaemonUnits(running, capabilities) ? [{ runId: running.runId, actions: running.actions, trigger: running.trigger }] : [];
 }
 
 function stopTextOf(running: RunningBlock | undefined, stoppable: readonly StopTarget[]): string {

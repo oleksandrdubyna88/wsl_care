@@ -175,8 +175,16 @@ function shownSelection<T extends string>(action: JsonObject | undefined, cap: n
     return shown as RootFailure | undefined;
   }
   const names = validNames(shown, kind);
+  if (typeof names === 'number') {
+    return invalid(`entry ${names + 1} of its shown list is not ${kind.entry}`);
+  }
 
-  return typeof names === 'number' ? invalid(`entry ${names + 1} of its shown list is not ${kind.entry}`) : selectionOf(names, countOf(action as JsonObject), (action as JsonObject).shownTruncated, cap);
+  return distinctSelection(names, action as JsonObject, cap);
+}
+
+/** A shown list naming one entry twice is refused — the confirm would bind a set the preview never showed. */
+function distinctSelection<T extends string>(names: readonly T[], action: JsonObject, cap: number): ShownSelection<T> | RootFailure {
+  return new Set(names).size === names.length ? selectionOf(names, countOf(action), action.shownTruncated, cap) : invalid('its shown list names an entry twice');
 }
 
 function actionEntry(actions: unknown, id: ActionId): JsonObject | undefined {

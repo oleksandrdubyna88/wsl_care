@@ -94,7 +94,7 @@ function daemonBlocker(snapshot: Snapshot): string {
  * palette's command and a stale page send the same bare request.
  */
 export function stopRelaysBlocker(snapshot: Snapshot, cleanup: CleanupSide): string {
-  return statusBodyOf(snapshot)?.interopRelays === undefined ? 'the daemon publishes no interop relays (an older daemon, or the Windows side)' : blocker(snapshot, cleanup);
+  return isObject(statusBodyOf(snapshot)?.interopRelays) ? blocker(snapshot, cleanup) : 'the daemon publishes no interop relays (an older daemon, or the Windows side)';
 }
 
 export function deriveRelays(snapshot: Snapshot, cleanup: CleanupSide): RelaysControls {

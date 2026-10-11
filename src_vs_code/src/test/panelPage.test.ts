@@ -408,3 +408,35 @@ test('hostile adapter text renders as inert TEXT; an unknown check is an alert w
   assert.equal(ok.root.one('section[data-section="health"]').one('p[data-gpu-ok]').textContent, 'GPU: AMD Radeon(TM) 890M Graphics — working (checked 14:31)');
   assert.equal(ok.root.all('div[data-gpu-alert]').length, 0);
 });
+
+// ---- S7b.2b: the client-gone relays' line and button in AI agents ----
+
+function relaysView(line: string, enabled: boolean, why = ''): PanelView {
+  return buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, { line, level: 'none', why, button: { id: 'stopRelays', label: 'Stop client-gone relays…', enabled } });
+}
+
+test('the relays line sits in the AI agents section as TEXT, and its button posts only its bare id', () => {
+  const hostile = 'Windows MCP relays: 2 </script><img src=x onerror=alert(1)>';
+  const { page, root } = show(relaysView(hostile, true));
+  const box = root.one('section[data-section="aiAgents"]').one('div[data-relays]');
+  assert.equal(box.one('p[data-relays-line]').textContent, hostile);
+  page.click(box.one('button[data-relays-action="stopRelays"]'));
+  assert.deepEqual(page.posted.at(-1), { type: 'stopRelays' });
+  assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
+});
+
+test('a greyed relays button shows why and posts nothing when pressed', () => {
+  const { page, root } = show(relaysView('Windows MCP relays: 0 (0 re-parented)', false, 'a run is in flight'));
+  const box = root.one('div[data-relays]');
+  assert.equal(box.one('p[data-relays-why]').textContent, 'a run is in flight');
+  const button = box.one('button[data-relays-action="stopRelays"]');
+  assert.ok(button.disabled);
+  const before = page.posted.length;
+  page.click(button);
+  assert.equal(page.posted.length, before);
+});
+
+test('an older daemon (no interopRelays) renders no relays part at all', () => {
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes())));
+  assert.equal(root.all('div[data-relays]').length, 0);
+});

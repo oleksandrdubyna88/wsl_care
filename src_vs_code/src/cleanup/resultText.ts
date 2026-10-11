@@ -114,7 +114,10 @@ function freedText(bytes: number | undefined, did: (typeof DID)[keyof typeof DID
  * failed, that some did not end on SIGTERM and keep their Windows programs running. Never "freed": A21 frees no disk.
  */
 function relaysDone(name: string, show: RunShow): string {
-  const action = show.line?.actions.find((a) => a.id === 'A21');
+  if (show.line === undefined) {
+    return `${name} is done.`;
+  }
+  const action = show.line.actions.find((a) => a.id === 'A21');
   const ended = action === undefined ? 0 : action.count;
 
   return `${name} is done: ended ${ended} relay${ended === 1 ? '' : 's'}; their Windows programs end with them.${survivorsOf(action)}`;

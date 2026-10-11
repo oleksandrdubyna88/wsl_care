@@ -74,6 +74,8 @@ const BASIS_MAX = 400;
 export interface StopTarget {
   readonly runId: RunId;
   readonly actions: readonly string[];
+  /** `status.running.trigger` — only a `manual` run is one the panel confirmed (S7b.2b own review #3: the watch runs A21 alone too). */
+  readonly trigger?: string;
 }
 
 export type FlowOutcome =
@@ -105,6 +107,11 @@ const NO_STATUS = "AI OS Care has not read the daemon's status yet; press Refres
 
 /** The hand-off kinds that may leave a run behind; every other answer is a refusal that wrote nothing. */
 const HANDED: ReadonlySet<string> = new Set(['accepted', 'acceptedObserved', 'outcomeUnknown', 'stopping']);
+
+/** A run the panel itself confirmed (`manual`) — or one whose trigger the daemon did not say (an older daemon: adopted, as before). */
+function isPanelRun(target: StopTarget): boolean {
+  return target.trigger === undefined || target.trigger === 'manual';
+}
 
 function sameActions(a: readonly string[], b: readonly string[]): boolean {
   const sorted = [...b].sort();
@@ -263,7 +270,7 @@ export class CleanFlow {
   private async followedFor(target: StopTarget, distro: string): Promise<JournalEntry | undefined> {
     const entries = this.options.journal.entries();
     const run = entries.find((e) => e.kind === 'run' && e.runId === target.runId);
-    const waiting = run === undefined ? entries.find((e) => e.kind === 'unresolved' && e.distro === distro && sameActions(e.actions, target.actions)) : undefined;
+    const waiting = run === undefined && isPanelRun(target) ? entries.find((e) => e.kind === 'unresolved' && e.distro === distro && sameActions(e.actions, target.actions)) : undefined;
     if (waiting === undefined) {
       return run;
     }
