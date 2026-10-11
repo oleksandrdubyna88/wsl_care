@@ -290,7 +290,7 @@
   let gpuWords = '';
   // The NEWEST read's stamp per adapter index: a click names the read the host holds now, while the alert's WORDS — not the
   // stamp, which changes with every read — decide whether the live region is rebuilt and re-announced (own review 2, F4).
-  const gpuReadAt = {};
+  let gpuReadAt = {};
 
   /** The alert's words: everything a person reads or presses, without the read's stamp. */
   function gpuWordsOf(alert) {
@@ -316,11 +316,10 @@
 
   function updateGpu(view) {
     const alerts = isObject(view.gpu) && Array.isArray(view.gpu.alerts) ? view.gpu.alerts : [];
-    alerts.forEach(function (alert) {
-      if (isObject(alert.button)) {
-        gpuReadAt[alert.button.index] = alert.button.readAt;
-      }
-    });
+    // A new map each render (never the old one changed in place — code round 5).
+    gpuReadAt = alerts.reduce(function (stamps, alert) {
+      return isObject(alert.button) ? Object.assign({}, stamps, { [alert.button.index]: alert.button.readAt }) : stamps;
+    }, {});
     const words = JSON.stringify(alerts.map(gpuWordsOf));
     if (words !== gpuWords) {
       gpuWords = words;
