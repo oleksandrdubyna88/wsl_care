@@ -2355,6 +2355,58 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "disk.vhdxGapWarnGib",
+      "shape": "int",
+      "min": 1,
+      "max": 1024,
+      "default": 20,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "disk.vhdxGrowthWarnGibPerDay",
+      "shape": "int",
+      "min": 1,
+      "max": 1024,
+      "default": 10,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "disk.hostFreeWarnGib",
+      "shape": "int",
+      "min": 1,
+      "max": 10240,
+      "default": 100,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "disk.growthMinHours",
+      "shape": "int",
+      "min": 1,
+      "max": 48,
+      "default": 1,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "health.snapTimeoutSeconds",
       "shape": "int",
       "min": 5,

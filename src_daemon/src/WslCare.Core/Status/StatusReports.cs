@@ -12,9 +12,6 @@ namespace WslCare.Core.Status;
 /// </summary>
 public static class StatusReports
 {
-    /// <summary>Named, so the panel can show the row, and honest about why it is empty.</summary>
-    public const string VhdxNotCollected = "the .vhdx sizes are read by the Windows collectors, which this build does not have yet";
-
     public static StatusReport From(ProbeSample sample, LastSlowParts slow, ConfigLoadResult loaded) =>
         new(
             SchemaVersion.Current,
@@ -124,7 +121,7 @@ public static class StatusReports
     private static HostReport Host(Reading<HostSample> reading) => reading switch
     {
         Reading<HostSample>.Available { Value: var h } => new HostReport(
-            true, null, HostMemory(h.Memory), Volume(h.SystemDrive), Bytes(h.VmmemWorkingSetBytes), Bytes(Reading.Missing<long>(VhdxNotCollected))),
+            true, null, HostMemory(h.Memory), Volume(h.SystemDrive), Bytes(h.VmmemWorkingSetBytes), Bytes(Reading.Missing<long>(StatusDisk.ReadByTheDistro))),
         _ => new HostReport(false, reading.ReasonOrEmpty, null, null, null, null),
     };
 

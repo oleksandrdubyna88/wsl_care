@@ -80,6 +80,10 @@ public sealed record SlowParts
     /// <summary>The AI agents' data folders (plan §4.6, §15q D1) — totals, counts and dates only, never a session's name; present
     /// only on the run that walked them (with the folders, once a day).</summary>
     public Agents.AgentsSample? Agents { get; init; }
+
+    /// <summary>E15.S2: the virtual disks' measured sizes — present on every run whose Windows disk script answered; what the next
+    /// run's growth per day is measured against (two measured sizes, never one).</summary>
+    public Health.VirtualDiskSizes? VirtualDisks { get; init; }
 }
 
 /// <summary>A slow part as <c>status</c> reports it: the value, the run it came from, when it was
@@ -100,6 +104,9 @@ public sealed record LastSlowParts(Reading<AgedPart<ContainerStatsSample>> Conta
 
     /// <summary>The agents' sample before <see cref="Agents"/> — what an agent's growth is measured against.</summary>
     public Reading<Agents.AgentsSample> PreviousAgents { get; init; } = Reading.Missing<Agents.AgentsSample>("no earlier agent sample is recorded");
+
+    /// <summary>E15.S2: the virtual disks' sizes of the newest run that measured them; unavailable before the first.</summary>
+    public Reading<AgedPart<Health.VirtualDiskSizes>> VirtualDisks { get; init; } = Reading.Missing<AgedPart<Health.VirtualDiskSizes>>(LastFullRun.NoFullRunYet);
 }
 
 /// <summary>
@@ -136,6 +143,7 @@ public static class LastFullRun
             PreviousAgents = newestFirst.Select(r => r.Slow?.Agents).Where(a => a is not null).Skip(1).FirstOrDefault() is { } previousAgents
                 ? Reading.Of(previousAgents)
                 : Reading.Missing<Agents.AgentsSample>("no earlier agent sample is recorded"),
+            VirtualDisks = Newest(newestFirst, r => r.Slow?.VirtualDisks, s => s.SampledAt, _ => string.Empty, now, "the virtual disks"),
         };
 
     private static Reading<AgedPart<T>> Newest<T>(IReadOnlyList<RunRecord> newestFirst, Func<RunRecord, T?> part, Func<T, DateTimeOffset> sampledAt, Func<T, string?> unavailable, DateTimeOffset now, string what)
@@ -159,5 +167,6 @@ public static class LastFullRun
         {
             Folders = Reading.Missing<AgedPart<FolderSizesSample>>(reason),
             Agents = Reading.Missing<AgedPart<Agents.AgentsSample>>(reason),
+            VirtualDisks = Reading.Missing<AgedPart<Health.VirtualDiskSizes>>(reason),
         };
 }

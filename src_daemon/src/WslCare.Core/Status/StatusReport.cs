@@ -90,6 +90,11 @@ public sealed record StatusReport(
     /// <summary>E14 S7b.2: the distro's interop relays of catalogued Windows MCP servers this caller can see, and the effective
     /// <c>auto.A21</c> with the command that flips it — the distro's binary only. Additive.</summary>
     public InteropRelaysReport? InteropRelays { get; init; }
+
+    /// <summary>E15.S2: the virtual disks and their hosting volumes from the newest full run, with its basis and age — or why there
+    /// are none. The distro's binary reads them from that run's detail; the Windows binary says the distro reads them. Additive;
+    /// absent from the sample a run detail embeds.</summary>
+    public Collect.DiskReport? Disk { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>
@@ -183,8 +188,8 @@ public sealed record UnattributedReport(string State, long? Bytes, long? Oversho
 
 public sealed record VolumeReport(bool Available, string? Reason, string? Path, long? TotalBytes, long? UsedBytes, long? AvailableBytes, double? UsedPercent);
 
-/// <summary>The Windows side (plan §2): host RAM, the system drive, <c>vmmemWSL</c>; the <c>.vhdx</c> sizes
-/// are named and marked unavailable until the Windows collectors read them.</summary>
+/// <summary>The Windows side (plan §2): host RAM, the system drive, <c>vmmemWSL</c>; <c>vhdx</c> stays named (no wire removal) and
+/// unavailable, its reason pointing at the distro's <c>status.disk</c>, which carries the virtual disks since E15.S2.</summary>
 public sealed record HostReport(
     bool Available,
     string? Reason,

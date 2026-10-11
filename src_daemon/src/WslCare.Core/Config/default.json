@@ -281,7 +281,11 @@
   "disk": {
     "eventsSinceDays": 60,
     "eventsMaxRead": 5000,
-    "eventGroupsMax": 500
+    "eventGroupsMax": 500,
+    "vhdxGapWarnGib": 20,
+    "vhdxGrowthWarnGibPerDay": 10,
+    "hostFreeWarnGib": 100,
+    "growthMinHours": 1
   },
   "commands": {
     "outputCapBytes": 1048576,

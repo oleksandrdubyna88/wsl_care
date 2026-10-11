@@ -7,7 +7,12 @@ namespace WslCare.Core.Status;
 
 /// <summary>The verdicts the newest full run recorded in its detail, with the run and the instant they were evaluated
 /// (the end of that run).</summary>
-public sealed record RecordedVerdicts(Records.RunId RunId, DateTimeOffset EvaluatedAt, IReadOnlyList<Verdict> Verdicts);
+public sealed record RecordedVerdicts(Records.RunId RunId, DateTimeOffset EvaluatedAt, IReadOnlyList<Verdict> Verdicts)
+{
+    /// <summary>E15.S2: the run's disk section (virtual disks and their hosting volumes), read from the SAME detail file — or why
+    /// there is none (a detail written before E15.S2).</summary>
+    public Reading<Collect.DiskReport> Disk { get; init; } = Reading.Missing<Collect.DiskReport>("not read");
+}
 
 /// <summary>
 /// The verdicts of <c>status --json</c> (plan §15g B1) — the SAME <see cref="Verdict"/> records and ids a full run writes,

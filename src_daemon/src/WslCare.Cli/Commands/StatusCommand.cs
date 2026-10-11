@@ -34,12 +34,14 @@ internal static class StatusCommand
         var now = host.Clock.GetUtcNow();
         var history = RunHistory.Read(host.Paths, host.Files);
         var last = LastFullRun.From(history, now);
+        // One detail file read: the newest full run's verdicts AND its disk section (E15.S2).
+        var fullRun = FullRunVerdicts.Read(host.Paths, host.Files, history);
         var report = StatusReports.From(sample, last, loaded) with
         {
             // The follower's summary, never the raw day files: status's cost must not grow with the starts recorded (gate finding #8).
             ContainerStarts = new ContainerStartsStore(host.Paths, host.Files).ReadSummary(now),
             Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
-            Verdicts = [.. StatusVerdicts.From(sample, FullRunVerdicts.Read(host.Paths, host.Files, history), loaded.Config, now), .. StatusVerdicts.Sampled(McpVerdicts.From(mcp, loaded.Config), sample.SampledAt)],
+            Verdicts = [.. StatusVerdicts.From(sample, fullRun, loaded.Config, now), .. StatusVerdicts.Sampled(McpVerdicts.From(mcp, loaded.Config), sample.SampledAt)],
             ProductVersion = Program.VersionText,
             Actions = ThisSidesActions(host),
             Capabilities = Capabilities.All,
@@ -49,6 +51,7 @@ internal static class StatusCommand
             Limits = StatusLimits.From(loaded.Config),
             McpServers = McpServersReport.From(mcp),
             InteropRelays = host.Paths is LinuxHostPaths ? InteropRelaysReport.From(sample.Vm.Bind(vm => vm.Processes), host.Paths, host.Files, loaded.Config) : null,
+            Disk = host.Paths is LinuxHostPaths ? StatusDisk.From(fullRun, now) : StatusDisk.OnWindows,
         };
         report = WithWindowsSide(report, host, sample, loaded.Config, cancellationToken);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));

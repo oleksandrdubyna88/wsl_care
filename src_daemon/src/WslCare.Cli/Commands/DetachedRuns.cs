@@ -329,6 +329,7 @@ internal static class DetachedRuns
             InterruptCause = host.InterruptCause,
             Wait = host.Wait,
             LockWait = RunLock.AcceptedRunWait,
+            DistroVariable = CollectCommand.ThisDistro(),
         };
         var result = Executed(() => CollectRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult(), file, host, cancellationToken);
         if (result.Recording == Recording.Busy)

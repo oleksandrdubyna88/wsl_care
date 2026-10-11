@@ -472,6 +472,25 @@ public static partial class ConfigKeys
         /// first), so the answer always fits the health output cap and reaches its end line; past it the answer says how many
         /// groups there were. Its maximum keeps even the smallest <c>health.outputCapBytes</c> clear. Default 500.</summary>
         public static readonly ConfigKey.IntKey EventGroupsMax = new("disk.eventGroupsMax", 10, 800) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>E15.S2: <c>disk.vhdxGap</c> warns when a virtual disk file is more than this many GiB larger than what its guest
+        /// uses. Default 20 — a STARTING VALUE: under half of the 43.7 GiB gap measured on Ubuntu's VHDX
+        /// (research/2026-10-10_disk.md D2/D3), so that measured case warns.</summary>
+        public static readonly ConfigKey.IntKey VhdxGapWarnGib = new("disk.vhdxGapWarnGib", 1, 1024) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S2: <c>disk.vhdxGrowth</c> warns when a virtual disk file grows faster than this many GiB a day. Default 10 —
+        /// a STARTING VALUE, not measured: D3 has only write volume, and writes are not growth; the first weeks of growth figures
+        /// calibrate it.</summary>
+        public static readonly ConfigKey.IntKey VhdxGrowthWarnGibPerDay = new("disk.vhdxGrowthWarnGibPerDay", 1, 1024) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S2: <c>disk.hostFree</c> warns when a volume that holds virtual disks has less than this many GiB free. Default
+        /// 100 — a STARTING VALUE: about 4 % of the 2.4 TiB system volume (D1); a floor, not a measured need.</summary>
+        public static readonly ConfigKey.IntKey HostFreeWarnGib = new("disk.hostFreeWarnGib", 1, 10240) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S2: a growth per day is computed only from two sizes at least this many hours apart; closer, it is
+        /// unavailable ("too close to the previous measurement"). Default 1 — a STARTING VALUE, not measured: it keeps the
+        /// extrapolation factor at 24 or below.</summary>
+        public static readonly ConfigKey.IntKey GrowthMinHours = new("disk.growthMinHours", 1, 48) { Trust = KeyTrust.Display };
     }
 
     public static partial class Commands
@@ -862,6 +881,10 @@ public static partial class ConfigKeys
         Disk.EventsSinceDays,
         Disk.EventsMaxRead,
         Disk.EventGroupsMax,
+        Disk.VhdxGapWarnGib,
+        Disk.VhdxGrowthWarnGibPerDay,
+        Disk.HostFreeWarnGib,
+        Disk.GrowthMinHours,
         Health.SnapTimeoutSeconds,
         Health.OutputCapBytes,
         Health.KernelLinesKept,

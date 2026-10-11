@@ -11,7 +11,8 @@ namespace WslCare.Core.Status;
 
 /// <summary>The part of a run detail <c>status</c> reads back: its head and the thresholds the run evaluated. Every other
 /// member of the detail is skipped by the reader, so its cost is one file read, not the whole detail's types.</summary>
-public sealed record RunDetailVerdicts(int SchemaVersion, RunId RunId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, IReadOnlyList<Verdict>? Thresholds);
+/// <param name="Disk">E15.S2: the run's disk section; absent (<c>null</c>) in a detail written before it.</param>
+public sealed record RunDetailVerdicts(int SchemaVersion, RunId RunId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, IReadOnlyList<Verdict>? Thresholds, Collect.DiskReport? Disk);
 
 /// <summary>
 /// The verdicts of the newest FULL run, read back from its detail (plan §15g B1). A full run is a <c>collect</c> line — the
@@ -51,7 +52,7 @@ public static class FullRunVerdicts
         try
         {
             return JsonSerializer.Deserialize(json, WslCareJsonContext.Default.RunDetailVerdicts) is { RunId: not null } detail
-                ? Reading.Of(new RecordedVerdicts(detail.RunId, detail.EndedAt, [.. (detail.Thresholds ?? []).SelectMany(Normalised)]))
+                ? Reading.Of(new RecordedVerdicts(detail.RunId, detail.EndedAt, [.. (detail.Thresholds ?? []).SelectMany(Normalised)]) { Disk = Disk(detail) })
                 : Reading.Missing<RecordedVerdicts>($"the detail of the newest full run ({relative}) does not parse: it names no run");
         }
         catch (JsonException e)
@@ -59,6 +60,12 @@ public static class FullRunVerdicts
             return Reading.Missing<RecordedVerdicts>($"the detail of the newest full run ({relative}) does not parse: {e.Message}");
         }
     }
+
+    /// <summary>E15.S2: the detail's disk section, or why it has none (written before E15.S2).</summary>
+    private static Reading<Collect.DiskReport> Disk(RunDetailVerdicts detail) =>
+        detail.Disk is { } disk
+            ? Reading.Of(disk)
+            : Reading.Missing<Collect.DiskReport>($"the newest full run ({detail.RunId}) recorded no disk section (its detail was written before E15.S2)");
 
     /// <summary>A stored verdict as a record whose strings are never null (C# doctrine §4a: the deserializer runs no
     /// defaults); one without an id is no verdict.</summary>

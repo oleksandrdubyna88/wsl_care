@@ -148,6 +148,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Systemd/SystemdParsers.cs: 1L << 50"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Thresholds/ThresholdRules.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Thresholds/SwapAndCommit.cs: Gib"] = "a unit: bytes in a GiB, never a choice (E14 S5)",
+        ["WslCare.Core/Thresholds/DiskRules.cs: Gib"] = "a unit: bytes in a GiB, never a choice (E15.S2)",
         ["WslCare.Core/Health/VmmemAdvice.cs: BytesPerGibibyte"] = "a unit: bytes in a GiB, never a choice (E14 S7a)",
         ["WslCare.Core/Mcp/Win32ProcessTable.cs: SnapProcess"] = "a Win32 contract: a flag, access right or error code Windows defines, never a choice (E14 S7a)",
         ["WslCare.Core/Mcp/Win32ProcessTable.cs: QueryLimitedInformation"] = "a Win32 contract: a flag, access right or error code Windows defines, never a choice (E14 S7a)",

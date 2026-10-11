@@ -346,7 +346,34 @@ reliability counters' refusal (they need elevation, which wsl-care never asks fo
 `disk.eventsSinceDays` (60) days counted per day, provider, id and disk (at most `disk.eventsMaxRead`, 5000, read, and at most
 `disk.eventGroupsMax`, 500, groups printed — the report says when it cut them), commit and
 Memory Compression, Windows' edition, build and install date, the machine id and the display adapters' problem codes. Its
-ceiling is `health.windowsDiskTimeoutSeconds` (30). No verdict judges these facts yet; the later disk stories do.
+ceiling is `health.windowsDiskTimeoutSeconds` (30).
+
+**The virtual disks and the hosting volume** (E15.S2, a report: nothing acts on these). From those facts each full run judges every
+virtual disk and records the figures in its detail's `disk` section; `status --json` carries the newest run's section as `disk`,
+with its basis (`fullRun`, the run, its end, its age). For each disk: its hosting volume, what its guest uses, the GAP (file −
+guest), its GROWTH per day since the previous full run and how much more it can grow. How the guest's usage is found
+(`mappedBy`): `mount` — this distro's own `/` (its size is the disk's virtual size, so the possible growth is that size − the
+file); `dockerDf` — Docker's data disk, by the `docker system df` the run already asks (Docker's own totals: an estimate, not the
+filesystem); `none` — another distro, whose filesystem is not mounted here. This distro is found by its NAME, never by size: a
+root `collect` started through `wsl.exe` (the panel's *Run full check now*) carries `WSL_DISTRO_NAME` and records it in
+`/var/lib/wsl-care/distro-name.json`; the timer's run, a systemd unit without that variable, reads it back. Until the name is
+recorded no distro is mapped, and the reason says how it becomes known. Three verdicts (none colours the status bar):
+- `disk.vhdxGap` warns when a mapped file is more than `disk.vhdxGapWarnGib` (1–1024, 20) GiB larger than its guest uses. Its
+  value reads "file − guest = gap"; a distro file that is not sparse gets the advice, as TEXT, `wsl --manage <distro> --set-sparse
+  true` (it lets Windows reclaim the space freed inside the file — wsl-care never runs it).
+- `disk.vhdxGrowth` warns when a file grows faster than `disk.vhdxGrowthWarnGibPerDay` (1–1024, 10) GiB a day. Growth is the
+  difference of TWO measured sizes of the same file, so it is unknown after the first run, and two sizes less than
+  `disk.growthMinHours` (1–48, 1) hours apart give "too close to the previous measurement" (1 GiB in 10 minutes would read as
+  144 GiB a day).
+- `disk.hostFree` warns when a volume that holds virtual disks has less free than `disk.hostFreeWarnGib` (1–10240, 100) GiB, or
+  less than the KNOWN possible growth of its files. While the possible growth of any file on it is unknown it is `unknown`, never
+  `ok`: the value still shows the free space, and the reason counts the files whose growth is not known.
+
+The four defaults are STARTING VALUES; only one comes from a measurement (research/2026-10-10_disk.md): 20 GiB is under half of
+the 43.7 GiB gap measured on Ubuntu's VHDX (D2/D3), so that measured case warns; 100 GiB is about 4 % of the 2.4 TiB system
+volume (D1) — a floor, not a measured need; 10 GiB a day is not measured (D3 has only write volume, and writes are not growth —
+the first weeks of growth figures calibrate it); 1 h keeps the extrapolation factor at 24 or below. The Windows binary's
+`status` says the distro reads the virtual disks, and its `host.vhdx` points at the distro's `status.disk`.
 
 **Before the evening** (E14 S5, a report: nothing acts on these):
 - `memory.swapFree` warns when the swap LEFT is under `thresholds.swapFreeWarnGb` (4). The 2026-10-07 evening had 2.4 GB of

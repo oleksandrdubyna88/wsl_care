@@ -58,6 +58,10 @@ public sealed record CollectContext(
     /// a <c>--detach</c> check may hold for a moment (<see cref="RunLock.TakeAsync"/>; retro round over PR #11, O1).</summary>
     public TimeSpan LockWait { get; init; }
 
+    /// <summary>E15.S2: this process's <c>WSL_DISTRO_NAME</c> (set by WSL for a process started through <c>wsl.exe</c>; a systemd unit
+    /// has none), which names this distro before <c>{state}/distro-name.json</c> does; empty by default.</summary>
+    public string DistroVariable { get; init; } = string.Empty;
+
     /// <summary>What the settle step waited before this TIMER run started (PLAN_boot_settle.md); <c>null</c> on any other run.</summary>
     public RunSettled? Settled { get; init; }
 
@@ -414,8 +418,9 @@ public static class CollectRun
         var docker = await PreviewRun.CollectAsync(c.Paths, c.Files, c.Commands, c.Clock, c.Loaded, new PreviewExtras(foldersNow, WindowsProfiles.DockerDesktopConfig(c.Paths, c.Files, profile)) { MayRecord = mayRecord }, cancellationToken).ConfigureAwait(false);
         var stats = await DockerStats.SampleAsync(new DockerCli(c.Commands), c.Clock, cancellationToken).ConfigureAwait(false);
         var starts = Coverage.Last24h(new ContainerStartsStore(c.Paths, c.Files).ReadAll(), c.Clock.GetUtcNow());
-        var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders, Agents = agents };
-        IReadOnlyList<Verdict> verdicts = [.. ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow), c.Loaded.Config), .. McpVerdicts.From(mcp, c.Loaded.Config)];
+        var disk = Disk(c, health, sample, docker, last);
+        var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders, Agents = agents, VirtualDisks = disk is Reading<DiskFacts>.Available { Value: var facts } ? facts.Sizes : null };
+        IReadOnlyList<Verdict> verdicts = [.. ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow) with { Disk = disk }, c.Loaded.Config), .. McpVerdicts.From(mcp, c.Loaded.Config)];
         var ended = c.Clock.GetUtcNow();
         var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, [], RunKind.Collect) { Slow = slow }, .. newestFirst], ended);
         var folderReport = FoldersReports.From(foldersNow, foldersBefore, folders is not null);
@@ -442,8 +447,21 @@ public static class CollectRun
             Config = ConfigValueReport.NotDefault(c.Loaded),
             ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
             Settled = c.Settled is { } settled ? RunSettledReport.From(settled) : null,
+            Disk = DiskReports.From(disk),
         };
     }
+
+    /// <summary>E15.S2: the virtual disks judged ONCE — this distro named by its environment, then by <c>{state}/distro-name.json</c>; Docker's
+    /// data disk by the <c>docker system df</c> the preview already ran (no second Docker walk); growth against the newest earlier run
+    /// that measured the sizes.</summary>
+    private static Reading<DiskFacts> Disk(CollectContext c, HealthSample health, ProbeSample sample, PreviewResult docker, LastSlowParts last) =>
+        VirtualDisks.From(
+            health.WindowsDisk,
+            sample.Vm.Bind(vm => vm.RootVolume),
+            docker.Snapshot.Totals,
+            DistroIdentity.Resolve(c.DistroVariable, DistroIdentity.Read(c.Paths, c.Files)),
+            last.VirtualDisks.Map(a => a.Value),
+            TimeSpan.FromHours(c.Loaded.Config.Int(ConfigKeys.Disk.GrowthMinHours)));
 
     /// <summary>The AI agents' folders (plan §4.6, §15q D1), on the daily walk's day: every catalogue agent whose folder exists
     /// in the home the paths follow (the TARGET user's as root) — folders only, nothing looked up on a PATH, nothing executed —

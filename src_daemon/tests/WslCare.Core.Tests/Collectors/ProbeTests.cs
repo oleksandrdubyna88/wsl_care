@@ -95,7 +95,8 @@ public sealed class ProbeTests
         vmmem.GetProperty("available").GetBoolean().Should().BeFalse();
         vmmem.GetProperty("reason").GetString().Should().Contain("not running");
         vmmem.TryGetProperty("bytes", out _).Should().BeFalse();
-        root.GetProperty("host").GetProperty("vhdx").GetProperty("reason").GetString().Should().Be(StatusReports.VhdxNotCollected);
+        // E15.S2: host.vhdx stays (no wire removal) and points at the distro's status.disk.
+        root.GetProperty("host").GetProperty("vhdx").GetProperty("reason").GetString().Should().Be(StatusDisk.ReadByTheDistro).And.Contain("status --json carries them as disk");
         root.GetProperty("host").GetProperty("memory").GetProperty("availableBytes").GetInt64().Should().Be(40);
     }
 

@@ -7,6 +7,8 @@ using Serilog;
 using WslCare.Core;
 using WslCare.Core.Collect;
 using WslCare.Core.Config;
+using WslCare.Core.Health;
+using WslCare.Core.Hosting;
 using WslCare.Core.Json;
 using WslCare.Core.Records;
 using WslCare.Core.Thresholds;
@@ -29,6 +31,7 @@ internal static class CollectCommand
     public static int Run(Request.Collect request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, ILogger logger, CancellationToken cancellationToken)
     {
         var log = logger.ForContext(typeof(CollectCommand));
+        RecordDistro(host, log);
         if (request.Detach)
         {
             return DetachedRuns.CollectDetach(request, host, stdout, stderr, log);
@@ -46,6 +49,7 @@ internal static class CollectCommand
             LockWait = request.Timer ? Core.Records.RunLock.AcceptedRunWait : TimeSpan.Zero,
             // PLAN_boot_settle.md (coai code round): a timer run that waits says so in its log, before each wait.
             Say = message => log.Information("{Settle}", message),
+            DistroVariable = ThisDistro(),
         };
         // Retro gate over PR #5: Docker's disk figures and the daily folder walks can take minutes, each under its own ceiling;
         // the console log (stderr) says so before anything is asked, so working is never mistaken for stuck.
@@ -75,6 +79,26 @@ internal static class CollectCommand
         }
 
         return (int)ExitCode.Ok;
+    }
+
+    /// <summary>This process's <c>WSL_DISTRO_NAME</c>: set by WSL for a process started through <c>wsl.exe</c>, absent in a systemd unit.</summary>
+    internal static string ThisDistro() => Environment.GetEnvironmentVariable(DistroIdentity.Variable) ?? string.Empty;
+
+    /// <summary>E15.S2 design §1: a ROOT collect started through <c>wsl.exe</c> — the panel's <i>Run full check now</i> is
+    /// <c>wsl.exe -u root … collect --detach</c> — carries <c>WSL_DISTRO_NAME</c>, which the systemd unit that then does the run has not;
+    /// it records the name in root's state (<c>{state}/distro-name.json</c>) for that run and the timer's. Nothing is written when
+    /// the variable is absent or the name is unchanged; a failed write is logged and never ends the verb.</summary>
+    private static void RecordDistro(CliHost host, ILogger log)
+    {
+        if (host.Paths is not LinuxHostPaths || !host.Privilege.IsRoot)
+        {
+            return;
+        }
+
+        if (DistroIdentity.Record(host.Paths, host.Files, ThisDistro(), host.Clock.GetUtcNow()) is { Length: > 0 } problem)
+        {
+            log.Warning("collect: this distro's name was not recorded: {Problem}", problem);
+        }
     }
 
     internal static CollectReport Report(CollectResult result) =>
