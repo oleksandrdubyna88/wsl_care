@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.3.1...extension-v0.4.0) (2026-10-11)
+
+
+### Features
+
+* **daemon:** A21 ends client-gone interop relays with SIGTERM only (E14 S7b.2) ([#91](https://github.com/oleksandrdubyna88/wsl_care/issues/91)) ([9d23dc1](https://github.com/oleksandrdubyna88/wsl_care/commit/9d23dc16d82e77ae259f2604c686c2c26f8d7bbf))
+* **extension:** a GPU that dropped out of Windows is an alert at the top of the panel, and a disabled one has Enable &lt;GPU&gt; (story G1) ([#98](https://github.com/oleksandrdubyna88/wsl_care/issues/98)) ([ff576fc](https://github.com/oleksandrdubyna88/wsl_care/commit/ff576fccaabade6a2af0f7153f14740865a9e626))
+* **extension:** E10.S1a — the archive folder, one user-layer writer, the panel's archive section ([#88](https://github.com/oleksandrdubyna88/wsl_care/issues/88)) ([6c5f148](https://github.com/oleksandrdubyna88/wsl_care/commit/6c5f148f3df096059fc756cb47901c441773ca62))
+* **extension:** E10.S1b — Archive now, the daemon's A13 through the cleanup controller from a panel button ([#92](https://github.com/oleksandrdubyna88/wsl_care/issues/92)) ([7198f25](https://github.com/oleksandrdubyna88/wsl_care/commit/7198f252e556db9535c0b132096a2190afc12ba1))
+* **extension:** E10.S2a — the Archive page, browse only, over the `wsl-care` daemon's `archive list` command ([#96](https://github.com/oleksandrdubyna88/wsl_care/issues/96)) ([b69deaa](https://github.com/oleksandrdubyna88/wsl_care/commit/b69deaac3049a3e42799fac66a5c33dd1d5c1124))
+
 ## [0.3.1](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.3.0...extension-v0.3.1) (2026-10-10)
 
 
