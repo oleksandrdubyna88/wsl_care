@@ -1,6 +1,6 @@
 import type { ProcessRequest } from '../process/runner';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
-import { elevatedRequest, powerShellOf } from '../powershell/elevatedLauncher';
+import { powerShellOf } from '../powershell/elevatedLauncher';
 
 /**
  * The three PowerShell texts around the guard's task (PLAN_windows_time_task.md D3, D5, D8) — install and remove, each run
@@ -37,6 +37,7 @@ export function installScript(options: GuardOptions): string {
   return [
     MODULES,
     IMPORT_SCHEDULED_TASKS,
+    "$ProgressPreference = 'SilentlyContinue'",
     "$xml = @'",
     guardTaskXml(options),
     HERE_END,
@@ -99,14 +100,6 @@ export const ELEVATED_COMMAND_LINE_MAX = 16_000;
 /** The command line `CreateProcess` receives for a request: the program and each argument, quoted as Node quotes them. */
 export function commandLineLength(request: ProcessRequest): number {
   return [request.file, ...request.args].reduce((sum, arg) => sum + arg.length + 3, 0);
-}
-
-export function installRequest(env: Readonly<Record<string, string | undefined>>, options: GuardOptions, timeoutMs: number): ProcessRequest | string {
-  return elevatedRequest(env, installScript(options), timeoutMs);
-}
-
-export function removeRequest(env: Readonly<Record<string, string | undefined>>, timeoutMs: number): ProcessRequest | string {
-  return elevatedRequest(env, REMOVE_SCRIPT, timeoutMs);
 }
 
 /** The read-only query, UNELEVATED: the absolute PowerShell with the fixed script — no `runas`, no encoded payload. */

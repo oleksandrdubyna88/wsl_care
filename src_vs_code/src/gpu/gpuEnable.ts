@@ -4,7 +4,7 @@ import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
 import { CONFIRM_LABEL, EXIT, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { clearGpuPending, PENDING_GRACE_MS, readGpuPending, writeGpuPending } from './gpuPending';
-import { engineChangedSentence, engineOf, withStoreNote, type Engine, type FileInfoOf, type PwshFacts } from '../powershell/elevatedEngine';
+import { byEngine, engineChangedSentence, engineOf, withStoreNote, type Engine, type FileInfoOf, type PwshFacts } from '../powershell/elevatedEngine';
 import { DISABLED_CODE, ENABLE_EXIT, enableRequestFor, enableScript } from './gpuScripts';
 import { canEnable, meaningOf, NOT_ASKED, pwshFactsOf, type Adapter, type GpuState } from './gpuState';
 
@@ -110,7 +110,7 @@ function nowWords(name: string, after: Adapter | undefined, state: GpuState): To
  * 2026-10-10: PowerShell 7 by its MSI or Store package path, or Windows PowerShell 5.1) — pure, so every row is a unit test.
  */
 export function enableSentence(adapter: Adapter, exit: EnableExit, state: GpuState, engine: Engine): { readonly sentence: string; readonly failed: boolean } {
-  const by = engine.label === '' ? '' : ` Elevated program: ${engine.label}.`;
+  const by = byEngine(engine);
   const now = nowWords(adapter.name, afterOf(state, adapter.id), state);
   const lead: { readonly [K in EnableExit['kind']]: (e: Extract<EnableExit, { kind: K }>) => { readonly text: string; readonly failed: boolean } } = {
     ran: () => ({ text: '', failed: false }),

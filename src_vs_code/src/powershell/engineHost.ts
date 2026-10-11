@@ -1,7 +1,7 @@
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
-import { engineOf, MODULES, PWSH_PROBE, pwshFactsFromTags, TAG_HELPER, type Engine, type FileInfoOf, type PwshFacts } from './elevatedEngine';
+import { engineChangedSentence, engineOf, MODULES, PWSH_PROBE, pwshFactsFromTags, TAG_HELPER, type Engine, type FileInfoOf, type PwshFacts } from './elevatedEngine';
 import { powerShellOf } from './elevatedLauncher';
 import { tagsOf } from './taggedAnswer';
 
@@ -66,6 +66,27 @@ function exitedRead(code: number, stdout: Buffer, env: Readonly<Record<string, s
 /** The read's process result as one engine — pure, so every answer is a unit test. */
 export function engineReadOf(result: ProcessResult, env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf): EngineRead {
   return result.kind === 'exited' ? exitedRead(signed32(result.code), result.stdout, env, fileInfo) : failedRead(env, fileInfo, (NOT_ANSWERED[result.kind] as (r: ProcessResult) => string)(result));
+}
+
+/** Where an elevated flow gets its engine — the host, or a fixed one in a unit test. */
+export interface EngineSource {
+  /** The last read's engine, reading first when there is none — asked BEFORE the modal. */
+  readonly engine: () => Promise<EngineRead>;
+  /** A NEW read — asked AFTER the modal, right before the launch. */
+  readonly reread: () => Promise<EngineRead>;
+}
+
+/**
+ * Why the launch must not go ahead with `before` (the engine the modal named) after the read taken right before it, or
+ * `undefined` when it may: a read that did not answer says so (§11 R7) — never "the program changed" — and a read that chose
+ * another program says that (G1's sentence). Both reads failing name the same 5.1, which runs: nothing is refused for a probe.
+ */
+export function engineProblem(before: Engine, now: EngineRead): string | undefined {
+  if (now.engine.file === before.file) {
+    return undefined;
+  }
+
+  return now.failure === '' ? engineChangedSentence(before, now.engine) : `Nothing ran: the read of the elevated program right before the launch did not answer (${now.failure}). Press the button again.`;
 }
 
 export interface EngineHostDeps {

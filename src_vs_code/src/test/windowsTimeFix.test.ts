@@ -13,6 +13,8 @@ import type { Snapshot } from '../state/outcomeStore';
 import { encoded, outerScript } from '../powershell/elevatedLauncher';
 import { CONFIRM_LABEL, EXIT, fixPrompt, fixRequest, innerScript, outcomeOf, startWindowsTime, type FixDeps, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
+import type { EngineRead } from '../powershell/engineHost';
+import { failedRead, fixedEngine, PS51_ENGINE, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
 import { ELEVATION_TRIPWIRE_MESSAGE, isElevatedPowerShell } from './support/noRealWsl';
 
 /**
@@ -46,6 +48,7 @@ function deps(answer: boolean, result: ProcessResult, setAutomatic = true): { de
       run: (request) => { events.push('run'); requests.push(request); return Promise.resolve(result); },
       report: (message, failed) => { events.push('report'); reports.push({ message, failed }); },
       afterDone: () => { events.push('fullCheck'); },
+      engine: fixedEngine(PS51_READ),
     },
   };
 }
@@ -193,5 +196,60 @@ test('PowerShell\'s own parser reads both scripts without an error (parsed, neve
 
 test('the encoding is PowerShell\'s: UTF-16LE base64', () => {
   assert.equal(encoded('A'), Buffer.from([0x41, 0x00]).toString('base64'));
-  assert.equal(fixPrompt(true).message, 'Start the Windows Time service and resync the Windows clock?');
+  assert.equal(fixPrompt(true, PS51_ENGINE).message, 'Start the Windows Time service and resync the Windows clock?');
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D3, D5, §11 R7, R12: the engine, read before the modal and AGAIN before the launch ----
+
+function engineDeps(answer: boolean, result: ProcessResult, before: EngineRead, after: EngineRead = before): ReturnType<typeof deps> {
+  const d = deps(answer, result);
+  return { ...d, deps: { ...d.deps, engine: fixedEngine(before, after, d.events) } };
+}
+
+function elevatedProgramOf(request: ProcessRequest | undefined): string {
+  return /ProcessStartInfo -ArgumentList '([^']+)'/.exec(request?.args[3] ?? '')?.[1] ?? '';
+}
+
+test('pwsh D3: a verified Store PowerShell 7 runs the fix elevated — read before the modal, which names it, and read AGAIN right before the launch', async () => {
+  const h = engineDeps(true, exited(0), STORE_READ);
+  assert.deepEqual(await startWindowsTime(h.deps), { kind: 'done' });
+  assert.deepEqual(h.events, ['engine', 'confirm', 'reread', 'run', 'fullCheck', 'report']);
+  assert.equal(elevatedProgramOf(h.requests[0]), STORE_PWSH);
+  assert.equal(h.requests[0]?.file, POWERSHELL, 'the LAUNCHER stays Windows PowerShell; only the elevated program changes');
+  assert.ok(h.prompts[0]?.detail.includes(`The elevated program: PowerShell 7 (${STORE_PWSH})`));
+  assert.match(h.reports[0]?.message ?? '', /Elevated program: PowerShell 7 \(C:\\Program Files\\WindowsApps\\.+\\pwsh\.exe\)\.$/);
+});
+
+test('pwsh D3: an engine that changed while the modal was open starts nothing — no run, no full check — and says so', async () => {
+  const h = engineDeps(true, exited(0), STORE_READ, PS51_READ);
+  assert.equal((await startWindowsTime(h.deps)).kind, 'notRun');
+  assert.deepEqual(h.events, ['engine', 'confirm', 'reread', 'report']);
+  assert.equal(h.requests.length, 0);
+  assert.match(h.reports[0]?.message ?? '', /^Nothing ran: the elevated program changed while the question was open \(PowerShell 7 .+ is now Windows PowerShell 5\.1 .+\)\. Press the button again\.$/);
+  assert.equal(h.reports[0]?.failed, true);
+});
+
+test('pwsh §11 R7: a re-read that did not answer says THAT — never "the program changed" — and starts nothing', async () => {
+  const h = engineDeps(true, exited(0), STORE_READ, failedRead('the read did not answer within 20 s (wslCare.timeouts.engineProbeSeconds)'));
+  assert.equal((await startWindowsTime(h.deps)).kind, 'notRun');
+  assert.equal(h.requests.length, 0);
+  assert.match(h.reports[0]?.message ?? '', /^Nothing ran: the read of the elevated program right before the launch did not answer \(the read did not answer within 20 s/);
+  assert.doesNotMatch(h.reports[0]?.message ?? '', /changed/);
+});
+
+test('pwsh: both reads unanswered name the same Windows PowerShell 5.1, which runs — the modal says PowerShell 7 could not be checked', async () => {
+  const unanswered = failedRead('the read could not start: ENOENT');
+  const h = engineDeps(true, exited(0), unanswered);
+  assert.equal((await startWindowsTime(h.deps)).kind, 'done');
+  assert.equal(elevatedProgramOf(h.requests[0]), POWERSHELL);
+  assert.match(h.prompts[0]?.detail ?? '', /The elevated program: Windows PowerShell 5\.1 \(.+\) — PowerShell 7 could not be checked: the read could not start: ENOENT/);
+});
+
+test('pwsh D5: exit 13 on the Store engine adds the Store note; on 5.1 it does not', async () => {
+  const store = engineDeps(true, exited(EXIT.launchFailed), STORE_READ);
+  await startWindowsTime(store.deps);
+  assert.match(store.reports[0]?.message ?? '', /could not be started — the Store package may not be available to the account that elevates/);
+  const windows = engineDeps(true, exited(EXIT.launchFailed), PS51_READ);
+  await startWindowsTime(windows.deps);
+  assert.doesNotMatch(windows.reports[0]?.message ?? '', /Store package/);
 });

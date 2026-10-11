@@ -267,6 +267,16 @@ export function withStoreNote(sentence: string, launchFailed: boolean, engine: E
   return sentence + (launchFailed && engine.kind === 'store' ? STORE_NOTE : '');
 }
 
+/** The end of every outcome sentence of an elevated run: " Elevated program: <label>." — nothing when no engine can be named. */
+export function byEngine(engine: Engine): string {
+  return engine.label === '' ? '' : ` Elevated program: ${engine.label}.`;
+}
+
+/** The modal's line naming the program that runs elevated (G1's words, shared). */
+export function elevatedProgramLine(engine: Engine): string {
+  return `The elevated program: ${engine.label}`;
+}
+
 /** What a caller says when the engine its modal named is not the one the read after the modal chose: nothing ran. */
 export function engineChangedSentence(before: Engine, now: Engine): string {
   return `Nothing ran: the elevated program changed while the question was open (${before.label} is now ${now.label}). Press the button again.`;

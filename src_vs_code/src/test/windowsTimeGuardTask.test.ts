@@ -5,8 +5,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { elevatedRequest } from '../powershell/elevatedLauncher';
 import type { ProcessRequest } from '../process/runner';
-import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, OP_EXIT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
+import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installScript, NOT_FOUND_HRESULT, OP_EXIT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT } from '../windowsTime/guardScripts';
 import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, START_TYPE_QUERY, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, xmlText, type GuardOptions } from '../windowsTime/guardTask';
 import { guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
@@ -170,14 +171,14 @@ test('install carries the XML verbatim in a single-quoted here-string, creates t
 });
 
 test('the install and remove requests are ONE absolute PowerShell whose encoded payload is exactly the script shown — under the length bound', () => {
-  const install = installRequest(ENV, LARGEST, 180_000) as ProcessRequest;
+  const install = elevatedRequest(ENV, installScript(LARGEST), 180_000) as ProcessRequest;
   assert.equal(install.file, POWERSHELL);
   assert.deepEqual(install.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
   assert.equal(encodedInner(install), installScript(LARGEST));
   assert.ok(commandLineLength(install) < ELEVATED_COMMAND_LINE_MAX, `${commandLineLength(install)} characters for the largest settings`);
-  const remove = removeRequest(ENV, 180_000) as ProcessRequest;
+  const remove = elevatedRequest(ENV, REMOVE_SCRIPT, 180_000) as ProcessRequest;
   assert.equal(encodedInner(remove), REMOVE_SCRIPT);
-  assert.equal(typeof installRequest({}, DEFAULTS, 1000), 'string', 'no SystemRoot: no request');
+  assert.equal(typeof elevatedRequest({}, installScript(DEFAULTS), 1000), 'string', 'no SystemRoot: no request');
 });
 
 test('removal is "if present" at every step, and never touches the service', () => {
@@ -194,7 +195,7 @@ test('the status query is unelevated and READ-only: no runas, no payload, no mut
   assert.equal(MUTATING.test(QUERY_SCRIPT), false);
   assert.equal(MUTATING.test(SUMMARY_FUNCTION), false);
   assert.equal(isElevatedPowerShell(query.file, query.args) || isMachineChange(query.file, query.args), false);
-  const install = installRequest(ENV, DEFAULTS, 1000) as ProcessRequest;
+  const install = elevatedRequest(ENV, installScript(DEFAULTS), 1000) as ProcessRequest;
   assert.equal(isMachineChange(install.file, install.args), true, 'the install is refused by its decoded payload, not only by its runas');
 });
 

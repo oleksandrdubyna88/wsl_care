@@ -25,6 +25,9 @@ import { OutcomeStore } from './state/outcomeStore';
 import { daemonLimitsOf, type DaemonLimits } from './shared/daemonLimits';
 import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
+import { fileInfoOf } from './powershell/elevatedEngine';
+import { EngineHost } from './powershell/engineHost';
+import { engineQueryFor, newEngineRecorder, type EngineRecorder } from './powershell/engineRecorder';
 import { WindowsTimeGuardHost } from './windowsTime/guardHost';
 import { sweepPending } from './windowsTime/guardPending';
 import type { GuardOptions } from './windowsTime/guardTask';
@@ -105,6 +108,9 @@ interface Parts {
   readonly windowsTime: WindowsTimeRecorder;
   readonly guardRecorder: GuardRecorder;
   readonly guard: WindowsTimeGuardHost;
+  /** Which PowerShell runs the Windows Time runs elevated (PLAN_pwsh_engine_windows_time.md §11 R3). */
+  readonly engine: EngineHost;
+  readonly engineRecorder: EngineRecorder;
   readonly gpu: GpuParts;
   readonly cleanRecorder: CleanRecorder;
   readonly host: CleanupHost;
@@ -155,12 +161,14 @@ function build(context: vscode.ExtensionContext): Parts {
   });
 
   const guardRecorder = newGuardRecorder();
-  const guard = windowsTimeGuard(context, testMode, guardRecorder);
+  const engineRecorder = newEngineRecorder();
+  const engine = engineHostOf(testMode, engineRecorder);
+  const guard = windowsTimeGuard(context, testMode, guardRecorder, engine);
   const archiveRecorder = newArchiveRecorder();
   const archive = archiveHostOf(testMode, client, runner, store, host, archiveRecorder, log);
 
   return {
-    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
+    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
 }
@@ -196,7 +204,15 @@ function guardOptions(): GuardOptions {
  * wsl.exe; a recorder in Test mode), and its install / remove run ONE elevated PowerShell each. A pending run past its
  * deadline is swept at activation, so nothing stays "waiting" after a crash.
  */
-function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, recorder: GuardRecorder): WindowsTimeGuardHost {
+/**
+ * The engine read (PLAN_pwsh_engine_windows_time.md §11 R3): the REAL runner (never the fake wsl.exe; a recorder in Test mode),
+ * shared by *Start Windows Time* and the guard's install / remove, and read again by the panel's refresh.
+ */
+function engineHostOf(testMode: boolean, recorder: EngineRecorder): EngineHost {
+  return new EngineHost({ env: process.env, fileInfo: fileInfoOf, timeoutMs: () => numbers().engineProbeSeconds * 1000, query: engineQueryFor(testMode, recorder, runnerFor({ kind: 'real' })) });
+}
+
+function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, recorder: GuardRecorder, engine: EngineHost): WindowsTimeGuardHost {
   void sweepPending(context.globalState, Date.now());
 
   return new WindowsTimeGuardHost({
@@ -208,6 +224,7 @@ function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, r
     durable: context.globalState,
     nowUtcMs: () => Date.now(),
     formatInstant: (iso) => new Date(iso).toLocaleString(),
+    engine,
   });
 }
 
@@ -243,6 +260,7 @@ function windowsTimeFixer(parts: Parts): () => void {
       setAutomaticStart: () => settings().get<boolean>('windowsTime.setAutomaticStart', true) !== false,
       timeoutMs: () => numbers().windowsTimeFixSeconds * 1000,
       afterDone: () => { void parts.host.runFullCheck(); },
+      engine: parts.engine,
       ...ui,
     }).catch((e: unknown) => { parts.log.error(`Start Windows Time failed: ${String(e)}`); }).finally(() => { running = false; });
   };
@@ -263,6 +281,7 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
 function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
   return (options) => {
     void parts.guard.refresh();
+    void parts.engine.refresh();
     void parts.gpu.host.refresh();
     const round = parts.poller.refreshPanel(options);
     void round.then(() => parts.archive.refresh()).catch((e: unknown) => { parts.log.error(`archive: the refresh failed: ${String(e)}`); });

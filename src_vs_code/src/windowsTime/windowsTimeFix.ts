@@ -1,13 +1,15 @@
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
+import { byEngine, elevatedArg, elevatedProgramLine, withStoreNote, type Engine } from '../powershell/elevatedEngine';
 import { elevatedRequest, LAUNCH_EXIT } from '../powershell/elevatedLauncher';
+import { engineProblem, type EngineSource } from '../powershell/engineHost';
 
 /**
  * *Start Windows Time* (PLAN_windows_time_guard.md D7, the incident of 2026-10-08: `w32time` stopped, Windows 2 h slow):
  * set the Windows Time service to start Automatic (while `wslCare.windowsTime.setAutomaticStart` is on — the owner's
- * decision, default on), start it, and resync — through ONE elevated Windows PowerShell, whose UAC prompt is the person's
- * own confirmation, after a modal that shows the exact commands.
+ * decision, default on), start it, and resync — through ONE elevated PowerShell, whose UAC prompt is the person's own
+ * confirmation, after a modal that shows the exact commands.
  *
  * <p>What is fixed, and why:</p>
  * <ul>
@@ -18,9 +20,11 @@ import { elevatedRequest, LAUNCH_EXIT } from '../powershell/elevatedLauncher';
  *   <li>an elevated child's streams cannot be read across the integrity boundary (`Start-Process -Verb RunAs` refuses
  *       redirection), so each failure has its OWN exit code and the sentence is ours. A result file was rejected: an
  *       elevated write to a fixed path in the user's `%TEMP%` follows a link the user's own processes can plant;</li>
- *   <li>the inner script travels as `-EncodedCommand` (UTF-16LE base64), so no quoting layer exists between the constant
- *       and the elevated PowerShell; the outer one starts it with `Process.Start` and the `runas` verb and reads the UAC
- *       refusal as the 1223 Win32Exception it throws.</li>
+ *   <li>the launcher (`powershell/elevatedLauncher.ts`) carries the inner script as `-EncodedCommand`, so no quoting layer
+ *       exists between the constant and the elevated PowerShell;</li>
+ *   <li>WHICH PowerShell runs elevated is the shared resolver's choice (PLAN_pwsh_engine_windows_time.md): PowerShell 7
+ *       resolved and signature-checked, else Windows PowerShell 5.1 — read before the modal, which names it, and read AGAIN
+ *       right before the launch; a different program, or a read that did not answer, starts nothing.</li>
  * </ul>
  */
 
@@ -43,17 +47,19 @@ export function innerScript(setAutomaticStart: boolean): string {
   return ["$env:PSModulePath = \"$PSHOME\\Modules\"", ...(setAutomaticStart ? [SET_AUTOMATIC] : []), ...BODY].join('\n');
 }
 
-/** The one request this module ever builds — or why none can be (no `SystemRoot` drive folder). */
-export function fixRequest(env: Readonly<Record<string, string | undefined>>, setAutomaticStart: boolean, timeoutMs: number): ProcessRequest | string {
-  return elevatedRequest(env, innerScript(setAutomaticStart), timeoutMs);
+/** The one request this module ever builds — for the ELEVATED program `elevated` (5.1 when absent) — or why none can be. */
+export function fixRequest(env: Readonly<Record<string, string | undefined>>, setAutomaticStart: boolean, timeoutMs: number, elevated?: string): ProcessRequest | string {
+  return elevatedRequest(env, innerScript(setAutomaticStart), timeoutMs, elevated);
 }
 
 export type FixOutcome =
   | { readonly kind: 'done' }
   | { readonly kind: 'declined' }
-  | { readonly kind: 'failed'; readonly sentence: string }
+  | { readonly kind: 'failed'; readonly sentence: string; readonly launchFailed?: true }
   | { readonly kind: 'timedOut'; readonly timeoutMs: number }
-  | { readonly kind: 'notStarted'; readonly reason: string };
+  | { readonly kind: 'notStarted'; readonly reason: string }
+  /** The read right before the launch disagreed with the modal (another program, or no answer): nothing ran. */
+  | { readonly kind: 'notRun'; readonly sentence: string };
 
 /** The sentence of each failing exit of the shared lines — the guard's last result reads the same ones. */
 export const FAILURES: Readonly<Record<number, string>> = {
@@ -76,12 +82,19 @@ export function outcomeOf(result: ProcessResult): FixOutcome {
   return (OF_RESULT[result.kind] as (r: ProcessResult) => FixOutcome)(result);
 }
 
+/** A failing exit: its sentence, and whether the elevated program itself could not be started (13 — the Store note's case). */
+function failedOutcome(code: number): FixOutcome {
+  const sentence = FAILURES[code] ?? `the elevated PowerShell exited ${code}`;
+
+  return code === EXIT.launchFailed ? { kind: 'failed', sentence, launchFailed: true } : { kind: 'failed', sentence };
+}
+
 function exitedOutcome(code: number): FixOutcome {
   if (code === EXIT.done) {
     return { kind: 'done' };
   }
 
-  return code === EXIT.declined ? { kind: 'declined' } : { kind: 'failed', sentence: FAILURES[code] ?? `the elevated PowerShell exited ${code}` };
+  return code === EXIT.declined ? { kind: 'declined' } : failedOutcome(code);
 }
 
 export interface FixPrompt {
@@ -92,11 +105,13 @@ export interface FixPrompt {
 
 export const CONFIRM_LABEL = 'Run it (one UAC prompt follows)';
 
-export function fixPrompt(setAutomaticStart: boolean): FixPrompt {
+/** The modal: the exact elevated script, and the program that runs it (the engine the read chose). */
+export function fixPrompt(setAutomaticStart: boolean, engine: Engine): FixPrompt {
   return {
     message: 'Start the Windows Time service and resync the Windows clock?',
     detail: [
-      'One Windows PowerShell runs ELEVATED — Windows asks you first (UAC) — and runs exactly this:',
+      'One PowerShell runs ELEVATED — Windows asks you first (UAC) — and runs exactly this:',
+      elevatedProgramLine(engine),
       '',
       innerScript(setAutomaticStart),
       '',
@@ -118,40 +133,55 @@ export interface FixDeps {
   readonly report: (message: string, failed: boolean) => void;
   /** After `done`: the existing *Run full check now*, so the persisted verdicts — the truth — turn green. */
   readonly afterDone: () => void;
+  /** Which PowerShell runs elevated — before the modal, and again right before the launch (`powershell/engineHost.ts`). */
+  readonly engine: EngineSource;
 }
 
-const SENTENCE: { readonly [K in FixOutcome['kind']]: (o: Extract<FixOutcome, { kind: K }>) => string } = {
-  done: () => 'The Windows Time service is running and the Windows clock was resynchronised. A full check runs now.',
+const SENTENCE: { readonly [K in FixOutcome['kind']]: (o: Extract<FixOutcome, { kind: K }>, engine: Engine) => string } = {
+  done: (_o, engine) => `The Windows Time service is running and the Windows clock was resynchronised. A full check runs now.${byEngine(engine)}`,
   declined: () => 'Nothing was changed: the UAC prompt was declined.',
-  failed: (o) => `The Windows Time fix failed: ${o.sentence}.`,
-  timedOut: (o) => `The Windows Time fix did not finish within ${Math.round(o.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeFixSeconds) — if the UAC prompt is still open, answering it still runs the fix.`,
+  failed: (o, engine) => `The Windows Time fix failed: ${withStoreNote(o.sentence, o.launchFailed === true, engine)}.${byEngine(engine)}`,
+  timedOut: (o, engine) => `The Windows Time fix did not finish within ${Math.round(o.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeFixSeconds) — if the UAC prompt is still open, answering it still runs the fix.${byEngine(engine)}`,
   notStarted: (o) => `The Windows Time fix could not start: ${o.reason}.`,
+  notRun: (o) => o.sentence,
 };
 
-export function outcomeSentence(outcome: FixOutcome): string {
-  return noticeText((SENTENCE[outcome.kind] as (o: FixOutcome) => string)(outcome));
+export function outcomeSentence(outcome: FixOutcome, engine: Engine): string {
+  return noticeText((SENTENCE[outcome.kind] as (o: FixOutcome, engine: Engine) => string)(outcome, engine));
 }
 
-/** The flow, in the order that makes it safe: the request is built, the modal shows the commands, ONLY its confirm starts
- * the one process, and its closed outcome is told. Nothing runs on a decline or when no request can be built. */
+/** The flow, in the order that makes it safe: the engine is read and the request built, the modal shows the commands and the
+ * program, ONLY its confirm leads on to the launch, and its closed outcome is told. Nothing runs on a decline or when no
+ * request can be built. */
 export async function startWindowsTime(deps: FixDeps): Promise<FixOutcome> {
   const setAutomatic = deps.setAutomaticStart();
-  const request = fixRequest(deps.env, setAutomatic, deps.timeoutMs());
+  const { engine } = await deps.engine.engine();
+  const request = fixRequest(deps.env, setAutomatic, deps.timeoutMs(), elevatedArg(engine));
   if (typeof request === 'string') {
-    return told(deps, { kind: 'notStarted', reason: request });
+    return told(deps, { kind: 'notStarted', reason: request }, engine);
   }
-  if (!(await deps.confirm(fixPrompt(setAutomatic)))) {
+  if (!(await deps.confirm(fixPrompt(setAutomatic, engine)))) {
     return { kind: 'declined' };
+  }
+
+  return launchedFix(deps, request, engine);
+}
+
+/** The confirmed half (§11 R12): the engine read AGAIN right before the launch — a disagreement runs nothing — then the ONE run. */
+async function launchedFix(deps: FixDeps, request: ProcessRequest, engine: Engine): Promise<FixOutcome> {
+  const problem = engineProblem(engine, await deps.engine.reread());
+  if (problem !== undefined) {
+    return told(deps, { kind: 'notRun', sentence: problem }, engine);
   }
   const outcome = outcomeOf(await deps.run(request));
   if (outcome.kind === 'done') {
     deps.afterDone();
   }
 
-  return told(deps, outcome);
+  return told(deps, outcome, engine);
 }
 
-function told(deps: FixDeps, outcome: FixOutcome): FixOutcome {
-  deps.report(outcomeSentence(outcome), outcome.kind !== 'done' && outcome.kind !== 'declined');
+function told(deps: FixDeps, outcome: FixOutcome, engine: Engine): FixOutcome {
+  deps.report(outcomeSentence(outcome, engine), outcome.kind !== 'done' && outcome.kind !== 'declined');
   return outcome;
 }

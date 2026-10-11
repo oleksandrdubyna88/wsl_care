@@ -1,5 +1,6 @@
 import type { DurableStore } from '../cleanup/journal';
 import type { Runner } from '../process/runner';
+import type { EngineSource } from '../powershell/engineHost';
 import type { FixPrompt } from './windowsTimeFix';
 import { runGuardOp, type GuardOp, type GuardOutcome } from './guardFlow';
 import { clearPending, readPending } from './guardPending';
@@ -35,6 +36,8 @@ export interface GuardHostDeps {
   readonly nowUtcMs: () => number;
   /** The presentation edge's local-time formatter for the last run. */
   readonly formatInstant: (iso: string) => string;
+  /** Which PowerShell runs the install / remove elevated (`powershell/engineHost.ts`, shared with *Start Windows Time*). */
+  readonly engine: EngineSource;
 }
 
 export class WindowsTimeGuardHost {
@@ -108,6 +111,7 @@ export class WindowsTimeGuardHost {
         durable: this.durable,
         nowUtcMs: this.deps.nowUtcMs,
         afterRun: () => { void this.refresh(); },
+        engine: this.deps.engine,
       });
     } finally {
       this.opRunning = false;
