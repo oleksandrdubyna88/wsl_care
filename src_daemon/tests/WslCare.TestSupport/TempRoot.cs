@@ -11,12 +11,125 @@ public sealed class TempRoot : IDisposable
 {
     public TempRoot(string purpose)
     {
+        _ = Swept.Value;
         Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"wsl-care-test-{purpose}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path);
+        System.IO.File.WriteAllText(Path + MarkerSuffix, MarkerOf(Environment.ProcessId, ThisProcessStartTicks.Value));
     }
+
+    private static readonly Lazy<long> ThisProcessStartTicks = new(() => System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks);
 
     /// <summary>The absolute path of this test's root.</summary>
     public string Path { get; }
+
+    /// <summary>How old a root left behind by an EARLIER test process must be before a later one removes it.</summary>
+    public static readonly TimeSpan LeftoverAge = TimeSpan.FromHours(24);
+
+    /// <summary>The marker file beside a root (never inside it, so no test that lists its root sees it).</summary>
+    public const string MarkerSuffix = ".owner";
+
+    /// <summary>A marker's text: the creating process's pid and start time (UTC ticks).</summary>
+    public static string MarkerOf(int pid, long startTicksUtc) => FormattableString.Invariant($"{pid} {startTicksUtc}");
+
+    /// <summary>The exact shape the constructor writes: the prefix, a purpose, a dash and 32 hex digits.</summary>
+    private static readonly System.Text.RegularExpressions.Regex RootName =
+        new("^wsl-care-test-.+-[0-9a-f]{32}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>The leftovers of earlier processes, removed once, by the first root this process makes.</summary>
+    private static readonly Lazy<int> Swept = new(() => SweepLeftovers(System.IO.Path.GetTempPath(), DateTime.UtcNow, LeftoverAge));
+
+    /// <summary>
+    /// Removes the roots in <paramref name="tempFolder"/> that an earlier test process left behind — only this harness's exact
+    /// names, only when last written before <paramref name="olderThan"/> ago, and never one whose marker names a process that is
+    /// still alive (pid AND start time: age alone does not prove a root abandoned — the coai plan round) — and answers how many
+    /// went. A root it cannot remove (a handle still open) stays for a later sweep; nothing else in the folder is ever touched.
+    /// A root from before the markers has none and is judged by its age alone.
+    /// </summary>
+    public static int SweepLeftovers(string tempFolder, DateTime nowUtc, TimeSpan olderThan) =>
+        new DirectoryInfo(tempFolder).EnumerateDirectories()
+            .Where(d => RootName.IsMatch(d.Name) && nowUtc - d.LastWriteTimeUtc > olderThan && !OwnerAlive(d.FullName + MarkerSuffix))
+            .Count(d => DeleteRootAndMarker(d.FullName));
+
+    /// <summary>Whether the marker names a process that still runs: the same pid with the same start time. A process whose start
+    /// time cannot be read is taken as alive (keep rather than guess), and so is a marker that exists but cannot be read; a missing
+    /// marker names nobody (a root from before the markers is judged by its age alone).</summary>
+    private static bool OwnerAlive(string marker) => ReadMarker(marker) is not { } text || NamesALiveProcess(text);
+
+    /// <summary>The marker's text; empty when there is none; <c>null</c> when it exists but cannot be read (the coai code round: the
+    /// sweep runs in a <see cref="Lazy{T}"/>, which would cache the exception and break every root of the process — so an
+    /// unreadable marker keeps its root instead).</summary>
+    private static string? ReadMarker(string marker)
+    {
+        try
+        {
+            return System.IO.File.Exists(marker) ? System.IO.File.ReadAllText(marker) : string.Empty;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    private static bool NamesALiveProcess(string text)
+    {
+        var parts = text.Split(' ');
+        return parts.Length == 2
+            && int.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out var pid)
+            && long.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out var ticks)
+            && StartTicksOf(pid) is { } live && (live == ticks || live == UnreadableStart);
+    }
+
+    private const long UnreadableStart = -1;
+
+    /// <summary>The start time of the running process <paramref name="pid"/>; <c>null</c> when no such process runs.</summary>
+    private static long? StartTicksOf(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return StartOrUnreadable(process);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static long StartOrUnreadable(System.Diagnostics.Process process)
+    {
+        try
+        {
+            return process.StartTime.ToUniversalTime().Ticks;
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException or System.Security.SecurityException)
+        {
+            return UnreadableStart;
+        }
+    }
+
+    /// <summary>The root, then — only once it is gone — its marker.</summary>
+    private static bool DeleteRootAndMarker(string root)
+    {
+        var gone = DeleteBestEffort(root);
+        if (gone)
+        {
+            DeleteMarker(root);
+        }
+
+        return gone;
+    }
+
+    private static void DeleteMarker(string root)
+    {
+        try
+        {
+            System.IO.File.Delete(root + MarkerSuffix);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A marker without its root names nothing that can be swept; it goes with a later run's delete or stays harmless.
+        }
+    }
 
     public string File(string relativePath, string content)
     {
@@ -36,24 +149,29 @@ public sealed class TempRoot : IDisposable
     public string Under(string relativePath) =>
         System.IO.Path.Combine(Path, relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar));
 
+    public void Dispose() => DeleteRootAndMarker(Path);
+
     /// <summary>
     /// Best effort, twice: on Windows a recursive delete over a tree holding a junction removes the
     /// junction and STILL throws <see cref="UnauthorizedAccessException"/> for it (measured 2026-10-02),
     /// so the second pass finishes what the first one started. A handle still open elsewhere leaves the
-    /// folder to the operating system's temp sweep — a test must never fail on its own cleanup.
+    /// folder to a later test process's <see cref="SweepLeftovers"/> — a test must never fail on its own cleanup.
+    /// Answers whether the folder is gone.
     /// </summary>
-    public void Dispose()
+    private static bool DeleteBestEffort(string path)
     {
-        for (var attempt = 0; attempt < 2 && Directory.Exists(Path); attempt++)
+        for (var attempt = 0; attempt < 2 && Directory.Exists(path); attempt++)
         {
             try
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(path, recursive: true);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                // Retried once; then left to the OS.
+                // Retried once; then left to a later sweep.
             }
         }
+
+        return !Directory.Exists(path);
     }
 }
