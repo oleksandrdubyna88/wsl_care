@@ -1,7 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 built on its branch
-> `feat/wc-e15s2-virtual-disks` (*E15.S2 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
+> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
+> built*); E15.S2b built on its branch `feat/wc-install-distro-name` (*E15.S2b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
 > not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
@@ -837,3 +837,52 @@ not preserve the environment through sudo.
 
 Break-its on `install.sh`'s validation and on the `env` pass. Docs: README (the argument, the one-liner), module_daemon (who
 records the name), module_tests.
+
+## E15.S2b as built (2026-10-11, branch `feat/wc-install-distro-name`)
+
+**What shipped.**
+- `install.sh --distro-name <name>`. The value is checked against `DISTRO_NAME_PATTERN`
+  (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`) through the installer's existing `matches` (which first refuses every byte outside
+  `[0-9A-Za-z._-]`, a newline included). A name outside the rule is a `usage_fail` (exit 2) before anything changes. The
+  argument with NO operand (the last argument) is a usage error; an explicitly EMPTY operand (`--distro-name ''`) is allowed and
+  means "no name". `--uninstall` refuses the argument, also when it is empty.
+- `first_run` starts the installed binary as `env WSL_DISTRO_NAME=<name> timeout … collect` (`with_distro_name`). Without a
+  name, the environment is left as it is. The root `collect` records the name through `DistroIdentity.Record` — the file keeps
+  ONE writer and ONE format, and the daemon checks the name a second time. The installer never writes `distro-name.json`.
+- What the installer says: `recording the distro name <name> (through the first full run, as WSL_DISTRO_NAME)`; under
+  `--dry-run`, `would record the distro name <name> (through the first full run)`; for an empty value, that no name is
+  recorded now and that a root collect through `wsl.exe` (the panel's *Run full check now*) records it later. Without the
+  argument it says nothing.
+- `usage()`, the script's header and the README: the argument, and the one-liner
+  `… | sudo sh -s -- --distro-name "$WSL_DISTRO_NAME"`. The README's table names `/var/lib/wsl-care/distro-name.json` (written
+  by the first full run, never by the installer).
+- The rule is held equal three ways: `ArchitectureTests.The_installer_and_the_daemon_share_one_distro_name_rule` compares the
+  pattern bodies (every OS), and `InstallDistroNameFlows.The_installer_and_the_daemon_accept_exactly_the_same_names` runs
+  fifteen names through `install.sh` and `DistroIdentity.IsName` (Linux).
+
+**Tests.** `Scenarios/InstallDistroNameFlows` (10 flows, Linux legs), one architecture test, one `DistroIdentityTests` guard
+(64 characters recorded, 65 refused). RED messages and break-its are in [module_tests.md](../research/module_tests.md)
+*E15.S2b*. Totals at the end: Windows Core 2554 (0 failed), Cli 383 (0 failed), Scenarios 550 (0 failed, the Linux-only
+flows skipped); Linux (WSL `Ubuntu`, a copy under `/tmp`) Scenarios 550 (0 failed, 3 skipped), Core 2554 (0 failed), Cli 383
+(0 failed).
+
+**Deviations.**
+1. **The first full run in the scenarios is the BUILT CLI, not the fake.** The install world's binary is a stub that hands its
+   argv to a fake, so the design's "after install, `DistroIdentity.Read` gives `Ubuntu`" could not be observed there. The new
+   flows give the stub a `StubPrelude` that hands `collect` to the built CLI in a captured scenario's sandbox
+   (`CollectFlows.Captured`, `ClaimsRoot`), keeping `WSL_DISTRO_NAME` as `install.sh` passed it. The flow reads the file with
+   the product's serializer and then runs a second `collect` without the variable (the timer's case): it maps Ubuntu's disk by
+   `mount`. That is the product's own `Read`, so the design's assertion holds through the product, not through a test copy.
+2. **The install world removes an inherited `WSL_DISTRO_NAME`** (sudo's `env_reset`): a test run from a WSL shell inherits it,
+   and without the removal the no-argument flow would record the shell's name. `env` joined the world's real-tool allowlist,
+   because the first run now uses it.
+3. **The re-run line keeps an empty argument** (own review, a defect the empty operand made reachable). The line a refusal
+   prints ("re-run: curl … | sudo sh -s -- …") was built from `"$*"`, which drops an empty argument. So
+   `--distro-name ''` came back as a bare `--distro-name`, which is now a usage error for the person who pastes it. The
+   arguments are now joined one by one, with an empty one shown as `''`. Red first; one break-it.
+4. **`--uninstall --distro-name ''` is refused too** (the design said "refuses the argument"; `--set-default-user ''` is still
+   let through by the older check, which tests the value, not the argument).
+
+**Open — the extension's follow-up (design point 3).** `INSTALL_COMMAND` (`src_vs_code/src/install/installCommand.ts:44`)
+pins the `install.sh` of a RELEASED tag, and a released `install.sh` refuses an unknown argument. So the extension adds
+`--distro-name "$WSL_DISTRO_NAME"` only after a daemon release ships this change. Not changed here.

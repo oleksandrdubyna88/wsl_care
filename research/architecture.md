@@ -152,7 +152,7 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   and beside them `contracts/actions.json` / `contracts/exit-codes.json` held equal to `ActionId` / `ExitCode` by
   `ContractFilesTests` (section *The daemon read contract* of [architecture-daemon-e6.md](architecture-daemon-e6.md)), and since plan §15o `contracts/history-reasons.json` (the reason
   prefixes of a kind-less history line that is not a full check, from `HistoryReasons`; section *A full check's history line
-  names itself* of [architecture-daemon-e6.md](architecture-daemon-e6.md)). There is no `RunLine` field list in `contracts/`: that wire is pinned by the `runs-*.json` goldens. Two rules live in both halves as source, each held equal by a daemon architecture test that reads the extension's file: the PowerShell module-path pin (`HealthCommands.ModulePathPin` = `MODULES` in `elevatedEngine.ts`) and the distro-name rule (`DistroIdentity.NamePatternText` = `DISTRO_NAME` in `wsl/distros.ts`, E15.S2), both 2026-10-11.
+  names itself* of [architecture-daemon-e6.md](architecture-daemon-e6.md)). There is no `RunLine` field list in `contracts/`: that wire is pinned by the `runs-*.json` goldens. Two rules live in both halves as source, each held equal by a daemon architecture test that reads the extension's file: the PowerShell module-path pin (`HealthCommands.ModulePathPin` = `MODULES` in `elevatedEngine.ts`) and the distro-name rule (`DistroIdentity.NamePatternText` = `DISTRO_NAME` in `wsl/distros.ts`, E15.S2), both 2026-10-11. The distro-name rule has a third copy in `install.sh` (`DISTRO_NAME_PATTERN`, E15.S2b: `--distro-name` is refused by it), held equal to the daemon's by `ArchitectureTests.The_installer_and_the_daemon_share_one_distro_name_rule`.
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
 - Plans: the daemon and extension (`todo/PLAN_wsl_care_daemon.md`), the Windows side
   (`todo/PLAN_windows_care.md`), the AI-session archive (`todo/PLAN_ai_session_archive.md`), the shared
@@ -1375,7 +1375,7 @@ packs (plan §15e #1).
 
 ```mermaid
 flowchart TD
-    args["arguments<br/>--version · --skip-attestation · --set-default-user · --dry-run · --uninstall [--purge]<br/>each value checked against a whole-string pattern"]
+    args["arguments<br/>--version · --skip-attestation · --set-default-user · --distro-name · --dry-run · --uninstall [--purge]<br/>each value checked against a whole-string pattern<br/>(--distro-name: WSL's rule = DistroIdentity.NamePatternText; empty = no name)"]
     pre["preflight — nothing written yet<br/>Linux · root (or --dry-run) · systemd booted (/run/systemd/system)<br/>arch → linux-x64 / linux-arm64 · tools<br/>/usr/local/bin/wsl-care absent or ours · wsl.conf decision"]
     ghpre{"gh ≥ 2.56.0 with attestation verify<br/>--bundle · --cert-identity · --deny-self-hosted-runners<br/>(unless --skip-attestation; asked BEFORE any download)"}
     rel["release: --version, or the newest daemon-v* of the releases API<br/>(never releases/latest — the extension's)"]
@@ -1389,7 +1389,7 @@ flowchart TD
     conf["/etc/wsl.conf: [user] default= ONLY with the flag and only when none is set<br/>otherwise advice, nothing written"]
     pkgs["sysstat + atop via apt when missing<br/>debconf sysstat/enable=true; dpkg-reconfigure when still off"]
     units["systemctl daemon-reload · try-restart follower (upgrade)<br/>enable --now wsl-care.timer wsl-care-events.service<br/>enable --now sysstat.service atop.service<br/>each call ≤ WSL_CARE_INSTALL_SYSTEMCTL_SECONDS (900) + 10 s kill grace"]
-    first["said first: may take minutes, at most 900 s<br/>/opt/wsl-care/bin/wsl-care collect<br/>(one full run: records, never acts; ≤ 900 s + 30 s kill grace)"]
+    first["said first: may take minutes, at most 900 s<br/>[env WSL_DISTRO_NAME=--distro-name] /opt/wsl-care/bin/wsl-care collect<br/>(a root collect: DistroIdentity.Record writes distro-name.json — the installer never does)<br/>(one full run: records, never acts; ≤ 900 s + 30 s kill grace)"]
     ver["verify: sar · atop on PATH → is-active timer · events<br/>→ doctor --json healthy (wall-clock wait ≤ WSL_CARE_INSTALL_DOCTOR_SECONDS,<br/>each call cut to the deadline, at least 10 s)"]
     fail["exit 1: FAILED at step #quot;…#quot;<br/>+ how to re-run or --uninstall once something was written"]
     ok["summary"]
