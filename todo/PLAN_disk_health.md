@@ -480,3 +480,10 @@ load (research D10). Left open for the owner and later stories (own review, belo
 Windows process may survive the WSL tree kill; the `Message` fallback per event is not measured against the ceiling at the
 100 000 maximum; a machine with no `stornvme` provider may answer `events.error`; access denied reads as "not there".
 
+**The final code round** (coai, 2026-10-11, `again`, `proceed`, 4 of 4 reviewers — codex): five findings, all accepted and
+fixed. The run detail dropped the cut flag (two reviewers) — `StorageEventsReport` now carries `groupsTotal` and `groupsCut`;
+`IsVolume` was above complexity 4 — split into `IsLetter` and `IsDiskField`; the parser's tag set could drift from the
+script's tags — a test holds every printed tag to `WindowsDiskParsers.KnownTags`; physical disks went on the wire as the
+domain record — now `PhysicalDiskReport` (same JSON shape). RED first for the report fields and the wire record; break-its in
+[module_tests.md](../research/module_tests.md) *E15.S1*.
+

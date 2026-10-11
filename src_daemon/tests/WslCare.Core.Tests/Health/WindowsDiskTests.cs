@@ -230,6 +230,58 @@ public sealed class WindowsDiskTests
     }
 
     [Fact]
+    public void The_run_detail_says_when_the_event_groups_were_cut_and_how_many_there_were()
+    {
+        var cut = Report(Parse(With("events.groups=5000")));
+        var whole = Report(Parse(WindowsDiskFixture.Answer));
+
+        cut.Events!.GroupsCut.Should().BeTrue("a reader of the saved detail must not take the missing groups for absent events (final code round)");
+        cut.Events.GroupsTotal.Should().Be(5000);
+        whole.Events!.GroupsCut.Should().BeFalse();
+        whole.Events.GroupsTotal.Should().Be(whole.Events.Groups!.Count);
+    }
+
+    [Fact]
+    public void Every_tag_the_script_prints_is_one_the_parser_reads()
+    {
+        var printed = typeof(WindowsDiskCommands).GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.Name.EndsWith("Tag", StringComparison.Ordinal))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToList();
+
+        printed.Should().NotBeEmpty();
+        printed.Should().OnlyContain(t => WindowsDiskParsers.KnownTags.Contains(t), "a tag the parser does not know reads as a malformed line and its fact is lost (final code round)");
+    }
+
+    [Fact]
+    public void The_run_detail_shape_holds_no_health_domain_type()
+    {
+        var domain = Wire(typeof(WslCare.Core.Collect.WindowsDiskReport), []).Where(t => t.Namespace == typeof(WindowsDiskSample).Namespace).ToList();
+
+        domain.Should().BeEmpty("the saved detail must not change shape when a domain record changes for parsing (final code round)");
+    }
+
+    private static WslCare.Core.Collect.WindowsDiskReport Report(WindowsDiskFacts facts) =>
+        WslCare.Core.Collect.WindowsDiskReports.From(new WindowsDiskSample(WindowsDiskFixture.CapturedAt, Reading.Of(TimeSpan.FromSeconds(3)), Reading.Of(facts)));
+
+    /// <summary>Every type reachable through the public properties of <paramref name="type"/>, generic arguments included.</summary>
+    private static HashSet<Type> Wire(Type type, HashSet<Type> seen)
+    {
+        var inner = Nullable.GetUnderlyingType(type) ?? type;
+        if (!seen.Add(inner) || inner.Namespace?.StartsWith("System", StringComparison.Ordinal) == true && !inner.IsGenericType)
+        {
+            return seen;
+        }
+
+        foreach (var next in inner.GetGenericArguments().Concat(inner.GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.PropertyType)))
+        {
+            Wire(next, seen);
+        }
+
+        return seen;
+    }
+
+    [Fact]
     public void An_event_that_names_no_disk_keeps_its_count_and_says_why_the_disk_is_unknown()
     {
         var facts = Parse(With("event=2026-10-01|Ntfs|153||2"));

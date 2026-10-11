@@ -54,6 +54,8 @@ public sealed class WindowsDiskFlows
             disk.Reliability.Reason.Should().Contain("elevation");
             disk.Events!.Read.Should().Be(63);
             disk.Events.Groups!.Should().OnlyContain(g => g.Disk.Value == 1 && g.Provider == "disk" && g.Id == 11);
+            disk.Events.GroupsCut.Should().BeFalse("the capture's four groups are far under disk.eventGroupsMax");
+            disk.Events.GroupsTotal.Should().Be(disk.Events.Groups!.Count);
             disk.CommitBytes!.Bytes.Should().Be(110_976_245_760);
             disk.Identity!.MachineGuid.Value.Should().Be("00000000-0000-4000-8000-000000000002");
             disk.Adapters!.Adapters!.Select(a => a.ProblemCode.Value).Should().Equal(0, 22);

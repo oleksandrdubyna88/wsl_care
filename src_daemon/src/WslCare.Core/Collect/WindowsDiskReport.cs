@@ -22,7 +22,10 @@ public sealed record WindowsVolumeReport(string Letter, CountFigure DiskNumber, 
 
 public sealed record WindowsVolumesReport(bool Available, string? Reason, IReadOnlyList<WindowsVolumeReport>? Volumes);
 
-public sealed record PhysicalDisksReport(bool Available, string? Reason, IReadOnlyList<WindowsPhysicalDisk>? Disks);
+/// <summary>A physical disk on the wire — its own record, so a change to the domain record cannot change a saved detail.</summary>
+public sealed record PhysicalDiskReport(int Number, string Bus, string Health, string OperationalStatus, string Firmware, string Model);
+
+public sealed record PhysicalDisksReport(bool Available, string? Reason, IReadOnlyList<PhysicalDiskReport>? Disks);
 
 public sealed record ReliabilityCounterReport(int Number, NumberFigure TemperatureCelsius, NumberFigure WearPercent, NumberFigure ReadErrors, NumberFigure WriteErrors, NumberFigure PowerOnHours);
 
@@ -34,7 +37,9 @@ public sealed record ReliabilityReport(bool Available, string? Reason, IReadOnly
 public sealed record StorageEventGroupReport(string Day, string Provider, int Id, CountFigure Disk, int Count);
 
 /// <param name="Capped">The cap was reached: the counts are a lower bound over the newest events.</param>
-public sealed record StorageEventsReport(bool Available, string? Reason, int? Read, int? MaxRead, int? SinceDays, bool? Capped, IReadOnlyList<StorageEventGroupReport>? Groups);
+/// <param name="GroupsTotal">How many groups the script counted — more than <paramref name="Groups"/> holds when it cut them.</param>
+/// <param name="GroupsCut">The list stops at <c>disk.eventGroupsMax</c>: older groups were left out, not absent.</param>
+public sealed record StorageEventsReport(bool Available, string? Reason, int? Read, int? MaxRead, int? SinceDays, bool? Capped, IReadOnlyList<StorageEventGroupReport>? Groups, int? GroupsTotal, bool? GroupsCut);
 
 public sealed record WindowsIdentityReport(TextFigure Edition, TextFigure DisplayVersion, TextFigure Build, InstantFigure InstalledAt, TextFigure MachineGuid, TextFigure Account);
 
@@ -91,7 +96,9 @@ public static class WindowsDiskReports
             : new(false, volumes.ReasonOrEmpty, null);
 
     private static PhysicalDisksReport Physical(Reading<IReadOnlyList<WindowsPhysicalDisk>> disks) =>
-        disks is Reading<IReadOnlyList<WindowsPhysicalDisk>>.Available { Value: var list } ? new(true, null, list) : new(false, disks.ReasonOrEmpty, null);
+        disks is Reading<IReadOnlyList<WindowsPhysicalDisk>>.Available { Value: var list }
+            ? new(true, null, [.. list.Select(d => new PhysicalDiskReport(d.Number, d.Bus, d.Health, d.OperationalStatus, d.Firmware, d.Model))])
+            : new(false, disks.ReasonOrEmpty, null);
 
     private static ReliabilityReport Reliability(Reading<IReadOnlyList<StorageReliability>> counters) =>
         counters is Reading<IReadOnlyList<StorageReliability>>.Available { Value: var list }
@@ -100,8 +107,8 @@ public static class WindowsDiskReports
 
     private static StorageEventsReport Events(Reading<StorageEvents> events) =>
         events is Reading<StorageEvents>.Available { Value: var e }
-            ? new(true, null, e.Read, e.MaxRead, e.SinceDays, e.Capped, [.. e.Groups.Select(g => new StorageEventGroupReport(g.Day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), g.Provider, g.Id, Count(g.Disk), g.Count))])
-            : new(false, events.ReasonOrEmpty, null, null, null, null, null);
+            ? new(true, null, e.Read, e.MaxRead, e.SinceDays, e.Capped, [.. e.Groups.Select(g => new StorageEventGroupReport(g.Day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), g.Provider, g.Id, Count(g.Disk), g.Count))], e.GroupsTotal, e.GroupsCut)
+            : new(false, events.ReasonOrEmpty, null, null, null, null, null, null, null);
 
     private static WindowsIdentityReport Identity(WindowsIdentity i) =>
         new(Text(i.Edition), Text(i.DisplayVersion), Text(i.Build), Instant(i.InstalledAt), Text(i.MachineGuid), Text(i.Account));

@@ -30,6 +30,9 @@ public static class WindowsDiskParsers
         C.InstallDateTag, C.AccountTag, C.WindowsErrorTag, C.MachineGuidTag, C.MachineErrorTag, C.AdapterTag, C.AdaptersErrorTag,
     };
 
+    /// <summary>The tags <see cref="Parse"/> reads — a test holds every tag the script prints to this set.</summary>
+    internal static IReadOnlySet<string> KnownTags => Known;
+
     /// <summary>The facts of <paramref name="stdout"/>; <paramref name="maxRead"/> and <paramref name="sinceDays"/> are the two
     /// numbers the script was built with (the events' cap and window).</summary>
     public static Reading<WindowsDiskFacts> Parse(string stdout, int maxRead, int sinceDays)
@@ -116,7 +119,12 @@ public static class WindowsDiskParsers
             ? Reading.Of(new WindowsVolume(f[0], DiskOf(f[0], f[1]), f[2], Long(f[3], $"{f[0]}:'s size"), Long(f[4], $"{f[0]}:'s free space"), f[5]))
             : Malformed<WindowsVolume>(value);
 
-    private static bool IsVolume(string[] f) => f[0].Length == 1 && char.IsAsciiLetter(f[0][0]) && (IntOrEmpty(f[1]) || f[1].StartsWith(C.FailedMark, StringComparison.Ordinal)) && Numbers(f[3], f[4]);
+    private static bool IsVolume(string[] f) => IsLetter(f[0]) && IsDiskField(f[1]) && Numbers(f[3], f[4]);
+
+    private static bool IsLetter(string s) => s.Length == 1 && char.IsAsciiLetter(s[0]);
+
+    /// <summary>A disk number, empty (no partition), or <c>!type</c> (the lookup failed).</summary>
+    private static bool IsDiskField(string s) => IntOrEmpty(s) || s.StartsWith(C.FailedMark, StringComparison.Ordinal);
 
     private static Reading<int> DiskOf(string letter, string disk) => disk switch
     {

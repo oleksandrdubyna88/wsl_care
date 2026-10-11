@@ -270,6 +270,9 @@ flowchart LR
   500, machine-only) with the total printed (`events.groups=`), so `StorageEvents.GroupsCut` says when the list is short and
   the answer stays under `health.outputCapBytes`' floor; the event day is written in the invariant calendar; and the answer
   leaves as UTF-8 bytes on the raw stdout stream (Windows PowerShell 5.1 writes `Console.Out` in the OEM code page).
+  The final code round added `groupsTotal` and `groupsCut` to the run detail's `events` (a cut list is never shown as
+  complete), gave physical disks their own wire record (`PhysicalDiskReport`, so a domain change cannot change a saved
+  detail), and holds every tag the script prints to the parser's known set (`WindowsDiskParsers.KnownTags`).
 - **Where it runs.** Only `collect`, after the clock probe and its reference (so its seconds never sit between the two
   clocks' readings), once, under its own ceiling; never `status` (a scenario holds it), never the watch. The Windows binary
   does not run it: its detail says the distro reads these facts. The full run's worst case (`RunBudget`) grew by the
