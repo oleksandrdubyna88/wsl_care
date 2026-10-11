@@ -1,6 +1,6 @@
 import type { EnumRead } from '../client/enumValue';
 import type { DaemonVersion, Failure } from '../client/outcome';
-import type { ActionId, ActionIds, RunId, VolumeName } from './rootIds';
+import type { ActionId, ActionIds, RunId, ShownProcess, VolumeName } from './rootIds';
 
 /**
  * What a root call through the cleanup controller ends in (E6.S2). Each way it can fail is its own kind, because each wants
@@ -73,9 +73,12 @@ export type RootFailure =
   /** 4: the records cannot be read. */
   | { readonly kind: 'recordsUnreadable'; readonly messages: readonly string[] };
 
-/** A4's shown list as the preview held it: every name validated, the total the daemon counted, whether the list was capped. */
-export interface ShownSelection {
-  readonly names: readonly VolumeName[];
+/**
+ * A shown list as the preview held it — A4's volume names, or (S7b.2b) A21's `pid:start` processes: every entry validated, the
+ * total the daemon counted, whether the list was capped. ONE shape for both, so the two cannot drift apart.
+ */
+export interface ShownSelection<T extends string = VolumeName> {
+  readonly names: readonly T[];
   readonly count: number;
   readonly truncated: boolean;
   /** The cap in force when it was previewed (`shownCap`) — what the modal names when the list was cut. */
@@ -107,6 +110,8 @@ export interface PreviewedAction {
   readonly items: readonly string[];
   /** Every item the preview listed, whole (E10.S1b): its name, its bytes when the daemon gave them, its note. */
   readonly details: readonly PreviewItem[];
+  /** The daemon's `preview.basis` (S7b.2b): how it read and judged — for A21, every kept relay with its reason. */
+  readonly basis?: string;
 }
 
 /**
@@ -118,6 +123,8 @@ export interface HeldPreview {
   readonly ids: ActionIds;
   readonly actions: readonly PreviewedAction[];
   readonly a4: ShownSelection | undefined;
+  /** S7b.2b: A21's processes as its preview showed them — what an A21 confirm passes as `--process`, from here and nowhere else. */
+  readonly processes?: ShownSelection<ShownProcess> | undefined;
   readonly takenAtMs: number;
   readonly productVersion: string | undefined;
 }

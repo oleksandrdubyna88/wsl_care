@@ -376,6 +376,17 @@ public sealed class DetachedRunsTests : IDisposable
         Requests().Should().ContainSingle().Which.Should().BeOfType<RunRequestRead.Parsed>().Which.File.ShownProcesses.Should().Equal("10:4000");
     }
 
+    /// <summary>S7b.2b (the own review, finding 5): a detached A21 button run carries the relays its modal showed into the request,
+    /// every pair in order — what the extension's *Stop client-gone relays* sends.</summary>
+    [Fact]
+    public void A_detached_a21_run_carries_its_shown_processes_into_the_request()
+    {
+        var (exit, _, stderr) = CliRun.Over(Host(), "act", "A21", "--confirm", "--manual", "--detach", "--process", "12000:36500", "--process", "12001:36501");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        Requests().Should().ContainSingle().Which.Should().BeOfType<RunRequestRead.Parsed>().Which.File.ShownProcesses.Should().Equal("12000:36500", "12001:36501");
+    }
+
     /// <summary>Plan §15r E9.S4: a detached A20 button run carries the entries its modal showed into the request, read back by the
     /// template unit's run.</summary>
     [Fact]

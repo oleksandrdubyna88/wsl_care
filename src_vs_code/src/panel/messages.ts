@@ -27,6 +27,9 @@ import { MAX_ADAPTERS } from '../gpu/gpuState';
  * read from Windows itself, and `readAt`, the time stamp of the read the button was rendered from (the host compares it with
  * its current read and refuses an older one): the instance id the elevated script acts on is the host's reading, never the
  * page's.</p>
+ *
+ * <p>S7b.2b's `stopRelays` is bare: the host previews A21 itself, and the processes it stops come only from that held
+ * preview — never a pid from the page.</p>
  */
 
 export type PageMessage =
@@ -50,7 +53,7 @@ export type PageMessage =
   | { readonly type: 'stop'; readonly index: number }
   | { readonly type: 'enableGpu'; readonly index: number; readonly readAt: number };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow', 'openArchive']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow', 'openArchive', 'stopRelays']);
 
 /** The host holds at most this many stoppable runs plus one (the daemon has ONE running state; the list is a list for shape only). */
 export const MAX_STOP_INDEX = 3;

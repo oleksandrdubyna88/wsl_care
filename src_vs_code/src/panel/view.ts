@@ -1,5 +1,6 @@
 import type { ArchiveControls } from '../archive/archiveView';
 import type { GpuView } from '../gpu/gpuState';
+import type { RelaysControls } from '../relays/relaysView';
 import type { GuardView } from '../windowsTime/guardState';
 
 /**
@@ -96,6 +97,12 @@ export type { ArchiveControls } from '../archive/archiveView';
 /** The GPU alerts (PLAN_gpu_health.md D6): derived by the host from what Windows answered — shown FIRST, above the sections. */
 export type { GpuView } from '../gpu/gpuState';
 
+/**
+ * The client-gone relays' line and button (S7b.2b): derived by the cleanup host from the daemon's `status.interopRelays` and its
+ * own controls (`relays/relaysView.ts`) — never a page flag.
+ */
+export type { RelaysControls } from '../relays/relaysView';
+
 export interface PanelView {
   readonly heading: string;
   /** One sentence above the sections ('' when there is nothing to say). */
@@ -107,4 +114,5 @@ export interface PanelView {
   readonly windowsTimeGuard: GuardView;
   readonly archive: ArchiveControls;
   readonly gpu: GpuView;
+  readonly relays: RelaysControls;
 }

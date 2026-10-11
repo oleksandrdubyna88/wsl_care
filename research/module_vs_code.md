@@ -183,7 +183,26 @@ flowchart LR
   `logging.retentionDays` (default 14).
 - Where *Install daemon*'s terminal opens in a Remote – WSL window, and which settings file a UI extension reads there,
   are E5 live-gate observations (`POST_DEPLOY.md` item 3).
-- **The process buttons are not built yet (2026-10-10).** A18, A19 and A21 (E14 S7b.2: the client-gone interop relays) are in
-  `ACTION_IDS` and in `BUTTON_ONLY_IDS`, so the E6 cleanup gate never acts on them. Their button road is still to come: a root op
-  with a `--process <pid:start>` tail tied to the shown list, a modal, and the gate on the daemon's `act.processList`. The daemon's
-  `status --json` already publishes `interopRelays` (counts, the effective `auto.A21` and the command that flips it) for the row.
+- **A18's and A19's buttons are not built yet.** They stay in `BUTTON_ONLY_IDS`, so the E6 cleanup gate never acts on them. A21's
+  button (S7b.2b) built the `--process` road they will use.
+- **Stop client-gone relays (S7b.2b).** A21 left `BUTTON_ONLY_IDS`, and runs through the cleanup host's transaction, on *Archive
+  now*'s road.
+  - **The preview** holds A21's `shown` processes (each a canonical `pid:start`, `rootIds.shownProcessOf`) under A4's count/cap
+    invariant — ONE `ShownSelection<T>` for both. A list past `MAX_PROCESS_ARGS` (500) is cut, because the pairs travel as argv
+    and Windows' command line is 32 767 characters. The modal says the timer takes the rest.
+  - **The confirm** (`rootCall.confirmTail`) spells `--process <pid:start>` once per held process. There is never an empty list,
+    never one without A21, and never one beside A4's `--only -`.
+  - **The gate:** `act.shownList` and `act.processList` for the preview, `act.detach` and `act.processList` for the confirm.
+  - **The preview's ceiling** is A21's own share: the fd scan's range maximum, 30 s (`worstCases.relayScan`).
+  - **The panel:** one line in *AI agents* from `status.interopRelays` (`relays/relaysView.ts`): the counts, or "unavailable —
+    <reason>", and the timer's switch with the daemon's command that flips it. The extension never writes daemon config. Beside
+    it, the button, with each blocker's sentence.
+  - **The three preview states:** unavailable tells the reason, empty tells the daemon's basis (every kept relay and why), and
+    only a non-empty preview opens the modal.
+  - **The words** (`isRelayOnly`): *Stopping… the client-gone relays*, *the relay stop*, "ended N relays; their Windows programs
+    end with them", and the relays that did not end on SIGTERM.
+  - **The confused deputy:** the page sends a bare `stopRelays`. The processes come only from the controller's held, frozen
+    preview, through the validator. The daemon re-validates, intersects them with a fresh judgement, and re-judges again before
+    SIGTERM, so a stale list ends nothing A21 would not end alone.
+  - **`state/statusBody.ts`** is the one reader of the newest status body, its capabilities and its actions. It was extracted from
+    the archive host, which now uses it.

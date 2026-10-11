@@ -134,6 +134,11 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.stopRelays",
+        "title": "Stop client-gone Windows MCP relays (preview, then confirm)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.openLogs",
         "title": "Logs",
         "category": "AI OS Care",

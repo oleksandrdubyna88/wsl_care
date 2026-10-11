@@ -285,6 +285,24 @@ function archiveActions(parts: Parts, page: ArchivePanel): Pick<PanelActions, 'a
   };
 }
 
+/** S7b.2b: the client-gone relays' line and button — the cleanup host's — and *Stop client-gone relays* (the button and the command). */
+function relayActions(parts: Parts): Pick<PanelActions, 'relays' | 'stopRelays'> {
+  return {
+    relays: () => parts.host.relays(),
+    stopRelays: () => { void parts.host.stopRelays(); },
+  };
+}
+
+/** The panel's parts beyond the cleanup and the guard: the archive's (E10.S1) and the relays' (S7b.2b). */
+function panelExtras(parts: Parts, page: ArchivePanel): ReturnType<typeof archiveActions> & ReturnType<typeof relayActions> {
+  return { ...archiveActions(parts, page), ...relayActions(parts) };
+}
+
+/** Their palette commands — each duplicates a panel button. */
+function extraCommands(extras: ReturnType<typeof panelExtras>): vscode.Disposable[] {
+  return [...archiveCommands(extras), vscode.commands.registerCommand('wslCare.stopRelays', extras.stopRelays)];
+}
+
 function archiveCommands(archive: Pick<PanelActions, 'chooseArchiveFolder' | 'stopArchiving' | 'archiveNow'>): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand('wslCare.chooseArchiveFolder', archive.chooseArchiveFolder),
@@ -328,7 +346,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
   const bar = new StatusBar(store, OPEN_PANEL, { mark: () => parts.gpu.host.barMark(), onChange: (listener) => parts.gpu.host.onChange(listener) });
   const [installGuard, removeGuard] = [guardFlow(parts, 'install'), guardFlow(parts, 'remove')];
   const refreshAll = panelRefresh(parts);
-  const archive = archiveActions(parts, archivePage);
+  const extras = panelExtras(parts, archivePage);
   const panel = new PanelProvider(context.extensionUri, store, {
     refresh: refreshAll,
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
@@ -344,7 +362,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     onGuardChange: (listener) => parts.guard.onChange(listener),
     installWindowsTimeGuard: installGuard,
     removeWindowsTimeGuard: removeGuard,
-    ...archive,
+    ...extras,
     ...gpuPanelActions(parts.gpu),
   });
   context.subscriptions.push(
@@ -360,7 +378,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.commands.registerCommand('wslCare.startWindowsTime', windowsTime),
     vscode.commands.registerCommand('wslCare.installWindowsTimeGuard', installGuard),
     vscode.commands.registerCommand('wslCare.removeWindowsTimeGuard', removeGuard),
-    ...archiveCommands(archive),
+    ...extraCommands(extras),
     ...logsSubscriptions(logs, store), ...archivePageSubscriptions(archivePage, store),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     ...settingsListeners(parts, panel),

@@ -4,7 +4,7 @@ import { VERBS } from '../client/verbs';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
-import { shownCap, type ActionIds, type RunId, type VolumeName } from './rootIds';
+import { MAX_PROCESS_ARGS, shownCap, type ActionIds, type RunId, type ShownProcess, type VolumeName } from './rootIds';
 
 /**
  * THE root boundary (E6.S2, plan §15f #2, §15j M1) — the ONE module of the extension that spells a root argv word: `-u`,
@@ -48,7 +48,7 @@ export type RootOpName = (typeof ROOT_OPS)[number];
  */
 export type RootOp =
   | { readonly op: 'preview'; readonly ids: ActionIds }
-  | { readonly op: 'confirm'; readonly ids: ActionIds; readonly shown: readonly VolumeName[] | undefined }
+  | { readonly op: 'confirm'; readonly ids: ActionIds; readonly shown: readonly VolumeName[] | undefined; readonly processes?: readonly ShownProcess[] }
   | { readonly op: 'stop'; readonly runId: RunId }
   | { readonly op: 'fullCheck' }
   | { readonly op: 'rootCheck' };
@@ -89,7 +89,7 @@ type Tails = { readonly [K in RootOpName]: (op: Extract<RootOp, { op: K }>) => r
 /** The daemon tail of each op — typed by the op, so an op added to `ROOT_OPS` without its tail does not compile. */
 const TAILS: Tails = {
   preview: (op) => ['act', op.ids.join(','), '--preview', '--json'],
-  confirm: (op) => confirmTail(op.ids, op.shown),
+  confirm: (op) => confirmTail(op.ids, op.shown, op.processes),
   stop: (op) => ['act', '--stop', op.runId, '--json'],
   fullCheck: () => ['collect', '--detach', '--json'],
   rootCheck: () => VERBS.version,
@@ -102,14 +102,28 @@ function tailOf(op: RootOp, limits: DaemonLimits): readonly string[] | undefined
   return fitsCap(op, limits) ? tail(op) : undefined;
 }
 
-/** A shown list exists exactly when A4 is confirmed: without one A4 would re-select live, and a list belongs to A4 alone. */
-function confirmTail(ids: ActionIds, shown: readonly VolumeName[] | undefined): readonly string[] | undefined {
-  if (ids.includes('A4') !== (shown !== undefined)) {
+/**
+ * A shown list exists exactly when A4 is confirmed, a NON-EMPTY process list exactly when A21 is (S7b.2b: `--process <pid:start>`,
+ * one pair per process, as argv; an empty list would be a bare button run, which the daemon refuses): without one the
+ * action would re-select live, and each list belongs to its own ids alone — never both in one call.
+ */
+function confirmTail(ids: ActionIds, shown: readonly VolumeName[] | undefined, processes: readonly ShownProcess[] | undefined): readonly string[] | undefined {
+  if (!listsMatch(ids, shown, processes)) {
     return undefined;
   }
   const only = shown === undefined ? [] : ['--only', '-'];
+  const pairs = (processes ?? []).flatMap((process) => ['--process', process]);
 
-  return ['act', ids.join(','), '--confirm', '--manual', '--detach', ...only, '--json'];
+  return ['act', ids.join(','), '--confirm', '--manual', '--detach', ...only, ...pairs, '--json'];
+}
+
+/** A4 with its shown list and only A4 with one; A21 with a NON-EMPTY process list and only A21 with one; never both lists. */
+function listsMatch(ids: ActionIds, shown: readonly VolumeName[] | undefined, processes: readonly ShownProcess[] | undefined): boolean {
+  return ids.includes('A4') === (shown !== undefined) && ids.includes('A21') === (lengthOf(processes) > 0) && (shown === undefined || processes === undefined);
+}
+
+function lengthOf(list: readonly unknown[] | undefined): number {
+  return list === undefined ? 0 : list.length;
 }
 
 /** A4's names as the daemon reads an `--only` list: one per line, every line ended. */
@@ -117,9 +131,13 @@ function stdinOf(op: RootOp): { readonly stdin?: Buffer } {
   return op.op === 'confirm' && op.shown !== undefined ? { stdin: Buffer.from(op.shown.map((name) => `${name}\n`).join('')) } : {};
 }
 
-/** A confirm's shown list fits the cap in force (daemon #17): the stdin never carries more names than the daemon takes. */
+/** A confirm's shown list fits the cap in force (daemon #17), and its process list that cap and the command line's (S7b.2b). */
 function fitsCap(op: RootOp, limits: DaemonLimits): boolean {
-  return op.op !== 'confirm' || op.shown === undefined || op.shown.length <= shownCap(limits.maxShownNames);
+  return op.op !== 'confirm' || listsFit(lengthOf(op.shown), lengthOf(op.processes), shownCap(limits.maxShownNames));
+}
+
+function listsFit(shown: number, processes: number, cap: number): boolean {
+  return shown <= cap && processes <= Math.min(cap, MAX_PROCESS_ARGS);
 }
 
 /** The one request `op` makes in `target`, or `undefined` when the op cannot be built. Pure. */

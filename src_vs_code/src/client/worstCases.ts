@@ -28,6 +28,8 @@ export const DAEMON_CEILING_S = {
   stdin: 10,
   /** `archive.previewTimeoutSeconds`' range maximum (`ConfigKeys.Archive.PreviewTimeoutSeconds`): the longest an `archive preview` takes. */
   archivePreviewMax: 600,
+  /** `processes.fdScanMilliseconds`' range maximum, in seconds (`ConfigKeys.Processes.FdScanMilliseconds`, 30000 ms): A21's one fd-table scan. */
+  fdScanMax: 30,
 } as const;
 
 /** `RunRequests.MaxQueued`: the most requests the detach's sweep can meet, each answered by one `systemctl show`. */
@@ -79,6 +81,8 @@ export function worstCasesOf(limits: DaemonLimits) {
     snapshot,
     /** A9's preview: `snap list --all`. */
     snapList: command(DAEMON_CEILING_S.snapList),
+    /** A21's preview (S7b.2b): ONE fd-table scan under `processes.fdScanMilliseconds`, taken at its range maximum — no child process. */
+    relayScan: DAEMON_CEILING_S.fdScanMax,
   } as const;
 }
 
@@ -101,7 +105,8 @@ export const DOCKER_ROW_IDS: ReadonlySet<string> = new Set(['A4', 'A5', 'A5Testc
 /** The rows that take no Docker snapshot — their share, under `worst`. */
 export function otherRowShareS(id: string, worst: WorstCases = TODAY): number | undefined {
   // E10.S1b: A13's preview is ONE `archive preview` child under `archive.previewTimeoutSeconds` (`ArchiveAction.PreviewAsync`).
-  const shares: Readonly<Record<string, number>> = { A8: 0, A9: worst.snapList, A13: worst.archivePreview };
+  // S7b.2b: A21's preview is one fd-table scan — derived here, never counted as a Docker snapshot by accident.
+  const shares: Readonly<Record<string, number>> = { A8: 0, A9: worst.snapList, A13: worst.archivePreview, A21: worst.relayScan };
 
   return Object.hasOwn(shares, id) && !DOCKER_ROW_IDS.has(id) ? shares[id] : undefined;
 }

@@ -14,7 +14,7 @@ import type { StopTarget } from './cleanFlow';
 import type { JournalEntry } from './journal';
 import type { Notice, NoticeLevel } from './resultText';
 import { ROW_IDS } from './rowIds';
-import { isArchiveOnly } from './modalText';
+import { isArchiveOnly, isRelayOnly } from './modalText';
 
 /**
  * The cleanup controls the panel shows (E6.S3, `common.durable-status` rules 1–4): DERIVED, every time, from what the
@@ -78,17 +78,17 @@ function whatOf(running: RunningBlock): string {
   if (isFullCheck(running)) {
     return 'the full check';
   }
-  if (isArchiveOnly(running.actions)) {
-    return 'the archive run';
-  }
-
-  return safeText(running.current === '' ? running.actions.join(', ') : running.current, RUN_TEXT);
+  return namedRun(running.actions) ?? safeText(running.current === '' ? running.actions.join(', ') : running.current, RUN_TEXT);
 }
 
 /** What a live run is doing, in its own words: the full check, the archive run (E10.S1b: A13 alone) or the cleanup of its ids. */
 function liveState(running: RunningBlock): string {
   if (isFullCheck(running)) {
     return 'Checking… the full check';
+  }
+
+  if (isRelayOnly(running.actions)) {
+    return 'Stopping… the client-gone relays';
   }
 
   return isArchiveOnly(running.actions) ? 'Archiving… the aged AI sessions' : `Cleaning… ${whatOf(running)}`;
@@ -114,8 +114,22 @@ function fromDaemon(running: RunningBlock | undefined): InFlight {
   return running.state.kind === 'known' ? BY_STATE[running.state.value](running) : { state: safeText(running.state.label, RUN_TEXT), level: 'warn', reason: 'the running state is one this extension does not know' };
 }
 
+/** A journal entry's actions by name: the archive run (A13 alone), the relay stop (A21 alone, S7b.2b), or its ids. */
+function entryWhat(actions: readonly string[]): string {
+  return namedRun(actions) ?? actions.join(', ');
+}
+
+/** The run a button names (E10.S1b, S7b.2b): the archive run (A13 alone), the relay stop (A21 alone) — or none (a cleanup). */
+function namedRun(actions: readonly string[]): string | undefined {
+  if (isRelayOnly(actions)) {
+    return 'the relay stop';
+  }
+
+  return isArchiveOnly(actions) ? 'the archive run' : undefined;
+}
+
 function entryLabel(entry: JournalEntry): string {
-  const what = entry.op === 'fullCheck' ? 'the full check' : (isArchiveOnly(entry.actions) ? 'the archive run' : entry.actions.join(', '));
+  const what = entry.op === 'fullCheck' ? 'the full check' : entryWhat(entry.actions);
 
   return entry.kind === 'run' ? `run ${entry.runId} (${what})` : what;
 }

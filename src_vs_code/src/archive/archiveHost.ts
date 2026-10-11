@@ -5,6 +5,7 @@ import { failureText } from '../failureText';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 import type { OutcomeStore } from '../state/outcomeStore';
+import { advertisedOf, offersAction } from '../state/statusBody';
 import { noticeText, unlinked } from '../text/safeText';
 import { chooseArchiveFolder, stopArchiving, type ArchiveFlowDeps, type ArchiveFlowOutcome, type ArchiveUi, type ConfigTarget } from './archiveFlow';
 import { archiveNowBlocker, deriveArchive, type ArchiveControls, type ArchiveState } from './archiveView';
@@ -38,20 +39,12 @@ export interface ArchiveHostOptions {
 
 /** The capabilities the store's newest answered status advertises — `undefined` until one answered. */
 export function capabilitiesOf(outcomes: OutcomeStore): readonly string[] | undefined {
-  const body = statusBody(outcomes);
-  if (body === undefined) {
-    return undefined;
-  }
-  const listed = body.capabilities;
-
-  return Array.isArray(listed) ? listed.filter((c): c is string => typeof c === 'string') : [];
+  return advertisedOf(outcomes.snapshot());
 }
 
 /** E10.S1b: the newest answered status offers A13 in `status.actions`. */
 export function offersA13(outcomes: OutcomeStore): boolean {
-  const actions = statusBody(outcomes)?.actions;
-
-  return Array.isArray(actions) && actions.includes('A13');
+  return offersAction(outcomes.snapshot(), 'A13');
 }
 
 /** The short label of the panel's own `status` failure, or '' — what the archive line says instead of a lasting "checking…" (own review #1). */
@@ -59,12 +52,6 @@ export function statusFailureOf(outcomes: OutcomeStore): string {
   const status = outcomes.snapshot().status;
 
   return status === undefined || status.kind === 'answered' ? '' : failureText(status).label;
-}
-
-function statusBody(outcomes: OutcomeStore): Readonly<Record<string, unknown>> | undefined {
-  const status = outcomes.snapshot().status;
-
-  return status?.kind === 'answered' && status.answer.verb === 'status' ? status.answer.body : undefined;
 }
 
 /** Each read and the capability its daemon must advertise for it to be asked. */

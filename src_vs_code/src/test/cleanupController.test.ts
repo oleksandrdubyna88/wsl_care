@@ -13,6 +13,7 @@ import type { HeldPreview } from '../root/rootOutcome';
 import { answered, failed, headBody, setAt, type Body } from './support/outcomes';
 import { GOLDEN_ROOT } from './support/paths';
 import { exited, recordingRunner, type Scripted } from './support/recordingRunner';
+import { relayKeys, relayPreviewBody } from './support/relayBodies';
 
 /**
  * The host-side cleanup controller (E6.S2) — the API E6.S3's buttons will call, and the ONLY importer of `rootCall.ts`.
@@ -643,4 +644,52 @@ test('#17: the confirm checks the cap in force AT THE CONFIRM — a 387-name lis
   const outcome = await w.controller.confirm(preview);
   assert.equal(outcome.kind, 'shownListInvalid', JSON.stringify(outcome).slice(0, 300));
   assert.deepEqual(w.runner.argvs().filter((a) => a === CONFIRM_A4), [], 'nothing confirmed');
+});
+
+// ---- S7b.2b: A21, the client-gone relays — previewed and confirmed bound to the processes its preview showed ----
+
+const PREVIEW_A21 = argv('act', 'A21', '--preview', '--json');
+
+function relayScript(keys: readonly string[]): Readonly<Record<string, Scripted>> {
+  return { [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody(keys))) };
+}
+
+test('S7b.2b: A21 passes the gate (it left BUTTON_ONLY_IDS) and its preview holds the shown processes', async () => {
+  const w = world({ script: relayScript(relayKeys(2)) });
+  const outcome = await w.controller.preview(['A21']);
+  assert.equal(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 300));
+  assert.ok(outcome.kind === 'previewed');
+  assert.deepEqual(outcome.preview.processes?.names, relayKeys(2));
+  assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, PREVIEW_A21]);
+});
+
+test('S7b.2b: the confirm carries exactly the held processes as --process pairs, detached, never stdin', async () => {
+  const keys = relayKeys(2);
+  const confirm = argv('act', 'A21', '--confirm', '--manual', '--detach', '--process', keys[0] ?? '', '--process', keys[1] ?? '', '--json');
+  const w = world({ script: { ...relayScript(keys), [confirm]: exited(0, handOff('accepted')) } });
+  const outcome = await w.controller.preview(['A21']);
+  assert.ok(outcome.kind === 'previewed');
+  const handed = await w.controller.confirm(outcome.preview);
+  assert.equal(handed.kind, 'accepted', JSON.stringify(handed).slice(0, 300));
+  assert.equal(w.runner.argvs().at(-1), confirm);
+  assert.equal(w.runner.requests.at(-1)?.stdin, undefined);
+});
+
+test('S7b.2b: a daemon that does not advertise act.processList is refused before any root call, for the preview and the confirm', async () => {
+  const head = headBody('status');
+  const older = { ...head, capabilities: (head.capabilities as string[]).filter((c) => c !== 'act.processList') };
+  const w = world({ status: older, script: relayScript(relayKeys(1)) });
+  const outcome = await w.controller.preview(['A21']);
+  assert.notEqual(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 300));
+  assert.deepEqual(w.runner.argvs(), []);
+});
+
+test('S7b.2b: an empty A21 preview cannot be confirmed — a bare button run would be refused by the daemon', async () => {
+  const w = world({ script: relayScript([]) });
+  const outcome = await w.controller.preview(['A21']);
+  assert.ok(outcome.kind === 'previewed');
+  const before = w.runner.argvs().length;
+  const handed = await w.controller.confirm(outcome.preview);
+  assert.notEqual(handed.kind, 'accepted');
+  assert.ok(w.runner.argvs().slice(before).every((a) => !a.includes('--confirm')), 'no confirm went out');
 });

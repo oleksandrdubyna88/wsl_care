@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { readEnum } from '../client/enumValue';
-import { ACTION_IDS, actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, volumeNameOf } from '../root/rootIds';
+import { ACTION_IDS, actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, shownProcessOf, volumeNameOf } from '../root/rootIds';
 import { REPOSITORY_ROOT } from './support/paths';
 
 /**
@@ -48,6 +48,15 @@ test('a volume name is 64 lowercase hex digits and nothing else — a stdin line
     assert.equal(volumeNameOf(bad), undefined, JSON.stringify(bad));
   }
   assert.equal(MAX_SHOWN_VOLUMES, 10_000, 'the daemon\'s ShownList.MaxNames (plan §15k #11)');
+});
+
+test('a shown process is the daemon\'s pid:start, canonical — pid above 1, whole numbers, nothing else (S7b.2b, SuspectSignals.IsShownKey)', () => {
+  for (const good of ['2:0', '12062:36501', '2147483647:9223372036854775807']) {
+    assert.equal(shownProcessOf(good), good);
+  }
+  for (const bad of ['1:5', '0:5', '-3:5', '5', '5:x', '5:1 --timer', ' 5:1', '5:1\n', '05:1', '5:01', '2147483648:1', '5:9223372036854775808', '5:1:2', '', 5, undefined, ['5:1']]) {
+    assert.equal(shownProcessOf(bad), undefined, JSON.stringify(bad));
+  }
 });
 
 test('an enum value this extension knows is read as itself', () => {

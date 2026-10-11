@@ -1,5 +1,6 @@
 import type { ArchiveAction } from '../archive/archiveView';
 import type { GpuAction } from '../gpu/gpuState';
+import type { RelaysControls } from '../relays/relaysView';
 import type { GuardAction } from '../windowsTime/guardState';
 import type { PageAction } from './view';
 
@@ -14,7 +15,7 @@ import type { PageAction } from './view';
  * `commandButtons.test.ts` holds this table to `package.json`'s commands and to the button sets the page really has.
  */
 export type CommandButton =
-  | { readonly where: 'page'; readonly action: PageAction | GuardAction | ArchiveAction | GpuAction }
+  | { readonly where: 'page'; readonly action: PageAction | GuardAction | ArchiveAction | GpuAction | NonNullable<RelaysControls['button']>['id'] }
   | { readonly where: 'title' }
   | { readonly where: 'opener' };
 
@@ -32,5 +33,6 @@ export const COMMAND_BUTTONS: Readonly<Record<string, CommandButton>> = {
   // PLAN_gpu_health.md D7: the alert's *Enable <GPU>* (the command picks the disabled adapter; the button names it).
   'wslCare.enableGpu': { where: 'page', action: 'enableGpu' },
   'wslCare.openArchive': { where: 'page', action: 'openArchive' },
+  'wslCare.stopRelays': { where: 'page', action: 'stopRelays' },
   'wslCare.openLogs': { where: 'title' },
 };

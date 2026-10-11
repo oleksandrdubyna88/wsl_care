@@ -9,7 +9,7 @@ import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { callRoot, FULL_CHECK_ACTIONS, RUN_KINDS, type RootOp, type RootTarget } from './rootCall';
 import { exitFailure } from './rootFailures';
-import { runIdOf, shownCap, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
+import { MAX_PROCESS_ARGS, runIdOf, shownCap, shownProcessOf, volumeNameOf, type ActionIds, type RunId, type ShownProcess, type VolumeName } from './rootIds';
 import type { DaemonLimits } from '../shared/daemonLimits';
 import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
 
@@ -112,6 +112,9 @@ export const CAPABILITIES = {
   confirmA4: [...BASE, 'act.detach', 'act.onlyStdin'],
   previewA13: [...BASE, 'act.shownList', 'archive.preview'],
   confirmA13: [...BASE, 'act.detach', 'archive.run'],
+  /** S7b.2b: A21's preview publishes its `shown` processes and its confirm passes them back on the `--process` road. */
+  previewA21: [...BASE, 'act.shownList', 'act.processList'],
+  confirmA21: [...BASE, 'act.detach', 'act.processList'],
   stop: [...BASE, 'act.stop'],
   fullCheck: [...BASE, 'act.detach'],
 } as const;
@@ -121,15 +124,19 @@ export const CAPABILITIES = {
  * preview is the archive child's own `archive preview`).
  */
 export function previewNeeds(ids: readonly string[]): readonly string[] {
-  return ids.includes('A13') ? CAPABILITIES.previewA13 : CAPABILITIES.preview;
+  const a13 = ids.includes('A13') ? CAPABILITIES.previewA13 : [];
+  const a21 = ids.includes('A21') ? CAPABILITIES.previewA21 : [];
+
+  return [...new Set([...CAPABILITIES.preview, ...a13, ...a21])];
 }
 
 /** What a confirm of `ids` needs advertised: the detach, A4's stdin list when A4 is confirmed, A13's archive run when A13 is (E10.S1b). */
 export function confirmNeeds(ids: readonly string[]): readonly string[] {
   const a4 = ids.includes('A4') ? CAPABILITIES.confirmA4 : [];
   const a13 = ids.includes('A13') ? CAPABILITIES.confirmA13 : [];
+  const a21 = ids.includes('A21') ? CAPABILITIES.confirmA21 : [];
 
-  return [...new Set([...CAPABILITIES.confirm, ...a4, ...a13])];
+  return [...new Set([...CAPABILITIES.confirm, ...a4, ...a13, ...a21])];
 }
 
 /** A call that went out: the op, and how it ended (`undefined`: the op could not be built, nothing started). */
@@ -397,9 +404,53 @@ function confirmOp(preview: HeldPreview, gate: GateOpen): Prepared {
   if ('kind' in ids) {
     return ids;
   }
-  const shown = ids.includes('A4') ? revalidated(preview, shownCap(gate.limits.maxShownNames)) : { names: undefined };
+  const lists = listsOf(preview, ids, shownCap(gate.limits.maxShownNames));
 
-  return 'kind' in shown ? shown : { op: 'confirm', ids, shown: shown.names };
+  return 'kind' in lists ? lists : { op: 'confirm', ids, ...lists };
+}
+
+/** The confirm's lists from the held preview: A4's names when A4 is confirmed, A21's processes when A21 is (S7b.2b) — or why not. */
+function listsOf(preview: HeldPreview, ids: ActionIds, cap: number): ConfirmLists | RootFailure {
+  const shown = ids.includes('A4') ? revalidated(preview, cap) : { names: undefined };
+  if ('kind' in shown) {
+    return shown;
+  }
+
+  return withProcesses(shown.names, ids.includes('A21') ? heldProcesses(preview, Math.min(cap, MAX_PROCESS_ARGS)) : undefined);
+}
+
+type ConfirmLists = { readonly shown: readonly VolumeName[] | undefined; readonly processes?: readonly ShownProcess[] };
+
+function withProcesses(shown: readonly VolumeName[] | undefined, processes: { readonly names: readonly ShownProcess[] } | RootFailure | undefined): ConfirmLists | RootFailure {
+  if (processes === undefined) {
+    return { shown };
+  }
+
+  return 'kind' in processes ? processes : { shown, processes: processes.names };
+}
+
+/**
+ * S7b.2b: A21's processes from the held preview and nowhere else, each re-validated — never empty (a bare button run is refused
+ * by the daemon), never past the cap in force.
+ */
+function heldProcesses(preview: HeldPreview, cap: number): { readonly names: readonly ShownProcess[] } | RootFailure {
+  const names = preview.processes?.names ?? [];
+  const valid = names.flatMap((name) => shownProcessOf(name) ?? []);
+  const problem = processProblem(names.length, valid.length, cap);
+
+  return problem === '' ? { names: valid } : { kind: 'shownListInvalid', reason: problem };
+}
+
+/** Why a held process list cannot be confirmed — '' when it can. */
+function processProblem(held: number, valid: number, cap: number): string {
+  if (held === 0) {
+    return 'its preview showed no relay whose client is gone, so there is nothing to stop';
+  }
+  if (valid !== held) {
+    return 'a held process is no longer a canonical pid:start';
+  }
+
+  return valid > cap ? `its process list holds ${valid} and a confirm takes at most ${cap}: preview again` : '';
 }
 
 function revalidated(preview: HeldPreview, cap: number): { readonly names: readonly VolumeName[] } | RootFailure {
@@ -554,8 +605,9 @@ function freezeAction(action: PreviewedAction): PreviewedAction {
 /** A held preview made immutable all the way down — the names a confirm pipes cannot be edited after the preview. */
 function freezePreview(preview: HeldPreview): HeldPreview {
   const a4 = preview.a4 === undefined ? undefined : Object.freeze({ ...preview.a4, names: Object.freeze([...preview.a4.names]) });
+  const processes = preview.processes === undefined ? {} : { processes: Object.freeze({ ...preview.processes, names: Object.freeze([...preview.processes.names]) }) };
 
-  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4 });
+  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4, ...processes });
 }
 
 /** What a full check's run holds as its actions (`["collect"]`) — re-exported so the host's cleanup flow can name it
