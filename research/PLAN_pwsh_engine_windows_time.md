@@ -1,8 +1,9 @@
 # PLAN — the Windows Time launcher elevates PowerShell 7 by the same resolver as *Enable <GPU>*, and the panel names each engine
 
 > Status: **IMPLEMENTED, 2026-10-11.** What shipped differently is in §12 (the as-built record): D2 replaced by its own engine
-> read (`EngineHost`, §11 R3), the shipped G1 hardened (§11 R1), the stamp line (R4). The open tail: the owner's first
-> elevated presses under PowerShell 7 (POST_DEPLOY item 9, the acceptance gate). Scope: the VS Code extension
+> read (`EngineHost`, §11 R3), the shipped G1 hardened (§11 R1), the stamp line (R4). The acceptance gate (POST_DEPLOY
+> item 9): *Remove* and *Install* passed under PowerShell 7 on the owner's machine, 2026-10-11; the open tail is only
+> *Start Windows Time* under PowerShell 7, pressed the next time the service is found stopped. Scope: the VS Code extension
 > (`src_vs_code/`) — the engine resolver of story G1 moved out of `src/gpu/` into one shared module, the Windows Time
 > launcher's three user-context elevated runs (*Start Windows Time*, *Install the Windows Time guard*, *Remove the Windows
 > Time guard*) moved onto it, and one line per part in the panel that names the engine. The SYSTEM task stays on Windows
@@ -336,6 +337,12 @@ read, the GPU host naming no engine (D6).
 ceiling is reported timed out within the ceiling plus the kill grace*) failed once under the full parallel suite and passed
 alone and on the next full run — not touched by this story.
 
-**Open tail:** the acceptance gate — the owner's first *Remove*, *Install* and *Start Windows Time* under PowerShell 7
-(POST_DEPLOY item 9): whether the ScheduledTasks module registers under elevated pwsh 7, and whether the Store package's
-registry virtualisation leaves the stamp behind.
+**The acceptance gate, seen 2026-10-11** (POST_DEPLOY item 9; extension 0.5.0 installed, the attested build, 11 files):
+under PowerShell 7.6.6.0 from the Store (`C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.exe`) the guard's *Remove* succeeded and its *Install* succeeded. The
+panel then read "Windows Time guard: installed — not run yet" and "Elevated runs here (Start Windows Time, install / remove
+the guard): PowerShell 7 (…7.6.6.0…). The guard's task runs as SYSTEM in Windows PowerShell 5.1." Both questions are
+answered: the ScheduledTasks module registers under elevated pwsh 7 (the System32 import works), and no virtualised stamp
+was reported after *Remove*.
+
+**Open tail:** *Start Windows Time* under PowerShell 7. It could not be pressed: the service runs Automatic, so the button
+is (correctly) hidden. It is pressed the next time the service is found stopped.
