@@ -34,6 +34,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { RUN_ID_SHAPE, UTC_INSTANT_SHAPE } from '../../shared/shapes';
+import { A20_PREVIEW_ACTION, pipedEntries, RESTORE_CAPABILITIES, restoreOpOf, restorePreviewLine, scenarioList } from './fakeRestore';
 
 export interface FakeDistro {
   readonly name: string;
@@ -464,6 +465,8 @@ interface RootShape {
   readonly piped: boolean;
   readonly capabilities: readonly string[];
   readonly runId?: string;
+  /** E10.S2b: A20's restore shapes — the entry ids on stdin (`fakeRestore.ts`). */
+  readonly entries?: true;
 }
 
 function isRootCall(argv: readonly string[]): boolean {
@@ -513,6 +516,9 @@ function processConfirm(ids: readonly string[], flags: readonly string[]): RootS
  * `archive.preview` advertised, its confirm `archive.run` — what `cleanupController.ts` gates on.
  */
 function withArchive(shape: RootShape | string): RootShape | string {
+  if (typeof shape !== 'string' && shape.ids.includes('A20')) {
+    return `A20 is restored only through act A20 … --entry - (E10.S2b), never through a cleanup shape: ${JSON.stringify(shape.ids)}`;
+  }
   if (typeof shape === 'string' || !shape.ids.includes('A13')) {
     return shape;
   }
@@ -547,7 +553,18 @@ function rootShape(tail: readonly string[]): RootShape | string {
     return RUN_ID.test(tail[2] ?? '') ? { op: 'stop', ids: [], piped: false, capabilities: ['act.stop'], runId: tail[2] ?? '' } : `not a run id the daemon writes: ${JSON.stringify(tail[2])}`;
   }
 
+  if (tail[0] === 'act' && tail[1] === 'A20') {
+    return restoreShape(tail);
+  }
+
   return tail[0] === 'act' && !(tail[1] ?? '').startsWith('-') ? withRelays(withArchive(actShape(tail))) : `not one of the root shapes: ${JSON.stringify(tail)}`;
+}
+
+/** E10.S2b: A20's two shapes, word for word the shared request's (`fakeRestore.ts`). */
+function restoreShape(tail: readonly string[]): RootShape | string {
+  const op = restoreOpOf(tail);
+
+  return op === undefined ? `A20 takes exactly the shared request's preview or confirm (--entry -): ${JSON.stringify(tail)}` : { op, ids: ['A20'], piped: false, entries: true, capabilities: RESTORE_CAPABILITIES[op] };
 }
 
 function readJson(file: string): Record<string, unknown> {
@@ -599,11 +616,22 @@ function archiveLineProblem(scenario: FakeScenario, shape: RootShape): string | 
 }
 
 function shapeProblem(scenario: FakeScenario, shape: RootShape, stdin: Buffer): string | undefined {
+  if (shape.entries === true) {
+    return entriesProblem(scenario, shape, stdin);
+  }
   if (!shape.piped && stdin.length > 0) {
     return 'stdin outside --only -: only a confirm of A4 pipes a list';
   }
 
   return (shape.piped ? pipedProblem(stdin) : undefined) ?? (shape.ids.length > 0 ? idsProblem(scenario, shape.ids) : undefined) ?? capabilityProblem(scenario, shape.capabilities) ?? archiveLineProblem(scenario, shape);
+}
+
+/** E10.S2b: A20's stdin, the registry ∩ status.actions, the capabilities and the daemon's A20 line in the answers folder. */
+function entriesProblem(scenario: FakeScenario, shape: RootShape, stdin: Buffer): string | undefined {
+  const piped = pipedEntries(stdin, scenarioList(scenario.answers, scenario.archiveList ?? 'archive-list.json').ceiling);
+  const lineMissing = shape.op === 'preview' && !fs.existsSync(path.join(scenario.answers, A20_PREVIEW_ACTION)) ? `the answers folder has no ${A20_PREVIEW_ACTION}` : undefined;
+
+  return (typeof piped === 'string' ? piped : undefined) ?? idsProblem(scenario, shape.ids) ?? capabilityProblem(scenario, shape.capabilities) ?? lineMissing;
 }
 
 function handOff(scenario: FakeScenario, kind: 'act' | 'collect'): Buffer {
@@ -624,7 +652,15 @@ function previewAnswer(scenario: FakeScenario, ids: readonly string[]): Buffer {
   return Buffer.from(JSON.stringify({ ...golden, actions }), 'utf8');
 }
 
-function rootAnswer(scenario: FakeScenario, shape: RootShape): Reply {
+/** E10.S2b: A20's preview — the act envelope of the A4 golden, the daemon's A20 line narrowed to the piped ids inside. */
+function restorePreviewAnswer(scenario: FakeScenario, stdin: Buffer): Buffer {
+  const golden = readJson(path.join(scenario.answers, 'act-a4-preview.json'));
+  const piped = stdin.toString('utf8').split('\n').slice(0, -1);
+
+  return Buffer.from(JSON.stringify({ ...golden, actions: [restorePreviewLine(scenario.answers, scenario.archiveList ?? 'archive-list.json', piped)] }), 'utf8');
+}
+
+function rootAnswer(scenario: FakeScenario, shape: RootShape, stdin: Buffer): Reply {
   const scripted = shape.op === 'check' ? scenario.root?.checkExit : scenario.root?.exit;
   const wait = scenario.root?.delayMs === undefined ? {} : { delayMs: scenario.root.delayMs };
   if (scripted !== undefined) {
@@ -632,7 +668,7 @@ function rootAnswer(scenario: FakeScenario, shape: RootShape): Reply {
   }
   const answers: Record<RootShape['op'], () => Buffer> = {
     check: () => Buffer.from(`${scenario.version ?? '0.1.0'}\n`, 'utf8'),
-    preview: () => previewAnswer(scenario, shape.ids),
+    preview: () => (shape.entries === true ? restorePreviewAnswer(scenario, stdin) : previewAnswer(scenario, shape.ids)),
     confirm: () => handOff(scenario, 'act'),
     collect: () => handOff(scenario, 'collect'),
     stop: () => Buffer.from(JSON.stringify({ schemaVersion: 1, result: 'stopping', kind: 'act', runId: shape.runId, unit: `wsl-care-act@${shape.runId ?? ''}.service`, productVersion: 'unknown' }), 'utf8'),
@@ -654,7 +690,7 @@ function rootReply(scenario: FakeScenario, argv: readonly string[], stdin: Buffe
     return refuse(problem ?? 'unreachable', argv);
   }
 
-  return distroReply(scenario, argv) ?? binaryReply(scenario) ?? rootAnswer(scenario, shape);
+  return distroReply(scenario, argv) ?? binaryReply(scenario) ?? rootAnswer(scenario, shape, stdin);
 }
 
 /** The shapes the fake checks run ids and instants against — the shared module's own objects (`sharedShapes.test.ts`). */

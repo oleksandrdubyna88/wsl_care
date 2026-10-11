@@ -1,11 +1,11 @@
 import { rootFailureText } from '../root/rootFailureText';
 import type { HandOffOutcome, RootFailure } from '../root/rootOutcome';
-import { gb, minuteOf, sizeText } from '../text/format';
+import { gb, minuteOf } from '../text/format';
 import { safeText } from '../text/safeText';
 import type { JournalEntry, JournalOp } from './journal';
-import { isArchiveOnly, isRelayOnly } from './modalText';
 import type { RunShow } from './runAnswers';
 import type { RunResult } from './runFollower';
+import { runWordsByLabel, runWordsOf, type RunWords } from './runWords';
 
 /**
  * The words the panel and its notifications use for a cleanup's hand-off and its end (E6.S3): one sentence and a level per
@@ -13,22 +13,11 @@ import type { RunResult } from './runFollower';
  * one place.
  */
 
-/** The label an archive run is told by (E10.S1b): never "Cleaning A13". */
-export const ARCHIVE_RUN = 'the archive run';
+/** The label an archive run is told by (E10.S1b): never "Cleaning A13" — its row of `runWords.ts`. */
+export const ARCHIVE_RUN = runWordsOf(['A13'])?.label ?? 'the archive run';
 
-/** The label a relay stop is told by (S7b.2b): never "Cleaning A21". */
-export const RELAY_RUN = 'the relay stop';
-
-/** What a run of these ids is told as: the archive run (A13 alone), the relay stop (A21 alone), or a cleanup of its ids. */
-type RunWords = 'clean' | 'archive' | 'relays';
-
-function wordsOf(actions: readonly string[]): RunWords {
-  if (isRelayOnly(actions)) {
-    return 'relays';
-  }
-
-  return isArchiveOnly(actions) ? 'archive' : 'clean';
-}
+/** The label a relay stop is told by (S7b.2b): never "Cleaning A21" — its row of `runWords.ts`. */
+export const RELAY_RUN = runWordsOf(['A21'])?.label ?? 'the relay stop';
 
 export type NoticeLevel = 'info' | 'warn' | 'error';
 
@@ -63,17 +52,13 @@ export function handOffNotice(outcome: HandOffOutcome, label: string, op: Journa
   return words(outcome, label, op);
 }
 
-/** What a hand-off is called: the full check, the archive run (E10.S1b), or the cleanup of its ids. */
+/** What a hand-off is called: the full check, a single-action run by its own name (`runWords.ts`: the archive run, the restore run, the relay stop), or the cleanup of its ids. */
 function doing(label: string, op: JournalOp): string {
   if (op === 'fullCheck') {
     return 'The full check';
   }
 
-  if (label === RELAY_RUN) {
-    return 'The relay stop';
-  }
-
-  return label === ARCHIVE_RUN ? 'The archive run' : `Cleaning ${label}`;
+  return runWordsByLabel(label)?.name ?? `Cleaning ${label}`;
 }
 
 function taken(runId: string, label: string, op: JournalOp): Notice {
@@ -86,65 +71,62 @@ function unseen(label: string, why: string): Notice {
   return { level: 'warn', sentence: `The daemon's answer to ${label} was not seen (${reason(why)}); the panel follows it from the daemon's own records.` };
 }
 
-/** "A4" — or the full check, or the archive run (E10.S1b: an entry of A13 alone), by name. */
+/** "A4" — or the full check, or a single-action run by name (an entry of A13, A20 or A21 alone: `runWords.ts`). */
 function labelOf(entry: JournalEntry): string {
   if (entry.op === 'fullCheck') {
     return 'full check';
   }
 
-  return { archive: ARCHIVE_RUN, relays: RELAY_RUN, clean: entry.actions.join(', ') }[wordsOf(entry.actions)];
+  return runWordsOf(entry.actions)?.label ?? entry.actions.join(', ');
 }
 
 /**
- * What a done run did, in its own words: a cleanup frees and removes, its figure in GB as `docker system df` prints it; the archive
- * run (E10.S1b) MOVES out of the agents' folders, its figure in the unit it reaches — a 200-byte backlog reads 200 B, never
- * 0.0 GB (own review #3, the second code round #3).
+ * What a done run did, in its own words: a cleanup frees and removes, its figure in GB as `docker system df` prints it; a
+ * single-action run says what ITS action did (`runWords.ts`): the archive run (E10.S1b) MOVES out of the agents' folders — a
+ * 200-byte backlog reads 200 B, never 0.0 GB (own review #3) — and the restore run (E10.S2b) counts the sessions it put back.
  */
-const DID = {
-  clean: { freed: 'freed', unknown: 'freed an unknown amount', objects: 'objects removed', size: gb },
-  archive: { freed: 'moved', unknown: 'moved an unknown amount', objects: 'objects archived', size: sizeText },
-} as const;
+function cleanDid(bytes: number | undefined, count: number): string {
+  return `${bytes === undefined ? 'freed an unknown amount' : `freed ${gb(bytes)}`}, ${count} objects removed`;
+}
 
-function freedText(bytes: number | undefined, did: (typeof DID)[keyof typeof DID]): string {
-  return bytes === undefined ? did.unknown : `${did.freed} ${did.size(bytes)}`;
+/** What the run did, in its own words (`runWords.ts`) — or a cleanup's. */
+function didText(words: RunWords | undefined, bytes: number | undefined, count: number): string {
+  return (words?.done ?? cleanDid)(bytes, count);
 }
 
 /**
  * What a done relay stop did (S7b.2b): how many relays it ended — their Windows programs end with them — and, when A21 itself
  * failed, that some did not end on SIGTERM and keep their Windows programs running. Never "freed": A21 frees no disk.
  */
-function relaysDone(name: string, show: RunShow): string {
+function relaysDone(name: string, show: RunShow, words: RunWords): string {
   if (show.line === undefined) {
     return `${name} is done.`;
   }
   const action = show.line.actions.find((a) => a.id === 'A21');
-  const ended = action === undefined ? 0 : action.count;
 
-  return `${name} is done: ended ${ended} relay${ended === 1 ? '' : 's'}; their Windows programs end with them.${survivorsOf(action)}`;
+  return `${name} is done: ${words.done(undefined, action === undefined ? 0 : action.count)}; their Windows programs end with them.${survivorsOf(action)}`;
 }
 
 function survivorsOf(action: { readonly status: string } | undefined): string {
   return action !== undefined && action.status === 'failed' ? ' Some relays did not end on SIGTERM; their Windows programs keep running (runs show names them).' : '';
 }
 
-/** A done run's sentence in its own words: the relay stop's (S7b.2b), or the cleanup's / the archive run's. */
-function sentenceOf(name: string, show: RunShow, words: RunWords): string {
-  return words === 'relays' ? relaysDone(name, show) : doneSentence(name, show, words === 'archive');
+/** A done run's sentence in its own words: the relay stop's (S7b.2b), or the cleanup's, the archive run's, the restore run's. */
+function sentenceOf(name: string, show: RunShow, words: RunWords | undefined): string {
+  return words?.id === 'A21' ? relaysDone(name, show, words) : doneSentence(name, show, words);
 }
 
-function doneSentence(name: string, show: RunShow, archive: boolean): string {
+function doneSentence(name: string, show: RunShow, words: RunWords | undefined): string {
   const line = show.line;
   if (line === undefined) {
     return `${name} is done.`;
   }
-  const did = DID[archive ? 'archive' : 'clean'];
-  const removed = line.actions.reduce((sum, a) => sum + a.count, 0);
-  const freed = freedText(line.freedBytes, did);
+  const did = didText(words, line.freedBytes, line.actions.reduce((sum, a) => sum + a.count, 0));
 
-  return `${name} ${line.outcome === 'completed' ? 'is done' : `ended ${reason(line.outcome)}`}: ${freed}, ${removed} ${did.objects}.`;
+  return `${name} ${line.outcome === 'completed' ? 'is done' : `ended ${reason(line.outcome)}`}: ${did}.`;
 }
 
-type ByState = { readonly [K in 'done' | 'refused' | 'interrupted' | 'unknown' | 'queued' | 'running']: (name: string, show: RunShow, runId: string, words: RunWords) => Notice };
+type ByState = { readonly [K in 'done' | 'refused' | 'interrupted' | 'unknown' | 'queued' | 'running']: (name: string, show: RunShow, runId: string, words: RunWords | undefined) => Notice };
 
 const BY_STATE: ByState = {
   done: (name, show, _runId, words) => ({ level: show.line === undefined || show.line.outcome === 'completed' ? 'info' : 'warn', sentence: sentenceOf(name, show, words) }),
@@ -159,20 +141,19 @@ function runNotice(entry: JournalEntry, show: RunShow): Notice {
   const runId = entry.kind === 'run' ? entry.runId : (show.runId ?? '');
   const name = `Run ${runId} (${labelOf(entry)})`;
 
-  return show.state.kind === 'known' ? BY_STATE[show.state.value](name, show, runId, wordsOf(entry.actions)) : { level: 'warn', sentence: `${name} is in a state this extension does not know: ${show.state.label}` };
+  return show.state.kind === 'known' ? BY_STATE[show.state.value](name, show, runId, runWordsOf(entry.actions)) : { level: 'warn', sentence: `${name} is in a state this extension does not know: ${show.state.label}` };
 }
 
-const CONFIRMED_AS: { readonly [K in 'fullCheck' | RunWords]: (entry: JournalEntry) => string } = {
-  fullCheck: () => 'The full check',
-  archive: () => 'The archive run',
-  relays: () => 'The relay stop',
-  clean: (entry) => `The cleanup of ${labelOf(entry)}`,
-};
+function confirmedAs(entry: JournalEntry): string {
+  if (entry.op === 'fullCheck') {
+    return 'The full check';
+  }
+
+  return runWordsOf(entry.actions)?.name ?? `The cleanup of ${labelOf(entry)}`;
+}
 
 function confirmed(entry: JournalEntry): string {
-  const kind = entry.op === 'fullCheck' ? 'fullCheck' : wordsOf(entry.actions);
-
-  return `${CONFIRMED_AS[kind](entry)} confirmed at ${minuteOf(entry.since)}`;
+  return `${confirmedAs(entry)} confirmed at ${minuteOf(entry.since)}`;
 }
 
 type Results = { readonly [K in RunResult['kind']]: (result: Extract<RunResult, { kind: K }>, ceilingMs: number) => Notice };

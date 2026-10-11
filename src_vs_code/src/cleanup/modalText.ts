@@ -2,6 +2,7 @@ import type { ActionId } from '../root/rootIds';
 import type { HeldPreview, PreviewedAction, PreviewItem } from '../root/rootOutcome';
 import { gb, sizeText } from '../text/format';
 import { safeText } from '../text/safeText';
+import { runWordsOf } from './runWords';
 
 /**
  * The words of the native confirmation modals (E6.S3, plan §7.3, §15j M8, m8). Every daemon string — a `what`, a reason,
@@ -19,8 +20,9 @@ export interface Modal {
 
 export const CLEAN_LABEL = 'Clean';
 export const CLEAN_ANYWAY_LABEL = 'Clean anyway';
-export const ARCHIVE_LABEL = 'Archive';
-export const STOP_RELAYS_CONFIRM = 'Stop relays';
+export const ARCHIVE_LABEL = runWordsOf(['A13'])?.confirm ?? 'Archive';
+export const RESTORE_LABEL = runWordsOf(['A20'])?.confirm ?? 'Restore';
+export const STOP_RELAYS_CONFIRM = runWordsOf(['A21'])?.confirm ?? 'Stop relays';
 
 /** An attacker-settable name (a container's, an image's) is cut here; a `what` or a reason a little later. */
 const NAME_MAX = 80;
@@ -77,16 +79,6 @@ function block(action: PreviewedAction, preview: HeldPreview): string {
   return [head, ...binding(action, preview), ...names(action)].join('\n');
 }
 
-/** E10.S1b: a preview of A13 alone — *Archive now* — is told in the archive's words, never "Clean A13". */
-export function isArchiveOnly(ids: readonly string[]): boolean {
-  return ids.length === 1 && ids[0] === 'A13';
-}
-
-/** S7b.2b: a preview of A21 alone — *Stop client-gone relays* — is told in the relays' words, never "Clean A21". */
-export function isRelayOnly(ids: readonly string[]): boolean {
-  return ids.length === 1 && ids[0] === 'A21';
-}
-
 /** One relay's line: its name (pid and program) and the head of the daemon's note, within the sanitiser's cut. */
 function relayLine(item: PreviewItem): string {
   return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)}`;
@@ -124,17 +116,22 @@ function relaysModal(preview: HeldPreview): Modal {
   return { message: `Stop ${stopped} client-gone relay${stopped === 1 ? '' : 's'} in "${safeText(preview.distro, 64)}"?`, detail: [...relayBinding(preview), ...relayList(action, stopped), '', ...how].join('\n'), confirm: STOP_RELAYS_CONFIRM };
 }
 
-/** One agent's line: its id, the daemon's note (sessions and files), its bytes. */
+/** A size in the unit it reaches (a 200-byte session reads 200 B), or "an unknown size". */
+function sizeOrUnknown(bytes: number | undefined): string {
+  return bytes === undefined ? 'an unknown size' : sizeText(bytes);
+}
+
+/** One item's line — an agent of A13, a session of A20: its name, the daemon's note, its bytes. */
 function agentLine(item: PreviewItem): string {
-  return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)} · ${item.bytes === undefined ? 'an unknown size' : sizeText(item.bytes)}`;
+  return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)} · ${sizeOrUnknown(item.bytes)}`;
 }
 
 function archiveBlock(action: PreviewedAction | undefined): string[] {
-  return action !== undefined && action.available ? readBlock(action) : [`Not read — ${notReadWhy(action)}`];
+  return action !== undefined && action.available ? readBlock(action) : [`Not read — ${notReadWhy(action, 'A13')}`];
 }
 
-function notReadWhy(action: PreviewedAction | undefined): string {
-  return safeText(action?.reason ?? 'the daemon did not describe A13', TEXT_MAX);
+function notReadWhy(action: PreviewedAction | undefined, id: string): string {
+  return safeText(action?.reason ?? `the daemon did not describe ${id}`, TEXT_MAX);
 }
 
 /** What A13 would move, per agent, and the daemon's own reason when it gave one (a skip). */
@@ -152,13 +149,52 @@ function archiveModal(preview: HeldPreview): Modal {
   return { message: `Archive the aged AI sessions in "${safeText(preview.distro, 64)}"?`, detail: [...archiveBlock(action), '', how].join('\n'), confirm: ARCHIVE_LABEL };
 }
 
+/** The restore modal lists at most this many sessions; the rest are counted ("… and N more"). */
+const RESTORE_LISTED = 10;
+
+function sessions(n: number): string {
+  return `${n} archived session${n === 1 ? '' : 's'}`;
+}
+
+/** One session's line: its entry id, the daemon's note (agent, month, files), its bytes. */
+function restoreLines(action: PreviewedAction): string[] {
+  const listed = action.details.slice(0, RESTORE_LISTED).map(agentLine);
+  const more = (action.count ?? action.details.length) - listed.length;
+
+  return more > 0 ? [...listed, `  … and ${more} more`] : listed;
+}
+
+/** How many sessions the held preview offers — the ids its confirm pipes. */
+function restoreCount(preview: HeldPreview): number {
+  return preview.restore?.names.length ?? 0;
+}
+
+/** What A20 would put back: the daemon's sentence, how many and how large, and the first sessions. */
+function restoreBlock(action: PreviewedAction, count: number): string[] {
+  return [safeText(action.what, TEXT_MAX), `${sessions(count)}, ${sizeOrUnknown(action.bytes)}`, ...restoreLines(action)];
+}
+
+/**
+ * *Restore*'s modal (E10.S2b): how many sessions the HELD preview offers — the ids its confirm pipes, never the page's selection —
+ * what the daemon would put back, and how. A preview that offers none still opens nothing: the flow tells it instead (`cleanFlow.ts`).
+ */
+function restoreModal(preview: HeldPreview): Modal {
+  const action = preview.actions.find((a) => a.id === 'A20');
+  const count = restoreCount(preview);
+  const what = action !== undefined && action.available ? restoreBlock(action, count) : [`Not read — ${notReadWhy(action, 'A20')}`];
+  const how = 'The daemon copies each session back to its agent\'s folder as the target user, with its own binary; files are only created, never replaced — a session already back is skipped, and one whose file is there with other bytes is refused. The run is the daemon\'s own unit; the panel follows it to its result.';
+
+  return { message: `Restore ${sessions(count)} in "${safeText(preview.distro, 64)}"?`, detail: [...what, '', how].join('\n'), confirm: RESTORE_LABEL };
+}
+
+/** The single-action modals, by their run's id (`runWords.ts`): *Archive now*, *Restore* and the relay stop are never "Clean A13" / "Clean A20" / "Clean A21". */
+const SINGLE: { readonly [K in 'A13' | 'A20' | 'A21']: (preview: HeldPreview) => Modal } = { A13: archiveModal, A20: restoreModal, A21: relaysModal };
+
 /** The modal every cleanup shows: what each action removes, how much, and how its targets are chosen. */
 export function firstModal(preview: HeldPreview, selected: boolean): Modal {
-  if (isRelayOnly(preview.ids)) {
-    return relaysModal(preview);
-  }
+  const words = runWordsOf(preview.ids);
 
-  return isArchiveOnly(preview.ids) ? archiveModal(preview) : cleanModal(preview, selected);
+  return words === undefined ? cleanModal(preview, selected) : SINGLE[words.id](preview);
 }
 
 function cleanModal(preview: HeldPreview, selected: boolean): Modal {

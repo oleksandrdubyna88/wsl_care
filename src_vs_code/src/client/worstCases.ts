@@ -104,9 +104,10 @@ export const DOCKER_ROW_IDS: ReadonlySet<string> = new Set(['A4', 'A5', 'A5Testc
 
 /** The rows that take no Docker snapshot — their share, under `worst`. */
 export function otherRowShareS(id: string, worst: WorstCases = TODAY): number | undefined {
-  // E10.S1b: A13's preview is ONE `archive preview` child under `archive.previewTimeoutSeconds` (`ArchiveAction.PreviewAsync`).
+  // E10.S1b: A13's preview is ONE `archive preview` child under `archive.previewTimeoutSeconds` (`ArchiveAction.PreviewAsync`);
+  // E10.S2b: A20's is ONE `archive list --restorable --entry …` child under the same key (`RestoreAction.PreviewAsync`).
   // S7b.2b: A21's preview is one fd-table scan — derived here, never counted as a Docker snapshot by accident.
-  const shares: Readonly<Record<string, number>> = { A8: 0, A9: worst.snapList, A13: worst.archivePreview, A21: worst.relayScan };
+  const shares: Readonly<Record<string, number>> = { A8: 0, A9: worst.snapList, A13: worst.archivePreview, A20: worst.archivePreview, A21: worst.relayScan };
 
   return Object.hasOwn(shares, id) && !DOCKER_ROW_IDS.has(id) ? shares[id] : undefined;
 }

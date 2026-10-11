@@ -28,6 +28,7 @@ const BRACKET_PAREN = String.fromCharCode(93, 40);
 
 interface Stub {
   preview?: () => Promise<PreviewOutcome>;
+  previewRestore?: () => Promise<PreviewOutcome>;
   confirm?: () => Promise<HandOffOutcome>;
   stop?: () => Promise<HandOffOutcome>;
   runFullCheck?: () => Promise<HandOffOutcome>;
@@ -43,7 +44,7 @@ function hostWith(stub: Stub, status: Record<string, unknown> = headBody('status
   const never = (): Promise<never> => Promise.reject(new Error('not asked in this test'));
   const host = new CleanupHost({
     durable: new MapStore(),
-    controller: { preview: stub.preview ?? never, confirm: stub.confirm ?? never, stop: stub.stop ?? never, runFullCheck: stub.runFullCheck ?? never },
+    controller: { preview: stub.preview ?? never, previewRestore: stub.previewRestore ?? never, confirm: stub.confirm ?? never, stop: stub.stop ?? never, runFullCheck: stub.runFullCheck ?? never },
     read: never, outcomes, askStatus: () => Promise.resolve(answered('status', status)), refreshPanel: () => Promise.resolve(),
     focused: () => true, ui: recordingCleanUi(recorder), timers: new ManualTimers(), now: () => 0, wallNow: () => Date.parse('2026-10-05T10:00:00.000Z'),
     log: (line) => { logged.push(line); },
@@ -105,7 +106,7 @@ function endingHost(numbers: Numbers): CleanupHost {
   const never = (): Promise<never> => Promise.reject(new Error('not asked in this test'));
   return new CleanupHost({
     durable: new MapStore(),
-    controller: { preview: never, confirm: never, stop: never, runFullCheck: never },
+    controller: { preview: never, previewRestore: never, confirm: never, stop: never, runFullCheck: never },
     read: (request) => Promise.resolve({ kind: 'read', read: request.read, distro: 'Ubuntu', body: { schemaVersion: 1, runId: request.read === 'runsShow' ? request.runId : '', state: 'done', reason: '' } }),
     outcomes, askStatus: () => Promise.resolve(status), refreshPanel: () => Promise.resolve(),
     focused: () => true, ui: recordingCleanUi(newCleanRecorder()), timers: new ManualTimers(), now: () => 0, wallNow: () => Date.parse('2026-10-05T10:05:00.000Z'),

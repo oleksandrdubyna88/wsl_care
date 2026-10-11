@@ -21,6 +21,11 @@ import { daemonLimitsOf, type DaemonLimits } from '../shared/daemonLimits';
 export interface GateOpen {
   readonly kind: 'open';
   readonly allowed: readonly ActionId[];
+  /**
+   * E10.S2b: the registry ∩ `status.actions`, the button-only ids INCLUDED — what the restore ops ask (A20 is acted on only through
+   * them, and only when the daemon reports it). The cleanup ops never read it: they take `allowed`.
+   */
+  readonly reported: readonly ActionId[];
   /** The daemon's published limits in that same status (daemon #17) — what the root call is sized under. */
   readonly limits: DaemonLimits;
 }
@@ -43,7 +48,9 @@ export function actionGate(status: JsonObject, version: DaemonVersion, required:
   }
   const reported = strings(status.actions);
 
-  return { kind: 'open', allowed: ACTION_IDS.filter((id) => reported.includes(id) && !BUTTON_ONLY_IDS.includes(id)), limits: daemonLimitsOf(status) };
+  const known = ACTION_IDS.filter((id) => reported.includes(id));
+
+  return { kind: 'open', allowed: known.filter((id) => !BUTTON_ONLY_IDS.includes(id)), reported: known, limits: daemonLimitsOf(status) };
 }
 
 /** The requested ids as the gate allows them — each once, in the registry's order — or the refusal naming the others. */

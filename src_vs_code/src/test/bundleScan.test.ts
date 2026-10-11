@@ -60,16 +60,17 @@ const OUTSIDE_ROOT: readonly Forbidden[] = [
   ...EVERYWHERE,
   { name: '-u (another user)', matches: flag('-u'), plants: ['-u', '-u someone'] },
   { name: 'root', matches: (s) => /\broot\b/i.test(s) && !rootProse().includes(s), plants: ['root', 'run as Root'] },
-  ...['--confirm', '--manual', '--preview', '--detach', '--only', '--process', '--stop', '--request'].map((word) => ({ name: word, matches: flag(word), plants: [word, `act A4 ${word} x`] })),
+  ...['--confirm', '--manual', '--preview', '--detach', '--only', '--process', '--entry', '--stop', '--request'].map((word) => ({ name: word, matches: flag(word), plants: [word, `act A4 ${word} x`] })),
 ];
 
 /**
  * The root region's literals, EXACTLY — the oracle of `rootCall.ts`, written out independently: the argv words of the
  * five ops, the comma that joins the ids, A4 (the one id bound to a shown list), `confirm` (the op that pipes it), the
- * empty string and the newline that build the stdin lines, WSLENV, taken out of every root call's environment, and (S7b.2b)
- * A21 with its `--process` flag — the one id bound to a process list.
+ * empty string and the newline that build the stdin lines, WSLENV, taken out of every root call's environment, (S7b.2b)
+ * A21 with its `--process` flag — the one id bound to a process list — and (E10.S2b) `--entry` and `A20`: A20's two restore ops,
+ * their entry ids on stdin (`--entry -`).
  */
-const ROOT_LITERALS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '-', '--stop', '--json', ',', 'A4', 'confirm', '', '\n', 'WSLENV', 'A21', '--process'];
+const ROOT_LITERALS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '--entry', '-', '--stop', '--json', ',', 'A4', 'A20', 'confirm', '', '\n', 'WSLENV', 'A21', '--process'];
 
 /**
  * The config region's literals, EXACTLY — the oracle of `configCall.ts`, written out independently: the settings verb, its `set`,

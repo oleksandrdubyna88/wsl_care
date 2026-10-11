@@ -197,7 +197,7 @@ test('§15k #19: the daemon refusing the piped list (its 10 s stdin ceiling) is 
   assert.equal((await w.flow.clean(['A4'], false)).kind, 'handedOff');
   const refusal = w.notices.find((n) => n.level === 'error');
   assert.ok(refusal !== undefined);
-  assert.match(refusal.sentence, /refused the list of volumes/);
+  assert.match(refusal.sentence, /refused the list it was handed on stdin/, 'E10.S2b: one sentence for the names of A4 and the entry ids of A20');
   assert.deepEqual(refusal.actions, [RETRY_LABEL]);
   assert.equal(confirms, 2);
   assert.equal(w.journal.entries()[0]?.kind, 'run');

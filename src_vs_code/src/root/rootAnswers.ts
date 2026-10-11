@@ -2,8 +2,8 @@ import { readEnum, type EnumRead } from '../client/enumValue';
 import { checkedBody } from '../client/handshake';
 import { RUN_ID_BODY } from '../shared/shapes';
 import type { JsonObject } from '../client/outcome';
-import { actionIdOf, MAX_PROCESS_ARGS, MAX_SHOWN_VOLUMES, runIdOf, shownCap, shownProcessOf, volumeNameOf, type ActionId, type ActionIds, type RunId, type ShownProcess, type VolumeName } from './rootIds';
-import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type PreviewItem, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
+import { actionIdOf, entryIdOf, MAX_PROCESS_ARGS, MAX_SHOWN_VOLUMES, runIdOf, shownCap, shownProcessOf, volumeNameOf, type ActionId, type ActionIds, type EntryId, type RunId, type ShownProcess, type VolumeName } from './rootIds';
+import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type PreviewItem, type RestoreSelection, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
 
 /**
  * The root answers, read as untrusted input (E6.S2): the schema checked by the client's own `checkedBody`, every value that
@@ -215,7 +215,30 @@ function selectedOf<T extends string>(body: JsonObject, context: PreviewContext,
   return context.ids.includes(id) ? shownSelection(actionEntry(body.actions, id), shownCap(context.maxShownNames ?? MAX_SHOWN_VOLUMES), kind) : undefined;
 }
 
-/** `act <ids> --preview --json` (exit 0), held — or why it cannot be: A4's volumes and (S7b.2b) A21's processes each held. */
+// ---- E10.S2b: A20's shown entries — the SAME shown-list rule, over entry ids ----
+
+/** A20's entries: an archived entry's id (`ArchiveIndex.IsEntryId`). */
+const ENTRIES: ShownKind<EntryId> = { of: entryIdOf, entry: "an archived entry's id (16 lowercase hex digits)" };
+
+function invalidRestore(reason: string): RootFailure {
+  return { kind: 'restoreListInvalid', reason };
+}
+
+/** A20's selection when the preview asked for A20 (the restore preview), else nothing — read by `selectedOf`, as A4's and A21's are. */
+function restoreOf(body: JsonObject, context: PreviewContext): RestoreSelection | undefined | RootFailure {
+  return context.ids.includes('A20') ? asRestore(selectedOf(body, context, 'A20', ENTRIES)) : undefined;
+}
+
+/** An A20 preview always carries its shown list (none is no restore at all), and a list it cannot hold is told as the restore's. */
+function asRestore(read: RestoreSelection | undefined | RootFailure): RestoreSelection | RootFailure {
+  if (read === undefined) {
+    return invalidRestore('its preview carried no shown list');
+  }
+
+  return 'kind' in read && read.kind === 'shownListInvalid' ? invalidRestore(read.reason) : read;
+}
+
+/** `act <ids> --preview --json` (exit 0), held — or why it cannot be: A4's volumes, (S7b.2b) A21's processes and (E10.S2b) A20's entries each held. */
 export function parsePreview(stdout: string, context: PreviewContext): HeldPreview | RootFailure {
   const checked = checkedBody(stdout);
   if ('kind' in checked) {
@@ -223,13 +246,22 @@ export function parsePreview(stdout: string, context: PreviewContext): HeldPrevi
   }
   const a4 = selectedOf(checked.body, context, 'A4', VOLUMES);
   const processes = cutTo(selectedOf(checked.body, context, 'A21', PROCESSES), MAX_PROCESS_ARGS);
-  const refused = [a4, processes].find((s): s is RootFailure => s !== undefined && 'kind' in s);
+  const restore = restoreOf(checked.body, context);
+  const refused = [a4, processes, restore].find((s): s is RootFailure => s !== undefined && 'kind' in s);
 
-  return refused ?? heldOf(checked, a4 as ShownSelection | undefined, processes as ShownSelection<ShownProcess> | undefined, context);
+  return refused ?? heldOf(checked, { a4: a4 as ShownSelection | undefined, processes: processes as ShownSelection<ShownProcess> | undefined, restore: restore as RestoreSelection | undefined }, context);
 }
 
-function heldOf({ body }: { body: JsonObject }, a4: ShownSelection | undefined, processes: ShownSelection<ShownProcess> | undefined, context: PreviewContext): HeldPreview {
-  const actions = Array.isArray(body.actions) ? body.actions.flatMap(previewedAction) : [];
+/** The lists a held preview carries, each validated. */
+interface HeldLists {
+  readonly a4: ShownSelection | undefined;
+  readonly processes: ShownSelection<ShownProcess> | undefined;
+  readonly restore: RestoreSelection | undefined;
+}
 
-  return { distro: context.distro, ids: context.ids, actions, a4, ...(processes === undefined ? {} : { processes }), takenAtMs: context.takenAtMs, productVersion: optionalString(body.productVersion) };
+function heldOf({ body }: { body: JsonObject }, lists: HeldLists, context: PreviewContext): HeldPreview {
+  const actions = Array.isArray(body.actions) ? body.actions.flatMap(previewedAction) : [];
+  const { a4, processes, restore } = lists;
+
+  return { distro: context.distro, ids: context.ids, actions, a4, ...(processes === undefined ? {} : { processes }), ...(restore === undefined ? {} : { restore }), takenAtMs: context.takenAtMs, productVersion: optionalString(body.productVersion) };
 }

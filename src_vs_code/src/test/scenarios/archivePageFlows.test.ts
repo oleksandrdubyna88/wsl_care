@@ -8,6 +8,7 @@ import type { ArchivePageView } from '../../archivePage/archiveView';
 import { WslCareClient } from '../../client/WslCareClient';
 import type { VerbOutcome } from '../../client/outcome';
 import { stringsAt } from '../support/body';
+import { recordingRestore } from '../support/archiveRestore';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING } from '../support/fakeWorld';
 import { Element, runPageScript } from '../support/pageHarness';
 import { EXTENSION_ROOT, goldenFile, GOLDEN_ROOT } from '../support/paths';
@@ -42,7 +43,7 @@ test('flow · open the Archive page: ONE unprivileged archive list --json, the p
     const client = new WslCareClient({ runner: world.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '' });
     const status = await statusOf(client);
     const views: ArchivePageView[] = [];
-    const controller = new ArchiveController({ read: (request) => client.read(request), status: () => status, post: (view) => { views.push(view); } });
+    const controller = new ArchiveController({ read: (request) => client.read(request), status: () => status, post: (view) => { views.push(view); }, restore: recordingRestore() });
     await controller.receive({ type: 'ready' });
     const lists = world.calls().filter((call) => call.includes(' archive '));
     assert.deepEqual(lists, [LIST], 'one list read, exactly that argv');
@@ -77,7 +78,7 @@ test('flow · an unreachable base: the daemon answers its list with exit 1, and 
     const client = new WslCareClient({ runner: world.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '' });
     const status = await statusOf(client);
     const views: ArchivePageView[] = [];
-    const controller = new ArchiveController({ read: (request) => client.read(request), status: () => status, post: (view) => { views.push(view); } });
+    const controller = new ArchiveController({ read: (request) => client.read(request), status: () => status, post: (view) => { views.push(view); }, restore: recordingRestore() });
     await controller.receive({ type: 'ready' });
     const text = page(views).root.textContent;
     assert.match(text, /The daemon could not list the archive: unreachable — the base did not answer within archive\.reachabilitySeconds/);
@@ -101,7 +102,7 @@ test('flow · a daemon that does not advertise archive.list: the page asks nothi
     const client = new WslCareClient({ runner: world.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '' });
     const status = await statusOf(client);
     const views: ArchivePageView[] = [];
-    const controller = new ArchiveController({ read: (request) => client.read(request), status: () => status, post: (view) => { views.push(view); } });
+    const controller = new ArchiveController({ read: (request) => client.read(request), status: () => status, post: (view) => { views.push(view); }, restore: recordingRestore() });
     await controller.receive({ type: 'ready' });
     assert.deepEqual(world.calls().filter((call) => call.includes(' archive ')), []);
     assert.match(page(views).root.textContent, /does not list its archive \(archive\.list\) — update the daemon/);

@@ -14,7 +14,7 @@ import type { StopTarget } from './cleanFlow';
 import type { JournalEntry } from './journal';
 import type { Notice, NoticeLevel } from './resultText';
 import { ROW_IDS } from './rowIds';
-import { isArchiveOnly, isRelayOnly } from './modalText';
+import { runWordsOf } from './runWords';
 
 /**
  * The cleanup controls the panel shows (E6.S3, `common.durable-status` rules 1–4): DERIVED, every time, from what the
@@ -73,7 +73,7 @@ function isFullCheck(running: RunningBlock): boolean {
   return running.actions.length === FULL_CHECK_ACTIONS.length && running.actions.every((a, i) => a === FULL_CHECK_ACTIONS[i]);
 }
 
-/** "A4" (the action in flight), "A5, A4" (what is queued), the full check or the archive run (E10.S1b, own review #7) by name. */
+/** "A4" (the action in flight), "A5, A4" (what is queued), the full check or a single-action run (`runWords.ts`) by name. */
 function whatOf(running: RunningBlock): string {
   if (isFullCheck(running)) {
     return 'the full check';
@@ -81,17 +81,13 @@ function whatOf(running: RunningBlock): string {
   return namedRun(running.actions) ?? safeText(running.current === '' ? running.actions.join(', ') : running.current, RUN_TEXT);
 }
 
-/** What a live run is doing, in its own words: the full check, the archive run (E10.S1b: A13 alone) or the cleanup of its ids. */
+/** What a live run is doing, in its own words: the full check, a single-action run (A13, A20 or A21 alone: `runWords.ts`) or the cleanup of its ids. */
 function liveState(running: RunningBlock): string {
   if (isFullCheck(running)) {
     return 'Checking… the full check';
   }
 
-  if (isRelayOnly(running.actions)) {
-    return 'Stopping… the client-gone relays';
-  }
-
-  return isArchiveOnly(running.actions) ? 'Archiving… the aged AI sessions' : `Cleaning… ${whatOf(running)}`;
+  return runWordsOf(running.actions)?.inFlight ?? `Cleaning… ${whatOf(running)}`;
 }
 
 type ByState = { readonly [K in 'none' | 'queued' | 'live' | 'wedged' | 'dead' | 'unknown' | 'unreadable']: (running: RunningBlock) => InFlight };
@@ -114,18 +110,14 @@ function fromDaemon(running: RunningBlock | undefined): InFlight {
   return running.state.kind === 'known' ? BY_STATE[running.state.value](running) : { state: safeText(running.state.label, RUN_TEXT), level: 'warn', reason: 'the running state is one this extension does not know' };
 }
 
-/** A journal entry's actions by name: the archive run (A13 alone), the relay stop (A21 alone, S7b.2b), or its ids. */
+/** A journal entry's actions by name: a single-action run (`runWords.ts`), or its ids. */
 function entryWhat(actions: readonly string[]): string {
   return namedRun(actions) ?? actions.join(', ');
 }
 
-/** The run a button names (E10.S1b, S7b.2b): the archive run (A13 alone), the relay stop (A21 alone) — or none (a cleanup). */
+/** The run a button names (E10.S1b, S7b.2b, E10.S2b): the archive run, the relay stop, the restore run — or none (a cleanup). */
 function namedRun(actions: readonly string[]): string | undefined {
-  if (isRelayOnly(actions)) {
-    return 'the relay stop';
-  }
-
-  return isArchiveOnly(actions) ? 'the archive run' : undefined;
+  return runWordsOf(actions)?.label;
 }
 
 function entryLabel(entry: JournalEntry): string {

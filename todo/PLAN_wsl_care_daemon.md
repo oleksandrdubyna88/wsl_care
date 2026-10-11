@@ -4270,7 +4270,7 @@ consult was owed.
 
 ### 15s. E10 split and design — the AI-session archive in the extension
 
-> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b merged (#92); E10.S2 split into S2a / S2b / S2c (*E10.S2 split into three epics*), S2a in progress on its branch.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b merged (#92); E10.S2 split into S2a / S2b / S2c (*E10.S2 split into three epics*): S2a merged (#96), S2b in progress on its branch.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
 > daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
 > ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
 > daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),
@@ -4672,7 +4672,7 @@ Tests and teeth: [module_tests.md](../research/module_tests.md), *What each E10.
 
 #### E10.S2 split into three epics (2026-10-10)
 
-> Status: **E10.S2a in progress on its branch, 2026-10-10; E10.S2b and E10.S2c not started.** E10.S2a's branch is
+> Status: **E10.S2a merged 2026-10-11 (#96, b69deaa); E10.S2b in progress on `feat/wc-e10s2b-restore`; E10.S2c not started.** E10.S2a's branch was
 > `feat/wc-e10s2a-archive-page`, from `main` d6f436c. The paths are `src_vs_code/`'s unless named otherwise.
 
 **Why three.** The coai plan round over the first draft (session af2da363, `proceed`, 2 gating of threshold 6, codex only — see
@@ -4839,7 +4839,167 @@ As planned, with these specifics:
   - **Not taken now — #8** (a view generation in `expandMonth` / `collapseMonth`, refused on mismatch): S2a's months are kept by
     agent and month, and `refresh` posts a view with no months before it awaits, so an index cannot name another month than the one
     shown today. Selection makes it matter: it is **E10.S2b's**, written into its story 3.
-##### E10.S2b and E10.S2c — the outline their own plan rounds start from
+##### E10.S2b build notes — *Restore* through the root road
+
+> Status: **built 2026-10-11 on `feat/wc-e10s2b-restore` — the code round and the own review next (see *As built* below).** Branch `feat/wc-e10s2b-restore`, from `main` b69deaa (E10.S2a merged,
+> #96). The paths are `src_vs_code/`'s unless named otherwise. Root-touching: the own review runs on Fable.
+
+**Goal.** On the Archive page a person selects verified entries removed at their source — one by one, or a whole month — and
+presses *Restore*. Then:
+- A20 previews as root over exactly those ids, on stdin (`act A20 --preview --entry - --json`).
+- A modal names what comes back: the daemon's sentence, the count, the size, the first entries.
+- The run is persisted before the confirm (the journal), confirmed detached with the ids of the HELD preview on stdin (`act A20
+  --confirm --manual --detach --entry - --json`), and followed to its end across a reload.
+- The page then reads the list again; the restored entries read *restored*.
+
+**What the code has today (verified on `main` b69deaa):**
+- `root/rootCall.ts:39` `ROOT_OPS` has five ops; stdin only for A4's `--only -` (`stdinOf`). No op spells `--entry`.
+- `root/actionGate.ts:46` leaves `BUTTON_ONLY_IDS` (A18–A20) out of `allowed`; `cleanupController.ts:395` `confirmOp` →
+  `pickIds` refuses A20 (`idsRefused`).
+- `cleanupController.ts:465` `expectedActions` answers `['collect']` for every op but `confirm` — a restore detach with no run id
+  would ADOPT a full check's run.
+- `cleanupController.ts:555` `freezePreview` freezes A4's names only; `root/rootAnswers.ts` reads `shown` for A4 only.
+- `client/ceilings.ts:64` `ROOT_OP_CALLS` maps unknown op names to `rootPreview` with `ids ?? []`; `:36` `SETTING_SHARES` holds A13.
+- `cleanup/cleanFlow.ts:40` and `cleanupHost.ts:27` take `Pick<CleanupController, 'preview' | 'confirm' | 'stop' | 'runFullCheck'>`.
+- The A13 words are chosen by `isArchiveOnly` at three sites: `modalText.ts:80,114`, `resultText.ts:6-131`, `cleanupView.ts:81-118`.
+- `rootIds.ts:25` says A20's run "takes `--entry <id>`" — stale since E10.S0 (`--entry -`).
+- The daemon: `act A20 --preview --entry -` narrows to the shown ids still restorable (`RestoreAction.Bound`) and carries `shown`
+  (`RestoreAction.Shown`, at most `ShownList.MaxNames`; `RunRequests.cs:269`); past `archive.maxRestoreEntries` it refuses before the
+  child (`PastTheCeiling`). Capabilities `archive.restore`, `act.entryStdin`.
+
+**Story 1 — the root road** (the shared request fixture is the oracle on both sides):
+- `shared/shapes.ts` `ENTRY_ID_SHAPE` (16 lowercase hex, the daemon's `ArchiveIndex.IsEntryId`); `rootIds.ts` `EntryId` (branded),
+  `entryIdOf`, `EntryIds` (1 to `MAX_RESTORE_ENTRIES` = 5000, the key's range maximum, none twice), `entryIdsOf(texts)` — the one road
+  in; its comment at `:25` corrected.
+- `rootCall.ts`: two ops — `restorePreview` → `act A20 --preview --entry - --json`, `restoreConfirm` → `act A20 --confirm --manual
+  --detach --entry - --json` — each `{ entries: EntryIds }`; the ids on stdin, one per line, every line ended. The op names A20 by a
+  constant; neither op takes a row id or an A4 list. `rootRequest` builds no restore op past `MAX_RESTORE_ENTRIES`.
+- `client/ceilings.ts`: `restoreConfirm` → the DETACH; `restorePreview` → a root preview of `['A20']`; `SETTING_SHARES` A20 = the
+  archive preview's setting (the preview is ONE `archive list --restorable --entry …` child under `archive.previewTimeoutSeconds`).
+  `worstCases.ts` A20 = 600 s.
+- The bundle scan: the root region's exact set gains `--entry` and `A20`; `--entry` is forbidden in every other region (planted
+  companion); `structure.test.ts` `ROOT_WORDS` gains `--entry`.
+- `rootCall.test.ts` reads `contracts/requests/act-a20-entry-stdin.json` and builds both ops from the ids in its `stdin` order: the
+  argv tails equal its `preview` / `confirm`, the stdin bytes its `stdin`.
+- **The daemon's A20 preview line golden** (`GoldenContracts` + `A20PreviewGolden.cs`, as `A13PreviewGolden`): the daemon's own
+  `RestoreAction` previews over a child answering one verified entry removed at its source, with that entry shown; the line is built
+  as the engine builds it (`Shown`, `ShownTruncated`). Written in WSL (`WSL_CARE_WRITE_GOLDENS=1`, a script file, no deletion).
+
+**Story 2 — controller, flow, host, fake:**
+- `actionGate.ts`: `GateOpen.reported` — the registry ∩ `status.actions`, the button-only ids included. `allowed` unchanged.
+- `cleanupController.ts`: `previewRestore(texts)` (texts → `entryIdsOf`, refused as `entriesRefused` before anything starts);
+  capabilities `previewA20` = BASE + `act.shownList` + `archive.restore` + `act.entryStdin`, `confirmA20` = BASE + `act.detach` +
+  `archive.restore` + `act.entryStdin` (`previewNeeds` / `confirmNeeds` widened); A20 only when `reported` holds it; a `confirmOp`
+  branch for a held A20 preview → `restoreConfirm` with the HELD selection, revalidated; `expectedActions` → `['A20']` for a restore
+  detach; `pipedShown` true for `restoreConfirm` (its exit 2 is a refusal of the piped list, retry offered); `freezePreview` freezes
+  the restore selection.
+- `rootAnswers.ts`: a held preview of A20 carries `restore: RestoreSelection` — every shown id validated (16 hex), none twice, at most
+  `MAX_RESTORE_ENTRIES`, `shown.length == min(count, cap)` with `shownTruncated` exactly when capped (the A4 rule, cap = the published
+  `maxShownNames` in force) — or the preview is refused (`restoreListInvalid`).
+- **A capped list is never confirmed as the whole** (the plan round's #0): the daemon's `shown` carries at most `act.maxShownNames`
+  (`ShownList.MaxNames`, published as `status.limits.maxShownNames`), and its detached request refuses more entries than that
+  (`RunRequests.ValidShownEntries`). So the page's ceiling is `min(restoreCeiling, maxShownNames)`, and a held A20 preview whose
+  list was cut (`shownTruncated`) is refused at the confirm — "the daemon showed only N of the M selected; select fewer" — never
+  confirmed with the shorter list. A scenario selects more than a lowered `maxShownNames` but fewer than `restoreCeiling`.
+- `rootOutcome.ts` / `rootFailureText.ts`: `entriesRefused`, `restoreListInvalid`; the `shownListRefused` sentence names "the list it
+  was handed on stdin" (both lists).
+- `cleanup/runWords.ts` (root-free): ONE table of single-action runs — A13 *the archive run* / *Archiving… the aged AI sessions* /
+  "moved X, N objects archived"; A20 *the restore run* / *Restoring… archived sessions* / "N archived session(s) restored" —
+  replacing `isArchiveOnly` at its three sites (reuse-first: widen; no fourth copy).
+- `cleanFlow.ts` `restore(texts)`: the cleanup transaction over `['A20']` — one flow at a time; `previewRestore`, the restore modal,
+  the age re-check (`previewRounds`); a preview offering 0 entries confirms nothing and says none is still restorable; the journal
+  entry `{ op: 'clean', actions: ['A20'] }` BEFORE the call; ONE `restoreConfirm`; the follower. The modal: "Restore N archived
+  session(s) in "<distro>"?", the daemon's `what`, count and size, up to 10 items (note · size), "… and N more", how (as the target
+  user, the product's own binary; files are only created, never replaced; a session already back is skipped). Confirm *Restore*.
+- `cleanupHost.ts` `restore(texts)` (refused, told, while the cleanup controls are greyed), `restoreBlocker()` (capabilities ⊇
+  `previewNeeds(['A20'])` ∪ `confirmNeeds(['A20'])`, A20 in `status.actions`, the controls enabled — '' when it may), and
+  `restoreInFlight()` (a journal entry or a running block of A20 alone). The `Pick<…>`s gain `previewRestore`.
+- The strict fake: `act A20` with exactly the fixture's preview / confirm flags; stdin non-empty, every line 16 hex and ended, none
+  twice, at most the scenario list's `restoreCeiling`; A20 never beside another id; preview needs `act.shownList` + `archive.restore` +
+  `act.entryStdin`, confirm `act.detach` + `archive.restore` + `act.entryStdin`. Its preview answers the daemon's golden line with
+  `shown` / items / count narrowed to the piped ids that the scenario's list holds as verified and removed at their source — a test
+  holds the fake's line over the golden's own entry EQUAL to the golden line.
+
+**Story 3 — the selection and the button** (`src/archivePage/`, still far from root):
+- Every index message carries the view's `generation`, and the host refuses a mismatch ("the list changed — select again") — the
+  S2a own review's #8, applied to `expandMonth` / `collapseMonth` too.
+- New messages: `toggleEntry {index, generation}` (an index into the answer's entries), `selectMonth {index, generation}`,
+  `clearSelection`, `restore` (bare).
+- The selection is held by ENTRY ID (the plan round's finding 0), replaced whole; on every list replacement it keeps only ids still
+  present and selectable, the dropped ones counted and said.
+- Selectable = `verified === true`, status `sourceRemoved` / `split`, and an id of the daemon's shape.
+- The ceiling: `min(restoreCeiling, status.limits.maxShownNames)` (the plan round's #0; `restoreCeiling` absent → *Restore*
+  greyed, "update the daemon"); "N selected — one restore takes at most
+  M"; past M *Restore* is greyed and the page says pick fewer; *Select month* takes the month's selectable entries, the newest by
+  `archivedAtUtc` when they do not fit the room left, and says so.
+- *Restore* is enabled when 1..M are selected, the daemon lists (`archive.list`), and `restoreBlocker()` says nothing; the host
+  refuses on the same conditions. It hands the selected ids as TEXT to `cleanupHost.restore` (the page never imports `root/`; the ids
+  become `EntryIds` in the controller, the one road in).
+- The page's restore line: the cleanup controls' state while the restore runs (*Restoring…*, from `status.running` and the journal,
+  so it survives a reload) and why *Restore* is greyed. When `restoreInFlight()` turns false, the list is read again and the
+  selection cleared.
+- `media/archive.js`: a select toggle per selectable entry (`aria-pressed`), *Select month*, the selection bar, *Restore*, *Clear
+  selection* — each posting the closed messages.
+
+**Build order:** the golden (daemon, WSL) → ids, ops, ceilings, scans, the fixture test → gate, answers, controller → failure kinds →
+runWords → flow + host → fake → page messages, controller, view model, script → wiring → scenarios → docs.
+
+**RED first** — each seen red for its own symptom:
+- `rootCall` emits exactly the fixture's argv and stdin; a bad, duplicate, empty or excess id list builds nothing;
+- a planted `--entry` outside the root region is found; the root set's new literals are exact;
+- A20 previews / confirms only with its capabilities and A20 reported; the cleanup ops still refuse A20;
+- the confirm pipes the HELD preview's ids, not the page's selection; a shown id that is not 16 hex refuses the preview;
+- a restore detach with no run id never adopts a full check's run (`expectedActions`);
+- the held restore selection is frozen;
+- a preview with 0 entries confirms nothing;
+- the words: *the restore run*, *Restoring… archived sessions*; A13's unchanged (the table);
+- an unverified entry is never selectable and never reaches stdin (a scenario asserts the fake's stdin log);
+- a selection past `restoreCeiling` greys *Restore* and says so; a month larger than the room left selects its newest;
+- a stale index (a generation mismatch) is refused; a list replacement keeps the selection by id and says what was dropped;
+- a restore survives a reload: started, reloaded, *Restoring…* from `status.running`, then the result from `runs show`; a dead run
+  ends interrupted, never stuck; the list is read again when it ends.
+
+**Growth.** The page persists nothing; the selection lives in host memory (at most the list's entries). The restore run is one
+journal entry (~200 bytes), gone on its terminal answer or at `wslCare.cleanup.followCeilingMinutes`; the shared budget
+`wslCare.cleanup.journalEntries` (32) refuses a new entry before anything starts and evicts none (the plan round's finding 1).
+
+**The plan round** (coai session 1ba3484c, `proceed`, 2 gating of threshold 6, codex only): #0 accepted (above: a capped list is
+never confirmed as the whole). #1 rejected as a new test — the two-sided fixture (the daemon's real CLI parser and detached run over
+the exact bytes the extension must emit) and the daemon-made preview golden ARE the contract check (§15s D7); the real daemon under
+`wsl -u root` on a real archive is the owner's live gate, and `POST_DEPLOY.md` gains a manual item for it with this change.
+
+**Not in S2b:** the Logs words and run goldens (S2c); the Windows archive (D9, E13); `--accept-unverified` from the page (§15r D6:
+a person's decision, in a terminal); a live root A20 run (the owner's).
+
+**DoD:** A20 only through the two new ops; the bundle scan's root set changed by exactly `--entry` and `A20`; every check red first;
+break-its on product code; an own review on Fable; the coai plan and code rounds; docs (`module_vs_code.md`, `module_tests.md`,
+`module_archive.md` if the golden changes its list, `architecture-extension-e6.md`, README, this section's *as built*).
+
+**As built (2026-10-11).** Stories 1–3 as written, in the build order. What shipped differently, or was decided while building:
+- `MAX_RESTORE_ENTRIES` lives in `shared/shapes.ts` beside `ENTRY_ID_SHAPE` (re-exported by `rootIds.ts`): the root ops and the
+  page's selection bound the same list, and the page may not import `root/`.
+- `restoreBlocker()` asks the controller's own gate (`actionGate` over `previewNeeds(['A20'])` ∪ `confirmNeeds(['A20'])`), then
+  A20 in `status.actions`, then the cleanup controls — ONE definition, never a second capability list.
+- The page reaches the cleanup host through an injected seam, `ArchiveRestore` (`facts`, `start`), wired in `extension.ts`;
+  `ArchivePanel.restoreChanged` follows `CleanupHost.onChange`, and `statusChanged` re-posts only when the selection bar moved.
+- The entry table gained a seventh column, *Restore*, holding each selectable row's *Select* toggle (`aria-pressed`); the
+  selection bar is drawn only over an answered list. *Select month* sits beside each month's *Show entries*.
+- The restore modal's *how*: "files are only created, never replaced — a session already back is skipped, and one whose file is
+  there with other bytes is refused" (`ArchiveRestore.cs`'s never-overwrite rule).
+- The expired-preview notice reads "nothing was started" (it said "nothing was cleaned", wrong for *Archive now* and *Restore*).
+- The page's *Verified* cell and the selection test a status with ONE `isRestorableStatus` (`archiveSelection.ts`).
+- `POST_DEPLOY.md` is at its 12-item cap, so the live root restore was MERGED into item 3 (the extension, by hand, on the same
+  host) rather than added as a thirteenth.
+- Tests: the root road's were red first; the words, flow, host, page and scenario tests were written beside the code and given
+  teeth by 29 break-its on product code instead (`module_tests.md` § *What each E10.S2b guarantee rests on*).
+- **Rebased onto S7b.2b (#100, *Stop client-gone relays*, A21)**, built in parallel on the same transaction. Reuse over a second copy:
+  its `isRelayOnly` words became the A21 row of `runWords.ts`; its `nothing` outcome (a preview that leaves nothing to confirm) now
+  serves the empty restore preview too (the `nothingToRestore` kind is gone); `RestoreSelection` is `ShownSelection<EntryId>`, read
+  by its generic `selectedOf` (an A20 preview without its list is refused); the held lists freeze through one `frozenSelection`;
+  the cleanup host reads the status body through its `state/statusBody.ts`. A21 left `BUTTON_ONLY_IDS` there, so the gate's
+  `reported` (A20 only) and A21's `allowed` coexist; the bundle scan's root set holds both `--process`/`A21` and `--entry`/`A20`.
+
+##### E10.S2b and E10.S2c — the outline their own plan rounds start from (S2b's is refined by its build notes above)
 
 **E10.S2b, *Restore*** (from S2a's merge; root; an own review on Fable). Its stories:
 1. **The root road**: a daemon A20 preview golden (`act-a20-preview-action.json`, the daemon's own `RestoreAction` over a child,

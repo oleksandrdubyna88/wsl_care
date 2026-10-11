@@ -54,6 +54,11 @@ export class ArchivePanel implements vscode.Disposable {
     }
   }
 
+  /** The cleanup host's restore facts may have moved (E10.S2b): a restore's end reads the open page's list again. */
+  restoreChanged(): void {
+    this.controller.restoreChanged().catch((error: unknown) => this.log(`archive page: ${String(error)}`));
+  }
+
   isOpen(): boolean {
     return this.slot.current() !== undefined;
   }
