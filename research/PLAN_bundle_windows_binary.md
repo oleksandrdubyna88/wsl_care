@@ -193,6 +193,16 @@ extension's update or uninstall. This story's short `--version` start is fine; S
 briefly. S7b must also own the exe's whole process tree (a Job Object), so a timeout ends every child it starts; `--version`
 starts none (§10).
 
+**The forward note's answer — [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md)** (written 2026-10-11 with its WR-D1;
+named on both sides): the runner COPIES the exe to `%LOCALAPPDATA%\wsl-care\bin\<sha256>\wsl-care.exe` with a `stage.json` beside
+it (WR-D2) and runs every task and button run under one kill-on-close Job Object (WR-D3). The rule above stays true of the
+EXTENSION folder: `wsl-care.exe tasks render` answers `registrable: true` only when the exe that answers is a verified staged copy,
+so no task XML can name `extension/bin/wsl-care.exe` (enforced in the daemon too, `Core/Scheduler/StagedCopies.cs`).
+
+| item | PLAN_windows_runner.md | this plan's §4 |
+|---|---|---|
+| the staged copy and its path | the runner stages, verifies and registers it | "never register its path" stays true of the extension folder |
+
 ## 5. Tests (RED first)
 
 - **`fetch-windows-daemon.sh`** (the Linux legs and the windows-latest leg; a fake `gh`; 7z-shaped zip fixtures):

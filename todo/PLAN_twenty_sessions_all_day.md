@@ -1231,6 +1231,17 @@ whatever still leaks, from any server.
    - **The watch.** `wsl-care.exe watch [--timer] [--json]` (refused on Windows today, `WatchCommand.cs:52`) samples the history. With `auto.A21` on, it runs A21 under `DryRunWindow.Decide` (`DryRunWindow.cs:41`) on the WINDOWS state directory — its own first-week window — and `dryRun`. A second runner holding the lock exits 75, which counts as normal (every VS Code window has a timer).
    - **The runner (assumption A2):** the extension, every `mcpWatchdog.periodMinutes` while VS Code runs. A new `WindowsCareClient.ts` is the only module that starts the bundled exe (`CREATE_NO_WINDOW`), mirroring `WslCareClient.ts:16`.
    - **Coverage, said plainly (coai 2):** while VS Code is closed nothing on Windows is stopped. An orphan left then is judged at VS Code's next start, as an instance first seen orphaned — so it waits the full idle time. A per-user scheduled task that runs without VS Code is E11's, and owner question Q-S7b-2.
+   - **Boundary with [PLAN_windows_runner.md](PLAN_windows_runner.md) (written 2026-10-11 with its WR-D1; named on both sides).**
+     The runner assumption A2 above (an extension timer) is **superseded**: the Windows watch's cadence and runner are that
+     plan's opt-in per-user task `\wsl-care\watch` (every `mcpWatchdog.periodMinutes`, a verified staged copy under one Job
+     Object supervisor, its §3.1). The Windows `watch` verb itself — elevated refused, the run lock, the ledger write under a
+     ledger lock, the retention sweep, the dry gate — is built there (WR-D4). **S7b.3 keeps A22**: it adds the act inside that
+     watch's `--timer` branch, and nothing else of the runner.
+
+     | item | PLAN_windows_runner.md | S7b.3 (this plan) |
+     |---|---|---|
+     | the Windows `watch` verb, its lock, ledger write, retention sweep, dry gate | WR-D4 | the A22 act inside the `--timer` branch |
+     | the Windows watch cadence and runner | the `\wsl-care\watch` task | item 5's "extension timer" assumption is superseded |
 6. **Where the thresholds live (own review 8).**
    - The Windows binary reads its own layers (`%APPDATA%\wsl-care\config.json`, `%ProgramData%`; `WindowsHostPaths.cs:67-69`), not the distro's. "The same threshold" (D1) is therefore the same KEYS with the same defaults and ranges, set per side. The owner has the Windows layer's `wsl-care.exe config set`.
    - The panel names the values the Windows side applies and whether its `dryRun` / first-week window holds. While either holds, the timer stops nothing.
