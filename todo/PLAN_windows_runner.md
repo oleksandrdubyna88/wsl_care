@@ -203,6 +203,17 @@ existing readers, and the dry window of §3.5.
   `temp.allowGlobs` (`wsl-care.exe config set …` — the extension never writes daemon config) from evidence, not guesses.
 - **Budgets on every run:** `temp.scanMaxNodes`, `temp.scanMaxSeconds`, `temp.maxItemsPerRun`; a cursor in
   `%LOCALAPPDATA%\wsl-care\temp-cursor.json` resumes after the last decided candidate, so a 138 k backlog drains over runs.
+- **A stable order that wraps** (coai plan round, finding 1): candidates are the top-level names in ORDINAL order; a run starts
+  after the cursor, and when it reaches the end it wraps to the first name and goes on until its budget or the cursor's own name,
+  so an entry created before the cursor is reached on the same pass or the next. The cursor file records when the current pass
+  began; the preview names "pass started <t>, N of M names decided".
+- **Recovery after a kill mid-delete** (finding 2): before the first delete inside a candidate, the cursor file records it as
+  `inProgress` with the newest FILE write time and the owner seen when it was judged, written atomically. Deleting children
+  updates a folder's own write time, so a resumed candidate is never re-judged by folder times: the next run takes the
+  `inProgress` candidate FIRST, re-checks owner, allow-list and reparse points, compares only its remaining FILES' newest write
+  time with the recorded one (any newer file → retained, "changed while interrupted"), and finishes or retains it before the
+  cursor moves on. The run itself follows the engine's interrupted-run rule (the reconcile of an `act` run that never wrote its
+  end), and the panel's last-cleanup line reads "interrupted" for it, never "completed".
 - **The delete:** each candidate is re-validated just before (owner, age, no reparse point, still allowed); a sharing violation
   or a partial delete is kept and counted, never retried in the same run; the run detail records counts per outcome, per group,
   and the deleted logical bytes.
@@ -262,10 +273,10 @@ cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout
 - E3: `the order is stage → render → show → modal → pending → one unelevated PowerShell → read`; `a digest mismatch stages nothing and registers nothing`; `a render that is not registrable registers nothing`; `a decline runs nothing`; `a pending run holds every button across a reload`; `the tripwire refuses Register-ScheduledTask and a task's Run(`; `the remove keeps the folder while the guard's task is in it`.
 - E4: `run-now starts the person's own task and nothing else`; `a running task reads running in every window`; `not installed → install first`.
 - E5/E6: `the Windows side's archive status and list render`; `the Logs page reads the Windows history`.
-- T1: `Nothing_under_temp_claude_is_ever_selected_whatever_the_allow_list`; `An_entry_of_another_owner_is_excluded`; `A_tree_holding_a_reparse_point_is_retained_and_never_followed`; `An_old_parent_with_a_fresh_nested_file_is_retained`; `A_tree_scanned_past_its_budget_is_unknown_and_retained`; `An_old_folder_outside_the_allow_list_is_previewed_as_would_be_eligible_and_never_deleted`; `A_sharing_violation_is_kept_and_counted`; `The_candidate_is_revalidated_just_before_the_delete`; `The_cursor_resumes_after_the_last_decided_candidate`; `While_dry_the_run_deletes_nothing`; `The_run_detail_counts_outcomes_and_logical_bytes`.
+- T1: `Nothing_under_temp_claude_is_ever_selected_whatever_the_allow_list`; `An_entry_of_another_owner_is_excluded`; `A_tree_holding_a_reparse_point_is_retained_and_never_followed`; `An_old_parent_with_a_fresh_nested_file_is_retained`; `A_tree_scanned_past_its_budget_is_unknown_and_retained`; `An_old_folder_outside_the_allow_list_is_previewed_as_would_be_eligible_and_never_deleted`; `A_sharing_violation_is_kept_and_counted`; `The_candidate_is_revalidated_just_before_the_delete`; `The_cursor_resumes_after_the_last_decided_candidate`; `An_entry_created_before_the_cursor_is_reached_after_the_wrap`; `An_in_progress_candidate_is_taken_first_and_judged_by_its_file_times_not_its_folder_times`; `A_file_newer_than_the_checkpoint_retains_the_interrupted_candidate`; `An_interrupted_run_reads_interrupted_not_completed`; `While_dry_the_run_deletes_nothing`; `The_run_detail_counts_outcomes_and_logical_bytes`.
 - T2/T3: `the cleanup task renders with its own cadence`; `the preview button never spells act or --confirm`; `clean-now starts the person's own cleanup task`.
 
-**Break-it on PRODUCT code only (each red, then restored):** the job's kill-on-close flag off; the assign failure ignored (worker resumed anyway); the job handle made inheritable; the deadline on wall time; the registrable check removed from `render`; the digest compare removed from the stage; the run lock taken in the archive body; the dry decision ignored in the archive body; the ledger read before its lock; the sweep at `tasks run` start removed; `--timer` spelled in the extension; the summary compare dropping the principal; the pending record written after the launch; the remove deleting the folder with the guard's task in it; the query reading one task only; the `claude` guard removed; the owner check removed; reparse points followed; the age read from the top-level folder only; the budget ignored (scan to the end); the re-validation before the delete removed.
+**Break-it on PRODUCT code only (each red, then restored):** the job's kill-on-close flag off; the assign failure ignored (worker resumed anyway); the job handle made inheritable; the deadline on wall time; the registrable check removed from `render`; the digest compare removed from the stage; the run lock taken in the archive body; the dry decision ignored in the archive body; the ledger read before its lock; the sweep at `tasks run` start removed; `--timer` spelled in the extension; the summary compare dropping the principal; the pending record written after the launch; the remove deleting the folder with the guard's task in it; the query reading one task only; the `claude` guard removed; the owner check removed; reparse points followed; the age read from the top-level folder only; the budget ignored (scan to the end); the re-validation before the delete removed; the wrap removed (the scan stops at the end); the `inProgress` checkpoint written after the delete; a resumed candidate judged by its folder times.
 
 ## 7. Owner questions — answered 2026-10-11 (through the coordinator)
 
@@ -331,3 +342,13 @@ bytes in the run detail, a Fable own reviewer. The default selection was decided
 solved): an ALLOW-list for real deletion (`coai-*`, `wsl-care-test-*`), the broad age view in the preview only, the newest
 descendant's time as the age, budgets with a cursor, and "unknown = retained". The consultant's claim that a held file can be
 deleted without a sharing violation was verified on this machine before it changed the design (§3.12). Stories WR-T1–T3.
+
+## 13. Plan round on the `%TEMP%` addition (coai session `de0d1828`, 2026-10-11)
+
+**proceed**, two findings (one reviewer), both accepted and written into §3.12 and §6:
+
+- **The cursor never wrapped**: an entry created before the cursor could be skipped forever. Now an ordinal order that wraps to the
+  first name within the same run, a pass start in the cursor file, and a RED test that inserts an entry before the cursor.
+- **No recovery after a kill mid-delete.** Now an `inProgress` checkpoint written before the first delete inside a candidate,
+  taken first by the next run and judged by its remaining FILES' times — deleting children rewrites a folder's own time, so folder
+  times would make a half-deleted tree look fresh forever — and the run reads "interrupted" through the engine's reconcile.
