@@ -720,3 +720,39 @@ arm removed → *Expected free.Level to be Level.Warn … but found Level.Ok*; t
 be …VerdictBasis*; the detail's disk not read → *…Available[[…DiskReport…]] … but found …Unavailable*; `DiskRules` not spread into
 the full-run list → the order test red; the panel's row back to `arriving` → 2 red (`fieldMap.test`, `viewModel.test`); and on
 Linux the root `collect`'s `RecordDistro` call commented out → `VirtualDiskFlows` red (no `distro-name.json`).
+
+**The story's code round** (coai, 2026-10-11, `proceed`, 4 of 4 reviewers — codex): four findings. Three were accepted:
+- `disk.vhdxGap` and `disk.vhdxGrowth` judged only the disks with a figure, so they could read `ok` while a disk was
+  unknown. This finding came from two reviewers. A known breach still warns; otherwise the verdict is now `unknown`. For the
+  gap that means a disk mapped to its guest whose gap could not be read; for growth, any file with no growth yet.
+- The daemon's distro-name rule could drift from the extension's `DISTRO_NAME`. An architecture test now holds them equal.
+
+One was rejected: "nullable lists in `DiskReport` should default to `[]`". Doctrine §7 is about immutability, and that
+holds. The null is this repo's JSON-edge contract ("available": false, a reason, no value), so an unavailable section never
+reads as "measured, none".
+
+**Own review** (Opus), all fixed:
+- Without this distro's name, Docker's estimate alone made the gap `ok`. Now it is `unknown`, or `warn` when Docker's
+  gap breaches the limit (as it does in the capture, about 34 GiB).
+- `HostWithFree` was at complexity 5. It is now a tuple switch.
+- No test proved that only root records the name. A scenario on Linux now proves it.
+- The growth baseline is the newest sizes at least `disk.growthMinHours` older, so a manual run soon after a timer run
+  still has a growth.
+- A clock that moved back says so.
+- A partial history line is not a measurement.
+- A disk section that does not parse costs only `disk`, not the carried verdicts.
+- The `disk.*` keys moved to `Config/ConfigKeys.Disk.cs`. `ConfigKeys.Numbers.cs` was 945 lines on main and is now
+  933; it is over 800 lines from before this story, and that is left for the owner.
+
+Not taken:
+- A cloned distro (`wsl --export` / `--import`) carries the old `distro-name.json`. That is a known limit, written in
+  module_daemon.
+- The `--set-sparse` caveat: WSL 2.7.10's `wsl --help` lists `--set-sparse <true|false>` with no unsafe flag, so the
+  text stays as it is.
+
+RED messages and break-its are in [module_tests.md](../research/module_tests.md) *E15.S2*.
+
+The goldens were re-checked on Linux. They are unchanged, because the capture's gap already warned.
+
+The Linux `FixturePrivacyTests` failure on the owner's machine (POST_DEPLOY.md names the local user) comes from before
+this story, from main.

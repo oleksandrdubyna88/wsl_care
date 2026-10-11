@@ -102,5 +102,23 @@ public sealed class VirtualDiskFlows
         disk.DistroName.Reason.Should().Be(DistroIdentity.NotKnownYet);
         disk.Vhdx!.Where(v => v.Name != WindowsDiskParsers.DockerDataDiskName).Should().OnlyContain(v => v.MappedBy == "none" && v.Note == DistroIdentity.NotKnownYet);
         File.Exists(DistroIdentity.File(home.Paths)).Should().BeFalse("a run without the variable records nothing");
+        Report(result).Detail!.Thresholds.Single(t => t.Id == DiskRules.GapId).Level.Should().NotBe(Level.Ok, "Docker's estimate alone never makes the gap ok while this distro's own disk is not judged (own review); the capture's Docker gap of about 34 GiB warns");
+    }
+
+    [Fact]
+    public async Task A_collect_that_is_not_root_maps_by_its_environment_but_records_nothing()
+    {
+        using var home = CollectFlows.Captured("collect-virtual-disks-unprivileged");
+        home.ClaimsRoot = false;
+        home.Extra[DistroIdentity.Variable] = "Ubuntu";
+
+        var result = await home.RunAsync("collect", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        File.Exists(DistroIdentity.File(home.Paths)).Should().BeFalse("only a ROOT run writes the state folder's distro-name.json (own review)");
+        if (OnTheDistro(home))
+        {
+            Vhdx(Report(result).Detail!.Disk!, "Ubuntu").MappedBy.Should().Be("mount", "the run's own environment still names the distro");
+        }
     }
 }

@@ -104,17 +104,33 @@ public static class VirtualDisks
         };
 
     /// <summary>(size now − size then) ÷ days — for the same path, measured both times, far enough apart.</summary>
-    private static Reading<double> Between(string path, long size, VirtualDiskSizes previous, GrowthBasis basis)
-    {
-        var elapsed = basis.Now - previous.SampledAt;
-        var before = (previous.Disks ?? []).FirstOrDefault(d => d is not null && Same(d.Path, path));
-        return before switch
+    private static Reading<double> Between(string path, long size, VirtualDiskSizes previous, GrowthBasis basis) =>
+        Before(path, previous) switch
         {
             null => Reading.Missing<double>(string.Create(CultureInfo.InvariantCulture, $"the previous measurement ({previous.SampledAt.UtcDateTime:yyyy-MM-dd HH:mm}Z) did not measure {path}: growth needs two measured sizes of the same file")),
-            _ when elapsed < basis.Min => Reading.Missing<double>(string.Create(CultureInfo.InvariantCulture, $"too close to the previous measurement ({elapsed.TotalMinutes:0} min apart; disk.growthMinHours is {basis.Min.TotalHours:0} h)")),
-            { SizeBytes: var then } => Reading.Of((size - then) / elapsed.TotalDays),
+            var before => Rate(size, before.SizeBytes, previous.SampledAt, basis),
+        };
+
+    /// <summary>The previous run's size of the same file, or <c>null</c> — a history line may be partial (doctrine §4a: the
+    /// deserializer runs no defaults).</summary>
+    private static VirtualDiskSize? Before(string path, VirtualDiskSizes previous) =>
+        (previous.Disks ?? []).FirstOrDefault(d => d is not null && Same(d.Path, path));
+
+    /// <summary>The rate between two sizes — only from a real measurement (a size and a time: a partial line reads as 0 bytes or
+    /// 0001-01-01), only forward in time (a clock step back is said as such), and only far enough apart (own review, 2026-10-11).</summary>
+    private static Reading<double> Rate(long size, long then, DateTimeOffset thenAt, GrowthBasis basis)
+    {
+        var elapsed = basis.Now - thenAt;
+        return (IsMeasurement(then, thenAt), elapsed.Ticks) switch
+        {
+            (false, _) => Reading.Missing<double>("the previous history line is not a measurement (it holds no size or no time): growth needs two measured sizes"),
+            (_, < 0) => Reading.Missing<double>(string.Create(CultureInfo.InvariantCulture, $"the clock moved back since the previous measurement ({thenAt.UtcDateTime:yyyy-MM-dd HH:mm}Z is {-elapsed.TotalMinutes:0} min in the future): no growth until two sizes are measured forward in time")),
+            (_, var ticks) when ticks < basis.Min.Ticks => Reading.Missing<double>(string.Create(CultureInfo.InvariantCulture, $"too close to the previous measurement ({elapsed.TotalMinutes:0} min apart; disk.growthMinHours is {basis.Min.TotalHours:0} h)")),
+            _ => Reading.Of((size - then) / elapsed.TotalDays),
         };
     }
+
+    private static bool IsMeasurement(long sizeBytes, DateTimeOffset sampledAt) => sizeBytes > 0 && sampledAt != default;
 
     private static IReadOnlyList<HostingVolumeFacts> Volumes(IReadOnlyList<VirtualDiskFacts> disks, Reading<IReadOnlyList<WindowsVolume>> volumes) =>
         [.. disks

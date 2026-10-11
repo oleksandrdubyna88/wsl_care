@@ -155,6 +155,79 @@ public sealed class VirtualDisksTests
     }
 
     [Fact]
+    public void Exactly_the_minimum_apart_gives_a_growth()
+    {
+        var facts = Facts(previous: Previous(GrowthMin, new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - Gib)));
+
+        Value(Disk(facts, "Ubuntu").GrowthBytesPerDay).Should().BeApproximately(24.0 * Gib, 1, "disk.growthMinHours is the smallest gap ALLOWED, not refused");
+    }
+
+    [Fact]
+    public void A_clock_that_moved_back_gives_no_growth_and_says_so()
+    {
+        var facts = Facts(previous: Previous(TimeSpan.FromHours(-2), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - Gib)));
+
+        var growth = Disk(facts, "Ubuntu").GrowthBytesPerDay;
+        growth.IsAvailable.Should().BeFalse();
+        growth.ReasonOrEmpty.Should().Contain("clock moved back", "a negative interval is a clock step, not a measurement 'too close' (own review)");
+    }
+
+    [Theory]
+    [InlineData(0L, true)]
+    [InlineData(-5L, true)]
+    [InlineData(1L << 30, false)]
+    public void A_history_line_without_a_size_or_a_time_is_not_a_measurement(long sizeThen, bool hasTime)
+    {
+        var at = hasTime ? WindowsDiskFixture.CapturedAt - TimeSpan.FromHours(12) : default;
+        var previous = Reading.Of(new VirtualDiskSizes(at, [new VirtualDiskSize("Ubuntu", UbuntuPath, sizeThen)]));
+
+        var growth = Disk(Facts(previous: previous), "Ubuntu").GrowthBytesPerDay;
+
+        growth.IsAvailable.Should().BeFalse("a partial history line deserialises to 0 bytes or 0001-01-01, which is no measurement (own review)");
+        growth.ReasonOrEmpty.Should().Contain("not a measurement");
+    }
+
+    [Fact]
+    public void An_unreadable_lxss_map_leaves_the_whole_disk_section_unavailable_with_its_reason()
+    {
+        var sample = Captured();
+        var noLxss = sample with { Facts = sample.Facts.Map(f => f with { Distros = Reading.Missing<IReadOnlyList<WindowsVirtualDisk>>("the Lxss map could not be read: SecurityException") }) };
+
+        var facts = VirtualDisks.From(noLxss, Root(), DockerTotals(), Reading.Of("Ubuntu"), Reading.Missing<VirtualDiskSizes>("none"), GrowthMin);
+
+        facts.IsAvailable.Should().BeFalse();
+        facts.ReasonOrEmpty.Should().Contain("SecurityException");
+    }
+
+    [Fact]
+    public void Growth_is_measured_against_the_newest_run_at_least_the_minimum_older_so_a_manual_run_soon_after_a_timer_run_still_has_one()
+    {
+        var now = WindowsDiskFixture.CapturedAt;
+        var timer = Run(now.AddHours(-4), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - Gib));
+        var manual = Run(now.AddMinutes(-10), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - 100));
+
+        var baseline = LastFullRun.VirtualDisksBefore([manual, timer], now, GrowthMin);
+
+        Value(baseline).SampledAt.Should().Be(now.AddHours(-4), "the run 10 minutes ago is too close; the one 4 h ago is the newest far enough back (own review)");
+    }
+
+    [Fact]
+    public void With_only_a_run_too_close_the_baseline_is_that_run_so_the_growth_says_too_close()
+    {
+        var now = WindowsDiskFixture.CapturedAt;
+        var manual = Run(now.AddMinutes(-10), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - 100));
+
+        Value(LastFullRun.VirtualDisksBefore([manual], now, GrowthMin)).SampledAt.Should().Be(now.AddMinutes(-10));
+        LastFullRun.VirtualDisksBefore([], now, GrowthMin).ReasonOrEmpty.Should().Contain("no recorded full run has sampled the virtual disks yet");
+    }
+
+    private static RunRecord Run(DateTimeOffset sampledAt, params VirtualDiskSize[] sizes) =>
+        new(SchemaVersion.Current, RunId.New(sampledAt, 9), RunTrigger.Timer, sampledAt, sampledAt.AddMinutes(1), RunOutcome.Completed, [], RunKind.Collect)
+        {
+            Slow = new SlowParts { VirtualDisks = new VirtualDiskSizes(sampledAt, sizes) },
+        };
+
+    [Fact]
     public void A_different_path_gives_no_growth()
     {
         var facts = Facts(previous: Previous(TimeSpan.FromHours(12), new VirtualDiskSize("Ubuntu", @"D:\elsewhere\ext4.vhdx", UbuntuSize - Gib)));

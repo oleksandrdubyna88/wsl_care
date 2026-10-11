@@ -129,6 +129,17 @@ public static class LastFullRun
                 ? Unreadable(NoFullRunYet)
                 : FromRecords([.. history.Records.Reverse()], now);
 
+    /// <summary>E15.S2's growth baseline (own review, 2026-10-11): the newest recorded virtual-disk sizes at least
+    /// <paramref name="min"/> older than <paramref name="now"/> — so a manual run soon after a timer run still measures its growth
+    /// against the run before — else the newest sizes at all (the growth then says "too close", or that the clock moved back).</summary>
+    public static Reading<Health.VirtualDiskSizes> VirtualDisksBefore(IReadOnlyList<RunRecord> newestFirst, DateTimeOffset now, TimeSpan min)
+    {
+        var measured = newestFirst.Select(r => r.Slow?.VirtualDisks).OfType<Health.VirtualDiskSizes>().ToList();
+        return (measured.FirstOrDefault(s => now - s.SampledAt >= min) ?? measured.FirstOrDefault()) is { } baseline
+            ? Reading.Of(baseline)
+            : Reading.Missing<Health.VirtualDiskSizes>("no recorded full run has sampled the virtual disks yet");
+    }
+
     /// <summary>The newest part of each kind in <paramref name="newestFirst"/>, aged against <paramref name="now"/>.</summary>
     public static LastSlowParts FromRecords(IReadOnlyList<RunRecord> newestFirst, DateTimeOffset now) =>
         new(

@@ -44,20 +44,41 @@ public static class DiskRules
         var mapped = disk.Map(f => f.Disks.Where(d => d.GapBytes.IsAvailable).ToList());
         return mapped switch
         {
-            Reading<List<VirtualDiskFacts>>.Available { Value.Count: > 0 } m => JudgedGap(m.Value, warnGib, limit),
+            Reading<List<VirtualDiskFacts>>.Available { Value.Count: > 0 } m => JudgedGap(m.Value, UnjudgedGaps(disk), warnGib, limit),
             Reading<List<VirtualDiskFacts>>.Available => Unknown(GapId, limit, $"no virtual disk is mapped to its guest — {Grouped(disk.Map(f => f.Disks).ValueOr([]), d => d.GapBytes.ReasonOrEmpty)}"),
             var unread => Unknown(GapId, limit, unread.ReasonOrEmpty),
         };
     }
 
-    private static Verdict JudgedGap(IReadOnlyList<VirtualDiskFacts> mapped, int warnGib, string limit)
+    /// <summary>What keeps the gap from being judged in full, each as a sentence: a disk mapped to its guest whose gap could not be
+    /// read (code round, 2026-10-11), and THIS distro's own disk when none is mapped by mount — its name not known, or matching no
+    /// file (own review: Docker's estimate alone must not read <c>ok</c>). A disk mapped <see cref="MappedBy.None"/> because it is
+    /// ANOTHER distro is outside this verdict by design.</summary>
+    private static IReadOnlyList<string> UnjudgedGaps(Reading<DiskFacts> disk) =>
+        disk.Map(f => (IReadOnlyList<string>)[
+            .. f.Disks.Where(d => d.MappedBy != MappedBy.None && !d.GapBytes.IsAvailable).Select(d => $"{d.Name}: {d.GapBytes.ReasonOrEmpty}"),
+            .. OwnDiskNotJudged(f)]).ValueOr([]);
+
+    private static IEnumerable<string> OwnDiskNotJudged(DiskFacts facts) =>
+        facts.Disks.Any(d => d.MappedBy == MappedBy.Mount) ? [] : [$"this distro's own disk is not judged: {OwnDiskReason(facts.DistroName)}"];
+
+    private static string OwnDiskReason(Reading<string> name) =>
+        name is Reading<string>.Available { Value: var n } ? $"its name, {n}, matches no virtual disk in the Lxss map" : name.ReasonOrEmpty;
+
+    /// <summary>A known breach warns; otherwise anything not judged makes it <c>unknown</c>, never <c>ok</c>.</summary>
+    private static Verdict JudgedGap(IReadOnlyList<VirtualDiskFacts> mapped, IReadOnlyList<string> unjudged, int warnGib, string limit)
     {
         var over = mapped.Where(d => d.GapBytes.ValueOr(0) > warnGib * Gib).ToList();
         var value = string.Join("; ", mapped.Select(d => Invariant($"{d.Name}: {d.SizeBytes.ValueOr(0) / Gib:0.0} − {d.GuestUsedBytes.ValueOr(0) / Gib:0.0} = {d.GapBytes.ValueOr(0) / Gib:0.0} GiB")));
-        return over.Count > 0
-            ? new(GapId, Level.Warn, value, limit, $"{string.Join(", ", over.Select(d => d.Name))}: the file holds more than its guest uses — {string.Join("; ", over.Select(GapAdvice))}")
-            : new(GapId, Level.Ok, value, limit, $"every mapped virtual disk is within the limit{DockerLabel(mapped)}");
+        return (over.Count, unjudged.Count) switch
+        {
+            ( > 0, _) => new(GapId, Level.Warn, value, limit, $"{string.Join(", ", over.Select(d => d.Name))}: the file holds more than its guest uses — {string.Join("; ", over.Select(GapAdvice))}"),
+            (_, > 0) => new(GapId, Level.Unknown, value, limit, $"not every gap could be judged ({string.Join("; ", unjudged)}); every gap that was read is within the limit{DockerLabel(mapped)}"),
+            _ => new(GapId, Level.Ok, value, limit, $"every mapped virtual disk is within the limit{DockerLabel(mapped)}"),
+        };
     }
+
+    private static string Names(IReadOnlyList<VirtualDiskFacts> disks) => string.Join(", ", disks.Select(d => d.Name));
 
     /// <summary>What to do about one disk's gap — TEXT: the sparse switch for a distro file that is not sparse, Docker's label for
     /// Docker's data disk.</summary>
@@ -79,19 +100,24 @@ public static class DiskRules
         var known = disk.Map(f => f.Disks.Where(d => d.GrowthBytesPerDay.IsAvailable).ToList());
         return known switch
         {
-            Reading<List<VirtualDiskFacts>>.Available { Value.Count: > 0 } k => JudgedGrowth(k.Value, warnGibPerDay, limit),
+            Reading<List<VirtualDiskFacts>>.Available { Value.Count: > 0 } k => JudgedGrowth(k.Value, disk.Map(f => (IReadOnlyList<VirtualDiskFacts>)[.. f.Disks.Where(d => !d.GrowthBytesPerDay.IsAvailable)]).ValueOr([]), warnGibPerDay, limit),
             Reading<List<VirtualDiskFacts>>.Available => Unknown(GrowthId, limit, Grouped(disk.Map(f => f.Disks).ValueOr([]), d => d.GrowthBytesPerDay.ReasonOrEmpty)),
             var unread => Unknown(GrowthId, limit, unread.ReasonOrEmpty),
         };
     }
 
-    private static Verdict JudgedGrowth(IReadOnlyList<VirtualDiskFacts> known, int warnGibPerDay, string limit)
+    /// <summary>A known breach warns; otherwise a file with no growth figure (newly seen, moved, too close) makes it <c>unknown</c>,
+    /// never <c>ok</c> (code round, 2026-10-11).</summary>
+    private static Verdict JudgedGrowth(IReadOnlyList<VirtualDiskFacts> known, IReadOnlyList<VirtualDiskFacts> unknown, int warnGibPerDay, string limit)
     {
         var over = known.Where(d => d.GrowthBytesPerDay.ValueOr(0) > warnGibPerDay * Gib).ToList();
         var value = string.Join("; ", known.Select(d => Invariant($"{d.Name} {d.GrowthBytesPerDay.ValueOr(0) / Gib:+0.0;-0.0} GiB/day")));
-        return over.Count > 0
-            ? new(GrowthId, Level.Warn, value, limit, $"{string.Join(", ", over.Select(d => d.Name))} grew faster than the limit since the previous full run")
-            : new(GrowthId, Level.Ok, value, limit, "the growth since the previous full run, from two measured sizes of each file");
+        return (over.Count, unknown.Count) switch
+        {
+            ( > 0, _) => new(GrowthId, Level.Warn, value, limit, $"{Names(over)} grew faster than the limit since the previous full run"),
+            (_, > 0) => new(GrowthId, Level.Unknown, value, limit, $"no growth yet for {Names(unknown)} ({Grouped(unknown, d => d.GrowthBytesPerDay.ReasonOrEmpty)}); every growth that was measured is within the limit"),
+            _ => new(GrowthId, Level.Ok, value, limit, "the growth since the previous full run, from two measured sizes of each file"),
+        };
     }
 
     // ---------- disk.hostFree ----------
@@ -125,11 +151,15 @@ public static class DiskRules
     private static Judged HostWithFree(HostingVolumeFacts volume, long free, DiskFacts facts, int floorGib)
     {
         var known = volume.KnownPossibleGrowthBytes / Gib;
-        return free switch
+        // A tuple switch, not three `when` guards: complexity ≤ 4 (own review, 2026-10-11).
+        var belowFloor = free < floorGib * Gib;
+        var belowKnownGrowth = free < volume.KnownPossibleGrowthBytes;
+        var someGrowthUnknown = volume.UnknownGrowth.Count > 0;
+        return (belowFloor, belowKnownGrowth, someGrowthUnknown) switch
         {
-            _ when free < floorGib * Gib => new(Level.Warn, Invariant($"{volume.Letter}: {free / Gib:0.0} GiB free is below the floor of {floorGib} GiB")),
-            _ when free < volume.KnownPossibleGrowthBytes => new(Level.Warn, Invariant($"{volume.Letter}: {free / Gib:0.0} GiB free is less than the {known:0.0} GiB its virtual disks can still grow")),
-            _ when volume.UnknownGrowth.Count > 0 => new(Level.Unknown, Invariant($"{volume.Letter}: the possible growth of {Files(volume.UnknownGrowth.Count)} is not known ({Grouped(Unknowns(volume, facts), d => d.PossibleGrowthBytes.ReasonOrEmpty)}); {free / Gib:0.0} GiB free is above the floor of {floorGib} GiB and the known growth of {known:0.0} GiB")),
+            (true, _, _) => new(Level.Warn, Invariant($"{volume.Letter}: {free / Gib:0.0} GiB free is below the floor of {floorGib} GiB")),
+            (_, true, _) => new(Level.Warn, Invariant($"{volume.Letter}: {free / Gib:0.0} GiB free is less than the {known:0.0} GiB its virtual disks can still grow")),
+            (_, _, true) => new(Level.Unknown, Invariant($"{volume.Letter}: the possible growth of {Files(volume.UnknownGrowth.Count)} is not known ({Grouped(Unknowns(volume, facts), d => d.PossibleGrowthBytes.ReasonOrEmpty)}); {free / Gib:0.0} GiB free is above the floor of {floorGib} GiB and the known growth of {known:0.0} GiB")),
             _ => new(Level.Ok, Invariant($"{volume.Letter}: {free / Gib:0.0} GiB free is above the floor of {floorGib} GiB and the {known:0.0} GiB its virtual disks can still grow")),
         };
     }

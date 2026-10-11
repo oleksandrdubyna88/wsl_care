@@ -125,6 +125,70 @@ public sealed class DiskRulesTests : IDisposable
         growth.Reason.Should().Contain("two measured sizes");
     }
 
+    [Fact]
+    public void A_mapped_disk_whose_gap_could_not_be_read_makes_the_gap_unknown_never_ok()
+    {
+        var unreadRoot = Disk("Ubuntu", 200 * Gib, Reading.Missing<long>("the distro's / was not read: statvfs failed"));
+        var docker = Disk("docker-data", 120 * Gib, Reading.Of(110 * Gib), MappedBy.DockerDf);
+
+        var gap = Find(Evaluate(Facts([unreadRoot, docker])), DiskRules.GapId);
+
+        gap.Level.Should().Be(Level.Unknown, "Docker's small gap says nothing about the distro disk that could not be judged (code round)");
+        gap.Reason.Should().Contain("Ubuntu").And.Contain("statvfs failed");
+        gap.Value.Should().Contain("docker-data", "the measured disk is still shown");
+    }
+
+    [Fact]
+    public void A_known_gap_over_the_limit_still_warns_while_another_mapped_gap_is_unknown()
+    {
+        var unreadRoot = Disk("Ubuntu", 200 * Gib, Reading.Missing<long>("statvfs failed"));
+        var docker = Disk("docker-data", 120 * Gib, Reading.Of(60 * Gib), MappedBy.DockerDf);
+
+        Find(Evaluate(Facts([unreadRoot, docker])), DiskRules.GapId).Level.Should().Be(Level.Warn);
+    }
+
+    [Fact]
+    public void Without_this_distros_name_dockers_small_gap_alone_never_reads_ok()
+    {
+        var notKnown = "this distro's name is not known yet — any wsl-care command started through wsl.exe records it";
+        var facts = Reading.Of(new DiskFacts(Now, Reading.Missing<string>(notKnown), [Unmapped("Ubuntu", 237 * Gib, notKnown), Disk("docker-data", 120 * Gib, Reading.Of(110 * Gib), MappedBy.DockerDf)], []));
+
+        var gap = Find(Evaluate(facts), DiskRules.GapId);
+
+        gap.Level.Should().Be(Level.Unknown, "this distro's own disk — the one that matters most — was not judged, so the gap cannot be ok (own review)");
+        gap.Reason.Should().Contain("wsl.exe");
+    }
+
+    [Fact]
+    public void A_disk_that_is_not_mounted_here_does_not_make_the_gap_unknown()
+    {
+        var gap = Find(Evaluate(Facts([Disk("Ubuntu", 200 * Gib, Reading.Of(190 * Gib)), Unmapped("Ubuntu-26.04", 70 * Gib)])), DiskRules.GapId);
+
+        gap.Level.Should().Be(Level.Ok, "a distro mapped `none` by design is outside the gap verdict");
+    }
+
+    [Fact]
+    public void A_disk_without_a_growth_figure_makes_the_growth_unknown_never_ok()
+    {
+        var measured = Disk("Ubuntu", 200 * Gib, Reading.Of(190 * Gib), growth: Reading.Of(1.0 * Gib));
+        var fresh = Disk("docker-data", 120 * Gib, Reading.Of(110 * Gib), MappedBy.DockerDf);
+
+        var growth = Find(Evaluate(Facts([measured, fresh])), DiskRules.GrowthId);
+
+        growth.Level.Should().Be(Level.Unknown, "a newly seen file has no growth yet, so the verdict cannot say every file is within the limit (code round)");
+        growth.Reason.Should().Contain("docker-data").And.Contain("two measured sizes");
+        growth.Value.Should().Contain("Ubuntu");
+    }
+
+    [Fact]
+    public void A_known_growth_over_the_limit_still_warns_while_another_disk_has_no_growth()
+    {
+        var fast = Disk("Ubuntu", 200 * Gib, Reading.Of(190 * Gib), growth: Reading.Of(30.0 * Gib));
+        var fresh = Disk("docker-data", 120 * Gib, Reading.Of(110 * Gib), MappedBy.DockerDf);
+
+        Find(Evaluate(Facts([fast, fresh])), DiskRules.GrowthId).Level.Should().Be(Level.Warn);
+    }
+
     [Theory]
     [InlineData(9.9, Level.Ok)]
     [InlineData(10.1, Level.Warn)]

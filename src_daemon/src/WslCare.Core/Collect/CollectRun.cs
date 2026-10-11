@@ -418,7 +418,7 @@ public static class CollectRun
         var docker = await PreviewRun.CollectAsync(c.Paths, c.Files, c.Commands, c.Clock, c.Loaded, new PreviewExtras(foldersNow, WindowsProfiles.DockerDesktopConfig(c.Paths, c.Files, profile)) { MayRecord = mayRecord }, cancellationToken).ConfigureAwait(false);
         var stats = await DockerStats.SampleAsync(new DockerCli(c.Commands), c.Clock, cancellationToken).ConfigureAwait(false);
         var starts = Coverage.Last24h(new ContainerStartsStore(c.Paths, c.Files).ReadAll(), c.Clock.GetUtcNow());
-        var disk = Disk(c, health, sample, docker, last);
+        var disk = Disk(c, health, sample, docker, newestFirst);
         var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders, Agents = agents, VirtualDisks = disk is Reading<DiskFacts>.Available { Value: var facts } ? facts.Sizes : null };
         IReadOnlyList<Verdict> verdicts = [.. ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow) with { Disk = disk }, c.Loaded.Config), .. McpVerdicts.From(mcp, c.Loaded.Config)];
         var ended = c.Clock.GetUtcNow();
@@ -453,15 +453,19 @@ public static class CollectRun
 
     /// <summary>E15.S2: the virtual disks judged ONCE — this distro named by its environment, then by <c>{state}/distro-name.json</c>; Docker's
     /// data disk by the <c>docker system df</c> the preview already ran (no second Docker walk); growth against the newest earlier run
-    /// that measured the sizes.</summary>
-    private static Reading<DiskFacts> Disk(CollectContext c, HealthSample health, ProbeSample sample, PreviewResult docker, LastSlowParts last) =>
-        VirtualDisks.From(
+    /// that measured the sizes at least <c>disk.growthMinHours</c> before this sample (own review: a manual run soon after a timer run
+    /// still gets a growth).</summary>
+    private static Reading<DiskFacts> Disk(CollectContext c, HealthSample health, ProbeSample sample, PreviewResult docker, IReadOnlyList<RunRecord> newestFirst)
+    {
+        var growthMin = TimeSpan.FromHours(c.Loaded.Config.Int(ConfigKeys.Disk.GrowthMinHours));
+        return VirtualDisks.From(
             health.WindowsDisk,
             sample.Vm.Bind(vm => vm.RootVolume),
             docker.Snapshot.Totals,
             DistroIdentity.Resolve(c.DistroVariable, DistroIdentity.Read(c.Paths, c.Files)),
-            last.VirtualDisks.Map(a => a.Value),
-            TimeSpan.FromHours(c.Loaded.Config.Int(ConfigKeys.Disk.GrowthMinHours)));
+            LastFullRun.VirtualDisksBefore(newestFirst, health.WindowsDisk.SampledAt, growthMin),
+            growthMin);
+    }
 
     /// <summary>The AI agents' folders (plan §4.6, §15q D1), on the daily walk's day: every catalogue agent whose folder exists
     /// in the home the paths follow (the TARGET user's as root) — folders only, nothing looked up on a PATH, nothing executed —

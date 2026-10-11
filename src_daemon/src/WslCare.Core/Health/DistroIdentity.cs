@@ -94,7 +94,11 @@ public static partial class DistroIdentity
     /// <summary>The value as a sentence may quote it: control characters shown as <c>?</c>.</summary>
     private static string Printable(string value) => string.Concat(value.Select(c => char.IsControl(c) ? '?' : c));
 
-    // \z, not $: .NET's $ also matches before a final newline, and a name with a newline is no name.
-    [GeneratedRegex(@"\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z", RegexOptions.CultureInvariant)]
+    /// <summary>WSL's distribution-name rule — the SAME body as the extension's <c>DISTRO_NAME</c> (<c>src_vs_code/src/wsl/distros.ts</c>),
+    /// held equal by <c>ArchitectureTests.The_daemon_and_the_extension_share_one_distro_name_rule</c> (code round, 2026-10-11).
+    /// <c>\z</c>, not <c>$</c>: .NET's <c>$</c> also matches before a final newline, and a name with a newline is no name.</summary>
+    internal const string NamePatternText = @"\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z";
+
+    [GeneratedRegex(NamePatternText, RegexOptions.CultureInvariant)]
     private static partial Regex NamePattern();
 }

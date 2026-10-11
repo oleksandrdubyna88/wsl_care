@@ -46,6 +46,19 @@ public sealed class StatusDiskTests : IDisposable
     private Reading<RecordedVerdicts> Read() => FullRunVerdicts.Read(_sandbox.Paths, _sandbox.Files, RunHistory.Read(_sandbox.Paths, _sandbox.Files));
 
     [Fact]
+    public void A_disk_section_that_does_not_parse_costs_only_the_disk_section_never_the_carried_verdicts()
+    {
+        FullRun(Now.AddHours(-1), ""","disk":{"available":"yes","vhdx":7}""");
+
+        var recorded = Read();
+
+        recorded.IsAvailable.Should().BeTrue("the verdicts of the run are still carried when only its disk section is broken (own review)");
+        var disk = ((Reading<RecordedVerdicts>.Available)recorded).Value.Disk;
+        disk.IsAvailable.Should().BeFalse();
+        disk.ReasonOrEmpty.Should().Contain("disk section").And.Contain("does not parse");
+    }
+
+    [Fact]
     public void Status_carries_the_full_runs_disk_section_with_its_basis_and_age()
     {
         var runId = RunId.New(Now.AddHours(-3), 4242);
