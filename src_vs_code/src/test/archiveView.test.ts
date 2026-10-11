@@ -178,3 +178,10 @@ test('a row with the retention badge sets the badge apart too', () => {
   assert.equal(rows[0]?.one('span[data-retention-badge]').dataset.level, 'warn', 'the badge keeps its own span and its warn level (plan round #0)');
   assert.equal(rows[0]?.textContent, 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 7 d — its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d');
 });
+
+test('own review #1: a part with no text is left out with its separator — an agent with neither name nor id never starts with " — "', () => {
+  const preview = goldenFile('archive-preview.json');
+  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, name: '', id: '' } : a));
+  const rows = renderedAgentRows(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })));
+  assert.equal(rows[0], '1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 30 d');
+});

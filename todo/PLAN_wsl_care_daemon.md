@@ -4698,12 +4698,12 @@ Sorting and search arrive with the kit's `DataTable` (E18.K1, E18.W1), not here.
 
 ##### E10.S1 follow-up — an agent row reads as one line
 
-> Status: **built 2026-10-11 on `fix/wc-agent-row-separators` — the code round and the own review next (see *As built* below).** Branch `fix/wc-agent-row-separators`, from `main` 1f3a0c6. Extension only
+> Status: **built 2026-10-11 on `fix/wc-agent-row-separators` — the code round (proceed) and the own review on Opus done, every suite green; merge next (see *As built* below).** Branch `fix/wc-agent-row-separators`, from `main` 1f3a0c6. Extension only
 > (`media/panel.js`, `src/test/archiveView.test.ts`); not a root path, so the own review runs on Opus.
 
 **The symptom (the owner's panel, extension 0.5.0, *AI agents*).** Each per-agent line of the archive runs its parts together:
 "Claude Code3 sessions · 153 files · 71.9 MB older than 14 dits own cleanup deletes after 90 d", "Gemini CLInothing older than 14
-dno deletion of its own known". **The cause:** `media/panel.js:256-264` (`archiveAgent`) appends the name, what is due, the
+dno deletion of its own known". **The cause:** `media/panel.js:256-265` (`archiveAgent`) appends the name, what is due, the
 retention and the badge as four `span`s with nothing between them; the view model (`src/archive/archiveView.ts:29-37`,
 `ArchiveAgentLine`) gives four separate strings, and no CSS spaces them. **Why it slipped through:** the page test
 (`src/test/archiveView.test.ts:98-110`) counts the rows and never reads a row's whole text; the model tests read each part alone.
@@ -4712,14 +4712,14 @@ retention and the badge as four `span`s with nothing between them; the view mode
 name, what is due, the retention, and the badge when there is one. The parts keep their own `span`s and data attributes, so the
 badge keeps its `warn` level. Text only, as the page's rule says (`createElement` / `textContent`); the strict page harness does not
 model text nodes, and a span is what every other part of the page uses. The view model does not change: the parts stay separate
-because the badge is styled on its own.
+because the badge is its own part (its `warn` level is data on its span; no CSS colours it yet).
 
 **Tests (RED first).** Two page tests render the panel in the strict harness and assert the `textContent` of WHOLE rows:
 the golden Claude Code row is exactly "Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after
 30 d", every enabled agent reads `name — due — retention`, and a row with the badge ends "… — its own cleanup deletes after 7 d —
 its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d". RED on `main`: "actual: 'Claude Code1 session ·
-2 files · 200 B older than 14 dits own cleanup deletes after 30 d'". Break-its on `media/panel.js` only: the separator removed;
-the separator put after the last part instead of between parts.
+2 files · 200 B older than 14 dits own cleanup deletes after 30 d'". Break-its on `media/panel.js` only: R1 the separator's text
+emptied; R2 a separator after each part instead of between parts; R3 the badge left out of the parts.
 
 **Build order:** the RED tests → the separator in `archiveAgent` → the whole extension suite, lint, package, check:vsix →
 `research/module_vs_code.md` (the archive section's row) and `research/module_tests.md` → the code round and the own review → merge.
@@ -4732,8 +4732,19 @@ badge keeps its own span and its `warn` level.
 **As built (2026-10-11).** As planned: `archiveAgent` gathers the parts it shows (the badge only when there is one) and puts a
 `data-agent-separator` span " — " between each two. RED first (both page tests, the owner's run-together text); break-its R1 (the
 separator's text emptied) → 2 red, R2 (a separator after each part) → 2 red, R3 (the badge appended outside the separated parts) →
-1 red, each restored by its sha256. The whole extension suite (1244 tests, 0 failed), lint, package and check:vsix (with the
+1 red, each restored by its sha256. The whole extension suite (1245 tests after the own review, 0 failed), lint, package and check:vsix (with the
 attested Windows daemon fetched) green.
+
+**The code round** (coai session 0967b21e, `proceed`, codex, one gating finding): #0 accepted — the parts array is no longer
+mutated (`push`); it is built whole. **The own review on Opus** (6 findings, all low): #1 accepted — a part with no text is left
+out with its separator (a name the daemon did not give would have started the row with " — "): RED first ("actual: ' — 1 session
+· …'"), then a filter over the parts, break-it R4 (the filter removed) → 2 red; R3 now removes the badge from the parts. #6
+accepted — the line reference and the break-it names made the same here and in `research/module_tests.md`. #3 (aria-hidden on
+the separator) no change: a hidden separator would make a screen reader run the parts together again. Out of this change, for
+the owner: #2 the badge row repeats the retention ("… — its own cleanup deletes after 7 d — its own cleanup deletes sessions
+after 7 d — before …") and its own " — " blurs the parts; #4 no CSS reads the badge's `warn` level, so it looks like plain
+text; #5 `media/archive.js:75-80` and `media/logs.js:143-148` (`linePart`) put a label and a value in two spans with no
+separator — spaced on screen by a flex gap, but run together in `textContent` and copy-paste.
 
 ##### E10.S2a build notes — the Archive page, browse only
 
@@ -5138,7 +5149,7 @@ README if the Logs page is described, this section's *as built*).
 
 ##### E10.S2c follow-up — A20 believes only the entries it asked for
 
-> Status: **built 2026-10-11 on `fix/wc-restore-answer-subset` — the code round (proceed) and the own review on Fable done, every suite green; merge next (see *As built* below).** Branch `fix/wc-restore-answer-subset`, from `main` befb57a (E10.S2c merged,
+> Status: **merged 2026-10-11, #118 (squash b76e1b2) — the code round (proceed) and the own review on Fable done, every suite green (see *As built* below).** Branch `fix/wc-restore-answer-subset`, from `main` befb57a (E10.S2c merged,
 > #114). Root path (A20's run): the own review runs on Fable. Found by E10.S2c's own review (#2).
 
 **Symptom.** `RestoreAction.RunAsync` (`src_daemon/src/WslCare.Core/Archive/RestoreAction.cs:76`) hands the child the shown entry
