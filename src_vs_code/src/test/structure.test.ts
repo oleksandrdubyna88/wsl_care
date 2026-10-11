@@ -176,7 +176,7 @@ const ROOT_CALL = 'src/root/rootCall.ts';
 const CLEANUP_CONTROLLER = 'src/root/cleanupController.ts';
 
 /** The root argv words (§15j M1) — only `rootCall.ts` may spell them. */
-const ROOT_WORDS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '--process', '--stop'];
+const ROOT_WORDS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '--process', '--entry', '--stop'];
 
 /** Words NO module may spell, the root module included: the timer's mark, another user. The daemon's settings verb is the writer's alone (E10.S1, below). */
 const NEVER_WORDS = ['--timer', '--user'];

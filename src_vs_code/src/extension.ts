@@ -336,17 +336,20 @@ function archiveCommands(archive: Pick<PanelActions, 'chooseArchiveFolder' | 'st
 }
 
 function archivePanel(context: vscode.ExtensionContext, parts: Parts): ArchivePanel {
-  const { client, store, log } = parts;
+  const { client, store, log, host } = parts;
+  // E10.S2b: *Restore* is the cleanup host's — the page hands it entry ids as text and reads its facts; it never touches root/.
+  const restore = { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids: readonly string[]) => host.restore(ids) };
 
-  return new ArchivePanel(context.extensionUri, { read: (request) => client.read(request), status: () => store.snapshot().status }, (line) => log.error(line));
+  return new ArchivePanel(context.extensionUri, { read: (request) => client.read(request), status: () => store.snapshot().status, restore }, (line) => log.error(line));
 }
 
-/** The Archive page (E10.S2a): itself, its command (also the archive section's *Open archive…*), the status it follows, its serializer. */
-function archivePageSubscriptions(page: ArchivePanel, store: OutcomeStore): vscode.Disposable[] {
+/** The Archive page (E10.S2a): itself, its command (also the archive section's *Open archive…*), the status and the restore (E10.S2b) it follows, its serializer. */
+function archivePageSubscriptions(page: ArchivePanel, store: OutcomeStore, host: CleanupHost): vscode.Disposable[] {
   return [
     page,
     vscode.commands.registerCommand('wslCare.openArchive', () => page.show()),
     { dispose: store.onChange(() => page.statusChanged()) },
+    { dispose: host.onChange(() => page.restoreChanged()) },
     vscode.window.registerWebviewPanelSerializer(ArchivePanel.viewType, { deserializeWebviewPanel: (restored) => { page.restore(restored); return Promise.resolve(); } }),
   ];
 }
@@ -403,7 +406,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.commands.registerCommand('wslCare.installWindowsTimeGuard', installGuard),
     vscode.commands.registerCommand('wslCare.removeWindowsTimeGuard', removeGuard),
     ...extraCommands(extras),
-    ...logsSubscriptions(logs, store), ...archivePageSubscriptions(archivePage, store),
+    ...logsSubscriptions(logs, store), ...archivePageSubscriptions(archivePage, store, host),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     ...settingsListeners(parts, panel),
   );

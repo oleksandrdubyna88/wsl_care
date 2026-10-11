@@ -9,9 +9,9 @@ import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { callRoot, FULL_CHECK_ACTIONS, RUN_KINDS, type RootOp, type RootTarget } from './rootCall';
 import { exitFailure } from './rootFailures';
-import { MAX_PROCESS_ARGS, runIdOf, shownCap, shownProcessOf, volumeNameOf, type ActionIds, type RunId, type ShownProcess, type VolumeName } from './rootIds';
+import { entryIdsOf, MAX_PROCESS_ARGS, runIdOf, shownCap, shownProcessOf, volumeNameOf, type ActionIds, type EntryIds, type RunId, type ShownProcess, type VolumeName } from './rootIds';
 import type { DaemonLimits } from '../shared/daemonLimits';
-import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
+import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, RestoreSelection, RootCheckOutcome, RootFailure, RunningBlock, ShownSelection } from './rootOutcome';
 
 /**
  * The host-side cleanup controller (E6.S2) — the API E6.S3's buttons call, and the ONLY module that imports
@@ -115,28 +115,34 @@ export const CAPABILITIES = {
   /** S7b.2b: A21's preview publishes its `shown` processes and its confirm passes them back on the `--process` road. */
   previewA21: [...BASE, 'act.shownList', 'act.processList'],
   confirmA21: [...BASE, 'act.detach', 'act.processList'],
+  previewA20: [...BASE, 'act.shownList', 'archive.restore', 'act.entryStdin'],
+  confirmA20: [...BASE, 'act.detach', 'archive.restore', 'act.entryStdin'],
   stop: [...BASE, 'act.stop'],
   fullCheck: [...BASE, 'act.detach'],
 } as const;
 
 /**
  * What a preview of `ids` needs advertised: the preview's own set, and A13's archive preview when A13 is asked (E10.S1b — its
- * preview is the archive child's own `archive preview`).
+ * preview is the archive child's own `archive preview`), A21's process list (S7b.2b) and A20's restore (E10.S2b).
  */
 export function previewNeeds(ids: readonly string[]): readonly string[] {
-  const a13 = ids.includes('A13') ? CAPABILITIES.previewA13 : [];
-  const a21 = ids.includes('A21') ? CAPABILITIES.previewA21 : [];
-
-  return [...new Set([...CAPABILITIES.preview, ...a13, ...a21])];
+  return needsOf(CAPABILITIES.preview, PREVIEW_EXTRAS, ids);
 }
 
-/** What a confirm of `ids` needs advertised: the detach, A4's stdin list when A4 is confirmed, A13's archive run when A13 is (E10.S1b). */
+/** What a confirm of the ids needs advertised: the detach, A4's stdin list when A4 is confirmed, A13's archive run when A13 is (E10.S1b), A21's process list (S7b.2b), A20's restore (E10.S2b). */
 export function confirmNeeds(ids: readonly string[]): readonly string[] {
-  const a4 = ids.includes('A4') ? CAPABILITIES.confirmA4 : [];
-  const a13 = ids.includes('A13') ? CAPABILITIES.confirmA13 : [];
-  const a21 = ids.includes('A21') ? CAPABILITIES.confirmA21 : [];
+  return needsOf(CAPABILITIES.confirm, CONFIRM_EXTRAS, ids);
+}
 
-  return [...new Set([...CAPABILITIES.confirm, ...a4, ...a13, ...a21])];
+/** The extra capabilities an id's preview needs beyond the preview's own set — in this table's order. */
+const PREVIEW_EXTRAS: Readonly<Record<string, readonly string[]>> = { A13: CAPABILITIES.previewA13, A21: CAPABILITIES.previewA21, A20: CAPABILITIES.previewA20 };
+
+/** The extra capabilities an id's confirm needs beyond the detach — in this table's order. */
+const CONFIRM_EXTRAS: Readonly<Record<string, readonly string[]>> = { A4: CAPABILITIES.confirmA4, A13: CAPABILITIES.confirmA13, A21: CAPABILITIES.confirmA21, A20: CAPABILITIES.confirmA20 };
+
+/** The base set and the extras of every asked id that has some, each capability once. */
+function needsOf(base: readonly string[], extras: Readonly<Record<string, readonly string[]>>, ids: readonly string[]): readonly string[] {
+  return [...new Set([...base, ...Object.entries(extras).filter(([id]) => ids.includes(id)).flatMap(([, needed]) => needed)])];
 }
 
 /** A call that went out: the op, and how it ended (`undefined`: the op could not be built, nothing started). */
@@ -177,7 +183,24 @@ export class CleanupController {
     });
   }
 
-  /** `act <the preview's ids> --confirm --manual --detach [--only -] --json` as root, A4's names from the held preview. */
+  /**
+   * E10.S2b: `act A20 --preview --entry - --json` as root — the entry ids on stdin, the one road in (`entryIdsOf`: every id valid, none
+   * twice, at most `MAX_RESTORE_ENTRIES`; anything else starts nothing), A20 only when the daemon reports it — held, so its confirm
+   * pipes the ids THIS preview showed and nothing else.
+   */
+  previewRestore(texts: readonly string[]): Promise<PreviewOutcome> {
+    const entries = entryIdsOf(texts);
+    if (entries === undefined) {
+      return Promise.resolve({ kind: 'entriesRefused', reason: `${texts.length} entr${texts.length === 1 ? 'y' : 'ies'} asked: none, one twice, an id that is not 16 lowercase hex digits, or more than one restore takes` });
+    }
+
+    return this.transaction(async (target) => {
+      const call = await this.acting(target, previewNeeds(['A20']), (gate) => restoreOp(gate, { op: 'restorePreview', entries }));
+      return 'kind' in call ? call : this.held(call, target);
+    });
+  }
+
+  /** `act <the preview's ids> --confirm --manual --detach [--only -] --json` as root, A4's names from the held preview; A20's entries likewise (E10.S2b). */
   confirm(preview: HeldPreview): Promise<HandOffOutcome> {
     if (!this.issued.has(preview)) {
       return Promise.resolve({ kind: 'previewNotHeld' });
@@ -293,7 +316,7 @@ export class CleanupController {
       return typeof answer === 'string' ? NOT_BUILT : answer;
     }
 
-    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now(), maxShownNames: call.limits.maxShownNames } satisfies PreviewContext));
+    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now(), maxShownNames: call.limits.maxShownNames, asked: askedOf(call.op) } satisfies PreviewContext));
   }
 
   private registered(preview: HeldPreview | RootFailure): PreviewOutcome {
@@ -400,6 +423,10 @@ function previewOp(requested: readonly string[], gate: GateOpen): Prepared {
 
 /** The confirm of a held preview: its ids, still allowed; A4's names, re-validated — or why not. */
 function confirmOp(preview: HeldPreview, gate: GateOpen): Prepared {
+  return preview.ids.includes('A20') ? restoreConfirmOp(preview, gate) : cleanupConfirmOp(preview, gate);
+}
+
+function cleanupConfirmOp(preview: HeldPreview, gate: GateOpen): Prepared {
   const ids = pickIds(preview.ids, gate);
   if ('kind' in ids) {
     return ids;
@@ -472,12 +499,54 @@ function validNames(names: readonly string[]): { readonly names: readonly Volume
 }
 
 function previewIds(op: RootOp): ActionIds | undefined {
+  if (op.op === 'restorePreview') {
+    return RESTORE_IDS;
+  }
+
   return op.op === 'preview' ? op.ids : undefined;
+}
+
+/** The entry ids a restore preview piped — what its shown list may name (own review #2); none for every other op. */
+function askedOf(op: RootOp): readonly string[] {
+  return op.op === 'restorePreview' ? op.entries : [];
+}
+
+/** The ids a restore preview is held under (E10.S2b): A20 alone. */
+const RESTORE_IDS: ActionIds = ['A20'];
+
+/** A restore op, when the daemon REPORTS A20 (the button-only ids are never in `allowed`) — or the refusal naming what is offered. */
+function restoreOp(gate: GateOpen, op: Extract<RootOp, { op: 'restorePreview' | 'restoreConfirm' }>): Prepared {
+  if (!gate.reported.includes('A20')) {
+    return { kind: 'idsRefused', refused: ['A20'], allowed: gate.allowed };
+  }
+  const cap = shownCap(gate.limits.maxShownNames);
+
+  return op.entries.length <= cap ? op : { kind: 'entriesRefused', reason: `${op.entries.length} entries are more than the daemon takes in one list now (act.maxShownNames: ${cap}); select fewer` };
+}
+
+/** A held A20 preview's confirm: its OWN shown entries, revalidated — never a cut list as the whole (the plan round's #0), never none. */
+function restoreConfirmOp(preview: HeldPreview, gate: GateOpen): Prepared {
+  const selection = wholeSelection(preview.restore);
+  if ('kind' in selection) {
+    return selection;
+  }
+  const entries: EntryIds | undefined = entryIdsOf(selection.names);
+
+  return entries === undefined ? { kind: 'restoreListInvalid', reason: 'its preview offers no entry that is still restorable' } : restoreOp(gate, { op: 'restoreConfirm', entries });
+}
+
+/** The held selection when the daemon showed it WHOLE — or why it cannot be confirmed. */
+function wholeSelection(selection: RestoreSelection | undefined): RestoreSelection | RootFailure {
+  if (selection === undefined) {
+    return { kind: 'restoreListInvalid', reason: 'its preview carried no shown list' };
+  }
+
+  return selection.truncated ? { kind: 'restoreListInvalid', reason: `the daemon showed only ${selection.names.length} of the ${selection.count} entries; select fewer` } : selection;
 }
 
 /** A confirm that piped A4's list (`--only -`): its exit 2 is a refusal of that list, with a retry offered. */
 function pipedShown(op: RootOp): boolean {
-  return op.op === 'confirm' && op.shown !== undefined;
+  return op.op === 'restoreConfirm' || (op.op === 'confirm' && op.shown !== undefined);
 }
 
 /** A root answer's text (exit 0), or why there is none. */
@@ -517,6 +586,11 @@ function consumed(call: Call, outcome: HandOffOutcome): boolean {
 
 /** The actions a run started by this op holds: the confirmed ids, or ["collect"] for a full check. */
 function expectedActions(op: RootOp): readonly string[] {
+  if (op.op === 'restoreConfirm') {
+    // E10.S2b: a restore's run holds A20 alone — never the full check's ["collect"], which would ADOPT the timer's run.
+    return RESTORE_IDS;
+  }
+
   return op.op === 'confirm' ? op.ids : FULL_CHECK_ACTIONS;
 }
 
@@ -608,9 +682,15 @@ function freezeAction(action: PreviewedAction): PreviewedAction {
 /** A held preview made immutable all the way down — the names a confirm pipes cannot be edited after the preview. */
 function freezePreview(preview: HeldPreview): HeldPreview {
   const a4 = preview.a4 === undefined ? undefined : Object.freeze({ ...preview.a4, names: Object.freeze([...preview.a4.names]) });
-  const processes = preview.processes === undefined ? {} : { processes: Object.freeze({ ...preview.processes, names: Object.freeze([...preview.processes.names]) }) };
+  const processes = preview.processes === undefined ? {} : { processes: frozenSelection(preview.processes) };
+  const restore = preview.restore === undefined ? {} : { restore: frozenSelection(preview.restore) };
 
-  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4, ...processes });
+  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4, ...processes, ...restore });
+}
+
+/** A held shown list, frozen with its names (A21's processes, A20's entries). */
+function frozenSelection<T extends string>(selection: ShownSelection<T>): ShownSelection<T> {
+  return Object.freeze({ ...selection, names: Object.freeze([...selection.names]) });
 }
 
 /** What a full check's run holds as its actions (`["collect"]`) — re-exported so the host's cleanup flow can name it

@@ -48,8 +48,22 @@ function goldenShown(): string[] {
 
 type Expected = { readonly kind: string; readonly root: readonly string[] };
 
+/** E10.S2b: the golden list's entry, verified and removed at its source — an answers folder whose `archive list` makes it restorable. */
+const ENTRY = '0123456789abcdef';
+
+function restorableWorld(world: FakeWorld): void {
+  const answers = path.join(world.folder, 'answers-restorable');
+  fs.mkdirSync(answers, { recursive: true });
+  for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
+    fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(answers, file));
+  }
+  const list = JSON.parse(fs.readFileSync(path.join(answers, 'archive-list.json'), 'utf8')) as { entries: Record<string, unknown>[] };
+  fs.writeFileSync(path.join(answers, 'archive-list.json'), JSON.stringify({ ...list, entries: list.entries.map((e) => ({ ...e, entryId: ENTRY, status: 'sourceRemoved', verified: true })) }));
+  world.rewrite({ answers });
+}
+
 /** One flow per root op: what the controller answers through the fake, and the exact root calls the fake received. */
-const FLOWS: { readonly [K in RootOpName]: (c: CleanupController) => Promise<Expected & { readonly got: string }> } = {
+const FLOWS: { readonly [K in RootOpName]: (c: CleanupController, world: FakeWorld) => Promise<Expected & { readonly got: string }> } = {
   rootCheck: async (c) => ({ got: (await c.rootCheck()).kind, kind: 'rootOk', root: [`${ROOT} --version`] }),
   preview: async (c) => ({ got: (await c.preview(['A4'])).kind, kind: 'previewed', root: [`${ROOT} --version`, `${ROOT} act A4 --preview --json`] }),
   confirm: async (c) => {
@@ -59,12 +73,23 @@ const FLOWS: { readonly [K in RootOpName]: (c: CleanupController) => Promise<Exp
   },
   stop: async (c) => ({ got: (await c.stop(RUN)).kind, kind: 'stopping', root: [`${ROOT} --version`, `${ROOT} act --stop ${RUN} --json`] }),
   fullCheck: async (c) => ({ got: (await c.runFullCheck()).kind, kind: 'accepted', root: [`${ROOT} --version`, `${ROOT} collect --detach --json`] }),
+  // E10.S2b: A20's two ops, the entry ids on stdin.
+  restorePreview: async (c, world) => {
+    restorableWorld(world);
+    return { got: (await c.previewRestore([ENTRY])).kind, kind: 'previewed', root: [`${ROOT} --version`, `${ROOT} act A20 --preview --entry - --json`] };
+  },
+  restoreConfirm: async (c, world) => {
+    restorableWorld(world);
+    const held = await c.previewRestore([ENTRY]);
+    assert.ok(held.kind === 'previewed', JSON.stringify(held).slice(0, 300));
+    return { got: (await c.confirm(held.preview)).kind, kind: 'accepted', root: [`${ROOT} --version`, `${ROOT} act A20 --preview --entry - --json`, `${ROOT} act A20 --confirm --manual --detach --entry - --json`] };
+  },
 };
 
 for (const op of ROOT_OPS) {
   test(`root flow · ${op}: answered through the fake, exactly its root calls, the System32 launcher`, async () => {
     await flow(UBUNTU_RUNNING, async ({ world, controller }) => {
-      const outcome = await FLOWS[op](controller);
+      const outcome = await FLOWS[op](controller, world);
       assert.equal(outcome.got, outcome.kind);
       assert.deepEqual(rootCalls(world), outcome.root);
       assert.ok(world.files().every((f) => f === 'C:\\Windows\\System32\\wsl.exe'));

@@ -24,8 +24,13 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   distribution's archive holds: per agent, per month, each archived session with its files, size, status (still at its
   source, removed there, partly back, restored …), whether it is verified, and when it was archived. A session's path is
   shortened to its file name until you press **Show full session paths** — it holds a project's folder name. An unverified
-  session removed at its source says how to restore it in a terminal (`--accept-unverified`). Browsing changes nothing; restoring
-  from the page comes in a later version, and the Windows archive is shown by a later version too.
+  session removed at its source says how to restore it in a terminal (`--accept-unverified`). Browsing changes nothing; the
+  Windows archive is shown by a later version.
+- **Restore** (on the Archive page) — **Select** verified sessions removed at their source (or **Select month**: the
+  newest that fit) and press **Restore**. The page says how many one restore takes. A modal first names what comes back,
+  and nothing is restored before you press **Restore**; the daemon copies the files back into the agent's folder as your
+  user and never overwrites one. The page shows *Restoring…* while it runs — also after a reload — and reads the archive
+  again when it ends, so the restored sessions read *restored*. An unverified session is restored only in a terminal.
 
 - **A GPU that is not working** (since 2026-10-10) — Windows' display adapters are read on their own (unelevated, at start,
   on panel open and *Refresh*, and every `wslCare.gpu.checkMinutes`). Any adapter whose Device Manager code is not 0 is an
@@ -61,11 +66,12 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   `wslCare.cleanup.followCeilingMinutes` (30 by default): the notice then says the run's state is unknown and names the
   daemon's `runs show`, while the section keeps reading **Archiving…** from the daemon's own status until the run ends — the run
   goes on in the daemon's unit; nothing is stuck.
-- **Cleaning — only after you confirm, and only through five calls.** A cleanup needs root inside the distribution, so
-  the extension has exactly five root calls, all built in one place and nowhere else: a cleanup's preview
+- **Cleaning — only after you confirm, and only through seven calls.** A cleanup needs root inside the distribution, so
+  the extension has exactly seven root calls, all built in one place and nowhere else: a cleanup's preview
   (`act <ids> --preview`), its run once you confirmed (`act <ids> --confirm --manual --detach`, with the list of volumes
   the preview showed handed over on stdin), stopping a wedged run (`act --stop <run>`), *Run full check now*
-  (`collect --detach`) and a root check (`--version`). It never sends the timer's mark, never changes a daemon setting
+  (`collect --detach`), a root check (`--version`), and *Restore*'s preview and run (`act A20 --preview --entry -`,
+  `act A20 --confirm --manual --detach --entry -`, the archived sessions' ids handed over on stdin). It never sends the timer's mark, never changes a daemon setting
   other than the archive folder above, and never acts on an action the daemon does not offer. A confirmed cleanup runs in the daemon's own systemd
   unit, so reloading the window does not cut it off: the panel writes the run down before it starts and follows it to its
   result — "Cleaning… A4" after a reload, then what it freed; a run that died says *interrupted*. (Whether the run also

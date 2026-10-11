@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { readEnum } from '../client/enumValue';
-import { ACTION_IDS, actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, shownProcessOf, volumeNameOf } from '../root/rootIds';
+import { ACTION_IDS, actionIdOf, entryIdOf, entryIdsOf, MAX_RESTORE_ENTRIES, MAX_SHOWN_VOLUMES, runIdOf, shownProcessOf, volumeNameOf } from '../root/rootIds';
 import { REPOSITORY_ROOT } from './support/paths';
 
 /**
@@ -57,6 +57,26 @@ test('a shown process is the daemon\'s pid:start, canonical — pid above 1, who
   for (const bad of ['1:5', '0:5', '-3:5', '5', '5:x', '5:1 --timer', ' 5:1', '5:1\n', '05:1', '5:01', '2147483648:1', '5:9223372036854775808', '5:1:2', '', 5, undefined, ['5:1']]) {
     assert.equal(shownProcessOf(bad), undefined, JSON.stringify(bad));
   }
+});
+
+// ---- E10.S2b: A20's entry ids ----
+
+test('an entry id is 16 lowercase hex digits — the daemon\'s ArchiveIndex.IsEntryId — and nothing else', () => {
+  assert.equal(entryIdOf('0123456789abcdef'), '0123456789abcdef');
+  for (const bad of ['0123456789ABCDEF', '0123456789abcde', '0123456789abcdef0', '0123456789abcdef\n', ' 0123456789abcdef', '-123456789abcdef', 'g123456789abcdef', '', 16, undefined]) {
+    assert.equal(entryIdOf(bad), undefined, JSON.stringify(bad));
+  }
+});
+
+test('an entry list is 1 to MAX_RESTORE_ENTRIES ids, none twice, every one valid — anything else builds no list at all', () => {
+  const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => i.toString(16).padStart(16, '0'));
+  assert.deepEqual(entryIdsOf(['0123456789abcdef', 'fedcba9876543210']), ['0123456789abcdef', 'fedcba9876543210'], 'kept in the order given');
+  assert.equal(entryIdsOf([]), undefined, 'none');
+  assert.equal(entryIdsOf(['0123456789abcdef', '0123456789abcdef']), undefined, 'twice');
+  assert.equal(entryIdsOf(['0123456789abcdef', 'NOTHEX0000000000']), undefined, 'one bad id spoils the list — never a silent subset');
+  assert.equal(entryIdsOf(ids(MAX_RESTORE_ENTRIES))?.length, MAX_RESTORE_ENTRIES);
+  assert.equal(entryIdsOf(ids(MAX_RESTORE_ENTRIES + 1)), undefined, 'past the key\'s range maximum');
+  assert.equal(MAX_RESTORE_ENTRIES, 5000, 'the range maximum of archive.maxRestoreEntries (ConfigKeys.Archive.MaxRestoreEntries)');
 });
 
 test('an enum value this extension knows is read as itself', () => {

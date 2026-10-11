@@ -252,6 +252,9 @@ internal static partial class GoldenContracts
 
         // S7b.2b: A21's line with two client-gone relays selected — produced by the daemon's own InteropRelayStop (A21PreviewGolden says why not the CLI).
         files.Add((A21PreviewGolden.File, await A21PreviewGolden.TextAsync(matched)));
+        // E10.S2b: A20's line when the panel showed one verified entry removed at its source — the daemon's own RestoreAction
+        // (A20PreviewGolden says why not the CLI): the shown list the extension pipes back, and the items its modal names.
+        files.Add((A20PreviewGolden.File, await A20PreviewGolden.TextAsync()));
 
         // E6.S1: the answer a detach hands the panel — the run id it follows and the unit systemd runs it in.
         using (var detach = new ScenarioHome("golden-detach") { ClaimsRoot = true })

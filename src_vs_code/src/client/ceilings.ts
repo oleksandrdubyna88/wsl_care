@@ -32,8 +32,9 @@ const SETTING_OF: { readonly [K in FixedCall]: keyof Numbers } = {
   stop: 'stopSeconds',
 };
 
-/** The ids whose share of a preview is a SETTING of their own (E10.S1b: A13's is the archive preview's ceiling). */
-const SETTING_SHARES: Readonly<Record<string, keyof Numbers>> = { A13: 'archivePreviewSeconds' };
+/** The ids whose share of a preview is a SETTING of their own (E10.S1b: A13's is the archive preview's ceiling; E10.S2b: A20's too —
+ * its preview is ONE `archive list --restorable --entry …` child under `archive.previewTimeoutSeconds`, `ArchiveChildren.ListShown`). */
+const SETTING_SHARES: Readonly<Record<string, keyof Numbers>> = { A13: 'archivePreviewSeconds', A20: 'archivePreviewSeconds' };
 
 /** One id's share of a cleanup's preview: its own setting (A13), A8 / A9 their cost, a Docker row (or an id outside the rows) its own snapshot's setting. */
 function shareS(numbers: Numbers, id: string): number {
@@ -61,12 +62,20 @@ function fixedS(numbers: Numbers, call: FixedCall, limits: DaemonLimits): number
 }
 
 /** Which host call a root op is — `root/rootCall.ts` asks here, so its region keeps only its argv literals (`bundleScan.test.ts`). */
-const ROOT_OP_CALLS: Readonly<Record<string, FixedCall>> = { confirm: 'detach', fullCheck: 'detach', stop: 'stop', rootCheck: 'rootCheck' };
+const ROOT_OP_CALLS: Readonly<Record<string, FixedCall>> = { confirm: 'detach', fullCheck: 'detach', stop: 'stop', rootCheck: 'rootCheck', restoreConfirm: 'detach' };
+
+/** The ids a preview op names when it carries none of its own (E10.S2b: the restore preview is A20's). */
+const ROOT_OP_PREVIEW_IDS: Readonly<Record<string, readonly string[]>> = { restorePreview: ['A20'] };
+
+/** The table's own value for `key` — never one from `Object.prototype`. */
+function ownValue<T>(table: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
 
 export function rootOpCall(op: { readonly op: string; readonly ids?: readonly string[] }): HostCall {
-  const fixed = Object.hasOwn(ROOT_OP_CALLS, op.op) ? ROOT_OP_CALLS[op.op] : undefined;
+  const fixed = ownValue(ROOT_OP_CALLS, op.op);
 
-  return fixed === undefined ? { call: 'rootPreview', ids: op.ids ?? [] } : { call: fixed };
+  return fixed === undefined ? { call: 'rootPreview', ids: op.ids ?? ownValue(ROOT_OP_PREVIEW_IDS, op.op) ?? [] } : { call: fixed };
 }
 
 export function ceilingMs(numbers: Numbers, call: HostCall, limits: DaemonLimits = FALLBACK_LIMITS): number {

@@ -1,6 +1,6 @@
 import type { EnumRead } from '../client/enumValue';
 import type { DaemonVersion, Failure } from '../client/outcome';
-import type { ActionId, ActionIds, RunId, ShownProcess, VolumeName } from './rootIds';
+import type { ActionId, ActionIds, EntryId, RunId, ShownProcess, VolumeName } from './rootIds';
 
 /**
  * What a root call through the cleanup controller ends in (E6.S2). Each way it can fail is its own kind, because each wants
@@ -44,7 +44,11 @@ export type RootFailure =
   | { readonly kind: 'distroChanged'; readonly previewed: string; readonly now: string }
   /** A4's shown list cannot be held or confirmed (a bad name, a count it does not match, none at all). */
   | { readonly kind: 'shownListInvalid'; readonly reason: string }
-  /** Exit 2 on a confirm that piped a shown list (its 10 s ceiling, a bad line): nothing was started — a retry is offered (§15k #19). */
+  /** E10.S2b: the entry ids a restore was asked for are not a list the daemon takes (none, one twice, a bad id, too many); nothing was started. */
+  | { readonly kind: 'entriesRefused'; readonly reason: string }
+  /** E10.S2b: A20's preview cannot be held or confirmed (a bad or repeated shown id, a count it does not match, a list the daemon cut). */
+  | { readonly kind: 'restoreListInvalid'; readonly reason: string }
+  /** Exit 2 on a confirm that piped a list on stdin (A4's names, A20's entries; its 10 s ceiling, a bad line): nothing was started — a retry is offered (§15k #19). */
   | { readonly kind: 'shownListRefused'; readonly messages: readonly string[] }
   /** 69: no systemd — there is no synchronous fallback (§15j B2). */
   | { readonly kind: 'detachUnavailable'; readonly messages: readonly string[] }
@@ -84,6 +88,12 @@ export interface ShownSelection<T extends string = VolumeName> {
   /** The cap in force when it was previewed (`shownCap`) — what the modal names when the list was cut. */
   readonly cap: number;
 }
+
+/**
+ * A20's shown entries as the preview held them (E10.S2b) — the SAME shape as A4's and A21's lists: every id validated, the total the
+ * daemon counted, whether the cap in force cut the list. A cut list is never confirmed as the whole (the plan round's #0).
+ */
+export type RestoreSelection = ShownSelection<EntryId>;
 
 /** One listed item of a preview (the daemon's `ActionItem`): A13's agents, A4's volumes. Every string is the daemon's, unsanitised here. */
 export interface PreviewItem {
@@ -125,6 +135,8 @@ export interface HeldPreview {
   readonly a4: ShownSelection | undefined;
   /** S7b.2b: A21's processes as its preview showed them — what an A21 confirm passes as `--process`, from here and nowhere else. */
   readonly processes?: ShownSelection<ShownProcess> | undefined;
+  /** E10.S2b: A20's shown entries — what its confirm pipes back, and nothing else; absent for every other preview. */
+  readonly restore?: RestoreSelection | undefined;
   readonly takenAtMs: number;
   readonly productVersion: string | undefined;
 }

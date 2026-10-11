@@ -3,9 +3,12 @@
  * has it in `logsPage/logsMessages.ts`), each validated EXACTLY: no extra key, no other type, no other value shape. Nothing the
  * page sends becomes argv: the one read is built by the host (`archive list --json`), and
  *
- * - `expandMonth` / `collapseMonth` carry an INDEX into the months of the list the HOST read — the host checks it against that
- *   list and keeps the month open by its agent and month; a month name, an agent, a session path or an entry id never comes from
- *   the page;
+ * - `expandMonth` / `collapseMonth` / `selectMonth` carry an INDEX into the months of the list the HOST read, and
+ *   `toggleEntry` an index into its entries — each with the view's `generation` (E10.S2b, the S2a own review's #8): the host
+ *   refuses an index sent from an older view ("the list changed — select again"), checks it against the list it holds, and keeps a
+ *   month open by its agent and month, an entry selected by its id. A month name, an agent, a session path or an entry id never
+ *   comes from the page;
+ * - `clearSelection` and `restore` are bare (E10.S2b): the ids a restore takes are the HOST's selection, never the page's;
  * - `showPaths` / `hidePaths` switch the host's own toggle;
  * - `ready` asks for the current view (the host reads only when it holds nothing), `refresh` reads again, `rendered` reports how
  *   many agent blocks the page drew (the extension-host scenarios read it).
@@ -19,9 +22,16 @@ export type ArchiveMessage =
   | { readonly type: 'refresh' }
   | { readonly type: 'showPaths' }
   | { readonly type: 'hidePaths' }
-  | { readonly type: 'expandMonth'; readonly index: number }
-  | { readonly type: 'collapseMonth'; readonly index: number }
+  | { readonly type: 'expandMonth'; readonly index: number; readonly generation: number }
+  | { readonly type: 'collapseMonth'; readonly index: number; readonly generation: number }
+  | { readonly type: 'selectMonth'; readonly index: number; readonly generation: number }
+  | { readonly type: 'toggleEntry'; readonly index: number; readonly generation: number }
+  | { readonly type: 'clearSelection' }
+  | { readonly type: 'restore' }
   | { readonly type: 'rendered'; readonly blocks: number };
+
+/** The messages that name a month or an entry by index — each carries the generation of the view it was sent from. */
+export type IndexedMessage = Extract<ArchiveMessage, { readonly generation: number }>;
 
 type Raw = Readonly<Record<string, unknown>>;
 
@@ -36,7 +46,7 @@ interface Shape {
 }
 
 const BARE: Shape = { keys: [], valid: () => true };
-const INDEXED: Shape = { keys: ['index'], valid: (raw) => isIndex(raw.index) };
+const INDEXED: Shape = { keys: ['index', 'generation'], valid: (raw) => isIndex(raw.index) && isIndex(raw.generation) };
 
 const SHAPES: { readonly [K in ArchiveMessage['type']]: Shape } = {
   ready: BARE,
@@ -45,6 +55,10 @@ const SHAPES: { readonly [K in ArchiveMessage['type']]: Shape } = {
   hidePaths: BARE,
   expandMonth: INDEXED,
   collapseMonth: INDEXED,
+  selectMonth: INDEXED,
+  toggleEntry: INDEXED,
+  clearSelection: BARE,
+  restore: BARE,
   rendered: { keys: ['blocks'], valid: (raw) => isIndex(raw.blocks) },
 };
 

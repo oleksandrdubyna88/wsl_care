@@ -888,13 +888,24 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   and shows this distribution's archive per agent and month: each archived session's files, size, status, whether it is
   verified, and when it was archived. Session paths read short until **Show full session paths** is pressed; an unverified
   session removed at its source says to restore it in a terminal with `--accept-unverified`. The page sends the host only a
-  month's index or the toggle — never a path or an id. Restoring from the page is E10.S2b; the Windows archive is E13's.
+  month's or an entry's index (with the generation of the view it came from) or the toggle — never a path or an id. The
+  Windows archive is E13's.
+- **Restore (E10.S2b).** On the Archive page **Select** a verified session removed at its source, or **Select month**, and
+  press **Restore**. One restore takes at most `min(restoreCeiling, act.maxShownNames)` sessions (the page says how many);
+  an unverified session is never selectable. The ids go to the cleanup host — never from the page to a command — and through
+  the same transaction as a cleanup: a root preview `act A20 --preview --entry - --json` with the ids on stdin, a modal that
+  names what comes back and how ("Restore N archived sessions…"), the run written down BEFORE the confirm, then ONE
+  detached `act A20 --confirm --manual --detach --entry - --json` that pipes the ids the preview SHOWED — a list the daemon
+  cut is never confirmed as the whole. The daemon copies the files back as the target user and never overwrites one. The
+  page reads *Restoring…* from the daemon's own status (it survives a reload), and reads its list again when the run ends.
 - **The root boundary (E6.S2).** A cleanup needs root, so the
-  extension holds exactly five root calls, built in ONE module (`src/root/rootCall.ts`) from a closed set and started only
+  extension holds exactly seven root calls, built in ONE module (`src/root/rootCall.ts`) from a closed set and started only
   through the runner seam: `-d <distro> -u root --cd / --exec /opt/wsl-care/bin/wsl-care` followed by
   `act <ids> --preview --json`, `act <ids> --confirm --manual --detach [--only -] --json` (A4's volumes, exactly the ones
-  its preview showed, on stdin), `act --stop <runId> --json`, `collect --detach --json` (*Run full check now*) or the
-  root check `--version`. Never `--timer`, `--user` or `config`; a confirm is always detached (it runs in the daemon's
+  its preview showed, on stdin), `act --stop <runId> --json`, `collect --detach --json` (*Run full check now*), the
+  root check `--version` — and, since E10.S2b, *Restore*'s `act A20 --preview --entry - --json` and
+  `act A20 --confirm --manual --detach --entry - --json` (archived entry ids, 16 hex each, on stdin; A20 never through a
+  cleanup call). Never `--timer`, `--user` or `config`; a confirm is always detached (it runs in the daemon's
   own unit and survives a reload). The ids are the extension's compiled registry ∩ `status.actions`; whether the daemon
   may act at all is decided by `status.capabilities` (an older one reads "Update daemon", naming the minimum, and nothing
   runs); one root call at a time per distribution; every root call runs without the Windows `WSLENV`; a detach whose
@@ -1022,25 +1033,27 @@ expire (a workflow artifact does).
 ## Build and test
 
 Needs the .NET 10 SDK (`global.json` pins `10.0.100` with `rollForward: latestFeature`). Every
-MSBuild command carries `-m:4`; the root `Directory.Build.rsp` adds `-nr:false`.
+MSBuild command carries `-m:4`; the root `Directory.Build.rsp` adds `-nr:false`. Local builds and test runs go through
+the shared rules' `low-priority.mjs` (BelowNormal on Windows, nice 19 elsewhere), and each test executable caps itself at
+8 threads (`xunit.runner.json`, copied for local builds only) — the shared rule `common.local-cpu-budget`; CI is exempt.
 
 ```bash
-dotnet build wsl_care.slnx -c Release -m:4
+node .agents/conventions/tools/low-priority.mjs dotnet build wsl_care.slnx -c Release -m:4
 
 # Tests are xUnit v3 executables — run them directly, NEVER `dotnet test` (no VSTest host here)
-./src_daemon/tests/WslCare.Core.Tests/bin/Release/net10.0/WslCare.Core.Tests.exe
-./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe
-./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe --filter-method "*Version*"
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Core.Tests/bin/Release/net10.0/WslCare.Core.Tests.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe --filter-method "*Version*"
 
 # The scenario harness: the BUILT wsl-care over a temp WSL_CARE_ROOT, fake docker/systemctl/journalctl/powershell
 # alone on its PATH, and the check that every CLI verb has a row in research/module_tests.md
-./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios.exe
 
 # The live contract: the REAL docker / systemctl / journalctl of this machine against the product's parsers.
 # Not run by CI. A missing tool or daemon is a skip with its reason; WSL_CARE_REQUIRE_LIVE=1 (release) makes it a failure.
 # Run it inside WSL Ubuntu for the systemd half; WSL_CARE_LIVE_CAPTURE=<dir> records each answer (fixture capture).
-./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
-WSL_CARE_REQUIRE_LIVE=1 ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
+WSL_CARE_REQUIRE_LIVE=1 node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
 
 # Formatting, as CI checks it (reports, never rewrites)
 dotnet format wsl_care.slnx --verify-no-changes

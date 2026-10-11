@@ -119,7 +119,7 @@ a socket until a peer can be shown gone.
 
 The coordinator ran it as root, right after the 0.4.0 install (POST_DEPLOY's 0.4.0 stamp):
 - `act A21 --preview --json` answered **available**, count **0**;
-- its basis read "0 process(es), 0 fd link(s) in 0 ms … 0 relay(s) of jinx kept".
+- its basis read "0 process(es), 0 fd link(s) in 0 ms … 0 relay(s) of user kept".
 
 No interop relay existed at that moment, so the scan found no pipe to look for and read nothing.
 
