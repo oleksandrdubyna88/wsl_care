@@ -10,13 +10,29 @@ VSCE_PAT expires: 2026-12-01 — effectively: the token itself expires 2027-10-0
 honouring global PATs on 2026-12-01 (global PAT retirement — see todo/PLAN_marketplace_entra_publish.md). Item 12 reads the
 first date, so it fails from 2026-11-01: rotate to an organization-scoped PAT, or move to OIDC or the manual upload
 (`VSCE_PAT expires: none — OIDC` / `none — manual upload`; docs/repo-settings.md, step 9).
-Last verified: 2026-10-09 · the owner's installation (WSL Ubuntu) · daemon 0.3.0
-— items 1, 2, 5, 7, 11 against the attested `daemon-v0.3.0` install of 2026-10-09 16:01Z from the tag's `install.sh` (its own
-verify: `sar, atop, wsl-care.timer, wsl-care-watch.timer, wsl-care-events.service, doctor healthy`; first full run
-`20261009T160120Z-1637973` recorded; 11: no oom-kill/memory.max/snap-confine since, 0 failed units), the new watch timer's
-first run 16:06:28Z `Result=success`, `ExecMainStatus=0`, re-armed, item 4 27/27 built from the tag, item 8 on the release
-(assets + `.sha256`, `gh attestation verify` ×3 with the wrong-identity control failing); item 10's download, checksum,
-attestation and archive layout were exercised by that real install rather than the disposable container. Items 3, 6 and 12 belong to the E5 live gate (the extension). The first daemon release and its live install were the **E4 live
+Last verified: 2026-10-11 · the owner's installation (WSL Ubuntu) · daemon 0.4.0
+— the release, then items 1, 2, 4, 5, 7, 8, 10 and 11, against the attested `daemon-v0.4.0` install of 2026-10-11, 09:59–10:00:16Z,
+from the tag's `install.sh`. This is the version the owner's dryRun-off on 2026-10-12 morning runs.
+- **The release:** #72 merged as `9cacb0bd`. The release-please run `38129751957` cut the tag and the draft. `release.yml`
+  succeeded (guard, linux-x64, linux-arm64, win-x64, publish), and the release is published, not a draft.
+- **Item 8, the assets:** `verify-release-assets.sh 0.4.0` said "every RID … has its archive and a matching .sha256, nothing
+  else". `sha256sum -c` passed ×3. `gh attestation verify` passed ×3 with the identity
+  `release.yml@refs/tags/daemon-v0.4.0` and `--deny-self-hosted-runners`. The wrong-identity control (`release-extension.yml`)
+  exited 1.
+- **Item 10** (download, checksum, attestation, archive layout) was exercised by the real install, not the disposable
+  container. The install's own verify said `sar, atop, wsl-care.timer, wsl-care-watch.timer, wsl-care-events.service, doctor
+  healthy`, and the first full run `20261011T100003Z-4598` was recorded.
+- **Items 1 and 2:** three units active; `--version` `0.4.0+9cacb0bd033e3208311794b2d3f07bbf0aa498e1`.
+- **Item 5:** `doctor --json` as root answered `"healthy": true`.
+- **Item 7:** `KillMode=control-group`, `MemoryMax=1073741824`, `TimeoutStopUSec=1min 30s`, `CollectMode=inactive-or-failed`.
+- **The watch:** its first run at 10:00:04Z deactivated successfully and re-armed.
+- **Item 11:** no oom-kill, memory.max or snap-confine lines; 0 failed units.
+- **Item 4:** 27/27 passed (total 27, failed 0, skipped 0, 44.7 s; docker 29.6.1 with 8 containers running), built from the tag.
+- **New in 0.4.0, A21:** a root `act A21 --preview` at about 10:00Z answered available, with count 0 and basis "0 process(es),
+  0 fd link(s) in 0 ms … 0 relay(s) of jinx kept". No interop relay existed at that moment
+  ([2026-10-09_interop_relays.md](research/2026-10-09_interop_relays.md) § 7).
+
+Items 3, 6 and 12 belong to the E5 live gate (the extension). The first daemon release and its live install were the **E4 live
 gate** (plan §16): settings with refused probes → item 4 → the release-please cut and the observed `release.yml` run →
 the live install → items 1–5, 7–11, then THIS line stamped `Last verified: <YYYY-MM-DD> · <target> · daemon <x.y.z>`.
 `release-extension.yml`'s guard READS that stamp — from MAIN'S TIP at the time the job runs, never from the tag's own
