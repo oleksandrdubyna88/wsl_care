@@ -19,8 +19,8 @@ measurements that motivated them in `research/`.
 ## Commands (as the code lands)
 
 ```bash
-dotnet build wsl_care.slnx -c Debug          # bounded worker pool via Directory.Build.rsp
-./src_daemon/tests/<Project>.Tests/bin/Debug/net10.0/<Project>.Tests.exe   # never `dotnet test`
+node .agents/conventions/tools/low-priority.mjs dotnet build wsl_care.slnx -c Debug -m:4   # lowered; -m:4 + Directory.Build.rsp bound the pool
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/<Project>.Tests/bin/Debug/net10.0/<Project>.Tests.exe   # lowered; capped at 8 threads; never `dotnet test`
 cd src_vs_code && npm ci && npm test
 node .agents/conventions/tools/plan-lifecycle.mjs
 ```

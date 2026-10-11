@@ -14,11 +14,22 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
+
+// Lowered before anything is spawned, so every test process inherits it — BelowNormal on Windows, nice 19
+// elsewhere, nothing under CI (the family rule common.local-cpu-budget).
+await import('./lower-priority.mjs');
 
 const TEST_DIR = join('out', 'test');
 const SUFFIX = '.test.js';
 const TRIPWIRE = join(TEST_DIR, 'support', 'noRealWsl.js');
+
+/**
+ * At most 8 test files at once (common.local-cpu-budget). A CAP, never a raise: node's default is CPUs - 1, so below
+ * nine threads — a CI runner — this is exactly that default.
+ */
+const TEST_CONCURRENCY = Math.max(1, Math.min(8, availableParallelism() - 1));
 
 /** Every `*.test.js` under `dir`, depth first, sorted; an absent directory contributes nothing. */
 function discover(dir) {
@@ -52,5 +63,5 @@ if (!existsSync(TRIPWIRE)) {
 }
 console.log(`run-tests: ${files.length} compiled test file(s)`);
 
-const result = spawnSync(process.execPath, ['--require', `./${TRIPWIRE.split('\\').join('/')}`, '--test', ...files], { stdio: 'inherit' });
+const result = spawnSync(process.execPath, ['--require', `./${TRIPWIRE.split('\\').join('/')}`, '--test', `--test-concurrency=${TEST_CONCURRENCY}`, ...files], { stdio: 'inherit' });
 process.exit(result.status ?? 1);
