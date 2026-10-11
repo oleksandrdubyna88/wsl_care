@@ -32,8 +32,16 @@ public static class HealthCommands
     /// TAGGED lines follow — the Windows Time service's status and start type, read AFTER both instants were taken, so the
     /// latency is unchanged; tagged because an empty value must not shift the lines the parser reads by position.
     /// </summary>
+    /// <summary>The module path pinned to <c>$PSHOME\Modules</c> by an assignment — no command to autoload — so every cmdlet an
+    /// interop script uses comes from the administrator-only module folder, never from a user's Documents (the coordinator,
+    /// 2026-10-11, after the #104 Fable review). The SAME text as the extension's <c>MODULES</c>
+    /// (<c>src_vs_code/src/powershell/elevatedEngine.ts</c>), held equal by an architecture test. No double quote, so the disk
+    /// script's ASCII rule holds.</summary>
+    public const string ModulePathPin = "$env:PSModulePath = $PSHOME + '\\Modules'";
+
     public const string ClockScript =
-        "$n = [DateTime]::UtcNow.ToString('o'); $p = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o'); "
+        ModulePathPin + "; "
+        + "$n = [DateTime]::UtcNow.ToString('o'); $p = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o'); "
         + "$s = Get-Service -Name w32time -ErrorAction SilentlyContinue; "
         + "[Console]::Out.Write($n + \"`n\" + $p + \"`n\" + $env:USERPROFILE + \"`n\" + '" + TimeServiceStatusTag + "' + $s.Status + \"`n\" + '" + TimeServiceStartTypeTag + "' + $s.StartType + \"`n\")";
 

@@ -118,10 +118,11 @@ public static class WindowsDiskCommands
 
     private static string Numbers(IEnumerable<int> values) => string.Join(',', values.Select(v => v.ToString(CultureInfo.InvariantCulture)));
 
-    /// <summary>No progress bar, every error terminating inside its try, the output list, and the file helper: size, sparse bit,
-    /// last write (UTC), path — or three empty fields and the path when the file is not there.</summary>
+    /// <summary>The module path pinned FIRST (<see cref="HealthCommands.ModulePathPin"/>: no cmdlet may autoload a module from a
+    /// user's Documents), no progress bar, every error terminating inside its try, the output list, and the file helper: size,
+    /// sparse bit, last write (UTC), path — or three empty fields and the path when the file is not there.</summary>
     private static readonly string Prelude =
-        $$"""$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; $o=New-Object System.Collections.Generic.List[string]; function V([string]$f){ $t=''; if($f -match '^[A-Za-z]:\\'){ $t=[string]([IO.DriveInfo]::new($f.Substring(0,1))).DriveType }; if($t -ne 'Fixed'){ return '{{NotLocalMark}}|||'+$f }; $i=Get-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; if($i){ [string]$i.Length+'|'+[string][int](($i.Attributes -band {{SparseAttribute}}) -ne 0)+'|'+$i.LastWriteTimeUtc.ToString('o')+'|'+$f } else { '|||'+$f } }""";
+        HealthCommands.ModulePathPin + "; " + $$"""$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; $o=New-Object System.Collections.Generic.List[string]; function V([string]$f){ $t=''; if($f -match '^[A-Za-z]:\\'){ $t=[string]([IO.DriveInfo]::new($f.Substring(0,1))).DriveType }; if($t -ne 'Fixed'){ return '{{NotLocalMark}}|||'+$f }; $i=Get-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; if($i){ [string]$i.Length+'|'+[string][int](($i.Attributes -band {{SparseAttribute}}) -ne 0)+'|'+$i.LastWriteTimeUtc.ToString('o')+'|'+$f } else { '|||'+$f } }""";
 
     /// <summary>Every registered distro from <c>HKCU\…\Lxss</c>: its virtual disk's file (<c>BasePath</c> without the <c>\\?\</c>
     /// prefix, <c>VhdFileName</c> or <c>ext4.vhdx</c>) and its name, LAST (a free-text field takes the rest of the line).</summary>
