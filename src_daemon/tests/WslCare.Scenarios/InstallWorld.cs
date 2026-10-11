@@ -49,7 +49,7 @@ internal sealed class InstallWorld : IDisposable
     /// <summary>The real tools linked onto the script's PATH: text and file tools only, acting on the temporary folder
     /// and the prefix.</summary>
     public static readonly IReadOnlyList<string> RealTools =
-        ["awk", "cat", "chmod", "cut", "flock", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "date", "sort", "tail", "tar", "timeout", "tr", "wc"];
+        ["awk", "cat", "chmod", "cut", "env", "flock", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "date", "sort", "tail", "tar", "timeout", "tr", "wc"];
 
     private readonly TempRoot _root;
     private readonly List<FakeAnswer> _answers = [];
@@ -392,6 +392,9 @@ internal sealed class InstallWorld : IDisposable
         ["WSL_CARE_INSTALL_RUN_WAIT_SECONDS"] = RunWaitSeconds.Length == 0 ? null : RunWaitSeconds,
         ["WSL_CARE_INSTALL_PROGRESS_SECONDS"] = ProgressSeconds.Length == 0 ? null : ProgressSeconds,
         ["WSL_CARE_INSTALL_SKIP_RUN_WAIT"] = SkipRunWait ? "1" : null,
+        // E15.S2b: removed, as sudo's default env_reset removes it from the real installer — a test run from a WSL shell inherits it,
+        // and the first full run would record it. A name reaches the installer only as --distro-name.
+        [Core.Health.DistroIdentity.Variable] = null,
     });
 
     private Dictionary<string, string?> WithVariables(Dictionary<string, string?> environment)
