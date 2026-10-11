@@ -266,8 +266,8 @@ Steps 4 and 5 land in ONE PR. The extension release that carries it is the first
       attest job's compare green, published through the Environment's approval.
 - [ ] POST_DEPLOY item 6 green against the real install folder, the exe compared and its version read.
 - [ ] The panel's Windows row shows the bundled version on the owner's machine.
-- [x] Docs updated; the own Fable review of the code finds no way to ship another exe (its one way, a twin entry or a DLL
-      beside the exe, is closed — §11).
+- [x] Docs updated; the own Fable review of the code finds no way to ship another exe AS bin/wsl-care.exe (its one way, a
+      twin entry or a DLL beside the exe, is closed — §11). The JavaScript the build writes is NOT re-derived; see §11, scope.
 
 ## 9. Plan round (coai session `52122128`, 2026-10-10) and the own Fable review
 
@@ -324,6 +324,14 @@ The seven steps of §7 shipped in that order, steps 4 and 5 in one commit. What 
 ## 11. The own Fable review of the code (supply chain, 2026-10-11)
 
 One major finding, seven minor, seven notes. Each was checked against the code; none was rejected.
+
+**Scope of the guarantee (coai cadence consultation a8a5731c, 2026-10-11).** The attest job proves that the package's
+`bin/wsl-care.exe` — and no twin of it, and no other `.exe` or `.dll` — is the attested daemon member. It does NOT prove what
+the build's JavaScript (`dist/extension.js`, `package.json`) starts: extension code can start any program, and the build
+writes that code after `npm ci`. That is the same trust every extension release had before this story; bundling the exe does
+not widen it. Closing it needs an independent second build whose bundle is compared outside the signing job — a separate
+story, not this one. The consultant also confirmed POST_DEPLOY item 6's source: the released tag's pin is the expected
+value, and the package's own claim must not replace it.
 
 - **1 (major) — the attest job looked at one entry only.** VS Code's installer writes `<ext>/<name>` on case-insensitive NTFS
   and the last of two colliding entries wins, so a package with the attested `extension/bin/wsl-care.exe` AND a twin
