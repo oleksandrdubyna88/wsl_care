@@ -1,0 +1,32 @@
+{
+  "id": "A20",
+  "summary": "restore archived AI-agent sessions into their agents\u0027 folders as the target user \u2014 the entries the modal showed, a button only",
+  "status": "previewed",
+  "reason": "",
+  "preview": {
+    "what": "restore archived AI-agent sessions as user: 1 removed at their source and verified; of the 1 entries the panel showed, the 1 still restorable",
+    "available": true,
+    "count": 1,
+    "bytes": 200,
+    "basis": "the archive child\u0027s own list (archive list --json), run as the target user; entry ids only",
+    "facts": {
+      "unverified": 0,
+      "count": 1,
+      "bytes": 200
+    },
+    "refusal": "",
+    "items": [
+      {
+        "kind": "archived session",
+        "name": "0123456789abcdef",
+        "bytes": 200,
+        "note": "claude-code 1999/12, 2 file(s)"
+      }
+    ],
+    "skip": "",
+    "urgent": ""
+  },
+  "shown": [
+    "0123456789abcdef"
+  ]
+}

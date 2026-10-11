@@ -16,7 +16,12 @@ export interface ArchiveLine {
 
 /** One archived entry, as its row's cells: session path, files, size, status, verified, archived at. */
 export interface ArchiveEntryRow {
+  /** The index into the answer's entries the page sends back to select it (E10.S2b). */
+  readonly index: number;
   readonly cells: readonly string[];
+  /** It may be selected for a restore: verified, removed at its source, an id of the daemon's shape. */
+  readonly selectable: boolean;
+  readonly selected: boolean;
 }
 
 /** One month of one agent: the index the page sends back to open or close it, and — open — its entries. */
@@ -26,6 +31,8 @@ export interface ArchiveMonth {
   /** "2 listed · 1 verified · 400 B". */
   readonly summary: string;
   readonly expanded: boolean;
+  /** *Select month* may be pressed: the month holds a selectable entry not yet selected, and the selection has room (E10.S2b). */
+  readonly selectEnabled: boolean;
   /** Only while expanded; a closed month builds no rows. */
   readonly rows: readonly ArchiveEntryRow[];
 }
@@ -39,8 +46,22 @@ export interface ArchiveAgent {
 /** How the list came about: an answer, a read in flight, a failure, or a daemon that cannot list (it is not asked). */
 export type ArchivePageState = 'reading' | 'answered' | 'failed' | 'unavailable';
 
+/** The restore selection and its button (E10.S2b): every word and every state decided by the host. */
+export interface ArchiveSelectionView {
+  readonly count: number;
+  /** "2 selected — one restore takes at most 1000", or why nothing can be selected. */
+  readonly summary: string;
+  readonly restoreEnabled: boolean;
+  readonly clearEnabled: boolean;
+  /** The restore line: *Restoring…* while a restore runs (from `status.running` and the journal), or why *Restore* is greyed. */
+  readonly line: string;
+  readonly lineLevel: ViewLevel;
+}
+
 export interface ArchivePageView {
   readonly heading: string;
+  /** The list this view was built from (E10.S2b): every index message carries it back; an older one is refused. */
+  readonly generation: number;
   /** D9: "this distribution's archive only — …". */
   readonly scope: string;
   readonly notice: string;
@@ -57,4 +78,5 @@ export interface ArchivePageView {
   /** The entry table's column headers. */
   readonly headers: readonly string[];
   readonly agents: readonly ArchiveAgent[];
+  readonly selection: ArchiveSelectionView;
 }

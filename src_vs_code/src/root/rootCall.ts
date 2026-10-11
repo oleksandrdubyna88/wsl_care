@@ -4,11 +4,11 @@ import { VERBS } from '../client/verbs';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
-import { MAX_PROCESS_ARGS, shownCap, type ActionIds, type RunId, type ShownProcess, type VolumeName } from './rootIds';
+import { MAX_PROCESS_ARGS, MAX_RESTORE_ENTRIES, shownCap, type ActionIds, type EntryIds, type RunId, type ShownProcess, type VolumeName } from './rootIds';
 
 /**
  * THE root boundary (E6.S2, plan §15f #2, §15j M1) — the ONE module of the extension that spells a root argv word: `-u`,
- * `root`, `act`, `collect`, `--preview`, `--confirm`, `--manual`, `--detach`, `--only`, `-` and `--stop`. Every root call
+ * `root`, `act`, `collect`, `--preview`, `--confirm`, `--manual`, `--detach`, `--only`, `--entry` (E10.S2b), `-` and `--stop`. Every root call
  * the extension can make is one op of the closed `ROOT_OPS` union below, built from typed values only (`rootIds.ts`'s
  * validators are the one road in), and started only through the runner seam it is handed — this module imports no
  * process API (`structure.test.ts`). It is a confused-deputy boundary, not a malware one: any process of this Windows user
@@ -36,7 +36,7 @@ import { MAX_PROCESS_ARGS, shownCap, type ActionIds, type RunId, type ShownProce
  * </ul>
  */
 
-export const ROOT_OPS = ['preview', 'confirm', 'stop', 'fullCheck', 'rootCheck'] as const;
+export const ROOT_OPS = ['preview', 'confirm', 'stop', 'fullCheck', 'rootCheck', 'restorePreview', 'restoreConfirm'] as const;
 
 export type RootOpName = (typeof ROOT_OPS)[number];
 
@@ -51,7 +51,11 @@ export type RootOp =
   | { readonly op: 'confirm'; readonly ids: ActionIds; readonly shown: readonly VolumeName[] | undefined; readonly processes?: readonly ShownProcess[] }
   | { readonly op: 'stop'; readonly runId: RunId }
   | { readonly op: 'fullCheck' }
-  | { readonly op: 'rootCheck' };
+  | { readonly op: 'rootCheck' }
+  /** E10.S2b: A20's preview and its detached confirm — the entry ids on STDIN (`--entry -`), never argv (25 characters an id against a
+   *  32 767-character command line, plan §15s D7). Neither takes a row id or an A4 list: A20 is named here, by `RESTORE_ID`. */
+  | { readonly op: 'restorePreview'; readonly entries: EntryIds }
+  | { readonly op: 'restoreConfirm'; readonly entries: EntryIds };
 
 /** The launcher and the validated, listed, running distribution — `WslCareClient.rootTarget()`'s answer. */
 export interface RootTarget {
@@ -81,6 +85,9 @@ export const RUN_KINDS = { fullCheck: 'collect', act: 'act' } as const;
 
 const AS_ROOT = ['-u', 'root'];
 
+/** The one action the restore ops act on (E10.S2b). */
+const RESTORE_ID = 'A20';
+
 /** Taken out of every root call's environment (review S2): `wsl.exe` would carry the Windows variables it names into root's. */
 const NOT_FOR_ROOT = ['WSLENV'];
 
@@ -93,6 +100,8 @@ const TAILS: Tails = {
   stop: (op) => ['act', '--stop', op.runId, '--json'],
   fullCheck: () => ['collect', '--detach', '--json'],
   rootCheck: () => VERBS.version,
+  restorePreview: () => ['act', RESTORE_ID, '--preview', '--entry', '-', '--json'],
+  restoreConfirm: () => ['act', RESTORE_ID, '--confirm', '--manual', '--detach', '--entry', '-', '--json'],
 };
 
 /** The daemon tail of `op`, or `undefined` when the op cannot be built (a shown list that does not match its ids, or longer than the cap in force). */
@@ -131,14 +140,35 @@ function lengthOf(list: readonly unknown[] | undefined): number {
   return list === undefined ? 0 : list.length;
 }
 
-/** A4's names as the daemon reads an `--only` list: one per line, every line ended. */
-function stdinOf(op: RootOp): { readonly stdin?: Buffer } {
-  return op.op === 'confirm' && op.shown !== undefined ? { stdin: Buffer.from(op.shown.map((name) => `${name}\n`).join('')) } : {};
+type Lines = { readonly [K in RootOpName]: (op: Extract<RootOp, { op: K }>) => readonly string[] | undefined };
+
+/** The lines each op pipes on stdin — A4's shown names (`--only -`), A20's entry ids (`--entry -`, E10.S2b) — or none. Typed by the op. */
+const LINES: Lines = {
+  preview: () => undefined,
+  confirm: (op) => op.shown,
+  stop: () => undefined,
+  fullCheck: () => undefined,
+  rootCheck: () => undefined,
+  restorePreview: (op) => op.entries,
+  restoreConfirm: (op) => op.entries,
+};
+
+function linesOf(op: RootOp): readonly string[] | undefined {
+  return (LINES[op.op] as (op: RootOp) => readonly string[] | undefined)(op);
 }
 
-/** A confirm's shown list fits the cap in force (daemon #17), and its process list that cap and the command line's (S7b.2b). */
+/** The lines as the daemon reads a stdin list: one per line, every line ended. */
+function stdinOf(op: RootOp): { readonly stdin?: Buffer } {
+  const lines = linesOf(op);
+
+  return lines === undefined ? {} : { stdin: Buffer.from(lines.map((line) => `${line}\n`).join('')) };
+}
+
+/** A confirm's shown list fits the cap in force (daemon #17), its process list that cap and the command line's (S7b.2b), and a restore's entry ids that cap and one restore's (E10.S2b). */
 function fitsCap(op: RootOp, limits: DaemonLimits): boolean {
-  return op.op !== 'confirm' || listsFit(lengthOf(op.shown), lengthOf(op.processes), shownCap(limits.maxShownNames));
+  const cap = shownCap(limits.maxShownNames);
+
+  return op.op === 'confirm' ? listsFit(lengthOf(op.shown), lengthOf(op.processes), cap) : lengthOf(linesOf(op)) <= Math.min(cap, MAX_RESTORE_ENTRIES);
 }
 
 function listsFit(shown: number, processes: number, cap: number): boolean {

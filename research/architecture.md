@@ -140,6 +140,8 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
     the status body, extracted from the archive host.
   - **The cross-implementation check** is the daemon-written golden `act-a21-preview-action.json`, which the extension's tests
     replay ([module_vs_code.md](module_vs_code.md), plan S7b.2b).
+  Since E10.S2b the Archive page's *Restore*: the selected entry ids, as text, to the cleanup host — A20 through the cleanup transaction and two
+  new root ops, the ids on stdin (section *The extension: Restore from the Archive page*).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,

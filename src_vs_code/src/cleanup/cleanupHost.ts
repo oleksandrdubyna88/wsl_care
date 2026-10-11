@@ -1,11 +1,14 @@
 import type { ReadOutcome, VerbOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
 import type { CleanupControls } from '../panel/view';
-import type { CleanupController } from '../root/cleanupController';
+import { actionGate, type GateOpen } from '../root/actionGate';
+import { confirmNeeds, previewNeeds, type CleanupController } from '../root/cleanupController';
+import { rootFailureText } from '../root/rootFailureText';
 import { runningOf } from '../root/rootAnswers';
 import { runIdOf } from '../root/rootIds';
-import type { RunningBlock } from '../root/rootOutcome';
+import type { RootFailure, RunningBlock } from '../root/rootOutcome';
 import type { OutcomeStore } from '../state/outcomeStore';
+import { statusBodyOf } from '../state/statusBody';
 import { CleanFlow, type CleanUi, type FlowOutcome } from './cleanFlow';
 import { deriveCleanup } from './cleanupView';
 import { CleanupJournal, type DurableStore } from './journal';
@@ -13,6 +16,7 @@ import { resultNotice, type Notice } from './resultText';
 import type { RowId } from './rowIds';
 import { noticeText, unlinked } from '../text/safeText';
 import { RunFollower, type OneShot, type RunResult } from './runFollower';
+import { runWordsOf } from './runWords';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { deriveRelays, stopRelaysBlocker, type RelaysControls } from '../relays/relaysView';
 import { daemonLimitsOf, type DaemonLimits } from '../shared/daemonLimits';
@@ -25,7 +29,7 @@ import { daemonLimitsOf, type DaemonLimits } from '../shared/daemonLimits';
 
 export interface CleanupHostOptions {
   readonly durable: DurableStore;
-  readonly controller: Pick<CleanupController, 'preview' | 'confirm' | 'stop' | 'runFullCheck'>;
+  readonly controller: Pick<CleanupController, 'preview' | 'previewRestore' | 'confirm' | 'stop' | 'runFullCheck'>;
   readonly read: (request: RunRead) => Promise<ReadOutcome>;
   readonly outcomes: OutcomeStore;
   /** `status` through the poller and the store, whatever the focus — the follower's one question. */
@@ -54,18 +58,57 @@ function sanitised(ui: CleanUi): CleanUi {
   };
 }
 
+/** The store's newest `status` body, or `undefined` while none answered — through the one reader, `state/statusBody.ts`. */
+function statusInStore(outcomes: OutcomeStore): Readonly<Record<string, unknown>> | undefined {
+  return statusBodyOf(outcomes.snapshot());
+}
+
 /** The daemon's own retention and clock-skew allowance, from the store's newest status (`shared/daemonLimits.ts`: the fallback until it says). */
 function limitsInStore(outcomes: OutcomeStore): DaemonLimits {
-  const status = outcomes.snapshot().status;
+  return daemonLimitsOf(statusInStore(outcomes));
+}
 
-  return daemonLimitsOf(status !== undefined && status.kind === 'answered' && status.answer.verb === 'status' ? status.answer.body : undefined);
+/** Everything A20's preview AND its confirm need (E10.S2b) — the controller's own definitions, asked once. */
+const RESTORE_NEEDS: readonly string[] = [...new Set([...previewNeeds(['A20']), ...confirmNeeds(['A20'])])];
+
+/**
+ * What the newest `status` does not offer of a restore (E10.S2b) — '' when it offers everything: the controller's own gate
+ * (`actionGate`, the capabilities the authority) over the preview's and the confirm's needs, and A20 reported in `status.actions`.
+ */
+function restoreUnoffered(outcomes: OutcomeStore): string {
+  const status = outcomes.snapshot().status;
+  if (status?.kind !== 'answered' || status.answer.verb !== 'status') {
+    return 'the daemon has not answered status yet';
+  }
+
+  return gateWords(actionGate(status.answer.body, status.daemonVersion, RESTORE_NEEDS));
+}
+
+function gateWords(gate: GateOpen | RootFailure): string {
+  if (gate.kind !== 'open') {
+    return gate.kind === 'actionsUnavailable' ? `this daemon does not offer ${gate.missing.join(', ')} — update the daemon` : rootFailureText(gate).label;
+  }
+
+  return gate.reported.includes('A20') ? '' : 'this daemon does not report A20 — update the daemon';
+}
+
+/** A run of A20 alone — a restore (`runWords.ts`). */
+function isRestoreRun(actions: readonly string[]): boolean {
+  return runWordsOf(actions)?.id === 'A20';
+}
+
+/** The running states in which a run still holds the daemon's run lock. */
+const HOLDING: ReadonlySet<string> = new Set(['queued', 'live', 'wedged']);
+
+function daemonRestoring(running: RunningBlock | undefined): boolean {
+  return running !== undefined && running.state.kind === 'known' && HOLDING.has(running.state.value) && isRestoreRun(running.actions);
 }
 
 /** The running block of the store's newest status, whoever asked it (review C4: the poll can start from idle). */
 function runningInStore(outcomes: OutcomeStore): RunningBlock | undefined {
-  const status = outcomes.snapshot().status;
+  const body = statusInStore(outcomes);
 
-  return status !== undefined && status.kind === 'answered' && status.answer.verb === 'status' ? runningOf(status.answer.body) : undefined;
+  return body === undefined ? undefined : runningOf(body);
 }
 
 function reasonOf(error: unknown): string {
@@ -146,6 +189,44 @@ export class CleanupHost {
     }
 
     return this.edge('the relay stop', () => this.flow.relays());
+  }
+
+  /**
+   * Why *Restore* cannot start now (E10.S2b) — `''` when it can: the newest `status` does not offer A20 with every capability its
+   * preview and confirm need, or the cleanup controls are greyed (a run in flight, the journal full, no status yet). The archive page
+   * greys its button by this and the host refuses by it again, whatever the page sent; the controller's gate checks again at the call.
+   */
+  restoreBlocker(): string {
+    const unoffered = restoreUnoffered(this.options.outcomes);
+    if (unoffered !== '') {
+      return unoffered;
+    }
+    const controls = this.controls();
+    if (controls.enabled) {
+      return '';
+    }
+
+    return controls.reason === '' ? controls.state : controls.reason;
+  }
+
+  /** *Restore* the archive page's selected entry ids (E10.S2b) — refused here, and told, while `restoreBlocker()` names a reason. */
+  restore(texts: readonly string[]): Promise<FlowOutcome | undefined> {
+    const blocker = this.restoreBlocker();
+    if (blocker !== '') {
+      void this.ui.notify('warn', `Restore is not available: ${blocker}.`);
+      return Promise.resolve(undefined);
+    }
+
+    return this.edge('the restore run', () => this.flow.restore(texts));
+  }
+
+  /**
+   * Whether a restore is in flight (E10.S2b, `common.durable-status`): this window's journal follows a run of A20 alone, or the
+   * daemon's `status.running` holds one (another window's, or one started before a reload). The archive page reads it again when it
+   * turns false — the restored sessions' states change only then.
+   */
+  restoreInFlight(): boolean {
+    return daemonRestoring(runningInStore(this.options.outcomes)) || this.journal.entries().some((entry) => entry.op === 'clean' && isRestoreRun(entry.actions));
   }
 
   /** *Run full check now* — refused here when the controls grey it (review A4), whatever the page sent. */

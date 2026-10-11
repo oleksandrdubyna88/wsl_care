@@ -391,3 +391,58 @@ strict harness over `archive-list.json`), `scenarios/archivePageFlows.test.ts` (
 `archiveReads.test.ts` / `runReads.test.ts` / `fakeWsl.test.ts` / `scenarios/clientFlows.test.ts` (the read), `archiveView.test.ts`
 and `commandButtons.test.ts` (*Open archive…*), `catalogue.test.ts` (the `archive <type>` rows derived), and in VS Code 1.85.0 +
 stable `host/suite.ts` (*E10.S2a: the Archive page*).
+
+## The extension: *Restore* from the Archive page (E10.S2b)
+
+E10.S2b (2026-10-11, plan §15s *E10.S2b build notes*) gives the Archive page its one change: a person selects verified sessions
+removed at their source and presses *Restore*. The page itself still reaches nothing privileged — it hands the selected entry
+ids, as TEXT, to the cleanup host, and A20 runs through the cleanup transaction and the root road that every cleanup uses.
+
+```mermaid
+sequenceDiagram
+    participant W as webview (media/archive.js)
+    participant A as archivePage/archiveController.ts
+    participant H as cleanup/cleanupHost.ts + cleanFlow.ts
+    participant R as root/cleanupController.ts + rootCall.ts
+    participant D as daemon (wsl.exe -u root)
+    W->>A: toggleEntry{index, generation} | selectMonth{index, generation} | clearSelection | restore
+    A->>A: generation current? index → entry id (selectable: verified, removed at its source); ceiling min(restoreCeiling, maxShownNames)
+    A->>H: restore(entry ids as text, in the list's order)
+    H->>H: restoreBlocker() — A20 offered with its capabilities, the cleanup controls free
+    H->>R: previewRestore(texts) → EntryIds (else entriesRefused, nothing started)
+    R->>D: act A20 --preview --entry - --json (ids on stdin)
+    D-->>R: A20's line: shown (≤ act.maxShownNames), count, items — held, validated, frozen
+    H->>H: the restore modal; the journal entry {op: clean, actions: [A20]} BEFORE the call
+    R->>D: act A20 --confirm --manual --detach --entry - --json (the HELD shown ids on stdin)
+    D-->>R: accepted, run id
+    H-->>A: facts: restoreInFlight() true → "Restoring… archived sessions" (from status.running / the journal)
+    H-->>A: restoreInFlight() false → the list read again, the selection cleared
+```
+
+**The parts:**
+
+- **`archivePage/archiveSelection.ts`** (pure) — what is selectable, the ceiling, the selection kept BY ID across a new list
+  (the dropped ones counted and said), *Select month*'s newest-first pick. **`archiveController.ts`** holds the selection, refuses
+  an index from an older view (every index message carries the view's `generation`), and reaches the cleanup host only through
+  `ArchiveRestore` (`facts`, `start`), which `extension.ts` wires to `CleanupHost.restoreInFlight` / `controls().state` /
+  `restoreBlocker` / `restore`; `ArchivePanel.restoreChanged` follows the host's changes.
+- **`cleanup/runWords.ts`** — ONE table of single-action runs (A13 *the archive run*, A20 *the restore run*, A21 *the relay stop*): the modal's
+  confirm, the hand-off and terminal notices, the in-flight state. **`cleanFlow.ts`** `restore(texts)` — the transaction over
+  A20 (a preview offering none still restorable opens no modal). **`cleanupHost.ts`** — `restore`, `restoreBlocker`,
+  `restoreInFlight`.
+- **`root/`** — two new ops of the closed union (`restorePreview`, `restoreConfirm`), the ids on stdin; `EntryIds`
+  (`rootIds.ts`); `GateOpen.reported` (A20 is acted on only when the daemon reports it; the cleanup ops still never take a
+  button-only id); the held `restore` selection (`rootAnswers.ts`); a cut list never confirmed as the whole (the plan round's
+  #0); a restore detach never adopts the full check's run.
+- **The daemon's A20 line** is a golden made by daemon code (`A20PreviewGolden.cs` → `contracts/golden/head/act-a20-preview-action.json`);
+  the shared request `contracts/requests/act-a20-entry-stdin.json` is the argv-and-stdin oracle on both sides.
+
+### Tests (details: [module_tests.md](module_tests.md) § *What each E10.S2b guarantee rests on*)
+
+`restoreRoot.test.ts` (the root road), `rootCall.test.ts` (the shared request, the ceilings), `rootIds.test.ts`,
+`restoreFlow.test.ts` (the words, the modal, the flow, the host), `archivePage/archiveSelection.test.ts`,
+`archivePage/archiveController.test.ts` and `archivePage/archivePage.test.ts` (the selection and the button),
+`fakeWsl.test.ts` (the strict fake's A20, its line EQUAL to the golden), `scenarios/rootFlows.test.ts` and
+`scenarios/restoreFlows.test.ts` (the page and the cleanup host wired as `extension.ts` wires them: an unverified entry never on
+stdin, a reload reads *Restoring…*, a dead run ends interrupted, a selection past a lowered `act.maxShownNames`), `bundleScan.test.ts`
+and `structure.test.ts` (`--entry` only in the root region; the page imports no `root/`), `catalogue.test.ts`.

@@ -1,4 +1,6 @@
-import { RUN_ID_SHAPE } from '../shared/shapes';
+import { ENTRY_ID_SHAPE, MAX_RESTORE_ENTRIES, RUN_ID_SHAPE } from '../shared/shapes';
+
+export { MAX_RESTORE_ENTRIES };
 
 /**
  * The typed values a root call may carry (E6.S2, plan §15f #2, §15j B1 / M1): each arrives as untrusted text — from a
@@ -22,9 +24,10 @@ export type ActionId = (typeof ACTION_IDS)[number];
 /**
  * Ids the registry knows but the E6 cleanup ops never act on (daemon #17): A18 ends orphaned agent processes, A19 stops
  * idle MCP servers (daemon E14 S2a — the timer may run it, but a button run of it takes `--process <pid:start>`, as A18's) and
- * A20 restores archived AI sessions (daemon E9.S4 — a button only, its run takes `--entry <id>`) — arguments no E6 op carries;
- * their buttons are later extension stories (A20's is E10's). The gate leaves them out of what it allows, so a
- * status reporting them changes nothing here. A21 (daemon E14 S7b.2, the client-gone relays) left this list with its button
+ * A20 restores archived AI sessions (daemon E9.S4 — a button only; the extension pipes its entry ids on stdin, `--entry -`, E10.S0) —
+ * arguments no E6 op carries. The gate leaves them out of what the cleanup ops allow, so a status reporting them changes nothing
+ * there. A20 is acted on ONLY through the two restore ops of `rootCall.ts` (E10.S2b), which take `EntryIds`, and only when the
+ * daemon reports it (`GateOpen.reported`). A21 (daemon E14 S7b.2, the client-gone relays) left this list with its button
  * (S7b.2b): its confirm carries the held `--process` list, and as no row id it can never join *Clean selected*.
  */
 export const BUTTON_ONLY_IDS: readonly ActionId[] = ['A18', 'A19', 'A20'];
@@ -111,4 +114,25 @@ function inRange(pidText: string, startText: string): boolean {
   const pid = Number(pidText);
 
   return pid > 1 && pid <= MAX_PID && BigInt(startText) <= MAX_START;
+}
+/** An archived entry's id (`ArchiveIndex.IsEntryId`): what A20's stdin lines carry (E10.S2b). */
+export type EntryId = string & { readonly __brand: 'EntryId' };
+
+/** One to `MAX_RESTORE_ENTRIES` entry ids, each once — what a restore op takes. Made only by `entryIdsOf`. */
+export type EntryIds = readonly [EntryId, ...EntryId[]] & { readonly __brand: 'EntryIds' };
+
+export function entryIdOf(value: unknown): EntryId | undefined {
+  return typeof value === 'string' && ENTRY_ID_SHAPE.test(value) ? (value as EntryId) : undefined;
+}
+
+/** `texts` as a restore's entry list — every one valid, none twice, 1 to `MAX_RESTORE_ENTRIES` — or nothing at all (never a subset). */
+export function entryIdsOf(texts: readonly unknown[]): EntryIds | undefined {
+  const ids = texts.flatMap((text) => entryIdOf(text) ?? []);
+  const whole = ids.length === texts.length && new Set(ids).size === ids.length;
+
+  return whole && fitsOneRestore(ids.length) ? (ids as unknown as EntryIds) : undefined;
+}
+
+function fitsOneRestore(count: number): boolean {
+  return count >= 1 && count <= MAX_RESTORE_ENTRIES;
 }
