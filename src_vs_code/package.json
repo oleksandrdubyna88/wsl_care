@@ -487,6 +487,7 @@
     "fieldmap:doc": "npm run compile && node scripts/field-map-doc.mjs",
     "package": "vsce package --no-dependencies",
     "check:vsix": "node scripts/check-vsix.mjs",
+    "fetch:windows-daemon": "node scripts/fetch-windows-daemon.mjs",
     "icon:make": "npm run compile && node scripts/make-icon.mjs"
   },
   "devDependencies": {

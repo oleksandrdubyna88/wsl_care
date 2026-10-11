@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { BUNDLED_EXE_FILE, onCi, shippedAllowlist } from './support/bundledExe';
 import { iconPng } from './support/iconPng';
 import { BUNDLE, EXTENSION_ROOT } from './support/paths';
 import { listLines, machineUserNames, machineUserNameSplit, minDaemonFindings, PUBLISHER_PLACEHOLDER, SERVICE_ACCOUNTS, VSIX_OWN_FILES, vsixEntryName, vsixFindings, type VsixCheckOptions } from './support/vsixCheck';
@@ -15,13 +18,15 @@ import { readZip, writeZip } from './support/zipFile';
  * `.vsix` vsce built, in CI on both OSes and in the release's build job.
  */
 
-const ALLOWLIST = listLines(fs.readFileSync(path.join(EXTENSION_ROOT, 'vsix-files.txt'), 'utf8'));
+// E7.S5a: the exe is fetched, not committed — read through the CI-guarded rule (`support/bundledExe.ts`).
+const SHIPPED = shippedAllowlist();
+const ALLOWLIST = SHIPPED.files;
 const DENYLIST = listLines(fs.readFileSync(path.join(EXTENSION_ROOT, 'vsix-denylist.txt'), 'utf8'));
-const OPTIONS: VsixCheckOptions = { expectedFiles: ALLOWLIST, deniedWords: ['someowner', ...DENYLIST], release: false };
+const OPTIONS: VsixCheckOptions = { expectedFiles: ALLOWLIST, deniedWords: ['someowner', ...DENYLIST], release: false, ...(SHIPPED.exe === undefined ? {} : { bundledExeDigest: SHIPPED.exe.digest }) };
 const BUNDLE_ENTRY = 'extension/dist/extension.js';
 const BACKSLASH = String.fromCharCode(92);
 
-/** A clean archive: every allowlisted file as vsce names it, from disk, plus vsce's own two files. */
+/** A clean archive: every allowlisted file as vsce names it, from disk (the fetched exe as fetched), plus vsce's own two files. */
 function cleanEntries(): Map<string, Buffer> {
   assert.ok(fs.existsSync(BUNDLE), 'npm test bundles before it tests');
   const entries = new Map<string, Buffer>(VSIX_OWN_FILES.map((name) => [name, Buffer.from('<?xml version="1.0"?><x/>')]));
@@ -53,10 +58,82 @@ test('the allowlist is what .vscodeignore lets in: the bundle, media, the icon, 
   for (const file of ['README.md', 'CHANGELOG.md', 'LICENSE']) {
     assert.ok(ALLOWLIST.includes(file), file);
   }
-  assert.ok(ALLOWLIST.every((f) => f === 'package.json' || f === 'README.md' || f === 'CHANGELOG.md' || f === 'LICENSE' || f === 'dist/extension.js' || f.startsWith('media/')), ALLOWLIST.join(', '));
+  assert.ok(ALLOWLIST.every((f) => f === 'package.json' || f === 'README.md' || f === 'CHANGELOG.md' || f === 'LICENSE' || f === 'dist/extension.js' || f === BUNDLED_EXE_FILE || f.startsWith('media/')), ALLOWLIST.join(', '));
   const ignore = fs.readFileSync(path.join(EXTENSION_ROOT, '.vscodeignore'), 'utf8');
   assert.equal(listLines(ignore)[0], '**', '.vscodeignore starts by excluding everything — an allowlist');
 });
+
+// ---- E7.S5a (todo/PLAN_bundle_windows_binary.md §3.4, §3.6): the bundled exe, exempt from the TEXT scan by its digest only ----
+
+/** A stand-in exe carrying exactly what the real one carries and the text scan would refuse: the runner's build path and `\wsl`. */
+const FAKE_EXE = Buffer.from(`MZ${BACKSLASH}${BACKSLASH}wsl.localhost D:${BACKSLASH}a${BACKSLASH}wsl_care${BACKSLASH}src build`, 'utf8');
+const FAKE_DIGEST = createHash('sha256').update(FAKE_EXE).digest('hex');
+const EXE_ENTRY = 'extension/bin/wsl-care.exe';
+
+/** The clean archive with the stand-in exe at `at`, and options that know `digest` (`null`: no digest) and list the exe. */
+function withExe(digest: string | null = FAKE_DIGEST, at: string = EXE_ENTRY): { entries: Map<string, Buffer>; options: VsixCheckOptions } {
+  const entries = cleanEntries();
+  entries.delete(EXE_ENTRY);
+  entries.set(at, FAKE_EXE);
+  const expectedFiles = [...new Set([...ALLOWLIST, BUNDLED_EXE_FILE])];
+
+  return { entries, options: { ...OPTIONS, expectedFiles, bundledExeDigest: digest ?? undefined } };
+}
+
+test('E7.S5a: the exe at exactly extension/bin/wsl-care.exe, with its digest, is exempt from the text scan — and only then', () => {
+  const { entries, options } = withExe();
+  assert.deepEqual(vsixFindings(entries, options), [], 'its build path and \\wsl are the attested bytes, not a leak');
+});
+
+test('E7.S5a: a wrong digest is refused, and the exe is then scanned like any file', () => {
+  const { entries, options } = withExe('0'.repeat(64));
+  const findings = vsixFindings(entries, options).join(' | ');
+  assert.match(findings, /extension\/bin\/wsl-care\.exe is not the fetched member: its SHA-256 is [0-9a-f]{64}, bin\/wsl-care\.exe\.sha256 says 0{64}/);
+  assert.match(findings, /extension\/bin\/wsl-care\.exe:1 holds a drive path/);
+});
+
+test('E7.S5a: the exe without a digest to compare is refused and scanned', () => {
+  const { entries, options } = withExe(null);
+  const findings = vsixFindings(entries, options).join(' | ');
+  assert.match(findings, /carries extension\/bin\/wsl-care\.exe but no digest was given to check it against/);
+  assert.match(findings, /extension\/bin\/wsl-care\.exe:1 holds a drive path/);
+});
+
+test('E7.S5a: the same bytes anywhere else are refused by the allowlist AND scanned — the exemption is the exact path', () => {
+  for (const at of ['extension/media/wsl-care.exe', 'extension/bin/other.exe', 'extension/bin/WSL-CARE.exe']) {
+    const { entries, options } = withExe(FAKE_DIGEST, at);
+    const findings = vsixFindings(entries, options).join(' | ');
+    assert.match(findings, new RegExp(`the \\.vsix holds ${at.replace(/[.]/g, '\\.')}, which the allowlist does not name`), at);
+    assert.match(findings, new RegExp(`${at.replace(/[.]/g, '\\.')}:1 holds a drive path`), at);
+  }
+});
+
+test('E7.S5a: a RELEASE .vsix needs the digest file even before it carries the exe', () => {
+  const entries = cleanEntries();
+  assert.match(vsixFindings(entries, { ...OPTIONS, release: true, bundledExeDigest: undefined }).join(' | '), /a release \.vsix needs bin\/wsl-care\.exe\.sha256/);
+});
+
+test('E7.S5a: the CI guard — on CI a missing exe FAILS naming the fetch; off CI it is dropped from the expected list too', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bundled-exe-'));
+  try {
+    fs.writeFileSync(path.join(root, 'vsix-files.txt'), `package.json\n${BUNDLED_EXE_FILE}\n`);
+    assert.throws(() => shippedAllowlist(root, { CI: 'true' }), /bin\/wsl-care\.exe \(with its \.sha256\) is missing on CI — the workflow must run `npm run fetch:windows-daemon` before npm test/);
+    assert.throws(() => shippedAllowlist(root, { GITHUB_ACTIONS: 'true' }), /missing on CI/);
+    const off = shippedAllowlist(root, {});
+    assert.deepEqual(off.files, ['package.json'], 'never a partial archive checked against the full list');
+    assert.match(off.skipped, /npm run fetch:windows-daemon/);
+    fs.mkdirSync(path.join(root, 'bin'));
+    fs.writeFileSync(path.join(root, BUNDLED_EXE_FILE), FAKE_EXE);
+    fs.writeFileSync(path.join(root, `${BUNDLED_EXE_FILE}.sha256`), `${FAKE_DIGEST}  wsl-care.exe\n`);
+    const present = shippedAllowlist(root, { CI: 'true' });
+    assert.deepEqual(present.files, ['package.json', BUNDLED_EXE_FILE]);
+    assert.equal(present.exe?.digest, FAKE_DIGEST);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  assert.equal(onCi({}), false);
+});
+
 
 test('an extra entry is a finding — a file the allowlist does not name', () => {
   const entries = cleanEntries();
@@ -178,7 +255,7 @@ test('a RELEASE refuses the placeholder publisher; an ordinary package does not'
   assert.deepEqual(vsixFindings(entries, OPTIONS), []);
   assert.match(vsixFindings(entries, { ...OPTIONS, release: true }).join(' | '), /placeholder publisher "publisher-tbd"/);
   entries.set('extension/package.json', Buffer.from(JSON.stringify({ ...manifest, publisher: 'real-publisher' })));
-  assert.deepEqual(vsixFindings(entries, { ...OPTIONS, release: true }), [], 'a real publisher passes the release check');
+  assert.deepEqual(vsixFindings(entries, { ...OPTIONS, release: true, bundledExeDigest: OPTIONS.bundledExeDigest ?? FAKE_DIGEST }), [], 'a real publisher passes the release check (with the exe digest a release needs — E7.S5a)');
 });
 
 test('the build machine\'s user names are derived, deduplicated, case-folded, too-short ones dropped, and a service account left out', () => {

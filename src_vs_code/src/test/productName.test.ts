@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { BUNDLE, EXTENSION_ROOT } from './support/paths';
-import { listLines } from './support/vsixCheck';
+import { BUNDLED_EXE_FILE, shippedAllowlist } from './support/bundledExe';
 
 /**
  * The extension's product name (owner decision 2026-10-06): the extension is **AI OS Care**, its permanent id
@@ -43,12 +43,16 @@ interface Shipped {
   readonly text: string;
 }
 
-/** Every text file the `.vsix` allowlist names, read from disk (the bundle is `dist/extension.js`). */
+/**
+ * Every text file the `.vsix` allowlist names, read from disk (the bundle is `dist/extension.js`) — through the CI-guarded
+ * allowlist (`support/bundledExe.ts`), and never the bundled `bin/wsl-care.exe`: that is the daemon's own attested build, by
+ * this exact path only (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.4).
+ */
 function shippedTexts(): Shipped[] {
   assert.ok(fs.existsSync(BUNDLE), 'npm test bundles before it tests');
-  const files = listLines(fs.readFileSync(path.join(EXTENSION_ROOT, 'vsix-files.txt'), 'utf8'));
+  const files = shippedAllowlist().files;
 
-  return files.filter((file) => !BINARY.test(file)).map((file) => ({ file, text: fs.readFileSync(path.join(EXTENSION_ROOT, file), 'utf8') }));
+  return files.filter((file) => !BINARY.test(file) && file !== BUNDLED_EXE_FILE).map((file) => ({ file, text: fs.readFileSync(path.join(EXTENSION_ROOT, file), 'utf8') }));
 }
 
 /**

@@ -46,6 +46,7 @@ if (!existsSync(join(SUPPORT, 'vsixCheck.js'))) {
 const { listLines, machineUserNameSplit, minDaemonFindings, vsixFindings } = require(join(SUPPORT, 'vsixCheck.js'));
 const { BUNDLED_DAEMON, INSTALL_DAEMON, MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER } = require(join(ROOT, 'out', 'client', 'handshake.js'));
 const { readZip } = require(join(SUPPORT, 'zipFile.js'));
+const { digestOf } = require(join(SUPPORT, 'bundledExe.js'));
 
 const args = process.argv.slice(2);
 const release = args.includes('--release');
@@ -101,6 +102,9 @@ function jsonOrUndefined(file) {
 
 // A service account (a GitHub-hosted runner's `runner` / `runneradmin`, …) is no person and is left out — SERVICE_ACCOUNTS.
 const { personal: names, serviceAccounts } = machineUserNameSplit([userInfo().username, process.env.USERNAME, process.env.USER, basename(homedir())]);
+// E7.S5a: the digest the fetch wrote beside the bundled exe — the ONLY key to its text-scan exemption; a release requires it.
+const digestFile = join(ROOT, 'bin', 'wsl-care.exe.sha256');
+const bundledExeDigest = existsSync(digestFile) ? digestOf(readFileSync(digestFile, 'utf8')) : undefined;
 const emitted = jsonOrUndefined(join(ROOT, 'dist', 'min-daemon.json'));
 const checkedIn = jsonOrUndefined(join(ROOT, 'min-daemon.json'));
 const minDaemon = [
@@ -112,7 +116,7 @@ const minDaemon = [
 const findings = [
   ...lsFindings,
   ...minDaemon,
-  ...vsixFindings(readZip(readFileSync(vsix)), { expectedFiles: expected, deniedWords: [...names, ...denylist], release, ...(rootAllowed === undefined ? {} : { rootAllowed }) }),
+  ...vsixFindings(readZip(readFileSync(vsix)), { expectedFiles: expected, deniedWords: [...names, ...denylist], release, bundledExeDigest, ...(rootAllowed === undefined ? {} : { rootAllowed }) }),
 ];
 
 if (findings.length > 0) {

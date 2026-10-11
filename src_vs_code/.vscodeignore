@@ -9,4 +9,6 @@
 !CHANGELOG.md
 !LICENSE
 !dist/extension.js
+# E7.S5a: the attested Windows daemon, fetched and verified (scripts/fetch-windows-daemon.mjs) — never its .sha256, never anything else in bin/
+!bin/wsl-care.exe
 !media/**
