@@ -714,7 +714,7 @@ test('root A20: each shape needs its capabilities advertised and A20 reported โ€
     world.rewrite({ answers: restoreAnswers(world, 'answers-a20-unreported', [GOLDEN_RESTORABLE], { status: (s) => ({ ...s, actions: stringsAt(s, 'actions').filter((a) => a !== 'A20') }) }) });
     assert.equal(exitOf(await rootAsk(world, RESTORE_PREVIEW, piped)).code, FAKE_EXIT.refused, 'A20 not in status.actions');
   });
-
+});
 
 // ---- E7.S5a (todo/PLAN_bundle_windows_binary.md ยง3.7): the strict fake learns the bundled exe's exact path ----
 
