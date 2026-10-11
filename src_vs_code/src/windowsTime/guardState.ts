@@ -1,3 +1,4 @@
+import { notAnsweredWords, type NotAnswered } from '../process/notAnswered';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
@@ -15,7 +16,8 @@ export type Channel = 'enabled' | 'disabled' | 'unknown';
 
 export type GuardState =
   | { readonly kind: 'unknown'; readonly reason: string }
-  | { readonly kind: 'absent'; readonly channel: Channel }
+  /** `stampLeft`: the task is gone but its rate-limit stamp under HKLM is still there (§11 R4 of PLAN_pwsh_engine_windows_time.md). */
+  | { readonly kind: 'absent'; readonly channel: Channel; readonly stampLeft?: true }
   | { readonly kind: 'unreadable'; readonly hresult: string; readonly channel: Channel }
   | {
     readonly kind: 'present';
@@ -74,7 +76,7 @@ function present(t: Tagged, channel: Channel): GuardState {
 }
 
 const BY_GUARD: Readonly<Record<string, (t: Tagged, channel: Channel) => GuardState>> = {
-  absent: (_t, channel) => ({ kind: 'absent', channel }),
+  absent: (t, channel) => ({ kind: 'absent', channel, ...(tag(t, 'stamp') === 'present' ? { stampLeft: true } : {}) }),
   unreadable: (t, channel) => ({ kind: 'unreadable', hresult: tag(t, 'hresult') || '?', channel }),
   present,
 };
@@ -87,17 +89,15 @@ export function parseGuardAnswer(stdout: string): GuardState {
   return read === undefined ? { kind: 'unknown', reason: 'the Task Scheduler query printed no answer' } : read(t, channelOf(t.tags.get('channel')));
 }
 
-const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {
-  timedOut: (r) => `the Task Scheduler query did not answer within ${Math.round(r.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeGuardQuerySeconds)`,
-  failedToStart: (r) => `the Task Scheduler query could not start: ${r.reason}`,
-  signalled: (r) => `the Task Scheduler query was stopped (${r.signal})`,
-  tooMuchOutput: () => 'the Task Scheduler query printed more than the extension reads',
-};
+/** Why this query did not answer — the shared wording (`process/notAnswered.ts`). */
+function notAnswered(result: NotAnswered): string {
+  return notAnsweredWords(result, 'the Task Scheduler query', 'wslCare.timeouts.windowsTimeGuardQuerySeconds');
+}
 
 /** The query's process result as one state. */
 export function guardStateOf(result: ProcessResult): GuardState {
   if (result.kind !== 'exited') {
-    return { kind: 'unknown', reason: (NOT_ANSWERED[result.kind] as (r: ProcessResult) => string)(result) };
+    return { kind: 'unknown', reason: notAnswered(result) };
   }
   const code = signed32(result.code);
 
@@ -151,6 +151,11 @@ export interface GuardView {
   readonly line: string;
   readonly level: GuardLevel;
   readonly buttons: readonly { readonly id: GuardAction; readonly label: string; readonly enabled: boolean }[];
+  /**
+   * Which PowerShell the Windows Time part's elevated runs use, and that the guard's task runs as SYSTEM in 5.1
+   * (PLAN_pwsh_engine_windows_time.md D6) — the host's words from the engine read; '' when none is given.
+   */
+  readonly engine: string;
 }
 
 /** An elevated install / remove this window persisted before it started (`guardPending.ts`), while it stands. */
@@ -212,7 +217,7 @@ function lastRun(state: Extract<GuardState, { kind: 'present' }>, formatInstant:
   return state.lastRunUtc === 'never' ? 'not run yet' : `last run ${formatInstant(state.lastRunUtc)}: ${lastResultText(state.lastResult)}`;
 }
 
-function presentView(state: Extract<GuardState, { kind: 'present' }>, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons'> & { readonly ids: readonly GuardAction[] } {
+function presentView(state: Extract<GuardState, { kind: 'present' }>, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons' | 'engine'> & { readonly ids: readonly GuardAction[] } {
   if (!state.enabled) {
     return { line: 'installed, but disabled in Task Scheduler — install it again to enable it', level: 'warn', ids: ['installWindowsTimeGuard', 'removeWindowsTimeGuard'] };
   }
@@ -230,17 +235,26 @@ function unknownLine(state: Extract<GuardState, { kind: 'unknown' }>): string {
   return state === NOT_ASKED ? 'checking…' : `unknown — ${state.reason}`;
 }
 
-function settledView(state: GuardState, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons'> & { readonly ids: readonly GuardAction[] } {
+function settledView(state: GuardState, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons' | 'engine'> & { readonly ids: readonly GuardAction[] } {
   switch (state.kind) {
     case 'unknown':
       return { line: unknownLine(state), level: 'unknown', ids: [] };
     case 'absent':
-      return { line: `not installed — it would start the Windows Time service by itself whenever it stops${channelNote(state.channel)}`, level: 'none', ids: ['installWindowsTimeGuard'] };
+      return absentView(state);
     case 'unreadable':
       return { line: `Task Scheduler does not let this account read it (${state.hresult}) — installed or not cannot be told`, level: 'unknown', ids: ['installWindowsTimeGuard', 'removeWindowsTimeGuard'] };
     default:
       return presentView(state, options, formatInstant);
   }
+}
+
+/** Not installed — and, when its rate-limit stamp outlived the task (a removal the Store engine may have virtualised, §11 R4), saying so and offering Remove again. */
+function absentView(state: Extract<GuardState, { kind: 'absent' }>): Omit<GuardView, 'buttons' | 'engine'> & { readonly ids: readonly GuardAction[] } {
+  const line = `not installed — it would start the Windows Time service by itself whenever it stops${channelNote(state.channel)}`;
+
+  return state.stampLeft === true
+    ? { line: `${line}; its rate-limit stamp under HKLM\\SOFTWARE\\wsl-care is still there — Remove the guard again to clear it`, level: 'none', ids: ['installWindowsTimeGuard', 'removeWindowsTimeGuard'] }
+    : { line, level: 'none', ids: ['installWindowsTimeGuard'] };
 }
 
 /** Whether Task Scheduler already shows the end a pending run was for: installed as these settings, or gone. */
@@ -257,13 +271,13 @@ const WAITING: { readonly [K in PendingGuardOp['op']]: string } = {
  * The guard's line and buttons (D5, D8). While an elevated run this window persisted stands, the line says so and both
  * buttons are disabled; otherwise the state decides. `formatInstant` is the presentation edge's local-time formatter.
  */
-export function guardView(state: GuardState, options: GuardOptions, pending: PendingGuardOp | undefined, formatInstant: (iso: string) => string, checking = false): GuardView {
+export function guardView(state: GuardState, options: GuardOptions, pending: PendingGuardOp | undefined, formatInstant: (iso: string) => string, checking = false, engine = ''): GuardView {
   const settled = settledView(state, options, formatInstant);
   if (pending !== undefined) {
-    return { line: noticeText(PREFIX + WAITING[pending.op]), level: 'none', buttons: buttons(['installWindowsTimeGuard', 'removeWindowsTimeGuard'], false) };
+    return { line: noticeText(PREFIX + WAITING[pending.op]), level: 'none', buttons: buttons(['installWindowsTimeGuard', 'removeWindowsTimeGuard'], false), engine };
   }
 
-  return { line: noticeText(PREFIX + settled.line + checkingNote(state, checking)), level: settled.level, buttons: buttons(settled.ids, true) };
+  return { line: noticeText(PREFIX + settled.line + checkingNote(state, checking)), level: settled.level, buttons: buttons(settled.ids, true), engine };
 }
 
 /** While Task Scheduler is asked again, an answer already shown says so (codex: a stale line must not look current). */

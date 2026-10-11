@@ -230,11 +230,18 @@
   }
 
   // ---- The Windows Time guard (PLAN_windows_time_task.md D5, D8 o5): ONE line the host derived from Task Scheduler's
-  // answer and the pending elevated run it persisted, and the buttons it allows — each posts its bare id, nothing else. ----
+  // answer and the pending elevated run it persisted, and the buttons it allows — each posts its bare id, nothing else.
+  // Since PLAN_pwsh_engine_windows_time.md D6 also which PowerShell its elevated runs use, and that its task runs on 5.1. ----
+
+  /** A paragraph for a line the host may leave out — none for an absent or empty one. */
+  function optionalLine(text, data) {
+    return typeof text === 'string' && text !== '' ? [element('p', text, data)] : [];
+  }
 
   function guardPart(guard) {
     const box = element('div', undefined, { guard: '' });
     box.appendChild(element('p', guard.line, { 'guard-line': '', level: guard.level }));
+    optionalLine(guard.engine, { 'guard-engine': '' }).forEach(function (p) { box.appendChild(p); });
     guard.buttons.forEach(function (b) {
       const id = b.id;
       box.appendChild(actionButton(b.label, { 'guard-action': id }, !b.enabled, function () { return { type: id }; }));
@@ -304,9 +311,8 @@
     const box = element('div', undefined, { 'gpu-alert': '', level: alert.level });
     box.appendChild(element('p', (SIGN[alert.level] || '') + alert.line, { 'gpu-line': '' }));
     box.appendChild(element('p', alert.fix, { 'gpu-fix': '' }));
-    if (alert.consequence !== '') {
-      box.appendChild(element('p', alert.consequence, { 'gpu-consequence': '' }));
-    }
+    // D6 of PLAN_pwsh_engine_windows_time.md: the engine Enable elevates, beside its button.
+    optionalLine(alert.consequence, { 'gpu-consequence': '' }).concat(optionalLine(alert.engine, { 'gpu-engine': '' })).forEach(function (p) { box.appendChild(p); });
     if (isObject(alert.button)) {
       const index = alert.button.index;
       box.appendChild(actionButton(alert.button.label, { 'gpu-action': 'enableGpu' }, !alert.button.enabled, function () { return { type: 'enableGpu', index: index, readAt: gpuReadAt[index] }; }));

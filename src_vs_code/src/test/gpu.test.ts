@@ -11,14 +11,16 @@ import { enableExitOf, enableGpu, enablePrompt, enableSentence, type EnableDeps 
 import { GpuHost, type GpuHostDeps } from '../gpu/gpuHost';
 import { GPU_PENDING_KEY, readGpuPending, sweepGpuPending } from '../gpu/gpuPending';
 import { DEVICE_PROBLEMS, FIX_WORDS, NEEDS_RESTART } from '../gpu/gpuProblems';
-import { DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, engineOf, INSTANCE_ID, msiPwsh, PWSH_PROBE, QUERY_SCRIPT, queryRequest, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshFacts, type PwshProbe } from '../gpu/gpuScripts';
-import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, type Adapter, type GpuState } from '../gpu/gpuState';
+import { DISABLED_CODE, ENABLE_EXIT, enableRequest, enableScript, INSTANCE_ID, QUERY_SCRIPT, queryRequest } from '../gpu/gpuScripts';
+import { elevatedPowerShellFor, engineOf, MODULES, msiPwsh, PWSH_PROBE, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshFacts, type PwshProbe } from '../powershell/elevatedEngine';
+import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, withEngineLine, type Adapter, type GpuState } from '../gpu/gpuState';
 import { newGpuRecorder } from '../gpu/gpuRecorder';
 import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '../gpu/ollamaLog';
 import { parsePageMessage } from '../panel/messages';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { withGpuMark } from '../statusBar/statusBarModel';
-import { EXIT, quotablePath } from '../windowsTime/windowsTimeFix';
+import { quotablePath } from '../powershell/elevatedLauncher';
+import { EXIT } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING, revealed } from './support/noRealWsl';
 
 /**
@@ -52,7 +54,7 @@ const REAL_MSI = { [MSI_PWSH]: { bytes: 300_000, symlink: false } };
 
 /** The read's two PowerShell 7 facts, as the host hands them to the enable. */
 function facts(store?: PwshProbe, msi?: PwshProbe): PwshFacts {
-  return { store, msi };
+  return { store, msi, programFiles: 'C:\\Program Files' };
 }
 const PS51_ENGINE: Engine = { file: PS51, label: PS51_LABEL, kind: 'windows' };
 const STORE_ENGINE: Engine = { file: STORE_PWSH, label: `PowerShell 7 (${STORE_PWSH})`, kind: 'store' };
@@ -251,14 +253,16 @@ test('owner 2026-10-10 / 2026-10-11: the elevated engine is PowerShell 7 — the
   assert.deepEqual(engineOf(ENV, files({}), facts(STORE)), STORE_ENGINE);
   assert.deepEqual(engineOf(ENV, files({}), undefined), PS51_ENGINE);
   assert.equal(engineOf(ENV, files(REAL_MSI), facts(undefined, MSI)).kind, 'msi');
-  assert.equal(storePwsh(ENV, { kind: 'signed', path: STORE_PWSH }), STORE_PWSH);
+  assert.equal(storePwsh(ENV, { kind: 'signed', path: STORE_PWSH }, 'C:\\Program Files'), STORE_PWSH);
+  assert.equal(storePwsh(ENV, { kind: 'signed', path: STORE_PWSH }, undefined), undefined, '§11 R1: no known folder in the read, no package');
   assert.equal(msiPwsh(ENV), MSI_PWSH);
 });
 
 test('code round 2 / 2026-10-11 / round 4: the query prints every field through ONE helper that strips line breaks, and resolves the Store package and the MSI pwsh with their signatures as WINDOWS sees them — RUN by Windows PowerShell on this machine, once, read-only', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
   assert.equal((QUERY_SCRIPT.match(/\btag \(/g) ?? []).length, 4, 'id, code, driver and name each go through the helper');
   // ONE PowerShell for both probes: the suite runs its files in parallel, and every extra child loads the timing tests.
-  const probe = `${TAG_HELPER}\ntag 'name.0' ("GPU\`r\`nadapters=0")\ntag 'code.0' $null\n${PWSH_PROBE}\nexit 0`;
+  assert.ok(QUERY_SCRIPT.startsWith(`${MODULES}\n`), '§11 R1: the GPU query pins the module path before anything resolves a program');
+  const probe = `${MODULES}\n${TAG_HELPER}\ntag 'name.0' ("GPU\`r\`nadapters=0")\ntag 'code.0' $null\n${PWSH_PROBE}\nexit 0`;
   const result = childProcess.spawnSync(PS51, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(probe, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 60_000 });
   assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
   const lines = result.stdout.split(/\r?\n/).filter((l) => l !== '');
@@ -267,8 +271,10 @@ test('code round 2 / 2026-10-11 / round 4: the query prints every field through 
   assert.equal(state.kind, 'read', JSON.stringify(state));
   const pwsh = state.kind === 'read' ? state.pwsh : undefined;
   assert.ok(pwsh !== undefined && ['signed', 'unsigned', 'absent'].includes(pwsh.kind), JSON.stringify(pwsh));
+  const known = state.kind === 'read' ? state.programFiles : undefined;
+  assert.equal(known?.toLowerCase(), (process.env.ProgramFiles ?? '').toLowerCase(), '§11 R1: the read names Program Files by the known-folder API, and it agrees with this environment');
   if (pwsh?.kind === 'signed') {
-    assert.equal(storePwsh(process.env, pwsh), pwsh.path, 'a signed package resolves under this machine\'s Program Files\\WindowsApps with Microsoft\'s publisher id');
+    assert.equal(storePwsh(process.env, pwsh, known), pwsh.path, 'a signed package resolves under this machine\'s Program Files\\WindowsApps with Microsoft\'s publisher id');
   }
   const msi = state.kind === 'read' ? state.msi : undefined;
   assert.ok(msi !== undefined && ['signed', 'unsigned', 'absent'].includes(msi.kind), JSON.stringify(msi));
@@ -468,7 +474,7 @@ test('the host\'s enable acts on ITS reading at the index — the recorded reque
 
 test('2026-10-11: the host elevates the Store package only when ITS OWN read of Windows resolved it, signed, under Program Files\\WindowsApps — the modal and the outcome name PowerShell 7 by that path', async () => {
   const deps = hostDeps();
-  deps.recorder.queryResult = exited(0, `${MEASURED}pwsh.store=signed\r\npwsh.path=${STORE_PWSH}\r\n`);
+  deps.recorder.queryResult = exited(0, `${MEASURED}pwsh.programFiles=C:\\Program Files\r\npwsh.store=signed\r\npwsh.path=${STORE_PWSH}\r\n`);
   const host = new GpuHost(deps);
   await host.refresh();
   deps.recorder.answer = true;
@@ -495,7 +501,7 @@ test('code round 3: the elevated program is verified AGAIN after the modal, from
   assert.equal(deps.store.get(GPU_PENDING_KEY), undefined, 'no pending record was written');
   assert.match(deps.log.at(-1) ?? '', /^error: Nothing ran: the elevated program changed while the question was open \(PowerShell 7 \(C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe\) is now Windows PowerShell 5\.1/);
 
-  const same = enableDeps({ pwsh: facts(STORE), after: { ...(measured(0) as Extract<GpuState, { kind: 'read' }>), pwsh: STORE } });
+  const same = enableDeps({ pwsh: facts(STORE), after: { ...(measured(0) as Extract<GpuState, { kind: 'read' }>), pwsh: STORE, programFiles: 'C:\\Program Files' } });
   assert.equal(await enableGpu(r9700(), same), 'ran', 'the same program at the last look: the run goes ahead');
   assert.deepEqual(same.log.slice(0, 3), ['confirm', 'reread', `run ${PS51}`], 'the fresh read comes AFTER the modal and BEFORE the launch');
 });
@@ -716,4 +722,30 @@ test('own review 2 note 11: a query that THROWS is one unknown state with its re
   await host.refresh();
   assert.deepEqual(host.current(), { kind: 'unknown', reason: 'the display-adapter query failed: the runner broke' });
   assert.equal(host.view().alerts[0]?.level, 'unknown');
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D6: the panel names the engine Enable elevates, beside its button ----
+
+test('pwsh D6: an alert with Enable names the engine its read chose; the line comes from the host, once per read', async () => {
+  const deps = hostDeps();
+  deps.recorder.queryResult = exited(0, `${MEASURED}pwsh.programFiles=C:\\Program Files\r\npwsh.store=signed\r\npwsh.path=${STORE_PWSH}\r\n`);
+  const host = new GpuHost(deps);
+  await host.refresh();
+  const withButton = host.view().alerts.find((a) => a.button !== undefined);
+  assert.equal(withButton?.engine, `Enable runs elevated in: PowerShell 7 (${STORE_PWSH}).`);
+  const plain = hostDeps();
+  plain.recorder.queryResult = exited(0, MEASURED);
+  const windows = new GpuHost(plain);
+  await windows.refresh();
+  assert.equal(windows.view().alerts.find((a) => a.button !== undefined)?.engine, `Enable runs elevated in: ${PS51_LABEL}.`);
+});
+
+test('pwsh D6: withEngineLine is pure — only an alert that carries the button gets the line, and no label gives none', () => {
+  const button = { index: 0, label: 'Enable X', enabled: true, readAt: 1 };
+  const view = { alerts: [{ level: 'critical' as const, line: 'a', fix: 'f', consequence: '', button }, { level: 'critical' as const, line: 'b', fix: 'f', consequence: '', button: undefined }], line: '' };
+  const named = withEngineLine(view, 'PowerShell 7 (P)');
+  assert.equal(named.alerts[0]?.engine, 'Enable runs elevated in: PowerShell 7 (P).');
+  assert.equal(named.alerts[1]?.engine, undefined);
+  assert.equal(withEngineLine(view, '').alerts[0]?.engine, '');
+  assert.equal(view.alerts[0] && 'engine' in view.alerts[0], false, 'the input view is not changed');
 });
