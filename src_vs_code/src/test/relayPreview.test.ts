@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { parsePreview } from '../root/rootAnswers';
 import { MAX_PROCESS_ARGS } from '../root/rootIds';
+import { goldenFile } from './support/paths';
 import { relayKeys, relayPreviewBody } from './support/relayBodies';
 
 /**
@@ -49,4 +50,12 @@ test('a list longer than the command line takes is cut to MAX_PROCESS_ARGS and s
   assert.equal(preview.processes?.count, MAX_PROCESS_ARGS + 7);
   assert.equal(preview.processes?.truncated, true);
   assert.equal(preview.processes?.cap, MAX_PROCESS_ARGS);
+});
+
+test('the DAEMON-WRITTEN A21 line (contracts/golden/head/act-a21-preview-action.json) is held as it is: its two shown pairs, its count, its basis', () => {
+  const line = goldenFile('act-a21-preview-action.json');
+  const preview = parsePreview(JSON.stringify({ ...relayPreviewBody([]), actions: [line] }), CONTEXT);
+  assert.ok(!('kind' in preview), JSON.stringify(preview).slice(0, 300));
+  assert.deepEqual(preview.processes, { names: ['12062:48563', '12063:48564'], count: 2, truncated: false, cap: 10_000 });
+  assert.match(preview.actions[0]?.basis ?? '', /^interop relays read from \/proc/);
 });

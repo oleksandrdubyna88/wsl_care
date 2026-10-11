@@ -1,8 +1,9 @@
 /**
  * A21's preview answer (S7b.2b), shaped as the daemon's `act A21 --preview --json` writes it: the action's preview with its items
  * (at most 20, `preview.maxItems`), and — an `IBoundToShownList` action — `shown` (every target's `pid:start`, capped at
- * `act.maxShownNames`) and `shownTruncated` exactly when that cap cut it. The captured golden tree holds no relay a preview could
- * select (a relay needs real links), so the tests build the body here, from the daemon's own shape.
+ * `act.maxShownNames`) and `shownTruncated` exactly when that cap cut it. The daemon-written line
+ * (`contracts/golden/head/act-a21-preview-action.json`) holds two relays; a test that needs other lists, counts or states builds
+ * the body here, from the same shape.
  */
 
 /** `count` relays from pid 12000 up, start ticks 36500 up — each `pid:start` as the daemon's `SuspectSignals.Shown` spells it. */

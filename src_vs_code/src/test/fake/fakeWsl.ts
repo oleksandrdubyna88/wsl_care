@@ -588,7 +588,7 @@ function capabilityProblem(scenario: FakeScenario, needed: readonly string[]): s
 /** The daemon's own A13 line, which every A13 preview answers from (E10.S1b). */
 const A13_PREVIEW_ACTION = 'act-a13-preview-action.json';
 
-/** S7b.2b: A21's line, which a test writes into its answers folder (the captured golden tree holds no relay a preview selects). */
+/** S7b.2b: A21's line — the daemon-written golden (two relays), or the one a test writes into its answers folder. */
 const A21_PREVIEW_ACTION = 'act-a21-preview-action.json';
 
 /** An answers folder without the daemon's A13 line cannot answer A13's preview: refused, never thrown (E10.S1b own review #11). */
