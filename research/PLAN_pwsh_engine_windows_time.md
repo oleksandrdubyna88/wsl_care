@@ -67,9 +67,9 @@ When this is done:
 | The guard host's one-query-at-a-time `refresh()` | `src/windowsTime/guardHost.ts:76`, `query` :117 | carries the probe's facts beside the guard state |
 | The SYSTEM task's program `TASK_POWERSHELL` and its ASCII test | `src/windowsTime/guardTask.ts:49` | unchanged |
 
-**The module.** `src/powershell/elevatedEngine.ts` (new folder `powershell/`, the name says what it is about). It imports the
-launcher's `powerShellOf` and `quotablePath` from `windowsTimeFix.ts`; `windowsTimeFix.ts` and `guardFlow.ts` import only
-**types** from it (`import type`), so no runtime import cycle exists. The GPU files import from it instead of defining.
+**The module.** `src/powershell/elevatedEngine.ts` (new folder `powershell/`, the name says what it is about). *As built (§11
+R2): the launcher moved to `src/powershell/elevatedLauncher.ts` too, and the engine module imports it, so the graph is
+launcher ← engine ← {gpu, windowsTime} with no cycle.* The GPU files import from it instead of defining.
 
 ## 4. Design
 
@@ -113,7 +113,8 @@ import (F1, F2). The SYSTEM task's script is not touched.
 
 **D5 — the words.** The modals say "One PowerShell runs ELEVATED — <engine label> — Windows asks you first (UAC)…" instead of
 "One Windows PowerShell…" (`fixPrompt` :158, `installPrompt`/`removePrompt` `guardFlow.ts:75`, :94). Every outcome sentence
-of the three runs ends with " Elevated program: <label>." (as G1's `enableSentence`). A failed exit 13 on the Store engine
+of the three runs that ran or may have run (done, failed, timed out) ends with " Elevated program: <label>." (as G1's
+`enableSentence`); a declined, not-started or not-run outcome names none. A failed exit 13 on the Store engine
 adds the Store note.
 
 **D6 — the panel names each engine.**
@@ -174,6 +175,13 @@ touched; the alias is never started; nothing from the page, the daemon or a sett
   is half-done (the register is the last step). A POST_DEPLOY item records it.
 - **The guard read costs about one more second** per read (D2). It does not poll; it runs on open, refresh and after a run.
 - **The launcher's own `SystemRoot` trust** is unchanged (a residual since the Windows Time story).
+- **The user's persisted environment** (own code review, finding 1): the elevated child's environment is built from the
+  user's profile, and variables there act BEFORE the script's first statement pins `$env:PSModulePath` — to the best of our
+  knowledge `DOTNET_STARTUP_HOOKS` for any .NET host such as `pwsh.exe`, and `COR_ENABLE_PROFILING` / `COR_PROFILER_PATH`
+  for the .NET Framework host `powershell.exe`, so the 5.1 road had the same shape before this story. Under the same-user
+  threat model R1 defends against, this is the larger residual, and it is not fixable inside a script; not measured here.
+- **The first press may wait** up to `engineProbeSeconds` (20 s) for the engine read before its modal, with no progress
+  notification (own code review, note 11); a read normally answers in 1–2 s.
 - **Two probes per panel open** (the GPU query's and the engine read, §11 R3): about 1–2 s of one core each, no polling.
 - **G1's order after its modal** (busy check, then the re-read): a window of about one second; not changed here (§11 R5).
 - **PowerShell 7's startup update check** may make one outbound HTTP request from the elevated child; the child's fresh
@@ -182,16 +190,16 @@ touched; the alias is never started; nothing from the page, the daemon or a sett
 
 ## 10. Definition of Done
 
-- [ ] One resolver module; the GPU code imports it; the structure test proves one definition.
-- [ ] *Start Windows Time*, install and remove elevate `engineOf`'s engine; 5.1 only without a verified PowerShell 7.
-- [ ] The engine is read again after the modal; a change runs nothing and writes no pending record.
-- [ ] The install imports ScheduledTasks by absolute path; exit 33 has its sentence.
-- [ ] Modals and outcomes name the engine; the Store note on exit 13.
-- [ ] The panel names each part's engine, as text.
-- [ ] The SYSTEM task stays on 5.1; its ASCII test unchanged and green.
-- [ ] Tests: unit, page, scenario; break-its red then restored; lint, typecheck, `plan-lifecycle` clean.
-- [ ] Docs updated; the plan promoted to `research/` with its as-built record.
-- [ ] §11's R1–R12 built, each with its test (R1 RED on a spoofed `ProgramFiles`; R4 the stamp line).
+- [x] One resolver module; the GPU code imports it; the structure test proves one definition.
+- [x] *Start Windows Time*, install and remove elevate `engineOf`'s engine; 5.1 only without a verified PowerShell 7.
+- [x] The engine is read again after the modal; a change runs nothing and writes no pending record.
+- [x] The install imports ScheduledTasks by absolute path; exit 33 has its sentence.
+- [x] Modals and outcomes name the engine; the Store note on exit 13.
+- [x] The panel names each part's engine, as text.
+- [x] The SYSTEM task stays on 5.1; its ASCII test unchanged and green.
+- [x] Tests: unit, page, scenario; break-its red then restored; lint, typecheck, `plan-lifecycle` clean.
+- [x] Docs updated; the plan promoted to `research/` with its as-built record.
+- [x] §11's R1–R12 built, each with its test (R1 RED on a spoofed `ProgramFiles`; R4 the stamp line).
 
 ## 11. Revision 1 — the gates (2026-10-11)
 
@@ -285,6 +293,9 @@ read, the GPU host naming no engine (D6).
   outcome suffix now come from the shared module (`engineChangedSentence`, `byEngine`).
 - **No `checkedEngineOf`:** the "could not be checked" label is made where a read fails (`engineHost.ts`'s `failedRead`), so
   `engineOf` and G1's labels are unchanged.
+- **No extension-host scenario** (§6 promised one): the host suite has no Windows Time scenario at all, and the flows are
+  pinned by the unit tests through the same request shapes the recorders see (own code review, finding 4). The Test-mode
+  engine recorder is held in the extension's parts, not exposed on the test API.
 - **`GpuAlert.engine` is optional** (the page renders it only when it is a non-empty string), so the unknown alert and the
   existing fixtures need no field.
 - **The engine line before any read** says "checking which PowerShell…" rather than "5.1 until a read verifies PowerShell 7":
@@ -302,7 +313,26 @@ read, the GPU host naming no engine (D6).
 | Major ×2 (one point): a failed re-read is treated as unchanged when both reads fall back to 5.1 | rejected — the program that runs is exactly the one the modal named and the person confirmed (System32 Windows PowerShell 5.1); the re-read stops an OTHER program; refusing would block the clock fix on a probe failure, against the one fallback policy shared with G1 | §11 R7's wording made exact |
 | Minor: a PARTIAL probe answer read as a complete check | accepted | RED first: a probe that printed one verdict, or a signed package without its known folder, now reads "could not be checked: the read printed an incomplete answer"; GREEN; the break-it (incompleteness ignored) red, restored |
 
-**Tests:** extension 1128 pass (1 skipped), lint and typecheck clean. One load-sensitive runner timing test (*a child past its
+### The own code review (Fable, read-only, after the code round: no Critical, no Major, six Minor, eight Notes)
+
+| Finding | Decision | Done |
+|---|---|---|
+| 1 Minor: the user's persisted environment (`DOTNET_STARTUP_HOOKS`, `COR_PROFILER*`) acts before the module pin | accepted as a residual | §9 — not fixable in a script, the 5.1 road had the same shape |
+| 2 Minor: "the environment must agree" was not pinned by a test | accepted | a test with the real package and another `ProgramFiles`; break-it (the agreement dropped) red |
+| 3 Minor: duplicated failing-exit and not-answered logic | accepted | `failedExit` (launcher) for both flows; `process/notAnswered.ts` for the GPU, guard and engine queries (words unchanged); `NO_ENGINE` exported; the test helper shared |
+| 4 Minor: no extension-host scenario | accepted as a deviation | recorded above; the unit tests pin the same request shapes |
+| 5 Minor: the module flowchart was not regenerated | accepted | `module_vs_code.md`: the `powershell/` node and its edges |
+| 6 Minor: "every outcome names the engine" overclaimed | accepted | D5 and the module doc say done, failed and timed-out |
+| 7 Note: a test attribution, §3 stale, the DoD boxes, two stacked JSDoc blocks | accepted | fixed |
+| 8 Note: `engine()` kept a failed read | accepted | it reads again; test + break-it red |
+| 9 Note: "printed no answer" when only the known folder was printed | accepted | "no PowerShell 7 verdict" |
+| 10 Note: a throwing listener or ceiling could reject | accepted | both guarded; tests + break-its red |
+| 11 Note: no progress before the first modal | accepted as a residual | §9 |
+| 12 Note: `factFields` returned an untyped record | accepted | typed again |
+| 13 Note: missing tests | accepted | a throwing runner and ceiling, `engine()` sharing a read in flight, a timed-out guard run naming its engine, exit 13 on the MSI engine without the Store note |
+| 14 Note: two reads may name two versions for one refresh | accepted | said in the module doc |
+
+**Tests:** extension 1134 pass (1 skipped), lint and typecheck clean. One load-sensitive runner timing test (*a child past its
 ceiling is reported timed out within the ceiling plus the kill grace*) failed once under the full parallel suite and passed
 alone and on the next full run — not touched by this story.
 
