@@ -1013,25 +1013,27 @@ expire (a workflow artifact does).
 ## Build and test
 
 Needs the .NET 10 SDK (`global.json` pins `10.0.100` with `rollForward: latestFeature`). Every
-MSBuild command carries `-m:4`; the root `Directory.Build.rsp` adds `-nr:false`.
+MSBuild command carries `-m:4`; the root `Directory.Build.rsp` adds `-nr:false`. Local builds and test runs go through
+the shared rules' `low-priority.mjs` (BelowNormal on Windows, nice 19 elsewhere), and each test executable caps itself at
+8 threads (`xunit.runner.json`, copied for local builds only) — the shared rule `common.local-cpu-budget`; CI is exempt.
 
 ```bash
-dotnet build wsl_care.slnx -c Release -m:4
+node .agents/conventions/tools/low-priority.mjs dotnet build wsl_care.slnx -c Release -m:4
 
 # Tests are xUnit v3 executables — run them directly, NEVER `dotnet test` (no VSTest host here)
-./src_daemon/tests/WslCare.Core.Tests/bin/Release/net10.0/WslCare.Core.Tests.exe
-./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe
-./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe --filter-method "*Version*"
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Core.Tests/bin/Release/net10.0/WslCare.Core.Tests.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe --filter-method "*Version*"
 
 # The scenario harness: the BUILT wsl-care over a temp WSL_CARE_ROOT, fake docker/systemctl/journalctl/powershell
 # alone on its PATH, and the check that every CLI verb has a row in research/module_tests.md
-./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios.exe
 
 # The live contract: the REAL docker / systemctl / journalctl of this machine against the product's parsers.
 # Not run by CI. A missing tool or daemon is a skip with its reason; WSL_CARE_REQUIRE_LIVE=1 (release) makes it a failure.
 # Run it inside WSL Ubuntu for the systemd half; WSL_CARE_LIVE_CAPTURE=<dir> records each answer (fixture capture).
-./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
-WSL_CARE_REQUIRE_LIVE=1 ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
+node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
+WSL_CARE_REQUIRE_LIVE=1 node .agents/conventions/tools/low-priority.mjs ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
 
 # Formatting, as CI checks it (reports, never rewrites)
 dotnet format wsl_care.slnx --verify-no-changes

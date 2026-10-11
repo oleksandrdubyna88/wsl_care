@@ -3077,6 +3077,17 @@ downloads and launches; the suite reports by throwing, and an empty scenario lis
 `scripts/run-tests.mjs`, which walks `out/test` for every `*.test.js` (no glob: it cannot forget a file, and prints the
 count) and starts ONE `node --test` with `--require out/test/support/noRealWsl.js`.
 
+**Capped and lowered** (the shared rule `common.local-cpu-budget`, 2026-10-11):
+
+- The runner first imports `scripts/lower-priority.mjs`, the family template copied with its MOUNT line set, so every
+  test process inherits BelowNormal (Windows) / nice 19. Nothing is lowered under `CI`, or when the mount folder is
+  empty, as on the extension CI job.
+- It passes `--test-concurrency=min(8, CPUs - 1)`: a cap that equals node's default below nine threads.
+- The four xUnit projects (Core.Tests, Cli.Tests, Scenarios, LiveContract) read `maxParallelThreads: 8` from an
+  `xunit.runner.json` that is copied for local builds only. Measured on xunit.v3 4.0.1: an uncopied file is never read.
+- `localCpuBudget.test.ts` pins all of it, including that the tripwire `--require` is still in the spawn. Break-it:
+  dropping the cap reddens it.
+
 | Part | What it is |
 |---|---|
 | `src/test/support/noRealWsl.ts` | **the tripwire**: loaded into every test process, it replaces `spawn` / `spawnSync` / `execFile` / `execFileSync` / `exec` / `execSync` on the raw `child_process` module with versions that THROW for any program named `wsl` / `wsl.exe` — so no test can reach the real WSL of whoever runs the suite. `noRealWsl.test.ts` asserts it is armed in the process it runs in, and that the product runner handed the real `SystemRoot` gets `failedToStart` naming the tripwire |
