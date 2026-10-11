@@ -145,3 +145,16 @@ test('the engine query really RUNS on the Windows leg — unelevated, read-only 
   const read = engineReadOf({ kind: 'exited', code: 0, stdout: Buffer.from(result.stdout), stderr: Buffer.alloc(0) }, process.env, () => undefined);
   assert.equal(read.failure, '', read.engine.label);
 });
+
+test('coai code round: a PARTIAL probe answer (it faulted after its first verdict, or printed no known folder) is no complete check — 5.1 runs, labelled "could not be checked"', () => {
+  const partial = [
+    ['pwsh.programFiles=C:\\Program Files', 'pwsh.store=absent', 'pwsh.path='].join('\n'),
+    ['pwsh.store=signed', `pwsh.path=${STORE}`, 'pwsh.msi=absent', 'pwsh.msiPath=x'].join('\n'),
+  ];
+  for (const answer of partial) {
+    const read = engineReadOf(exited(answer), ENV, NO_FILES);
+    assert.equal(read.engine.kind, 'windows', answer);
+    assert.match(read.failure, /printed an incomplete answer/, answer);
+    assert.match(read.engine.label, /PowerShell 7 could not be checked: the read printed an incomplete answer/);
+  }
+});

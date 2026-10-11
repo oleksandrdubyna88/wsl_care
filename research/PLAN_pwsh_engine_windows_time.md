@@ -238,8 +238,10 @@ worktree; all accepted (R5 partly):
   is recorded as a residual (§9), not changed here.
 - **R6 (Minor)** — `reread()` must never be answered by a read already in flight: it awaits that one, then starts its own.
   Pinned by a test.
-- **R7 (Minor)** — a re-read that did not answer says "the read of the elevated program right before the launch did not answer
-  (<reason>)" — never "the program changed" — and nothing runs.
+- **R7 (Minor)** — a re-read that did not answer, and so names a program OTHER than the modal's, says "the read of the
+  elevated program right before the launch did not answer (<reason>)" — never "the program changed" — and nothing runs. A
+  re-read that did not answer while the modal already named Windows PowerShell 5.1 names that same System32 program, which runs:
+  it is exactly what the person confirmed (made exact after the coai code round, below).
 - **R8 (Minor)** — the probe is wrapped in `try { … } catch { }` in the shared module, so a probe fault cannot blank the GPU
   state; the engine read reads exit 0 only.
 - **R9 (Minor)** — tests: the Windows-leg command lists (done), the probe-only query really RUNS on the Windows leg and answers
@@ -292,7 +294,15 @@ read, the GPU host naming no engine (D6).
   two `absent` verdicts and no path.
 - **New key:** `wslCare.timeouts.engineProbeSeconds` (default 20, 5–120).
 
-**Tests:** extension 1127 pass (1 skipped), lint and typecheck clean. One load-sensitive runner timing test (*a child past its
+### The code round (coai, 2026-10-11 on the rebased branch: `proceed`, all 4 codex reviewers answered)
+
+| Finding | Decision | Done |
+|---|---|---|
+| Nit: the Test-mode recorder pushes into its arrays | rejected — the extension's standard Test-mode double (every recorder accumulates in place, read by the scenarios; G1's code round 4 rejected the same) | — |
+| Major ×2 (one point): a failed re-read is treated as unchanged when both reads fall back to 5.1 | rejected — the program that runs is exactly the one the modal named and the person confirmed (System32 Windows PowerShell 5.1); the re-read stops an OTHER program; refusing would block the clock fix on a probe failure, against the one fallback policy shared with G1 | §11 R7's wording made exact |
+| Minor: a PARTIAL probe answer read as a complete check | accepted | RED first: a probe that printed one verdict, or a signed package without its known folder, now reads "could not be checked: the read printed an incomplete answer"; GREEN; the break-it (incompleteness ignored) red, restored |
+
+**Tests:** extension 1128 pass (1 skipped), lint and typecheck clean. One load-sensitive runner timing test (*a child past its
 ceiling is reported timed out within the ceiling plus the kill grace*) failed once under the full parallel suite and passed
 alone and on the next full run — not touched by this story.
 

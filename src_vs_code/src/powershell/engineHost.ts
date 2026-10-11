@@ -49,14 +49,32 @@ function unchecked(facts: PwshFacts): boolean {
   return facts.store === undefined && facts.msi === undefined;
 }
 
+/** A signed Store package needs the known folder it is anchored on (§11 R1); any other verdict needs none. */
+function anchoredStore(facts: PwshFacts): boolean {
+  return facts.store?.kind !== 'signed' || facts.programFiles !== undefined;
+}
+
+/**
+ * Whether the probe printed its WHOLE answer (coai code round): both verdicts, and the known folder when the Store package is
+ * signed — a probe that faulted after its first verdict reads as "could not be checked", never as a complete check.
+ */
+function complete(facts: PwshFacts): boolean {
+  return facts.store !== undefined && facts.msi !== undefined && anchoredStore(facts);
+}
+
+/** The verdicts as the engine: none printed, part printed, or the whole answer. */
+function factsRead(facts: PwshFacts, env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf): EngineRead {
+  if (unchecked(facts)) {
+    return failedRead(env, fileInfo, 'the read printed no answer');
+  }
+
+  return complete(facts) ? { engine: engineOf(env, fileInfo, facts), failure: '' } : failedRead(env, fileInfo, 'the read printed an incomplete answer');
+}
+
 function answeredRead(stdout: string, env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf): EngineRead {
   const { tags, twice } = tagsOf(stdout);
-  if (twice !== undefined) {
-    return failedRead(env, fileInfo, `the read answered a tag twice (${safeText(twice, 60)})`);
-  }
-  const facts = pwshFactsFromTags(tags);
 
-  return unchecked(facts) ? failedRead(env, fileInfo, 'the read printed no answer') : { engine: engineOf(env, fileInfo, facts), failure: '' };
+  return twice === undefined ? factsRead(pwshFactsFromTags(tags), env, fileInfo) : failedRead(env, fileInfo, `the read answered a tag twice (${safeText(twice, 60)})`);
 }
 
 function exitedRead(code: number, stdout: Buffer, env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf): EngineRead {
