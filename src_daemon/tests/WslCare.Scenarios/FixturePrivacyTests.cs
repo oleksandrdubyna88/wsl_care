@@ -223,6 +223,98 @@ public sealed class FixturePrivacyTests
             .Should().ContainSingle().Which.Should().StartWith("planted.txt:2 holds ").And.Contain(rule);
     }
 
+    /// <summary>2026-10-11: a copied A21 basis carried the owner's login name into POST_DEPLOY.md and a research note, and the scan
+    /// saw it ONLY through the machine-name rule — on the owner's machine, never in CI (the runner's account is <c>runner</c>). The
+    /// daemon's own sentences that name a target user are a FIXED rule now, so the repository is clean whatever the machine running
+    /// the test is called.</summary>
+    [Fact]
+    public void No_tracked_text_file_carries_a_daemon_sentence_naming_a_real_user_whatever_the_machine_is_called()
+    {
+        var findings = FixturePrivacy.RepositoryFindings(ReleaseFiles.Root, []);
+
+        findings.Should().BeEmpty("the fixed rules alone must hold the repository clean, as CI runs them — {0} finding(s), by file and rule:\n{1}",
+            findings.Count, ByFileAndRule(findings));
+    }
+
+    /// <summary>The holes of a daemon interpolation that mention a user but carry no NAME — each with why. Anything else whose
+    /// expression mentions a user, an account or a login is a name, and its sentence must be one the rule knows.</summary>
+    private static readonly HashSet<string> NotANameHole = new(StringComparer.Ordinal)
+    {
+        "c.Loaded.UserLayerSkipped",  // a count of skipped configuration layers
+        "context.TargetUser.Refusal", // the daemon's own refusal sentence, its names already covered where it is written
+        "account.Home",               // a home path: the /home/<name> rule's
+        "logins.Count",               // a number
+        "FirstLoginUid",              // a number
+        "AccountTag",                 // a constant tag of the Windows disk script
+        "user.Source",                // where the target user came from (SUDO_USER, the login uid …)
+    };
+
+    /// <summary>ActCommand's helper renders "{name} ({source})", which its caller writes after "target user: " — the caller's hole
+    /// (<c>User(p.TargetUser)</c>) is the sentence, so the helper's own line is not one.</summary>
+    private const string CompositionHelper = "private static string User(TargetUserReport user)";
+
+    private const string PlantedName = "quillonvex";
+
+    /// <summary>Coai code round of this change: a NEW daemon sentence that interpolates a user name would slip past the fixed rule
+    /// while the repository scan stayed green. So every such interpolation of <c>src_daemon/src</c> is found here, rendered with a
+    /// planted name, and must be caught by the rule — a new site fails this test until the rule (or <see cref="NotANameHole"/>, with
+    /// its reason) knows it.</summary>
+    [Fact]
+    public void Every_daemon_sentence_that_interpolates_a_user_name_is_covered_by_the_rule()
+    {
+        var src = Path.Combine(ReleaseFiles.Root, "src_daemon", "src");
+        var sites = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(src, file).Replace('\\', '/'))
+            .Where(file => !file.Contains("/obj/", StringComparison.Ordinal) && !file.Contains("/bin/", StringComparison.Ordinal))
+            .SelectMany(file => File.ReadLines(Path.Combine(src, file)).Select((text, i) => (File: file, Line: i + 1, Text: text)))
+            .Where(line => !line.Text.Contains(CompositionHelper, StringComparison.Ordinal))
+            .SelectMany(line => System.Text.RegularExpressions.Regex.Matches(line.Text, @"\{(?<expr>[A-Za-z_][A-Za-z0-9_.()]*)(?::[^{}]*)?\}")
+                .Select(m => (line.File, line.Line, line.Text, Hole: m.Value, Expr: m.Groups["expr"].Value)))
+            .Where(h => System.Text.RegularExpressions.Regex.IsMatch(h.Expr, "user|account|login", System.Text.RegularExpressions.RegexOptions.IgnoreCase) && !NotANameHole.Contains(h.Expr))
+            .ToList();
+
+        sites.Should().HaveCountGreaterThanOrEqualTo(12, "the walk finds the interpolations of a user name it exists for");
+        var uncovered = sites
+            .Where(h => !FixturePrivacy.Findings("site", Rendered(h.Text, h.Hole), NoMachineNames, FixturePrivacy.SyntheticNames).Any(f => f.Contains("daemon sentence", StringComparison.Ordinal)))
+            .Select(h => $"{h.File}:{h.Line} {h.Hole}")
+            .ToList();
+        uncovered.Should().BeEmpty("every daemon sentence that writes a user name must be one the privacy rule finds — teach FixturePrivacy.DaemonUserSentence its shape, or say in NotANameHole why the hole is no name:\n{0}", string.Join('\n', uncovered));
+    }
+
+    /// <summary>The source line with the name hole filled by the planted name and every other hole by <c>1</c>.</summary>
+    private static string Rendered(string line, string hole) =>
+        System.Text.RegularExpressions.Regex.Replace(line.Replace(hole, PlantedName, StringComparison.Ordinal), @"\{(?!\s)[^{}]*\}", "1");
+
+    // Each planted name is spelt in two parts, so this source file does not itself hold a daemon sentence for the repository scan to find.
+    [Theory]
+    [InlineData("its basis read \"0 process(es), 0 fd link(s) in 0 ms … 0 relay(s) of " + "quillonvex kept\"")]
+    [InlineData("2 AI-agent process(es) of " + "quillonvex kept: 12 (busy)")]
+    [InlineData("1 MCP server(s) of " + "quillonvex kept: 40 (busy)")]
+    [InlineData("wsl-care act --preview (nothing run, nothing written); target user: " + "quillonvex (SUDO_USER)")]
+    [InlineData("config set and config reset write the user layer of " + "quillonvex; run them as " + "quillonvex, not as root")]
+    [InlineData("npm is not in " + "quillonvex's bin folders: /usr/local/bin")]
+    public void A_daemon_sentence_naming_a_real_user_is_a_finding(string line)
+    {
+        FixturePrivacy.Findings("planted.txt", $"first line\n{line}\n", NoMachineNames)
+            .Should().ContainSingle().Which.Should().Be("planted.txt:2 holds a daemon sentence that names its target user, whose name is not 'user'");
+    }
+
+    [Theory]
+    [InlineData("0 relay(s) of user kept: none")]
+    [InlineData("1 relay(s) of me kept: 12 (its client is alive)")]
+    [InlineData("2 relay(s) of <user> kept")]
+    [InlineData("target user: user (SUDO_USER)")]
+    [InlineData("write the user layer of <user>; run them as user, not as root")]
+    [InlineData("npm is not in user's bin folders")]
+    [InlineData("the relay(s) of the run were kept as they were")]
+    [InlineData("Nothing happens until the CodeRabbit App is installed for this repository (docs/repo-settings.md, step 7).")]
+    [InlineData("dotnet is not installed for the target user: no dotnet")]
+    [InlineData("restore archived AI-agent sessions as user: 1 removed at their source and verified")]
+    public void A_daemon_sentence_with_the_placeholder_or_a_synthetic_name_is_not_a_finding(string line)
+    {
+        FixturePrivacy.Findings("clean.txt", line, NoMachineNames, FixturePrivacy.SyntheticNames).Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("/home/user/git/project-a")]
     [InlineData("/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code")]

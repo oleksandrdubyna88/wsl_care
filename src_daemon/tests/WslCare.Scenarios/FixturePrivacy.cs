@@ -11,6 +11,11 @@ namespace WslCare.Scenarios;
 ///   <item>a Windows profile path — <c>/mnt/&lt;d&gt;/Users/&lt;name&gt;</c> or <c>&lt;D&gt;:\Users\&lt;name&gt;</c> — whose name is not
 ///   <c>user</c> (Windows' own <c>Public</c> and <c>Default</c> profiles excepted);</item>
 ///   <item>an e-mail address (a systemd template instance such as <c>getty@tty1.service</c> is not one);</item>
+///   <item>a daemon sentence that names its target user — every shape in which the daemon's own code writes a user's NAME in
+///   prose (the suspect previews' basis "… relay(s) of &lt;name&gt; kept", <c>act --preview</c>'s "target user: &lt;name&gt;", config's
+///   "the user layer of &lt;name&gt;", A13's and A20's "… as &lt;name&gt;:", "… is not installed for &lt;name&gt;" …; a parity test holds
+///   every such site of <c>src_daemon/src</c> to this rule) — whose name is not <c>user</c> (2026-10-11: a copied A21 basis carried the owner's login name into POST_DEPLOY.md and a research
+///   note, and only the machine-name rule below could see it — never in CI, where the runner's account is <c>runner</c>);</item>
 ///   <item>the user name of the machine RUNNING the test — derived now from the environment and the home folder, as
 ///   <c>src_vs_code/scripts/check-vsix.mjs</c> derives it, and never written into the repository.</item>
 /// </list>
@@ -246,6 +251,11 @@ internal static partial class FixturePrivacy
             yield return "an e-mail address";
         }
 
+        if (DaemonUserSentence().Matches(line).Any(m => IsForeign(m, Users, syntheticNames)))
+        {
+            yield return "a daemon sentence that names its target user, whose name is not 'user'";
+        }
+
         for (var n = 0; n < machineNames.Count; n++)
         {
             if (Regex.IsMatch(line, $"(?<![A-Za-z0-9]){Regex.Escape(machineNames[n])}(?![A-Za-z0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
@@ -291,4 +301,18 @@ internal static partial class FixturePrivacy
 
     [GeneratedRegex(@"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?<tld>[A-Za-z]{2,})(?![A-Za-z0-9-])", RegexOptions.CultureInvariant)]
     private static partial Regex Email();
+
+    /// <summary>
+    /// The daemon's own sentences that carry a target user's name — EVERY interpolation of a user name in <c>src_daemon/src</c>,
+    /// held to this list by <c>FixturePrivacyTests.Every_daemon_sentence_that_interpolates_a_user_name_is_covered_by_the_rule</c>:
+    /// the suspect previews' basis "… process(es) | MCP server(s) | relay(s) of {name} kept" and item note "{family}, {name}, {h} h
+    /// old:", <c>act --preview</c>'s "…written); target user: {name}" (the bare "target user:" is prose too: "dotnet is not installed for the target user: …"), config's "the user layer of {name}" / "run them as {name}, not as root",
+    /// "{exe} is not in {name}'s bin folders", A20's "… sessions as {name}:", A13's "… into the archive as {name}:", the tool caches'
+    /// "… their own commands as {name};" and "… is (not) installed for {name}", the command policy's "a command run as {name} must
+    /// start", the target user's "the account "{name}" has no usable". A placeholder in angle brackets (<c>&lt;user&gt;</c>) is no
+    /// name: the class leaves out <c>&lt;</c>; "installed for" needs the name to end the clause, so "installed for this repository"
+    /// is prose.
+    /// </summary>
+    [GeneratedRegex(@"(?:\((?:e?s)\) of (?<name>[A-Za-z0-9._-]+) kept|written\); target user: (?<name>[A-Za-z0-9._-]+)|the user layer of (?<name>[A-Za-z0-9._-]+)|run them as (?<name>[A-Za-z0-9._-]+), not as root|is not in (?<name>[A-Za-z0-9._-]+)'s bin folders|sessions as (?<name>[A-Za-z0-9._-]+):|into the archive as (?<name>[A-Za-z0-9._-]+):|their own commands as (?<name>[A-Za-z0-9._-]+);|is (?:not )?installed for (?<name>[A-Za-z0-9._-]+)(?=:|""|$)|a command run as (?<name>[A-Za-z0-9._-]+) must start|the account \\?""(?<name>[A-Za-z0-9._-]+)\\?"" has no usable|, (?<name>[A-Za-z0-9._-]+), \d+(?:\.\d+)? h old:)", RegexOptions.CultureInvariant)]
+    private static partial Regex DaemonUserSentence();
 }
