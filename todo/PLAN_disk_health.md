@@ -1,7 +1,8 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built* at the end); the owner's answers to Q1–Q6
-> recorded (§9); E15.S2 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 built on its branch
+> `feat/wc-e15s2-virtual-disks` (*E15.S2 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
+> not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -657,3 +658,65 @@ as-built section.
   gives no guest usage, because those filesystems are not mounted here (D3).
 - The keys are in GiB (`…Gib`), not "Gb", because Windows reports the file sizes in binary units.
 - `host.vhdx` is re-worded, not removed.
+
+## E15.S2 as built (2026-10-11, branch `feat/wc-e15s2-virtual-disks`)
+
+**What shipped.** `Health/DistroIdentity.cs` (`WSL_DISTRO_NAME` first, then `{state}/distro-name.json`, written by a ROOT `collect`
+that carries the variable — atomically, only when the name changed; a name is believed only when it passes WSL's rule, the
+extension's `DISTRO_NAME` pattern); `Health/VirtualDisks.cs` (PURE) → `Health/VirtualDiskFacts.cs` (`DiskFacts`: per disk the
+volume letter, `mappedBy` `mount | dockerDf | none`, guest used, gap, growth per day, possible growth, each a `Reading`; per hosting
+volume size, free, the disks, summed growth, known possible growth and the disks whose growth is unknown); `Thresholds/DiskRules.cs`
+(`disk.vhdxGap`, `disk.vhdxGrowth`, `disk.hostFree`, spread into `ThresholdRules.FromFullRun` after `disk.discard`, so `status`
+carries them with the run and their age); `SlowParts.VirtualDisks` + `LastFullRun.VirtualDisks` (the sizes on the history line,
+the previous run's for growth); `Collect/DiskReport.cs` (the run detail's `disk`) and `Status/StatusDisk.cs` (`status.disk` with
+`basis {source: fullRun, runId, evaluatedAt, ageSeconds}`, read from the same detail file as the verdicts through
+`RunDetailVerdicts.Disk`); the Windows binary answers `disk` unavailable and `host.vhdx` points at it. Keys `disk.vhdxGapWarnGib`
+(1–1024, 20), `disk.vhdxGrowthWarnGibPerDay` (1–1024, 10), `disk.hostFreeWarnGib` (1–10240, 100), `disk.growthMinHours` (1–48, 1),
+display keys, their descriptions and the README naming them STARTING VALUES with their provenance; `contracts/config-keys.json`
+regenerated. The panel's `disk.vhdx` row reads `verdicts[id=disk.vhdxGap]`; the status bar is unchanged (a test holds that the
+three `disk.*` verdicts do not colour it); the field-map block in `architecture.md` regenerated. The scenarios' captured collect
+answers the disk script with the 2026-10-10 capture, so the seven status goldens carry the three verdicts and `status.json` the
+`disk` section (regenerated on Linux, WSL `Ubuntu`, from a copy under `/tmp`).
+
+**Deviations.**
+
+1. **Who records the name.** `collect` run as root (synchronously, or as `collect --detach` — the panel's *Run full check now* is
+   `wsl.exe -u root … collect --detach`, so the detaching process carries the variable and the systemd unit that does the run
+   reads the file). Not `install.sh` / update: it runs under `sudo`, whose default `env_reset` drops the variable (sudo's
+   documented default, not measured here); not `act`. The design said "any root run"; one verb is the smallest sound place.
+2. **The environment is an argument**: `CollectContext.DistroVariable`, set by the CLI from the process — so no test reads the
+   test process's own environment; the scenarios' captured collect REMOVES `WSL_DISTRO_NAME` (a test run from a WSL shell inherits
+   it), so the goldens are the systemd unit's case. (A first version removed it for EVERY scenario; on Linux in WSL that split the
+   archive's side folder — `ArchiveNames` reads the same variable in the test process and in the CLI — and two `ArchiveRunFlows`
+   went red, so the scrub is now only in `CollectFlows.Captured`.) In the goldens no distro is mapped, Docker's data disk is (by
+   `docker system df`), and `disk.hostFree` is `unknown`. The `mount` mapping is proved by the unit tests and by `VirtualDiskFlows` on Linux.
+3. **The gap test reads 43.6 GiB, not 43.7**: the exact bytes (255 195 086 848 − 208 337 252 352 = 46 857 834 496) are 43.6 GiB;
+   D3's 43.7 rounded both sides first. It still warns at 20.
+4. **No `hostGrowth` field** (the story row's `status.disk {vhdx[], volumes[], hostGrowth}`): each volume carries
+   `growthBytesPerDay`, `knownPossibleGrowthBytes` and `unknownGrowth` (design §2's shape).
+5. **An unreadable Lxss map leaves the whole disk section unavailable** with its reason (Docker's disk alone is not judged): this
+   distro's mapping needs the map. Docker's data disk that is absent or unread is simply not listed.
+6. **`host.vhdx`'s reason is `StatusDisk.ReadByTheDistro`** — one sentence for both, and `VhdxNotCollected` is gone.
+
+**RED first** (against stubs answering "not built yet" and a `DiskRules` returning no verdict): 45 of 227 red, each for the
+missing behaviour — *Expected type to be …Reading`1+Available[[…DiskFacts…]] because not built yet, but found …Unavailable…*
+(the facts); *Expected DistroIdentity.NotKnownYet "not built yet" to contain "wsl.exe"*; *Expected Record(name, Now) "not built
+yet" to contain "is not a distribution name"*; *Expected Record(string.Empty, Now) to be empty, but found "not built yet"*;
+*Expected verdicts.Select(v => v.Id) to be equal to {"disk.vhdxGap", "disk.vhdxGrowth", "disk.hostFree"}, but found empty
+collection*; *Expected ids {… "disk.discard", "docker.A4", …} to contain items {"disk.discard", "disk.vhdxGap", …} in order*; the
+verdict tests *Sequence contains no matching element*; *Expected disk.Available to be True because not built yet, but found
+False*; *Expected StatusDisk.OnWindows.Reason "not built yet" to contain "the distro's full run"*; *Expected type to be
+…Available[[…DiskReport…]] because not read, but found …Unavailable…*. The `host.vhdx` re-wording: `ProbeTests` red first
+(*… to be the same string, but they differ at index 4*). Then green: 227 of 227.
+
+**Break-its** (product code, each restored, each named test red alone): gap = file (not file − guest) → *Expected
+Value(ubuntu.GapBytes) to be 46857834496L … but found 255195086848L*; every distro mapped by mount → *Expected other.MappedBy to be
+MappedBy.None … but found MappedBy.Mount*; the `disk.growthMinHours` arm removed → the 10-minute pair reads a growth; the
+same-path check removed → *Expected …GrowthBytesPerDay.IsAvailable to be False … but found True*; the unknown-growth arm of
+`disk.hostFree` removed → *Expected free.Level to be Level.Unknown … but found Level.Ok* (the 150 / 20 / 1 case); the known-growth
+arm removed → *Expected free.Level to be Level.Warn … but found Level.Ok*; the sparse arm removed → the reason lacks
+`wsl --manage Ubuntu --set-sparse true`; the file before the environment → *The_environment_names_the_distro_first* red; the
+"unchanged" arm removed → the file is rewritten (*differ on line 4*); `status.disk` without its basis → *Expected disk.Basis to
+be …VerdictBasis*; the detail's disk not read → *…Available[[…DiskReport…]] … but found …Unavailable*; `DiskRules` not spread into
+the full-run list → the order test red; the panel's row back to `arriving` → 2 red (`fieldMap.test`, `viewModel.test`); and on
+Linux the root `collect`'s `RecordDistro` call commented out → `VirtualDiskFlows` red (no `distro-name.json`).
