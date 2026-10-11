@@ -3704,12 +3704,12 @@ broken one line at a time (R1–R4: `media/panel.js` mutated, `archiveView.test.
 
 The three items #120's own review found outside its change. RED first (5 tests: "actual: 'Archive folder/golden-root/mnt/v/ai-archive'",
 the badge's old text, the CSS rule "actual: []", "actual: 'Freed in total0.3 GB'"), then green; then one product line broken at a
-time (C1–C6, `badge-breakit`: the file mutated, a `.ts` recompiled, the three test files run, the file restored by its sha256).
+time (C1–C6 and C2b, `badge-breakit`: the file mutated, a `.ts` recompiled, the three test files run, the file restored by its sha256).
 
 | Guarantee | Held by | RED, and teeth |
 |---|---|---|
 | the badge reads "before the archive takes them at <N> d" — the retention is said once, in the WHOLE badge row too | `archiveView.test.ts` (*shows EXACTLY*, *sets the badge apart too*) | red: the old badge text; teeth C1 → 3 red |
-| the badge's warn level has `color: var(--vscode-editorWarning-foreground)` (a rule of `media/panel.css` read from the file), and the rendered badge is that rule's SPAN with `data-retention-badge` and `data-level="warn"` and keeps its words (the plan round's #0) | `archiveView.test.ts` (*the editor's warning colour*) | red: `[]`; teeth C2 (another token) → 1 red |
+| the badge's warn level has `color: var(--vscode-editorWarning-foreground)` (a rule of `media/panel.css` read from the file), and the rendered badge is that rule's SPAN with `data-retention-badge` and `data-level="warn"` and keeps its words (the plan round's #0) | `archiveView.test.ts` (*the editor's warning colour*) | red: `[]`; teeth C2 (a rule of its own with another token), C2b (the badge left out of the warn rule) → 1 red each |
 | an Archive page line reads "label: value" whole — "Archive folder: /golden-root/mnt/v/ai-archive" — every line so, the value span alone, the separator INSIDE the label span | `archivePage.test.ts` (*label: value*) | red: the run-together text; teeth C3 (no separator), C5 (a sibling span after the label) |
 | a Logs page line the same — "Freed in total: 0.3 GB", every line of the page | `logsPage.test.ts` (*label: value*) | red: the run-together text; teeth C4, C6 |
 

@@ -142,7 +142,7 @@
 
   function linePart(model) {
     const line = element('div', undefined, { line: model.id });
-    // The label holds its ': ' separator INSIDE it, so textContent and copy-paste read 'Archive folder: /…' while the line stays two
+    // The label holds its ': ' separator INSIDE it, so textContent and copy-paste read 'Freed in total: 0.3 GB' while the line stays two
     // flex items: the gap on screen is unchanged, and a space at the end of the label is not drawn.
     const label = element('span', model.label, { label: '' });
     label.appendChild(element('span', ': ', { 'label-separator': '' }));

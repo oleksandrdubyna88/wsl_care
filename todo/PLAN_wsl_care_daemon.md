@@ -4749,7 +4749,7 @@ below.
 
 ##### E10.S1 follow-up 2 — the badge said once and coloured, a label and its value set apart
 
-> Status: **built 2026-10-11 on `fix/wc-badge-and-line-separators` — the code round and the own review next (see *As built* below).** Branch `fix/wc-badge-and-line-separators`, from `main` 73e99f0 (#120
+> Status: **built 2026-10-11 on `fix/wc-badge-and-line-separators` — the code round (proceed) and the own review on Opus done, every suite green; merge next (see *As built* below).** Branch `fix/wc-badge-and-line-separators`, from `main` 73e99f0 (#120
 > merged). Extension only (`src/archive/archiveView.ts`, `media/panel.css`, `media/archive.js`, `media/logs.js`, their tests); not a
 > root path, so the own review runs on Opus. The three items #120's own review found outside its change.
 
@@ -4801,6 +4801,15 @@ colour token) → 1 red, C3 / C4 (no separator in archive.js / logs.js) → 1 re
 label, a third flex item) → 1 red each, every file restored by its sha256. The whole extension suite (1248 tests, 0 failed; a first full run under load had 3
 unrelated timing failures in the scenario files, each green alone and in the clean second run), lint, package and check:vsix (with
 the attested Windows daemon fetched) green.
+
+**The code round** (coai session 973f8195, `proceed`, codex, one gating finding): #0 accepted — the test fixtures read the golden
+preview's agents through `bodyOf` (`goldenAgents()`), no `as` cast; all five uses in `archiveView.test.ts` (three were #120's,
+written the same way). **The own review on Opus** (4 findings): #2 accepted — the `logs.js` comment's example is the Logs page's own
+line; #3 accepted — the badge joins the panel's existing warn rule (one selector list, one declaration), break-it C2b (the badge left
+out of the rule) → 1 red, C2 now splits the badge into a rule of its own with another token; #4 (the cleanup row's tick, button and
+note run together in `textContent`) noted for the shared kit, not this change. #1 rejected for this PR: "them" in "before the archive
+takes them at 14 d" has no noun of its own — the coordinator set this exact text; a wording with the noun ("sessions go before the
+archive takes them at 14 d") is left to the owner.
 
 ##### E10.S2a build notes — the Archive page, browse only
 

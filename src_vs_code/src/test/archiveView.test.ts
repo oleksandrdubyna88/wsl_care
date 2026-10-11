@@ -6,6 +6,7 @@ import { ARCHIVE_CAPABILITY, deriveArchive, NO_ARCHIVE, retentionBadge, type Arc
 import type { ReadOutcome } from '../client/outcome';
 import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
+import { bodyOf, type Body } from './support/body';
 import { goldenSnapshot } from './support/outcomes';
 import { Element, runPageScript } from './support/pageHarness';
 import { goldenFile, PAGE_SCRIPT } from './support/paths';
@@ -28,6 +29,13 @@ const CAPABLE = [ARCHIVE_CAPABILITY, 'archive.preview', 'archive.run'];
 
 function state(overrides: Partial<ArchiveState> = {}): ArchiveState {
   return { status: read('archiveStatus', goldenFile('archive-status.json')), preview: read('archivePreview', goldenFile('archive-preview.json')), capabilities: CAPABLE, busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true, ...overrides };
+}
+
+/** The golden preview's agents, each read through `bodyOf` — no cast stands in for the daemon's shape (the code round of follow-up 2). */
+function goldenAgents(): Body[] {
+  const agents = goldenFile('archive-preview.json').agents;
+  assert.ok(Array.isArray(agents), 'the golden preview lists its agents');
+  return agents.map((agent: unknown, i: number) => bodyOf(agent, `archive-preview.json agents[${i}]`));
 }
 
 function enabled(controls: ReturnType<typeof deriveArchive>): Record<string, boolean> {
@@ -59,7 +67,7 @@ test('the retention badge shows EXACTLY when the agent\'s own retention is below
   assert.equal(retentionBadge(agent(7, true, 14)), 'before the archive takes them at 14 d', 'the retention beside it already says "after 7 d" — never said twice');
   assert.equal(retentionBadge(agent(7, false, 14)), '', 'an unknown retention says nothing it does not know');
   const preview = goldenFile('archive-preview.json');
-  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
+  const agents = goldenAgents().map((agent, i) => (i === 0 ? { ...agent, retention: { known: true, days: 7, source: 's' } } : agent));
   assert.equal(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0]?.badge, 'before the archive takes them at 14 d');
 });
 
@@ -120,7 +128,7 @@ test('code round #6: a FAILED preview is said, never shown as nothing due', () =
 
 test('code round #6: an agent whose figures are missing reads "unknown", never "nothing older than 0 d"', () => {
   const preview = goldenFile('archive-preview.json');
-  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { id: 'claude-code', name: 'Claude Code', enabled: true } : a));
+  const agents = goldenAgents().map((agent, i) => (i === 0 ? { id: 'claude-code', name: 'Claude Code', enabled: true } : agent));
   const line = deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0];
   assert.equal(line?.due, 'what is due is unknown — update the daemon to see this');
   assert.equal(line?.badge, '');
@@ -173,7 +181,7 @@ test('an agent row reads as one line — its name, what is due and its own reten
 
 test('a row with the retention badge sets the badge apart too', () => {
   const preview = goldenFile('archive-preview.json');
-  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
+  const agents = goldenAgents().map((agent, i) => (i === 0 ? { ...agent, retention: { known: true, days: 7, source: 's' } } : agent));
   const rows = renderedAgentRowElements(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })));
   assert.equal(rows[0]?.one('span[data-retention-badge]').dataset.level, 'warn', 'the badge keeps its own span and its warn level (plan round #0)');
   assert.equal(rows[0]?.textContent, 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 7 d — before the archive takes them at 14 d', 'the retention is said once (the follow-up to #120, #1)');
@@ -192,7 +200,7 @@ function cssDeclarationsFor(selector: string): string[] {
 test('the badge\'s warn level has the editor\'s warning colour (a theme token) — and its words stay, so colour is never the only signal', () => {
   assert.deepEqual(cssDeclarationsFor('span[data-retention-badge][data-level="warn"]'), ['color: var(--vscode-editorWarning-foreground)']);
   const preview = goldenFile('archive-preview.json');
-  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
+  const agents = goldenAgents().map((agent, i) => (i === 0 ? { ...agent, retention: { known: true, days: 7, source: 's' } } : agent));
   const badge = renderedAgentRowElements(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })))[0]?.one('span[data-retention-badge]');
   assert.equal(badge?.textContent, 'before the archive takes them at 14 d');
   // The rule's selector, part by part, on the RENDERED badge (the harness matches one attribute at a time; the plan round's #0):
@@ -204,7 +212,7 @@ test('the badge\'s warn level has the editor\'s warning colour (a theme token) �
 
 test('own review #1: a part with no text is left out with its separator — an agent with neither name nor id never starts with " — "', () => {
   const preview = goldenFile('archive-preview.json');
-  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, name: '', id: '' } : a));
+  const agents = goldenAgents().map((agent, i) => (i === 0 ? { ...agent, name: '', id: '' } : agent));
   const rows = renderedAgentRows(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })));
   assert.equal(rows[0], '1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 30 d');
 });
