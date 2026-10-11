@@ -70,20 +70,25 @@ public sealed class DiskRulesTests : IDisposable
     private static VirtualDiskFacts MeasuredUbuntu(bool sparse = false) => Disk("Ubuntu", 255_195_086_848, Reading.Of(208_337_252_352L), sparse: sparse);
 
     [Fact]
-    public void The_measured_gap_of_43_6_GiB_warns_with_the_sparse_advice_for_Ubuntu_as_text()
+    public void The_measured_gap_of_43_6_GiB_warns_with_the_compaction_advice_and_never_advises_a_sparse_vhd()
     {
         var gap = Find(Evaluate(Facts([MeasuredUbuntu()])), DiskRules.GapId);
 
         gap.Level.Should().Be(Level.Warn);
         gap.Value.Should().Be("Ubuntu: 237.7 − 194.0 = 43.6 GiB", "file − guest = gap, named by the file");
         gap.Limit.Should().Contain("20 GiB").And.Contain("disk.vhdxGapWarnGib");
-        gap.Reason.Should().Contain("wsl --manage Ubuntu --set-sparse true").And.Contain("wsl-care never runs it");
+        gap.Reason.Should().NotContain("--set-sparse true", "WSL disabled sparse VHD after data-corruption reports, and a sparse VHDX cannot be compacted (research/2026-10-02_competitor_survey.md; the never-list's sparse-vhd rule)");
+        gap.Reason.Should().Contain("wsl --shutdown").And.Contain("compact").And.Contain("wsl-care never compacts");
+        gap.Reason.Should().Contain("sparse VHD is not advised");
     }
 
     [Fact]
-    public void A_sparse_file_gets_no_sparse_advice()
+    public void A_sparse_file_gets_no_compaction_advice_and_no_sparse_switch()
     {
-        Find(Evaluate(Facts([MeasuredUbuntu(sparse: true)])), DiskRules.GapId).Reason.Should().NotContain("--set-sparse");
+        var reason = Find(Evaluate(Facts([MeasuredUbuntu(sparse: true)])), DiskRules.GapId).Reason;
+
+        reason.Should().NotContain("--set-sparse");
+        reason.Should().NotContain("compact vdisk", "a sparse VHDX cannot be compacted");
     }
 
     [Fact]
