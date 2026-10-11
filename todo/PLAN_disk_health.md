@@ -1144,3 +1144,68 @@ limit, untouched here). CI is the authority for these.
 
 **Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
 that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.
+
+## E15.S1b design — the MSI pwsh for the root interop scripts (2026-10-11, branch `feat/wc-e15s1b-msi-pwsh`)
+
+**Decided (Q3, the coordinator, 2026-10-11).** The daemon's interop scripts use the MSI `pwsh` 7 when it is present and
+verified, otherwise Windows PowerShell 5.1. They never use the Store package or the alias. The rules are those of
+`src_vs_code/src/powershell/elevatedEngine.ts`:
+- Program Files is the known-folder path, refused when the environment's `ProgramFiles` names another folder.
+- The file is real, with no link type.
+- `Get-AuthenticodeSignature` reads Valid from `CN=Microsoft Corporation`.
+- The module path is pinned first (shipped in #112).
+
+**Measured first (2026-10-11, read-only):**
+- **No MSI `pwsh` on the owner's machine.** `[Environment]::GetFolderPath('ProgramFiles')` = `$env:ProgramFiles` =
+  `C:\Program Files`, and `C:\Program Files\PowerShell\7\pwsh.exe` is absent. The owner of `C:\Program Files` is
+  `NT SERVICE\TrustedInstaller`. So on this machine the story ships the verification, the fallback and the refusal tests;
+  pwsh's own timing is measured on the first machine that has the MSI build.
+- **The 9p system drive shows every folder below `/mnt/c` with the distro user's uid and mode 555.** That includes
+  `Windows/System32/WindowsPowerShell/v1.0` and `Program Files`. The resolver checks root ownership only ABOVE the mount point
+  (`SystemDriveFiles.MountPointRefusal`). Below it, it checks: no link, the same device, a regular file, an execute bit, the `MZ`
+  header. So `Program Files/PowerShell/7` rests on the same basis as System32 does today: Windows lets only administrators
+  (TrustedInstaller) change it.
+
+**1. The verifier is the clock probe.** It stays on Windows PowerShell 5.1, the trusted System32 path. It already runs first in
+every full run, and the latency it measures is calibrated for 5.1.
+- AFTER its two instants and the Windows Time lines (so the latency is unchanged), it prints tagged lines:
+  - `pwsh.knownFolder=` — `[Environment]::GetFolderPath('ProgramFiles')`
+  - `pwsh.envProgramFiles=` — `$env:ProgramFiles`
+  - `pwsh.msi=` — `absent`, `link`, `empty`, or `file`
+  - `pwsh.signature=` — `signed`, or `unsigned:<status>|<subject>`
+- `Get-AuthenticodeSignature` comes from the pinned module path.
+- No new process: there is no third PowerShell start per full run.
+
+**2. The judgement is PURE** (`Health/PwshEngine.cs`): `Engine Choose(clockLines)` returns `msi` with the absolute WSL path, or
+`windowsPowerShell` with a reason.
+- `msi` only when all of these hold:
+  - the known folder is EXACTLY `C:\Program Files` (the daemon maps only that folder, on the assumed system drive, to
+    `<mount>/Program Files`);
+  - the environment's `ProgramFiles` equals it (case-insensitive);
+  - the file is real (`file`);
+  - the signature is `signed`.
+- A clock probe that failed or was cut gives `windowsPowerShell`, with the reason "the clock probe did not verify pwsh".
+- The run detail's `health.windowsDisk.engine` says `{program, reason}`.
+
+**3. The resolver and the closed set.**
+- `WindowsSystemDrive.Programs` gains ONE entry: `pwsh.exe` → `Program Files/PowerShell/7`. It is checked by the same
+  `SystemDriveFiles.Problem` checks.
+- The never-list's closed set admits `pwsh.exe` ONLY with the Windows disk script's exact argv (and later E15.S10's). It never
+  admits pwsh with the clock probe, and never with a third script.
+- The disk script runs under the chosen engine. The clock probe always runs under 5.1.
+
+**Tests, RED first:**
+- Each of these gives 5.1, with a reason:
+  - a spoofed environment `ProgramFiles` (`D:\Evil`) while the known folder is `C:\Program Files`;
+  - a known folder that is not `C:\Program Files`;
+  - `absent`, `link` or `empty`;
+  - `unsigned:NotSigned`, `unsigned:HashMismatch`, and a Valid signature from another publisher;
+  - a failed clock probe.
+- Everything verified gives pwsh at `<mount>/Program Files/PowerShell/7/pwsh.exe`.
+- Never the Store path or the alias.
+- The never-list refuses pwsh with the clock script and pwsh with a one-word variant of the disk script, and admits pwsh with
+  the exact disk script.
+- The clock probe's latency lines come before the new tags.
+- The scenario's fake PowerShell answers both engines.
+
+Break-its on the judgement and on the closed set. Docs: module_daemon (the engine), README, module_tests, the as-built section.
