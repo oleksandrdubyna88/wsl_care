@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 import { ARCHIVE_CAPABILITY, ARCHIVE_LABELS, ARCHIVE_NOW_CAPABILITIES, deriveArchive } from '../archive/archiveView';
 import { ARCHIVE_LIST_CAPABILITY } from '../shared/archiveCapabilities';
+import { deriveRelays, RELAYS_LABELS } from '../relays/relaysView';
 import { COMMAND_BUTTONS } from '../panel/commandButtons';
 import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { PAGE_ACTIONS } from '../panel/view';
@@ -64,13 +65,15 @@ function postedByPageButtons(): Set<string> {
     buildPanelView(goldenSnapshot(), undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: [ARCHIVE_CAPABILITY, ...ARCHIVE_NOW_CAPABILITIES, ARCHIVE_LIST_CAPABILITY], busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true })),
     // PLAN_gpu_health.md: the REAL GPU view over a disabled adapter, so the alert's Enable button is rendered and pressed.
     buildPanelView(goldenSnapshot(), undefined, undefined, undefined, gpuView(parseGpuAnswer(['name.0=GPU', 'id.0=PCI\\VEN_1002&DEV_7551', 'code.0=22', 'adapters=1'].join('\n'), 0), undefined, undefined, () => '')),
+    // S7b.2b: the head golden's daemon publishes interopRelays, offers A21 and advertises its road — the relays' button enabled.
+    buildPanelView(goldenSnapshot(), undefined, undefined, undefined, undefined, deriveRelays(goldenSnapshot(), { enabled: true, reason: '' })),
   ];
   const posted = new Set<string>();
   for (const view of views) {
     const root = new Element('MAIN');
     const page = runPageScript(fs.readFileSync(PAGE_SCRIPT, 'utf8'), { panel: root });
     page.message({ type: 'view', view: structuredClone(view) });
-    for (const button of [...root.all('button[data-action]'), ...root.all('button[data-guard-action]'), ...root.all('button[data-archive-action]'), ...root.all('button[data-gpu-action]')]) {
+    for (const button of [...root.all('button[data-action]'), ...root.all('button[data-guard-action]'), ...root.all('button[data-archive-action]'), ...root.all('button[data-gpu-action]'), ...root.all('button[data-relays-action]')]) {
       page.click(button);
     }
     for (const message of page.posted) {
@@ -91,7 +94,7 @@ test('a page button is one the page renders, the host accepts, and that runs the
       continue;
     }
     assert.ok(rendered.has(button.action), `${command}: no rendered page button posts '${button.action}' (pressed: ${[...rendered].sort().join(', ')})`);
-    assert.ok((PAGE_ACTIONS as readonly string[]).includes(button.action) || button.action in GUARD_LABELS || button.action in ARCHIVE_LABELS || (GPU_ACTIONS as readonly string[]).includes(button.action), `${command}: '${button.action}' is no page action`);
+    assert.ok((PAGE_ACTIONS as readonly string[]).includes(button.action) || button.action in GUARD_LABELS || button.action in ARCHIVE_LABELS || (GPU_ACTIONS as readonly string[]).includes(button.action) || button.action in RELAYS_LABELS, `${command}: '${button.action}' is no page action`);
     assert.ok((PAGE_MESSAGE_TYPES as readonly string[]).includes(button.action), `${command}: the host does not accept '${button.action}'`);
     assert.equal(command, `wslCare.${button.action}`, `${command}: its button posts '${button.action}', another operation`);
   }

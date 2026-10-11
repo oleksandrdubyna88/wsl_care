@@ -12,6 +12,7 @@ import { bodyAt } from '../support/body';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld } from '../support/fakeWorld';
 import { ManualTimers, MapStore } from '../support/memento';
 import { GOLDEN_ROOT, goldenFile } from '../support/paths';
+import { relayAction, relayKeys } from '../support/relayBodies';
 
 /**
  * The extension's scenario harness, CLEANUP tier (E6.S3; research/module_tests.md § The extension): the REAL cleanup host —
@@ -201,5 +202,50 @@ test('Archive now while a run is in flight is told and starts nothing — the cl
     assert.equal(await window.host.archiveNow(), undefined);
     assert.equal(confirms(), before, 'no second confirm');
     assert.match(window.recorder.notices.at(-1)?.sentence ?? '', /^Archive now is not available: /);
+  });
+});
+
+// ---- S7b.2b: Stop client-gone relays — A21 through the real host, controller, client and the strict fake ----
+
+function stopping(state: 'live' | 'dead'): Record<string, unknown> {
+  const golden = goldenFile(`status-running-${state}.json`);
+  return { ...golden, running: { ...bodyAt(golden, 'running'), actions: ['A21'], current: '' } };
+}
+
+test('the RELOAD scenario for Stop client-gone relays: A21 bound to the shown pairs, reload, "Stopping…" from status.running, then the result in the relays\' words', async () => {
+  await within(async (world) => {
+    const keys = relayKeys(2);
+    world.rewrite({ answers: answers(world, 'relays', { 'act-a21-preview-action.json': relayAction(keys) }) });
+    const durable = new MapStore();
+    const first = openWindow(world, durable);
+    await first.host.follower.tick();
+    const outcome = await first.host.stopRelays();
+    assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
+    assert.ok(world.calls().includes(`${ROOT} act A21 --confirm --manual --detach --process ${keys[0] ?? ''} --process ${keys[1] ?? ''} --json`), world.calls().join('\n'));
+    assert.deepEqual(first.host.journal.entries().map((e) => e.actions), [['A21']], 'the started relay stop is persisted');
+    assert.equal(first.recorder.modals[0]?.confirm, 'Stop relays');
+    first.host.dispose();
+
+    world.rewrite({ answers: answers(world, 'stopping', { 'status.json': stopping('live') }) });
+    const second = openWindow(world, durable);
+    await second.host.follower.tick();
+    assert.equal(second.host.controls().state, 'Stopping… the client-gone relays', 'from the daemon\'s running block, in a window that started nothing');
+
+    world.rewrite({ answers: answers(world, 'stopped', { 'status.json': 'status.json' }), runsShow: 'runs-show-done.json' });
+    await second.host.follower.tick();
+    assert.match(second.host.controls().results[0]?.sentence ?? '', /^Run 20000101T000000Z-1 \(the relay stop\) is done: ended /);
+    assert.deepEqual(second.host.journal.entries(), []);
+  });
+});
+
+test('Stop client-gone relays while a run is in flight is told and starts nothing — the cleanup controls are the gate', async () => {
+  await within(async (world) => {
+    world.rewrite({ answers: answers(world, 'busy-relays', { 'status.json': stopping('live') }) });
+    const window = openWindow(world, new MapStore());
+    await window.host.follower.tick();
+    const before = world.calls().filter((c) => c.includes('--confirm')).length;
+    assert.equal(await window.host.stopRelays(), undefined);
+    assert.equal(world.calls().filter((c) => c.includes('--confirm')).length, before, 'no confirm');
+    assert.match(window.recorder.notices.at(-1)?.sentence ?? '', /^Stop client-gone relays is not available: /);
   });
 });

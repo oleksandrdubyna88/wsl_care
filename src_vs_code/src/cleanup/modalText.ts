@@ -20,6 +20,7 @@ export interface Modal {
 export const CLEAN_LABEL = 'Clean';
 export const CLEAN_ANYWAY_LABEL = 'Clean anyway';
 export const ARCHIVE_LABEL = 'Archive';
+export const STOP_RELAYS_CONFIRM = 'Stop relays';
 
 /** An attacker-settable name (a container's, an image's) is cut here; a `what` or a reason a little later. */
 const NAME_MAX = 80;
@@ -81,6 +82,48 @@ export function isArchiveOnly(ids: readonly string[]): boolean {
   return ids.length === 1 && ids[0] === 'A13';
 }
 
+/** S7b.2b: a preview of A21 alone — *Stop client-gone relays* — is told in the relays' words, never "Clean A21". */
+export function isRelayOnly(ids: readonly string[]): boolean {
+  return ids.length === 1 && ids[0] === 'A21';
+}
+
+/** One relay's line: its name (pid and program) and the head of the daemon's note, within the sanitiser's cut. */
+function relayLine(item: PreviewItem): string {
+  return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)}`;
+}
+
+/** What the relays' modal binds the stop to: the shown list, and — when it was cut — how many stay for the timer. */
+function relayBinding(preview: HeldPreview): string[] {
+  const held = preview.processes;
+  if (held === undefined) {
+    return [];
+  }
+  const bound = `Stops exactly the ${held.names.length} relays this preview showed. The daemon judges each again just before the signal: one whose client came back, or that the timer's own watch ended first, is skipped — a smaller count is not a failure.`;
+
+  return held.truncated ? [bound, `Only the first ${held.cap} shown are stopped; ${held.count} were selected — the timer takes the rest.`] : [bound];
+}
+
+/** The listed relays (at most the daemon's 20 items), and how many more the run stops beyond them. */
+function relayList(action: PreviewedAction | undefined, stopped: number): string[] {
+  const listed = (action?.details ?? []).map(relayLine);
+  const more = stopped - listed.length;
+
+  return more > 0 ? [...listed, `  … all ${stopped} are stopped; the first ${listed.length} are listed`] : listed;
+}
+
+/** *Stop client-gone relays*'s modal (S7b.2b): what SIGTERM asks, what is bound, each relay, and the agent's /mcp. */
+function relaysModal(preview: HeldPreview): Modal {
+  const action = preview.actions.find((a) => a.id === 'A21');
+  const stopped = preview.processes?.names.length ?? 0;
+  const how = [
+    'SIGTERM asks each relay to end, and its Windows program ends with it. A relay that does not end is reported, and its Windows program keeps running — a relay is never sent SIGKILL.',
+    "An AI agent's session may need /mcp to reconnect a server it still wanted.",
+    "The run is the daemon's own unit; the panel follows it to its result.",
+  ];
+
+  return { message: `Stop ${stopped} client-gone relay${stopped === 1 ? '' : 's'} in "${safeText(preview.distro, 64)}"?`, detail: [...relayBinding(preview), ...relayList(action, stopped), '', ...how].join('\n'), confirm: STOP_RELAYS_CONFIRM };
+}
+
 /** One agent's line: its id, the daemon's note (sessions and files), its bytes. */
 function agentLine(item: PreviewItem): string {
   return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)} · ${item.bytes === undefined ? 'an unknown size' : sizeText(item.bytes)}`;
@@ -111,6 +154,10 @@ function archiveModal(preview: HeldPreview): Modal {
 
 /** The modal every cleanup shows: what each action removes, how much, and how its targets are chosen. */
 export function firstModal(preview: HeldPreview, selected: boolean): Modal {
+  if (isRelayOnly(preview.ids)) {
+    return relaysModal(preview);
+  }
+
   return isArchiveOnly(preview.ids) ? archiveModal(preview) : cleanModal(preview, selected);
 }
 

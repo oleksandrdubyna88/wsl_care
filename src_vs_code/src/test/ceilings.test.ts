@@ -93,7 +93,7 @@ test('#17: the contract maximum is what the ceilings are held to — and A4\'s s
 });
 
 test('#17: the worst cases follow the published drain grace and unit stop timeout — today\'s values reproduce the inventory\'s numbers', () => {
-  assert.deepEqual(worstCasesOf(FALLBACK_LIMITS), { ...WORST_CASE_S, snapshot: DOCKER_SNAPSHOT_S, snapList: 34 }, 'the fallback is today');
+  assert.deepEqual(worstCasesOf(FALLBACK_LIMITS), { ...WORST_CASE_S, snapshot: DOCKER_SNAPSHOT_S, snapList: 34, relayScan: 30 }, 'the fallback is today');
   const dear = worstCasesOf(MAX_LIMITS);
   assert.equal(dear.stop, 600 + 20, 'systemctl stop at 600 s, then two 10 s drains');
   assert.equal(dear.doctor, 5 * (15 + 20) + (10 + 20));

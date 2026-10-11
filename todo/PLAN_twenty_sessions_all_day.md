@@ -1628,8 +1628,177 @@ on safety: no path signals a live-client relay or sends SIGKILL). All ten findin
 The Linux goldens (`status.json`, the six `status-running-*.json`) were taken from the CI's `goldens-linux-x64` artifact. They
 add A21, the two capabilities and the `interopRelays` block, and were read as a contract diff.
 
-**Not done here:** S7b.2b (the button), S7b.3 (A22, the Windows-side stop), and the socket peer through `sock_diag` (only if
+**Not done here:** S7b.2b (the button — built since, below), S7b.3 (A22, the Windows-side stop), and the socket peer through `sock_diag` (only if
 the dry-run preview shows that relays sit on sockets).
+
+#### S7b.2b — as to be built (2026-10-10, branch `feat/wc-s7b2b-relay-button`): A21's panel button
+
+> Split from S7b.2, whose daemon half shipped first (#91, 9d23dc16) so that it could be released before 2026-10-12. The owner's
+> standing rule (.agents/PROJECT.md): every action has a panel button, and a command-palette entry may only duplicate it.
+
+**The goal.** A **Stop client-gone relays…** button in the panel ends exactly the relays that A21's preview showed, through
+one native modal. It sits beside a "Windows MCP relays" line, which reads `status.interopRelays`.
+
+**What exists to reuse** (E10.S1b's *Archive now*, the same road):
+- **`cleanup/cleanFlow.ts` `CleanFlow`, the host transaction:**
+  - one flow at a time;
+  - the preview held by the controller;
+  - the native modal, then the age re-check after it;
+  - the persisted `unresolved` journal entry before the call;
+  - the detached confirm, the follower, and Retry.
+
+  *Archive now* runs A13 alone through it (`ARCHIVE_IDS`, cleanFlow.ts:65). A21 goes the same way, alone.
+- **`root/cleanupController.ts`:**
+  - one root call in flight per distribution;
+  - the capability gate, `CAPABILITIES` / `previewNeeds` / `confirmNeeds` (cleanupController.ts:109-134).
+- **`root/rootAnswers.ts`'s A4 shown selection** (`a4Selection`, `consistent`; rootAnswers.ts:109-160). It holds a preview's
+  `shown` list under the invariant `shown.length == min(count, cap)`, with `shownTruncated` exactly when the cap cut it. The daemon
+  publishes `shown` and `shownTruncated` for every `IBoundToShownList` action (ActionEngine.cs:428-440), A21 included: each entry
+  is its `pid:start`.
+- **On the daemon side**, `act A21 --confirm --manual --detach --process <pid:start>…`:
+  - the button run is bound to the shown list (`ShownProcessBinding`);
+  - the detached request carries the processes;
+  - the daemon advertises `act.processList` and `status.interopRelays`.
+
+**The design:**
+1. **A typed value.** `ShownProcess` is a branded `pid:start`. `rootIds.ts` validates it as the daemon does
+   (`SuspectSignals.IsShownKey`): two whole numbers, and a pid above 1.
+2. **The held selection.**
+   - `parsePreview` holds A21's `shown` list as a `ProcessSelection` when the preview asked for A21. It is A4's
+     `ShownSelection` code, generalised over the validator: ONE implementation, never a second copy (reuse-first).
+   - An invalid entry refuses the preview (`shownListInvalid`), with nothing confirmed.
+3. **The root call.**
+   - `RootOp.confirm` gains `processes?: readonly ShownProcess[]`. `confirmTail` emits one `--process <pid:start>` pair per
+     process, as argv. At most `limits.maxShownNames` pairs; about 2 KB for 85 relays.
+   - The list is present exactly when A21 is confirmed, and never beside A4's `--only -`. `fitsCap` covers it.
+   - `--process` joins `ROOT_LITERALS` (`bundleScan.test.ts`).
+4. **The gate.**
+   - `CAPABILITIES` gains `previewA21: [...BASE, 'act.shownList', 'status.interopRelays']` and
+     `confirmA21: [...BASE, 'act.detach', 'act.processList']`.
+   - `previewNeeds` and `confirmNeeds` read them. A daemon without them greys the button and says why.
+5. **The flow.**
+   - `CleanFlow.stopRelays()` previews `['A21']`. An empty selection ("no relay's client is shown gone") opens no modal, and is
+     told as a notice.
+   - Otherwise one modal (`modalText.ts`). It names the count and the first relays from the preview's items (pid, program, idle
+     minutes, parent), and says: "SIGTERM only — each relay's Windows program ends with it; an AI agent's session may need
+     /mcp".
+   - Confirming sends exactly the held list.
+   - The journal entry and `status.running` are the durable state, as for every cleanup. A reload shows the run until it ends.
+6. **The panel** (`panel/viewModel.ts`, `view.ts`, `rowRenderers.ts`).
+   - The line: `Windows MCP relays: N (M re-parented) · the timer stops client-gone relays: on|off — <command>`, from the
+     daemon's `interopRelays`. Absent from an older daemon. The Windows side has no such block.
+   - The button **Stop client-gone relays…**, with a blocker in the *Archive now* pattern:
+     - the cleanup controls are free;
+     - A21 is in `status.actions`;
+     - the capabilities are there;
+     - the line says relays exist.
+   - The extension never writes `auto.A21`; it shows the daemon's command.
+7. **The command.** `wslCare.stopRelays` duplicates the button: `COMMAND_BUTTONS` gets `{ where: 'page', action:
+   'stopClientGoneRelays' }`, and `commandButtons.test.ts` holds it, rendered and clicked in the strict harness.
+8. **Not in this story:** A18's and A19's buttons. They have no panel row to start from yet. The `--process` road built here is
+   theirs too: the ids that take a process list widen.
+
+**Revised after the plan round and the own review** (coai `a82f9db1`: proceed, 3 findings accepted; own Fable review:
+revise, 14 findings, all taken in; a fifteenth, a daemon detail shared with A19, is noted for S7b.3). These override the items
+above where they differ:
+- **A21 leaves `BUTTON_ONLY_IDS`.** `actionGate` strips those ids, so the button could never preview otherwise. A18, A19 and
+  A20 stay. `clean` / *Clean selected* still cannot name A21: it is no row id (`rowIds.ts`).
+- **The cap is the command line's, not stdin's.** A pair is about 26 characters, and Windows' command line is 32 767.
+  - A compiled `MAX_PROCESS_ARGS = 500` (about 13 KB) caps the argv. `fitsCap` enforces `min(maxShownNames,
+    MAX_PROCESS_ARGS)`.
+  - A held list past it is cut, with A4's words: "only the first 500 shown are stopped; N were selected; the timer takes the
+    rest".
+- **Three preview states.**
+  - **unavailable** (no `shown`): tell the daemon's reason.
+  - **empty:** tell its `basis`, which names each kept relay and why. That is S7b.2's DoD evidence, so the button is useful even
+    then.
+  - **non-empty:** the modal.
+
+  An empty process list is unbuildable: `act A21 --confirm` without `--process` would be refused by the daemon's binding.
+- **Words.**
+  - A `RELAY_RUN` label and `isRelayOnly(ids)` sit beside `isArchiveOnly` in `cleanupView.ts` and `resultText.ts`.
+  - After a reload: "Stopping client-gone relays…". The result: "ended N relays (their Windows programs end with them)". Never
+    "freed 0.0 GB".
+- **The modal.**
+  - "SIGTERM asks each relay to end; one that does not is reported, and its Windows program keeps running".
+  - "All N are stopped; the first 20 are listed".
+  - The timer's own watch may end some first, so a smaller count is not a failure.
+  - Each relay's line is the item's name ("pid program") plus the head of its note, within the sanitiser's 200 characters.
+- **The gate.** `previewA21` and `confirmA21` both need `act.processList` (the road), and the preview `act.shownList` too.
+  `status.interopRelays` gates only the LINE.
+- **The panel line** has an unavailable state ("unavailable — <reason>"), never "0 relays". There is no "relays exist"
+  blocker: the preview's basis is the answer when there is nothing to stop.
+- **The preview ceiling.** `worstCases.ts` gets an A21 share: the fd scan's range maximum, 30 s. Before, it counted by accident
+  as a Docker snapshot.
+- **The confused deputy, said once.**
+  - The page sends a bare message.
+  - The process list comes only from the controller's held, frozen preview.
+  - A value becomes argv only through the validator. It is stricter than `IsShownKey`: the canonical spelling only, pid
+    2..2 147 483 647, start ≤ 2^63−1. So `5:1 --timer` cannot smuggle a flag.
+  - The daemon re-validates.
+  - Decisively, `--process` only NARROWS: the daemon intersects it with a fresh judgement and re-judges again before SIGTERM. A
+    forged or stale list ends nothing that A21 would not end alone.
+- **More tests:**
+  - `bundleScan` `ROOT_LITERALS` gains `--process` and `A21`, and `structure.test.ts` `ROOT_WORDS` gains `--process`;
+  - the daemon's A21 detached road (CLI parse and persist, as A18's and A19's; the engine narrowing then the run ending only
+    shown ∩ eligible);
+  - cleanupView/resultText wording, with a reload test in the cleanup scenario tier: the button runs A21 alone through the real
+    host, controller, client and the strict fake `wsl.exe`, which accepts `--process` pairs for A21 only. The plan round's
+    finding 1.
+- **The modal's truncation** follows the daemon's `shownTruncated` (the plan round's finding 2).
+- **SIGTERM survivors** are reported by the result notice (the plan round's finding 0).
+
+**RED tests:**
+- `rootIds`: the `pid:start` validator accepts what `IsShownKey` accepts, and refuses `1:5`, `0:5`, `-3:5`, `5`, `5:x`,
+  `5:1 --timer` and ` 5:1`.
+- `rootCall`: the A21 confirm spells `--process` once per pair, in order. There is no list without A21, and no A21 without its
+  list. `--only` and `--process` never appear together, and the cap is enforced.
+- `rootAnswers`: A21's `shown` is held under the count/cap invariant. A bad entry or a count mismatch refuses. A4 is unchanged:
+  its existing tests still pass, unedited.
+- `cleanupController`: the A21 preview and confirm need their capabilities, so a daemon without them is refused before any root
+  call. The confirm carries the held list.
+- `cleanFlow`: the button runs A21 alone; an empty preview opens no modal; the journal entry is written before the call; the
+  modal text names SIGTERM only and the Windows program.
+- The view: the line renders the counts and the switch with its command. The button is disabled with each blocker's sentence.
+  An older daemon (no block) shows no line and no button.
+- `commandButtons`, and the bundle scan: `--process` is inside the root region only.
+
+**Break-it on product code**, each red and then restored:
+- the cap off;
+- the "list exactly when A21" rule off;
+- the capability off in the gate;
+- the validator accepting pid 1.
+
+**DoD:**
+- [ ] RED, then green; break-it red, then restored; `npm test`, lint and typecheck green.
+- [ ] `module_vs_code.md` (the root boundary, the panel, the known-limits line from S7b.2 replaced), `module_tests.md`, and the
+  S7b.2 as-built record pointing here.
+
+#### S7b.2b as built (2026-10-11)
+
+Built as revised above, RED first where the defect could be watched. Every break-it on product code went red and was restored:
+- the command-line cap off;
+- "a list exactly when A21" off;
+- the A21 capability off in the gate;
+- the validator accepting pid 1;
+- never relay-only (the words);
+- an empty preview not told;
+- A21 back among the button-only ids;
+- the held list never cut.
+
+The record is in [module_vs_code.md](../research/module_vs_code.md) (*Known limits*, the relays) and
+[module_tests.md](../research/module_tests.md) (the catalogue rows for `command wslCare.stopRelays` and `message
+stopRelays`).
+
+**Deviations:**
+- **The command is `wslCare.stopRelays`, not `wslCare.stopClientGoneRelays`.** Every page command is named after the message its
+  button posts (`commandButtons.test.ts`).
+- **The relays line and button live in *AI agents*,** beside the archive's part. The cleanup host derives them (`relays()`),
+  because A21 runs through its transaction.
+- **`state/statusBody.ts` is extracted** from the archive host (reuse-first): one reader of the status body, its capabilities
+  and its actions.
+- **On the daemon side, two tests were added** and no code changed: the CLI parses `act A21 --confirm --manual --detach
+  --process …` with several pairs, and the detached request carries them in order.
 
 ### S8 — the 24 h × 20 sessions soak campaign
 

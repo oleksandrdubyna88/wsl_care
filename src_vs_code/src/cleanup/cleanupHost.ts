@@ -14,6 +14,7 @@ import type { RowId } from './rowIds';
 import { noticeText, unlinked } from '../text/safeText';
 import { RunFollower, type OneShot, type RunResult } from './runFollower';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { deriveRelays, stopRelaysBlocker, type RelaysControls } from '../relays/relaysView';
 import { daemonLimitsOf, type DaemonLimits } from '../shared/daemonLimits';
 
 /**
@@ -123,6 +124,28 @@ export class CleanupHost {
     }
 
     return this.edge('the archive run', () => this.flow.archive());
+  }
+
+  /** S7b.2b: the client-gone relays' line and button — the daemon's `interopRelays` and this host's own controls. */
+  relays(): RelaysControls {
+    const controls = this.controls();
+
+    return deriveRelays(this.options.outcomes.snapshot(), { enabled: controls.enabled, reason: controls.reason === '' ? controls.state : controls.reason });
+  }
+
+  /**
+   * *Stop client-gone relays* (S7b.2b) — refused here, and told, on the same conditions the button greys on: the palette's command
+   * and a stale page send the same bare request.
+   */
+  stopRelays(): Promise<FlowOutcome | undefined> {
+    const controls = this.controls();
+    const why = stopRelaysBlocker(this.options.outcomes.snapshot(), { enabled: controls.enabled, reason: controls.reason === '' ? controls.state : controls.reason });
+    if (why !== '') {
+      void this.ui.notify('warn', `Stop client-gone relays is not available: ${why}.`);
+      return Promise.resolve(undefined);
+    }
+
+    return this.edge('the relay stop', () => this.flow.relays());
   }
 
   /** *Run full check now* — refused here when the controls grey it (review A4), whatever the page sent. */

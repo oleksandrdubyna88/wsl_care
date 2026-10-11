@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { VERB_TIMEOUT_MS } from '../client/verbs';
 import { callRoot, DETACH_TIMEOUT_MS, ROOT_OPS, rootRequest, rootTimeoutMs, STOP_TIMEOUT_MS, type RootOp } from '../root/rootCall';
 import { DEFAULT_NUMBERS } from '../settings/numbers';
-import { MAX_SHOWN_VOLUMES, runIdOf, shownCap, volumeNameOf, type RunId, type VolumeName } from '../root/rootIds';
+import { MAX_PROCESS_ARGS, MAX_SHOWN_VOLUMES, runIdOf, shownCap, shownProcessOf, volumeNameOf, type RunId, type ShownProcess, type VolumeName } from '../root/rootIds';
 import { FALLBACK_LIMITS } from '../shared/daemonLimits';
 import { exited, recordingRunner } from './support/recordingRunner';
 
@@ -19,6 +19,10 @@ const TARGET = { wsl: 'C:\\Windows\\System32\\wsl.exe', distro: 'Ubuntu' } as co
 const PREFIX = ['-d', 'Ubuntu', '-u', 'root', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care'];
 const RUN = runIdOf('20261004T101500Z-4242') as RunId;
 
+function processes(count: number): ShownProcess[] {
+  return Array.from({ length: count }, (_, i) => shownProcessOf(`${12_000 + i}:${36_500 + i}`) as ShownProcess);
+}
+
 function names(count: number): VolumeName[] {
   return Array.from({ length: count }, (_, i) => volumeNameOf(`${i.toString(16).padStart(8, '0')}${'cd'.repeat(28)}`) as VolumeName);
 }
@@ -28,6 +32,7 @@ const OPS: readonly { readonly op: RootOp; readonly tail: readonly string[] }[] 
   { op: { op: 'preview', ids: ['A5', 'A4', 'A10'] }, tail: ['act', 'A5,A4,A10', '--preview', '--json'] },
   { op: { op: 'confirm', ids: ['A10'], shown: undefined }, tail: ['act', 'A10', '--confirm', '--manual', '--detach', '--json'] },
   { op: { op: 'confirm', ids: ['A5', 'A4'], shown: names(2) }, tail: ['act', 'A5,A4', '--confirm', '--manual', '--detach', '--only', '-', '--json'] },
+  { op: { op: 'confirm', ids: ['A21'], shown: undefined, processes: processes(2) }, tail: ['act', 'A21', '--confirm', '--manual', '--detach', '--process', '12000:36500', '--process', '12001:36501', '--json'] },
   { op: { op: 'stop', runId: RUN }, tail: ['act', '--stop', '20261004T101500Z-4242', '--json'] },
   { op: { op: 'fullCheck' }, tail: ['collect', '--detach', '--json'] },
   { op: { op: 'rootCheck' }, tail: ['--version'] },
@@ -123,4 +128,30 @@ test('#17: a confirm is built only when its shown list fits the cap in force —
   assert.equal(built?.stdin?.toString('utf8').split('\n').filter((l) => l.length > 0).length, 3);
   assert.equal(shownCap(20_000), MAX_SHOWN_VOLUMES, 'never above the compiled bound');
   assert.equal(shownCap(300), 300);
+});
+
+test('S7b.2b: A21 is ALWAYS bound to the processes its preview showed — no list without A21, no A21 without its list, never beside A4\'s stdin list', () => {
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21'], shown: undefined }), undefined, 'A21 would re-select live — never');
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A10'], shown: undefined, processes: processes(1) }), undefined, 'a process list belongs to A21 alone');
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A4', 'A21'], shown: names(1), processes: processes(1) }), undefined, 'never --only and --process together');
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21'], shown: undefined, processes: processes(1) })?.stdin, undefined, 'the processes are argv, never stdin');
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21'], shown: undefined, processes: [] }), undefined, 'an empty list is no list: the daemon would refuse a bare button run');
+});
+
+test('S7b.2b: an A21 confirm is built only when its process list fits the cap in force', () => {
+  const op = { op: 'confirm', ids: ['A21'], shown: undefined, processes: processes(3) } as const;
+  assert.equal(rootRequest(TARGET, op, DEFAULT_NUMBERS, { ...FALLBACK_LIMITS, maxShownNames: 2 }), undefined);
+  assert.equal(rootRequest(TARGET, op, DEFAULT_NUMBERS, { ...FALLBACK_LIMITS, maxShownNames: 3 })?.args.filter((a) => a === '--process').length, 3);
+});
+
+test('S7b.2b: the process list is capped by the COMMAND LINE (MAX_PROCESS_ARGS), not by the daemon\'s stdin list cap', () => {
+  const full = rootRequest(TARGET, { op: 'confirm', ids: ['A21'], shown: undefined, processes: processes(MAX_PROCESS_ARGS) });
+  assert.ok(full !== undefined);
+  assert.ok(full.args.join(' ').length < 30_000, `${full.args.join(' ').length} characters would near Windows' 32 767`);
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21'], shown: undefined, processes: processes(MAX_PROCESS_ARGS + 1) }), undefined, 'past it nothing is built, whatever maxShownNames says');
+});
+
+test('S7b.2b (code round): A21 is confirmed ALONE — never beside another id, whatever list comes with it', () => {
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A5', 'A21'], shown: undefined, processes: processes(1) }), undefined);
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21', 'A10'], shown: undefined, processes: processes(1) }), undefined);
 });

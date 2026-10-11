@@ -344,12 +344,39 @@
     return box;
   }
 
+  // ---- S7b.2b: the client-gone Windows MCP relays (src/relays/relaysView.ts RelaysControls) — the daemon's interopRelays line,
+  // why the button is greyed, and *Stop client-gone relays…*, posting its bare id: the processes come from the host's held preview. ----
+
+  function relaysPart(relays) {
+    const box = element('div', undefined, { relays: '' });
+    box.appendChild(element('p', relays.line, { 'relays-line': '', level: relays.level }));
+    box.appendChild(element('p', relays.why, { 'relays-why': '' }));
+    const id = relays.button.id;
+    box.appendChild(actionButton(relays.button.label, { 'relays-action': id }, !relays.button.enabled, function () { return { type: id }; }));
+    return box;
+  }
+
+  function isRelays(value) {
+    return isObject(value) && typeof value.line === 'string' && value.line !== '' && isObject(value.button);
+  }
+
+  /** The AI agents section's extras: the archive's part, then the relays' line and button — each only when the host derived it. */
+  function aiAgentsParts(view) {
+    const parts = [isArchive(view.archive) ? archivePart(view.archive) : undefined, isRelays(view.relays) ? relaysPart(view.relays) : undefined].filter(function (part) { return part !== undefined; });
+    if (parts.length === 0) {
+      return undefined;
+    }
+    const box = element('div', undefined, { 'ai-agents-extras': '' });
+    parts.forEach(function (part) { box.appendChild(part); });
+    return box;
+  }
+
   /** The sections the host's extra parts belong to — by the ids of src/panel/fieldMap.ts's SECTIONS. */
   const EXTRAS = {
     cleanup: function (view) { return isObject(view.cleanup) ? cleanupControls(view.cleanup) : undefined; },
     lastCleanup: function (view) { return isObject(view.cleanup) ? lastCleanupParts(view.cleanup) : undefined; },
     health: healthExtras,
-    aiAgents: function (view) { return isArchive(view.archive) ? archivePart(view.archive) : undefined; },
+    aiAgents: function (view) { return aiAgentsParts(view); },
   };
 
   function sectionWithExtras(model, view) {

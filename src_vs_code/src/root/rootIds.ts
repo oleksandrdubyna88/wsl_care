@@ -22,18 +22,21 @@ export type ActionId = (typeof ACTION_IDS)[number];
 /**
  * Ids the registry knows but the E6 cleanup ops never act on (daemon #17): A18 ends orphaned agent processes, A19 stops
  * idle MCP servers (daemon E14 S2a — the timer may run it, but a button run of it takes `--process <pid:start>`, as A18's) and
- * A20 restores archived AI sessions (daemon E9.S4 — a button only, its run takes `--entry <id>`), and A21 ends client-gone interop
- * relays (daemon E14 S7b.2 — the timer may run it; a button run takes `--process <pid:start>`, as A19's) — arguments no E6 op carries;
+ * A20 restores archived AI sessions (daemon E9.S4 — a button only, its run takes `--entry <id>`) — arguments no E6 op carries;
  * their buttons are later extension stories (A20's is E10's). The gate leaves them out of what it allows, so a
- * status reporting them changes nothing here.
+ * status reporting them changes nothing here. A21 (daemon E14 S7b.2, the client-gone relays) left this list with its button
+ * (S7b.2b): its confirm carries the held `--process` list, and as no row id it can never join *Clean selected*.
  */
-export const BUTTON_ONLY_IDS: readonly ActionId[] = ['A18', 'A19', 'A20', 'A21'];
+export const BUTTON_ONLY_IDS: readonly ActionId[] = ['A18', 'A19', 'A20'];
 
 /** One or more registry ids — never an empty `act`. */
 export type ActionIds = readonly [ActionId, ...ActionId[]];
 
 /** A run id as the daemon spells it (`RunId.New`): `yyyyMMddTHHmmssZ-<pid>`. */
 export type RunId = string & { readonly __brand: 'RunId' };
+
+/** A process the daemon's preview SHOWED, as `pid:start` (S7b.2b) — what A21's `--process` arguments hold. */
+export type ShownProcess = string & { readonly __brand: 'ShownProcess' };
 
 /** An anonymous Docker volume's full name — what A4's shown list holds. */
 export type VolumeName = string & { readonly __brand: 'VolumeName' };
@@ -44,6 +47,13 @@ export type VolumeName = string & { readonly __brand: 'VolumeName' };
  * (research/2026-10-03_wsl_exe_facts.md row 20; re-measured with `-u root` at the E6 live gate).
  */
 export const MAX_SHOWN_VOLUMES = 10_000;
+
+/**
+ * The most `--process <pid:start>` pairs one confirm carries (S7b.2b): about 26 characters each, so 500 are about 13 KB — well
+ * under Windows' 32 767-character command line, which the daemon's 10 000-name stdin cap would overrun. A list the daemon showed
+ * longer is cut to this, and the modal says so; the timer takes the rest.
+ */
+export const MAX_PROCESS_ARGS = 500;
 
 /**
  * A4's shown-list cap IN FORCE (daemon #17): the daemon's published `act.maxShownNames` (`status.limits.maxShownNames`),
@@ -73,4 +83,32 @@ export function runIdOf(value: unknown): RunId | undefined {
 
 export function volumeNameOf(value: unknown): VolumeName | undefined {
   return typeof value === 'string' && VOLUME_NAME.test(value) ? (value as VolumeName) : undefined;
+}
+
+/** `pid:start` in the daemon's canonical spelling (`SuspectSignals.Shown`): no sign, no space, no leading zero. */
+const SHOWN_PROCESS = /^([1-9][0-9]{0,9}):(0|[1-9][0-9]{0,18})$/;
+
+/** The largest pid the daemon parses (`int`) and the largest start ticks (`long`). */
+const MAX_PID = 2_147_483_647;
+const MAX_START = 9_223_372_036_854_775_807n;
+
+/**
+ * A process a confirm may name (S7b.2b): the daemon's `SuspectSignals.IsShownKey` — two whole numbers, the pid above 1 (never
+ * init) — in the one spelling its previews write. Anything else is refused before it can become an argv word.
+ */
+export function shownProcessOf(value: unknown): ShownProcess | undefined {
+  return typeof value === 'string' && canonical(value) ? (value as ShownProcess) : undefined;
+}
+
+function canonical(text: string): boolean {
+  const match = SHOWN_PROCESS.exec(text);
+
+  return match !== null && inRange(String(match[1]), String(match[2]));
+}
+
+/** The pid above 1 and within the daemon's `int`, the start within its `long` (2^63 − 1 is past `MAX_SAFE_INTEGER`: a BigInt). */
+function inRange(pidText: string, startText: string): boolean {
+  const pid = Number(pidText);
+
+  return pid > 1 && pid <= MAX_PID && BigInt(startText) <= MAX_START;
 }

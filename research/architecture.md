@@ -128,6 +128,18 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   button's capability requirement is the controller's own (`previewNeeds(['A13'])` ∪ `confirmNeeds(['A13'])`), never a second list.
   Since E10.S2a `src/archivePage/` — the Archive page, browse only: one more unprivileged read, `archive list --json` (section *The
   extension: the Archive page* of [architecture-extension-e6.md](architecture-extension-e6.md)).
+  Since S7b.2b *Stop client-gone relays* runs the daemon's A21 the same way as *Archive now*, from the *AI agents* section.
+  - **The road:** `CleanupHost.stopRelays()` → `CleanFlow.relays()`, the cleanup transaction over `['A21']` alone.
+  - **What crosses:** the daemon's `act A21 --preview --json` answer carries `shown`, every selected relay as `pid:start`. The
+    extension holds it, cut to `MAX_PROCESS_ARGS` (500, the command line's bound), and sends it back as ONE
+    `act A21 --confirm --manual --detach --process <pid:start>… --json`.
+  - **The one new root word is `--process`.** The bundle scan and the structure test hold it to the root region.
+  - **The daemon decides what ends:** it re-validates the pairs, intersects them with a fresh judgement and re-judges again before
+    SIGTERM, so a stale list ends nothing A21 would not end alone.
+  - **The status read:** the line beside the button reads `status.interopRelays` through `state/statusBody.ts`, the one reader of
+    the status body, extracted from the archive host.
+  - **The cross-implementation check** is the daemon-written golden `act-a21-preview-action.json`, which the extension's tests
+    replay ([module_vs_code.md](module_vs_code.md), plan S7b.2b).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,

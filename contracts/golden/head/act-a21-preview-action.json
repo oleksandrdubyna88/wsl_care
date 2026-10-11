@@ -1,0 +1,36 @@
+{
+  "id": "A21",
+  "summary": "SIGTERM only (never SIGKILL) of the target user's interop relays of catalogued Windows MCP servers whose client is gone - re-parented, not born there, no other holder of their stdio pipes - with no CPU for 10 min; by pid and start, never by name",
+  "status": "previewed",
+  "reason": "",
+  "preview": {
+    "what": "the target user's interop relays of catalogued Windows MCP servers (coai-mcp, creds-mcp) whose client is gone - re-parented, not born there, no other holder of their stdio pipes - with no CPU for 10 min: SIGTERM only, never SIGKILL; ending a relay ends its Windows process; the agent's session may need /mcp to reconnect it",
+    "available": true,
+    "count": 2,
+    "basis": "interop relays read from /proc (exe /init, the raw argv, the parent, fd 0-2, every process's fd table: 3 process(es), 4 fd link(s) in 0 ms); idle by the CPU history the timer's and the watch's runs record (/golden-root/var/lib/wsl-care/agent-cpu.json); 0 relay(s) of user kept: ",
+    "facts": {
+      "heldMemoryBytes": 4096000
+    },
+    "refusal": "",
+    "items": [
+      {
+        "kind": "relay",
+        "name": "12062 creds-mcp",
+        "bytes": 2048000,
+        "note": "the creds-mcp.exe relay, pid 4242, under Relay(7411) (pid 4242), no CPU for 42 min; its client is gone: re-parented, not born there, no other holder of its stdio pipes; SIGTERM ends it and its Windows process creds-mcp.exe; the agent's session may need /mcp to reconnect it"
+      },
+      {
+        "kind": "relay",
+        "name": "12063 creds-mcp",
+        "bytes": 2048000,
+        "note": "the creds-mcp.exe relay, pid 4242, under Relay(7411) (pid 4242), no CPU for 42 min; its client is gone: re-parented, not born there, no other holder of its stdio pipes; SIGTERM ends it and its Windows process creds-mcp.exe; the agent's session may need /mcp to reconnect it"
+      }
+    ],
+    "skip": "",
+    "urgent": ""
+  },
+  "shown": [
+    "12062:48563",
+    "12063:48564"
+  ]
+}

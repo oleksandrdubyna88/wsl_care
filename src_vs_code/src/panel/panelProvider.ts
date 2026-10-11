@@ -5,6 +5,7 @@ import type { OutcomeStore } from '../state/outcomeStore';
 import { parsePageMessage, type PageMessage } from './messages';
 import { newNonce, panelOptions, panelShell } from './panelHtml';
 import type { ArchiveControls, CleanupControls, GpuView, GuardView } from './view';
+import type { RelaysControls } from '../relays/relaysView';
 import { buildPanelView } from './viewModel';
 import type { RowId } from '../cleanup/rowIds';
 
@@ -53,6 +54,10 @@ export interface PanelActions {
   readonly enableGpu: (index: number, readAt: number) => void;
   /** E10.S2a: *Open archive…* — the Archive page, which reads `archive list` itself. */
   readonly openArchive: () => void;
+  /** S7b.2b: the client-gone relays' line and button (the cleanup host's; its changes arrive with the cleanup's). */
+  readonly relays: () => RelaysControls;
+  /** S7b.2b: *Stop client-gone relays* — A21 through the cleanup host's transaction. */
+  readonly stopRelays: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -115,6 +120,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       stopArchiving: () => this.actions.stopArchiving(),
       archiveNow: () => this.actions.archiveNow(),
       openArchive: () => this.actions.openArchive(),
+      stopRelays: () => this.actions.stopRelays(),
       clean: (m) => this.actions.clean(m.rowIds, false),
       cleanSelected: (m) => this.actions.clean(m.rowIds, true),
       runFullCheck: () => this.actions.runFullCheck(),
@@ -128,6 +134,6 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive(), this.actions.gpu()) });
+    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive(), this.actions.gpu(), this.actions.relays()) });
   }
 }

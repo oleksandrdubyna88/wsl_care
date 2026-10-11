@@ -3,7 +3,7 @@ import type { HandOffOutcome, RootFailure } from '../root/rootOutcome';
 import { gb, minuteOf, sizeText } from '../text/format';
 import { safeText } from '../text/safeText';
 import type { JournalEntry, JournalOp } from './journal';
-import { isArchiveOnly } from './modalText';
+import { isArchiveOnly, isRelayOnly } from './modalText';
 import type { RunShow } from './runAnswers';
 import type { RunResult } from './runFollower';
 
@@ -15,6 +15,20 @@ import type { RunResult } from './runFollower';
 
 /** The label an archive run is told by (E10.S1b): never "Cleaning A13". */
 export const ARCHIVE_RUN = 'the archive run';
+
+/** The label a relay stop is told by (S7b.2b): never "Cleaning A21". */
+export const RELAY_RUN = 'the relay stop';
+
+/** What a run of these ids is told as: the archive run (A13 alone), the relay stop (A21 alone), or a cleanup of its ids. */
+type RunWords = 'clean' | 'archive' | 'relays';
+
+function wordsOf(actions: readonly string[]): RunWords {
+  if (isRelayOnly(actions)) {
+    return 'relays';
+  }
+
+  return isArchiveOnly(actions) ? 'archive' : 'clean';
+}
 
 export type NoticeLevel = 'info' | 'warn' | 'error';
 
@@ -55,6 +69,10 @@ function doing(label: string, op: JournalOp): string {
     return 'The full check';
   }
 
+  if (label === RELAY_RUN) {
+    return 'The relay stop';
+  }
+
   return label === ARCHIVE_RUN ? 'The archive run' : `Cleaning ${label}`;
 }
 
@@ -74,7 +92,7 @@ function labelOf(entry: JournalEntry): string {
     return 'full check';
   }
 
-  return isArchiveOnly(entry.actions) ? ARCHIVE_RUN : entry.actions.join(', ');
+  return { archive: ARCHIVE_RUN, relays: RELAY_RUN, clean: entry.actions.join(', ') }[wordsOf(entry.actions)];
 }
 
 /**
@@ -91,6 +109,29 @@ function freedText(bytes: number | undefined, did: (typeof DID)[keyof typeof DID
   return bytes === undefined ? did.unknown : `${did.freed} ${did.size(bytes)}`;
 }
 
+/**
+ * What a done relay stop did (S7b.2b): how many relays it ended — their Windows programs end with them — and, when A21 itself
+ * failed, that some did not end on SIGTERM and keep their Windows programs running. Never "freed": A21 frees no disk.
+ */
+function relaysDone(name: string, show: RunShow): string {
+  if (show.line === undefined) {
+    return `${name} is done.`;
+  }
+  const action = show.line.actions.find((a) => a.id === 'A21');
+  const ended = action === undefined ? 0 : action.count;
+
+  return `${name} is done: ended ${ended} relay${ended === 1 ? '' : 's'}; their Windows programs end with them.${survivorsOf(action)}`;
+}
+
+function survivorsOf(action: { readonly status: string } | undefined): string {
+  return action !== undefined && action.status === 'failed' ? ' Some relays did not end on SIGTERM; their Windows programs keep running (runs show names them).' : '';
+}
+
+/** A done run's sentence in its own words: the relay stop's (S7b.2b), or the cleanup's / the archive run's. */
+function sentenceOf(name: string, show: RunShow, words: RunWords): string {
+  return words === 'relays' ? relaysDone(name, show) : doneSentence(name, show, words === 'archive');
+}
+
 function doneSentence(name: string, show: RunShow, archive: boolean): string {
   const line = show.line;
   if (line === undefined) {
@@ -103,10 +144,10 @@ function doneSentence(name: string, show: RunShow, archive: boolean): string {
   return `${name} ${line.outcome === 'completed' ? 'is done' : `ended ${reason(line.outcome)}`}: ${freed}, ${removed} ${did.objects}.`;
 }
 
-type ByState = { readonly [K in 'done' | 'refused' | 'interrupted' | 'unknown' | 'queued' | 'running']: (name: string, show: RunShow, runId: string, archive: boolean) => Notice };
+type ByState = { readonly [K in 'done' | 'refused' | 'interrupted' | 'unknown' | 'queued' | 'running']: (name: string, show: RunShow, runId: string, words: RunWords) => Notice };
 
 const BY_STATE: ByState = {
-  done: (name, show, _runId, archive) => ({ level: show.line === undefined || show.line.outcome === 'completed' ? 'info' : 'warn', sentence: doneSentence(name, show, archive) }),
+  done: (name, show, _runId, words) => ({ level: show.line === undefined || show.line.outcome === 'completed' ? 'info' : 'warn', sentence: sentenceOf(name, show, words) }),
   refused: (name, show) => ({ level: 'warn', sentence: `${name} was refused: ${reason(show.reason || (show.line?.reason ?? ''))}` }),
   interrupted: (name, show) => ({ level: 'warn', sentence: `${name} was interrupted: ${reason(show.reason || (show.line?.reason ?? ''))}` }),
   unknown: (_name, show, runId) => ({ level: 'warn', sentence: `The daemon does not know run ${runId}: ${reason(show.reason)}` }),
@@ -118,17 +159,18 @@ function runNotice(entry: JournalEntry, show: RunShow): Notice {
   const runId = entry.kind === 'run' ? entry.runId : (show.runId ?? '');
   const name = `Run ${runId} (${labelOf(entry)})`;
 
-  return show.state.kind === 'known' ? BY_STATE[show.state.value](name, show, runId, isArchiveOnly(entry.actions)) : { level: 'warn', sentence: `${name} is in a state this extension does not know: ${show.state.label}` };
+  return show.state.kind === 'known' ? BY_STATE[show.state.value](name, show, runId, wordsOf(entry.actions)) : { level: 'warn', sentence: `${name} is in a state this extension does not know: ${show.state.label}` };
 }
 
-const CONFIRMED_AS: { readonly [K in 'fullCheck' | 'archive' | 'clean']: (entry: JournalEntry) => string } = {
+const CONFIRMED_AS: { readonly [K in 'fullCheck' | RunWords]: (entry: JournalEntry) => string } = {
   fullCheck: () => 'The full check',
   archive: () => 'The archive run',
+  relays: () => 'The relay stop',
   clean: (entry) => `The cleanup of ${labelOf(entry)}`,
 };
 
 function confirmed(entry: JournalEntry): string {
-  const kind = entry.op === 'fullCheck' ? 'fullCheck' : (isArchiveOnly(entry.actions) ? 'archive' : 'clean');
+  const kind = entry.op === 'fullCheck' ? 'fullCheck' : wordsOf(entry.actions);
 
   return `${CONFIRMED_AS[kind](entry)} confirmed at ${minuteOf(entry.since)}`;
 }

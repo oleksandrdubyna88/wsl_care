@@ -274,6 +274,16 @@ public sealed class ActCommandTests : IDisposable
             .Which.Message.Should().Contain("A18").And.Contain("A19");
     }
 
+    /// <summary>S7b.2b (the own review, finding 5): A21's button run — the extension's *Stop client-gone relays* — takes the processes
+    /// its modal showed, the same `--process` road as A18's and A19's; several pairs, in the order given, beside `--detach`.</summary>
+    [Fact]
+    public void The_process_flag_is_accepted_for_A21_with_several_pairs_and_detached()
+    {
+        CommandLine.Parse(["act", "A21", "--confirm", "--manual", "--detach", "--process", "12000:36500", "--process", "12001:36501"]).Should().BeOfType<Request.Act>()
+            .Which.Processes.Should().Equal("12000:36500", "12001:36501");
+        CommandLine.Parse(["act", "A21", "--confirm", "--manual", "--process", "1:5"]).Should().BeOfType<Request.Failed>("pid 1 is never a shown process");
+    }
+
     /// <summary>Plan §15r E9.S4: A20's button run is bound to the archived entries its modal showed — each a 16-hex entry id, none
     /// twice, and only with A20 among the actions.</summary>
     [Fact]

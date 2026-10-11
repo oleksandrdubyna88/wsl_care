@@ -250,6 +250,9 @@ internal static partial class GoldenContracts
         // E10.S1b: A13's line when a session is due — produced by the daemon's own ArchiveAction (A13PreviewGolden says why not the CLI).
         files.Add((A13PreviewGolden.File, await A13PreviewGolden.TextAsync()));
 
+        // S7b.2b: A21's line with two client-gone relays selected — produced by the daemon's own InteropRelayStop (A21PreviewGolden says why not the CLI).
+        files.Add((A21PreviewGolden.File, await A21PreviewGolden.TextAsync(matched)));
+
         // E6.S1: the answer a detach hands the panel — the run id it follows and the unit systemd runs it in.
         using (var detach = new ScenarioHome("golden-detach") { ClaimsRoot = true })
         {

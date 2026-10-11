@@ -601,3 +601,24 @@ test('root: A13 is refused beside another id, and without the capability its op 
     assert.equal(exitOf(await rootAsk(world, ['act', 'A13', '--confirm', '--manual', '--detach', '--json'])).code, FAKE_EXIT.refused, 'no archive.run');
   });
 });
+
+test('root (S7b.2b): A21 confirms with canonical --process pairs, alone — anything else is refused; its preview needs act.processList', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    assert.equal(json(await rootAsk(world, ['act', 'A21', '--confirm', '--manual', '--detach', '--process', '12000:36500', '--json'])).result, 'accepted');
+    const refused: readonly (readonly string[])[] = [
+      ['act', 'A21', '--confirm', '--manual', '--detach', '--process', '1:5', '--json'],
+      ['act', 'A21', '--confirm', '--manual', '--detach', '--process', '--json'],
+      ['act', 'A21', '--confirm', '--manual', '--detach', '--process', '05:1', '--json'],
+      ['act', 'A4,A21', '--confirm', '--manual', '--detach', '--process', '12000:36500', '--json'],
+      ['act', 'A4', '--confirm', '--manual', '--detach', '--process', '12000:36500', '--json'],
+      ['act', 'A5,A21', '--preview', '--json'],
+    ];
+    for (const argv of refused) {
+      assert.equal(exitOf(await rootAsk(world, argv)).code, FAKE_EXIT.refused, argv.join(' '));
+    }
+  });
+  await within(UBUNTU_RUNNING, async (world) => {
+    world.rewrite({ answers: withoutCapability(world, 'act.processList') });
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A21', '--preview', '--json'])).code, FAKE_EXIT.refused, 'no act.processList');
+  });
+});

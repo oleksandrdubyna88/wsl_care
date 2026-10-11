@@ -1,11 +1,12 @@
 import { FULL_CHECK_ACTIONS, type CleanupController } from '../root/cleanupController';
 import { rootFailureText } from '../root/rootFailureText';
 import type { ActionId, ActionIds, RunId } from '../root/rootIds';
-import type { HandOffOutcome, HeldPreview, RootFailure } from '../root/rootOutcome';
+import type { HandOffOutcome, HeldPreview, PreviewedAction, RootFailure } from '../root/rootOutcome';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { safeText } from '../text/safeText';
 import type { CleanupJournal, JournalEntry, NewEntry } from './journal';
-import { firstModal, missingFromPreview, secondModal, stopModal, type Modal } from './modalText';
-import { ARCHIVE_RUN, handOffNotice, type NoticeLevel } from './resultText';
+import { firstModal, isRelayOnly, missingFromPreview, secondModal, stopModal, type Modal } from './modalText';
+import { ARCHIVE_RUN, handOffNotice, RELAY_RUN, type NoticeLevel } from './resultText';
 import type { RowId } from './rowIds';
 import type { RunFollower } from './runFollower';
 
@@ -64,10 +65,17 @@ export const RETRY_LABEL = 'Retry';
 /** *Archive now*'s one id (E10.S1b): A13 alone, never beside a cleanup row. */
 const ARCHIVE_IDS: ActionIds = ['A13'];
 
+/** *Stop client-gone relays*'s one id (S7b.2b): A21 alone, never beside a cleanup row. */
+const RELAY_IDS: ActionIds = ['A21'];
+
+const BASIS_MAX = 400;
+
 /** A wedged run the daemon can stop, as the host read it from `status.running`. */
 export interface StopTarget {
   readonly runId: RunId;
   readonly actions: readonly string[];
+  /** `status.running.trigger` — only a `manual` run is one the panel confirmed (S7b.2b own review #3: the watch runs A21 alone too). */
+  readonly trigger?: string;
 }
 
 export type FlowOutcome =
@@ -80,7 +88,9 @@ export type FlowOutcome =
   /** The journal holds its budget of unshown entries (review C12): nothing was started. */
   | { readonly kind: 'journalFull' }
   /** The preview did not describe every id the confirm would act on (review A3): nothing was confirmed. */
-  | { readonly kind: 'incomplete'; readonly missing: readonly string[] };
+  | { readonly kind: 'incomplete'; readonly missing: readonly string[] }
+  /** S7b.2b: A21's preview selected nothing (its basis told), or could not read the relays (its reason told) — no modal. */
+  | { readonly kind: 'nothing'; readonly sentence: string };
 
 /** One pass of a flow, and whether the person asked to run it again. */
 interface Pass {
@@ -97,6 +107,11 @@ const NO_STATUS = "AI OS Care has not read the daemon's status yet; press Refres
 
 /** The hand-off kinds that may leave a run behind; every other answer is a refusal that wrote nothing. */
 const HANDED: ReadonlySet<string> = new Set(['accepted', 'acceptedObserved', 'outcomeUnknown', 'stopping']);
+
+/** A run the panel itself confirmed (`manual`) — or one whose trigger the daemon did not say (an older daemon: adopted, as before). */
+function isPanelRun(target: StopTarget): boolean {
+  return target.trigger === undefined || target.trigger === 'manual';
+}
 
 function sameActions(a: readonly string[], b: readonly string[]): boolean {
   const sorted = [...b].sort();
@@ -134,6 +149,17 @@ export class CleanFlow {
     const pass = await this.exclusive(() => this.cleanOnce(ARCHIVE_IDS, false, ARCHIVE_RUN));
 
     return pass.retry ? this.archive() : pass.result;
+  }
+
+  /**
+   * *Stop client-gone relays* (S7b.2b): A21 through the SAME transaction — the preview, its modal, the age re-check, the journal
+   * entry before the confirm, the follower — told as the relay stop. A preview that selected nothing is told with the daemon's
+   * basis (every kept relay and why), one that could not read the relays with its reason; neither opens a modal.
+   */
+  async relays(): Promise<FlowOutcome> {
+    const pass = await this.exclusive(() => this.cleanOnce(RELAY_IDS, false, RELAY_RUN));
+
+    return pass.retry ? this.relays() : pass.result;
   }
 
   /** *Stop* — only ever for a wedged run the host read from `status.running` (`cleanupView.ts` decides which). */
@@ -194,7 +220,18 @@ export class CleanFlow {
       return { kind: 'incomplete', missing };
     }
 
-    return this.confirmedRound(outcome.preview, selected);
+    return this.nothingOutcome(rowIds, outcome.preview) ?? this.confirmedRound(outcome.preview, selected);
+  }
+
+  /** S7b.2b: a relay stop whose preview leaves nothing to confirm is told here and ends — no modal; otherwise `undefined`. */
+  private nothingOutcome(rowIds: readonly ActionId[], preview: HeldPreview): FlowOutcome | undefined {
+    const nothing = isRelayOnly(rowIds) ? nothingToStop(preview) : '';
+    if (nothing === '') {
+      return undefined;
+    }
+    this.tell('info', nothing);
+
+    return { kind: 'nothing', sentence: nothing };
   }
 
   /** The modals, then the age check (§15k #12). */
@@ -233,7 +270,7 @@ export class CleanFlow {
   private async followedFor(target: StopTarget, distro: string): Promise<JournalEntry | undefined> {
     const entries = this.options.journal.entries();
     const run = entries.find((e) => e.kind === 'run' && e.runId === target.runId);
-    const waiting = run === undefined ? entries.find((e) => e.kind === 'unresolved' && e.distro === distro && sameActions(e.actions, target.actions)) : undefined;
+    const waiting = run === undefined && isPanelRun(target) ? entries.find((e) => e.kind === 'unresolved' && e.distro === distro && sameActions(e.actions, target.actions)) : undefined;
     if (waiting === undefined) {
       return run;
     }
@@ -318,3 +355,24 @@ export class CleanFlow {
   }
 }
 
+/**
+ * S7b.2b: why A21's preview leaves nothing to confirm — '' when it holds relays to stop. Unavailable: the daemon's reason. Empty:
+ * its basis, which names every kept relay and why ("its stdio is a socket" …) — the answer the person pressed the button for.
+ */
+function nothingToStop(preview: HeldPreview): string {
+  const action = preview.actions.find((a) => a.id === 'A21');
+
+  return action === undefined || !action.available ? unreadRelays(action) : emptyPreview(preview, action);
+}
+
+function unreadRelays(action: PreviewedAction | undefined): string {
+  return `The daemon could not read the relays: ${safeText(action === undefined ? 'it did not describe A21' : action.reason, BASIS_MAX)}. Nothing was stopped.`;
+}
+
+function emptyPreview(preview: HeldPreview, action: PreviewedAction): string {
+  if (preview.processes === undefined) {
+    return "The daemon's preview carried no relay list, so nothing can be stopped from it — Refresh and try again.";
+  }
+
+  return preview.processes.names.length === 0 ? `No relay's client is shown gone, so nothing was stopped. The daemon says: ${safeText(action.basis ?? '', BASIS_MAX)}` : '';
+}
