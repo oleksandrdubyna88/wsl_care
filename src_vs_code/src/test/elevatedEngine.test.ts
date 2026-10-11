@@ -5,6 +5,7 @@ import * as ts from 'typescript';
 
 import { fromExtensionRoot, shippedSources } from './support/paths';
 import { importsOf, stringLiteralsOf } from './support/sourceScan';
+import { engineOf, type PwshFacts } from '../powershell/elevatedEngine';
 
 /**
  * ONE resolver of the elevated PowerShell (PLAN_pwsh_engine_windows_time.md D1): the probe that resolves and verifies
@@ -75,4 +76,23 @@ test('R2: the shared PowerShell modules import nothing from the stories that use
   assert.deepEqual(offending, []);
   const launcher = shared.find((s) => s.file === 'src/powershell/elevatedLauncher.ts')?.text ?? '';
   assert.deepEqual(importsOf(launcher).filter((spec) => spec.includes('elevatedEngine')), [], 'the launcher does not import the engine');
+});
+
+// ---- §11 R1: the Store road is anchored on the KNOWN-FOLDER Program Files, never on the environment ----
+
+const PROGRAM_FILES = 'C:\\Program Files';
+const REAL_STORE = 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe';
+
+test('R1: a ProgramFiles pointed at a user folder, with a "signed" package path planted under it, elevates nothing — 5.1 runs', () => {
+  const evil = 'C:\\Users\\user\\Evil';
+  const planted = `${evil}\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe`;
+  const facts: PwshFacts = { store: { kind: 'signed', path: planted }, msi: undefined, programFiles: PROGRAM_FILES };
+  const env = { SystemRoot: 'C:\\Windows', ProgramFiles: evil };
+  assert.equal(engineOf(env, () => undefined, facts).kind, 'windows', 'the read named the real Program Files; the environment differs');
+});
+
+test('R1: the real package under the known-folder Program Files is elevated only while the environment names the same folder (any case)', () => {
+  const env = { SystemRoot: 'C:\\Windows', ProgramFiles: 'c:\\program files' };
+  assert.equal(engineOf(env, () => undefined, { store: { kind: 'signed', path: REAL_STORE }, msi: undefined, programFiles: PROGRAM_FILES }).file, REAL_STORE);
+  assert.equal(engineOf(env, () => undefined, { store: { kind: 'signed', path: REAL_STORE }, msi: undefined }).kind, 'windows', 'a read without the known folder elevates no package');
 });

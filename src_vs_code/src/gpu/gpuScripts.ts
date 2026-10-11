@@ -1,5 +1,5 @@
 import type { ProcessRequest } from '../process/runner';
-import { elevatedArg, engineOf, PWSH_PROBE, PWSH_TAGS, TAG_HELPER, type Engine, type FileInfoOf, type PwshFacts } from '../powershell/elevatedEngine';
+import { elevatedArg, engineOf, MODULES, PWSH_PROBE, PWSH_TAGS, TAG_HELPER, type Engine, type FileInfoOf, type PwshFacts } from '../powershell/elevatedEngine';
 import { elevatedRequest, powerShellOf } from '../powershell/elevatedLauncher';
 
 /**
@@ -26,6 +26,7 @@ export const TAGS = { adapter: 'adapter', name: 'name', id: 'id', code: 'code', 
  * It changes nothing — no word of the tripwire's mutating list is in it (asserted).
  */
 export const QUERY_SCRIPT = [
+  MODULES,
   "$ProgressPreference = 'SilentlyContinue'",
   TAG_HELPER,
   '$i = 0',

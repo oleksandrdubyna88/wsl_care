@@ -23,13 +23,13 @@ export interface Adapter {
 
 export type GpuState =
   | { readonly kind: 'unknown'; readonly reason: string }
-  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshProbe; readonly msi?: PwshProbe };
+  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshProbe; readonly msi?: PwshProbe; readonly programFiles?: string };
 
 export const NOT_ASKED: GpuState = { kind: 'unknown', reason: 'checking…' };
 
 /** The read's PowerShell 7 facts, for the enable — nothing for a state that is not a read. */
 export function pwshFactsOf(state: GpuState): PwshFacts | undefined {
-  return state.kind === 'read' ? { store: state.pwsh, msi: state.msi } : undefined;
+  return state.kind === 'read' ? { store: state.pwsh, msi: state.msi, ...(state.programFiles === undefined ? {} : { programFiles: state.programFiles }) } : undefined;
 }
 
 /**
@@ -112,9 +112,14 @@ function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: n
   if (adapters.length !== count) {
     return { kind: 'unknown', reason: 'the display-adapter query answered an adapter without its name or code' };
   }
-  const { store: pwsh, msi } = pwshFactsFromTags(tags);
+  return { kind: 'read', adapters, atUtcMs, ...factFields(pwshFactsFromTags(tags)) };
+}
 
-  return { kind: 'read', adapters, atUtcMs, ...(pwsh === undefined ? {} : { pwsh }), ...(msi === undefined ? {} : { msi }) };
+/** The read's PowerShell 7 facts as the state's optional fields — each left out when the probe did not print it. */
+function factFields(facts: PwshFacts): { readonly pwsh?: PwshProbe; readonly msi?: PwshProbe; readonly programFiles?: string } {
+  const fields: [string, unknown][] = [['pwsh', facts.store], ['msi', facts.msi], ['programFiles', facts.programFiles]];
+
+  return Object.fromEntries(fields.filter(([, value]) => value !== undefined));
 }
 
 const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {

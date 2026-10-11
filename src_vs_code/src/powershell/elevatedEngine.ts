@@ -22,8 +22,15 @@ import { powerShellOf, quotablePath } from './elevatedLauncher';
  * {@link pwshFactsFromTags}, chooses with {@link engineOf}, and hands {@link elevatedArg} to the launcher.</p>
  */
 
-/** The probe's four tags — the GPU query spreads them into its own, so their names are the ones G1 shipped. */
-export const PWSH_TAGS = { pwshKind: 'pwsh.store', pwshPath: 'pwsh.path', msiKind: 'pwsh.msi', msiPath: 'pwsh.msiPath' } as const;
+/** The probe's tags — the GPU query spreads them into its own, so the first four keep the names G1 shipped. */
+export const PWSH_TAGS = { pwshKind: 'pwsh.store', pwshPath: 'pwsh.path', msiKind: 'pwsh.msi', msiPath: 'pwsh.msiPath', programFiles: 'pwsh.programFiles' } as const;
+
+/**
+ * The first line of EVERY PowerShell script this extension runs that resolves a program (§11 R1, the guard's own k2 rule):
+ * the module path pinned to `$PSHOME\Modules` by an assignment — no command to autoload — so `Get-AppxPackage` and
+ * `Get-AuthenticodeSignature` come from the administrator-only module folder, never from a user's Documents.
+ */
+export const MODULES = "$env:PSModulePath = $PSHOME + '\\Modules'";
 
 /**
  * The ONE road every printed field takes (code round 2): a value carrying a line break — a device name, say — would end its
@@ -46,20 +53,29 @@ export const SIGNED_HELPER = "function verdict($i, $s) { if ($null -eq $i) { 'ab
  * path under the Program Files the KNOWN-FOLDER API names (the registry's, not the environment's — round 4: a `ProgramFiles`
  * variable pointed at a user folder must not name the program this extension elevates). Each gets {@link SIGNED_HELPER}'s
  * verdict and its path. Measured cost (research G9): 0.9–1.3 s under Windows PowerShell 5.1, most of it `Get-AppxPackage`.
+ *
+ * <p>Since §11 R1 it prints Program Files as the known-folder API names it FIRST (`pwsh.programFiles`), so the Store shape is
+ * anchored on the registry's folder; since R8 the whole probe sits in `try { … } catch { }`, so a fault in it (a missing
+ * module, an unreadable file) leaves its tags out — PowerShell 7 unverified, 5.1 runs — and never ends the query it is
+ * embedded in. A caller pins {@link MODULES} before it.</p>
  */
 export const PWSH_PROBE = [
+  'try {',
   SIGNED_HELPER,
+  "$pf = [Environment]::GetFolderPath('ProgramFiles')",
+  `tag '${PWSH_TAGS.programFiles}' $pf`,
   '$sp = Get-AppxPackage -Name Microsoft.PowerShell -ErrorAction SilentlyContinue | Select-Object -First 1',
   "$se = if ($null -ne $sp) { Join-Path $sp.InstallLocation 'pwsh.exe' } else { '' }",
   "$si = if ($se -ne '') { Get-Item -LiteralPath $se -ErrorAction SilentlyContinue } else { $null }",
   '$ss = if ($null -ne $si) { Get-AuthenticodeSignature -LiteralPath $se } else { $null }',
   `tag '${PWSH_TAGS.pwshKind}' (verdict $si $ss)`,
   `tag '${PWSH_TAGS.pwshPath}' $se`,
-  "$mp = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'PowerShell\\7\\pwsh.exe'",
+  "$mp = Join-Path $pf 'PowerShell\\7\\pwsh.exe'",
   '$mi = Get-Item -LiteralPath $mp -ErrorAction SilentlyContinue',
   '$ms = if ($null -ne $mi) { Get-AuthenticodeSignature -LiteralPath $mp } else { $null }',
   `tag '${PWSH_TAGS.msiKind}' (verdict $mi $ms)`,
   `tag '${PWSH_TAGS.msiPath}' $mp`,
+  '} catch { }',
 ].join('\n');
 
 /** What Node's `lstat` says of a file the enable might elevate — `undefined` when it cannot be read (absent, or EACCES). */
@@ -77,12 +93,16 @@ export interface PwshProbe {
   readonly path: string;
 }
 
-/** The read's two PowerShell 7 facts, as the host hands them to the enable. */
+/** The read's PowerShell 7 facts, as a host hands them to an elevated flow. */
 export interface PwshFacts {
   readonly store: PwshProbe | undefined;
   readonly msi: PwshProbe | undefined;
+  /**
+   * Program Files as the KNOWN-FOLDER API named it in the same read (`pwsh.programFiles`, §11 R1) — the registry's, never
+   * the environment's. The Store shape is built from it, and the environment's `ProgramFiles` must name the same folder.
+   */
+  readonly programFiles?: string;
 }
-
 
 /** The engine that runs ELEVATED — the program, the words the modal and the outcome name it by, and which of the three it is. */
 export interface Engine {
@@ -126,13 +146,27 @@ function signedPath(store: PwshProbe | undefined): string | undefined {
 }
 
 /**
+ * Program Files as the read's known-folder API named it — ONLY while the environment's `ProgramFiles` names the same folder
+ * (case-insensitive, §11 R1, as {@link msiVerified} compares the MSI path): a variable pointed at a user folder anchors nothing.
+ */
+/** Whether two folder names are the same folder, as Windows compares them (case-insensitive); an absent name is no folder. */
+function sameFolder(a: string | undefined, b: string | undefined): boolean {
+  return a !== undefined && a.toLowerCase() === b?.toLowerCase();
+}
+
+function anchoredProgramFiles(env: Readonly<Record<string, string | undefined>>, known: string | undefined): string | undefined {
+  return known !== undefined && sameFolder(known, programFilesOf(env)) ? known : undefined;
+}
+
+/**
  * The Store package's `pwsh.exe` as the LAST read resolved it — accepted ONLY when the read verified its signature and the
- * path has exactly the shape Windows gives a Microsoft Store package under THIS machine's Program Files:
+ * path has exactly the shape Windows gives a Microsoft Store package under THIS machine's Program Files, as the KNOWN-FOLDER
+ * API named it in the same read (`knownProgramFiles`, §11 R1 — the environment must agree, never decide):
  * `<ProgramFiles>\WindowsApps\Microsoft.PowerShell_<version>_<arch>__8wekyb3d8bbwe\pwsh.exe` — a folder only
  * TrustedInstaller and SYSTEM may write. The stdout of a query becomes a program path through this check alone.
  */
-export function storePwsh(env: Readonly<Record<string, string | undefined>>, store: PwshProbe | undefined): string | undefined {
-  const programFiles = programFilesOf(env);
+export function storePwsh(env: Readonly<Record<string, string | undefined>>, store: PwshProbe | undefined, knownProgramFiles: string | undefined): string | undefined {
+  const programFiles = anchoredProgramFiles(env, knownProgramFiles);
   const file = signedPath(store);
 
   return programFiles !== undefined && file !== undefined && storeShape(programFiles).test(file) ? file : undefined;
@@ -166,8 +200,8 @@ function msiCandidate(env: Readonly<Record<string, string | undefined>>, fileInf
 }
 
 /** The Store package's pwsh, when the last read verified it, its path has the Store shape, and PowerShell can quote it. */
-function storeCandidate(env: Readonly<Record<string, string | undefined>>, store: PwshProbe | undefined): string | undefined {
-  const file = storePwsh(env, store);
+function storeCandidate(env: Readonly<Record<string, string | undefined>>, facts: PwshFacts): string | undefined {
+  const file = storePwsh(env, facts.store, facts.programFiles);
 
   return file !== undefined && quotablePath(file) ? file : undefined;
 }
@@ -181,7 +215,7 @@ function sevenOf(env: Readonly<Record<string, string | undefined>>, fileInfo: Fi
   if (msi !== undefined) {
     return { file: msi, kind: 'msi' };
   }
-  const store = storeCandidate(env, facts.store);
+  const store = storeCandidate(env, facts);
 
   return store === undefined ? undefined : { file: store, kind: 'store' };
 }
@@ -215,7 +249,9 @@ function probeOf(tags: ReadonlyMap<string, string>, kindTag: string, pathTag: st
 
 /** The probe's two answers in any tagged answer — each `undefined` when its tags are not there or not one of the three kinds. */
 export function pwshFactsFromTags(tags: ReadonlyMap<string, string>): PwshFacts {
-  return { store: probeOf(tags, PWSH_TAGS.pwshKind, PWSH_TAGS.pwshPath), msi: probeOf(tags, PWSH_TAGS.msiKind, PWSH_TAGS.msiPath) };
+  const programFiles = tags.get(PWSH_TAGS.programFiles);
+
+  return { store: probeOf(tags, PWSH_TAGS.pwshKind, PWSH_TAGS.pwshPath), msi: probeOf(tags, PWSH_TAGS.msiKind, PWSH_TAGS.msiPath), ...(programFiles === undefined || programFiles === '' ? {} : { programFiles }) };
 }
 
 /** The launcher's last argument for `engine`: nothing for Windows PowerShell 5.1 (the launcher's own default), else its file. */
