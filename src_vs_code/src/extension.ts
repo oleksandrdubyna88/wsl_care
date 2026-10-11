@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 
 import { buildVersion } from './buildStamp';
 import { WslCareClient, type RunOptions } from './client/WslCareClient';
+import { WindowsCareClient } from './client/WindowsCareClient';
+import { BUNDLED_DAEMON } from './client/handshake';
+import { BundledHost } from './bundled/bundledHost';
 import { installDaemon } from './install/installDaemon';
 import { installUiFor, newInstallRecorder, type InstallRecorder } from './install/installUi';
 import { performance } from 'node:perf_hooks';
@@ -112,6 +115,8 @@ interface Parts {
   readonly engine: EngineHost;
   readonly engineRecorder: EngineRecorder;
   readonly gpu: GpuParts;
+  /** E7.S5a: the bundled Windows daemon's row — the client of bin/wsl-care.exe, on the SAME runner seam as the client. */
+  readonly bundled: BundledHost;
   readonly cleanRecorder: CleanRecorder;
   readonly host: CleanupHost;
   readonly archive: ArchiveHost;
@@ -169,8 +174,25 @@ function build(context: vscode.ExtensionContext): Parts {
 
   return {
     testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
+    bundled: bundledHostOf(context, runner),
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
+}
+
+/**
+ * E7.S5a (todo/PLAN_bundle_windows_binary.md §3.7): the bundled exe's client on the SAME runner as the read-only client — the
+ * Test-mode fake or the closed runner, never the Windows-Time real runner — so `test:host` never starts the real exe. It starts
+ * `<extension>/bin/wsl-care.exe --version` only when the panel asks (its refresh), never at activation.
+ */
+/** The panel's two members of the Windows row: the view and its change. */
+function bundledPanelActions(bundled: BundledHost): Pick<PanelActions, 'windowsDaemon' | 'onWindowsDaemonChange'> {
+  return { windowsDaemon: () => bundled.view(), onWindowsDaemonChange: (listener) => bundled.onChange(listener) };
+}
+
+function bundledHostOf(context: vscode.ExtensionContext, runner: ReturnType<typeof clientRunner>): BundledHost {
+  const client = new WindowsCareClient({ runner, platform: process.platform, extension: { scheme: context.extensionUri.scheme, fsPath: context.extensionUri.fsPath }, timeoutMs: () => numbers().versionSeconds * 1000 });
+
+  return new BundledHost({ version: () => client.version(), pin: BUNDLED_DAEMON });
 }
 
 /**
@@ -287,6 +309,7 @@ function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
   return (options) => {
     void parts.guard.refresh();
     void parts.engine.refresh();
+    void parts.bundled.refresh();
     void parts.gpu.host.refresh();
     const round = parts.poller.refreshPanel(options);
     void round.then(() => parts.archive.refresh()).catch((e: unknown) => { parts.log.error(`archive: the refresh failed: ${String(e)}`); });
@@ -391,6 +414,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     removeWindowsTimeGuard: removeGuard,
     ...extras,
     ...gpuPanelActions(parts.gpu),
+    ...bundledPanelActions(parts.bundled),
   });
   context.subscriptions.push(
     bar,

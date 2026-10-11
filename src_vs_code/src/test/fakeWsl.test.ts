@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { WindowsCareClient } from '../client/WindowsCareClient';
 import type { ProcessResult } from '../process/runner';
 import { FAKE_EXIT, missingBinaryStderr, NO_SUCH_DISTRO, OLD_GLIBC_STDERR } from './fake/fakeWsl';
 import { bodyOf, stringsAt } from './support/body';
@@ -713,4 +714,33 @@ test('root A20: each shape needs its capabilities advertised and A20 reported �
     world.rewrite({ answers: restoreAnswers(world, 'answers-a20-unreported', [GOLDEN_RESTORABLE], { status: (s) => ({ ...s, actions: stringsAt(s, 'actions').filter((a) => a !== 'A20') }) }) });
     assert.equal(exitOf(await rootAsk(world, RESTORE_PREVIEW, piped)).code, FAKE_EXIT.refused, 'A20 not in status.actions');
   });
+
+
+// ---- E7.S5a (todo/PLAN_bundle_windows_binary.md §3.7): the strict fake learns the bundled exe's exact path ----
+
+const BUNDLED_EXTENSION = { scheme: 'file', fsPath: 'C:\\Users\\u\\.vscode\\extensions\\pub.ai-os-care-0.5.0-win32-x64' };
+const BUNDLED_EXE_PATH = 'C:\\Users\\u\\.vscode\\extensions\\pub.ai-os-care-0.5.0-win32-x64\\bin\\wsl-care.exe';
+
+test('E7.S5a: WindowsCareClient through the Test-mode seam — the fake answers --version for EXACTLY the bundled path and records it', async () => {
+  const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_PATH, bundledVersion: '0.4.0+0123456789abcdef0123456789abcdef01234567' });
+  try {
+    const read = await new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: BUNDLED_EXTENSION, timeoutMs: () => 20_000 }).version();
+    assert.deepEqual(read, { kind: 'version', text: '0.4.0+0123456789abcdef0123456789abcdef01234567' });
+    assert.deepEqual(world.files(), [BUNDLED_EXE_PATH], 'the exact absolute path the client started');
+    assert.deepEqual(world.calls(), ['--version']);
+  } finally {
+    world.dispose();
+  }
+});
+
+test('E7.S5a: the fake refuses any other argv to the bundled exe, and any other exe path stays refused', async () => {
+  const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_PATH });
+  try {
+    const other = await world.runner({ file: BUNDLED_EXE_PATH, args: ['status', '--json'], timeoutMs: 20_000 });
+    assert.equal(other.kind === 'exited' && other.code, FAKE_EXIT.refused);
+    const elsewhere = await world.runner({ file: 'C:\\Users\\u\\Downloads\\wsl-care.exe', args: ['--version'], timeoutMs: 20_000 });
+    assert.equal(elsewhere.kind === 'exited' && elsewhere.code, FAKE_EXIT.wrongFile, 'an exe from anywhere else is no launcher the client has');
+  } finally {
+    world.dispose();
+  }
 });

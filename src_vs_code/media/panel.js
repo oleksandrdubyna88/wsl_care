@@ -344,9 +344,15 @@
     return isObject(view.windowsTimeGuard) && Array.isArray(view.windowsTimeGuard.buttons) ? [guardPart(view.windowsTimeGuard)] : [];
   }
 
+  /** E7.S5a: the bundled Windows daemon's version line (src/bundled/bundledView.ts) — nothing when the host says nothing. */
+  function windowsDaemonLine(view) {
+    const row = isObject(view.windowsDaemon) ? view.windowsDaemon : {};
+    return optionalLine(row.line, { 'windows-daemon': '', level: typeof row.level === 'string' ? row.level : 'none' });
+  }
+
   function healthExtras(view) {
     const box = element('div', undefined, { 'health-extras': '' });
-    gpuLine(view).concat(guardParts(view)).forEach(function (part) { box.appendChild(part); });
+    gpuLine(view).concat(windowsDaemonLine(view), guardParts(view)).forEach(function (part) { box.appendChild(part); });
     return box;
   }
 

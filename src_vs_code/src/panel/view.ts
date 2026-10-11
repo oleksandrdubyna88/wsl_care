@@ -1,4 +1,5 @@
 import type { ArchiveControls } from '../archive/archiveView';
+import type { WindowsDaemonView } from '../bundled/bundledView';
 import type { GpuView } from '../gpu/gpuState';
 import type { RelaysControls } from '../relays/relaysView';
 import type { GuardView } from '../windowsTime/guardState';
@@ -115,4 +116,6 @@ export interface PanelView {
   readonly archive: ArchiveControls;
   readonly gpu: GpuView;
   readonly relays: RelaysControls;
+  /** E7.S5a: the bundled Windows daemon's version, compared with the build this extension carries — '' off Windows. */
+  readonly windowsDaemon: WindowsDaemonView;
 }
