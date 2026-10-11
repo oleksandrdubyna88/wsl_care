@@ -271,4 +271,76 @@ public sealed class FetchWindowsDaemonFlows
 
         result.Exit.Should().Be(exit, result.Stdout + result.Stderr);
     }
+
+    // ---- §3.5, the plan of record's S5 test: the attest job re-derives the bytes before it signs (verify-bundled-exe.sh) ----
+
+    /// <summary>A package as vsce writes one: the extension's members under <c>extension/</c>, the exe among them as given.</summary>
+    private static string Package(World world, params (string Name, byte[] Data)[] members)
+    {
+        var path = Path.Combine(world.Root.Path, "from-build", "ai-os-care-win32-x64-0.5.0.vsix");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+        foreach (var (name, data) in members.Prepend(("extension/package.json", Encoding.UTF8.GetBytes("{}"))))
+        {
+            using var stream = archive.CreateEntry(name).Open();
+            stream.Write(data);
+        }
+
+        return path;
+    }
+
+    private static Task<ChildResult> VerifyAsync(World world, string package) =>
+        ReleaseScripts.RunAsync("verify-bundled-exe.sh", [Version, package.Replace('\\', '/')], world.Root.Path, world.Env);
+
+    [Fact]
+    public async Task The_bundled_exe_is_the_attested_asset_byte_for_byte()
+    {
+        Runnable();
+        using var root = new TempRoot("bundled-same");
+        var world = Make(root);
+        Publish(world, SevenZipShape());
+
+        var result = await VerifyAsync(world, Package(world, ("extension/bin/wsl-care.exe", Exe)));
+
+        result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+        result.Stdout.Should().Contain("extension/bin/wsl-care.exe is byte for byte the attested member");
+        File.ReadAllText(world.Log).Should().Contain("attestation verify ", "the attest job asks the attestation itself — never the build's word");
+    }
+
+    public static TheoryData<string> RefusedPackages => ["different", "missing", "twice"];
+
+    [Theory]
+    [MemberData(nameof(RefusedPackages))]
+    public async Task A_package_whose_exe_is_not_the_attested_member_is_refused_before_signing(string shape)
+    {
+        Runnable();
+        using var root = new TempRoot($"bundled-{shape}");
+        var world = Make(root);
+        Publish(world, SevenZipShape());
+        (string, byte[])[] members = shape switch
+        {
+            "different" => [("extension/bin/wsl-care.exe", Encoding.UTF8.GetBytes("MZ rewritten after the fetch by a build step"))],
+            "missing" => [],
+            _ => [("extension/bin/wsl-care.exe", Exe), ("extension/bin/wsl-care.exe", Exe)],
+        };
+
+        var result = await VerifyAsync(world, Package(world, members));
+
+        result.Exit.Should().Be(1, result.Stdout + result.Stderr);
+        result.Stdout.Should().Contain("does not carry exactly the attested daemon-v0.3.0 member — nothing is signed");
+    }
+
+    [Fact]
+    public async Task A_refused_fetch_refuses_the_package_too_even_when_the_bytes_would_match()
+    {
+        Runnable();
+        using var root = new TempRoot("bundled-unattested");
+        var world = Make(root, attestExit: 1);
+        Publish(world, SevenZipShape());
+
+        var result = await VerifyAsync(world, Package(world, ("extension/bin/wsl-care.exe", Exe)));
+
+        result.Exit.Should().Be(1, result.Stdout + result.Stderr);
+        result.Stdout.Should().Contain("could not be fetched and verified — nothing is signed");
+    }
 }

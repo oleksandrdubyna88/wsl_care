@@ -41,8 +41,14 @@ internal static partial class ReleaseFiles
         }
     }
 
-    /// <summary>The file <c>vsce package</c> writes for <paramref name="version"/>: <c>&lt;name&gt;-&lt;version&gt;.vsix</c>.</summary>
-    public static string ExtensionVsix(string version) => $"{ExtensionName}-{version}.vsix";
+    /// <summary>The one platform the package targets (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.3) — lib/extension-package.sh's
+    /// <c>EXTENSION_TARGET</c>.</summary>
+    public const string ExtensionTarget = "win32-x64";
+
+    /// <summary>The file <c>vsce package --target win32-x64</c> writes for <paramref name="version"/>:
+    /// <c>&lt;name&gt;-&lt;target&gt;-&lt;version&gt;.vsix</c> — the C# twin of lib/extension-package.sh's <c>vsix_name</c> and of
+    /// check-vsix.mjs's default name, held equal to both by <c>ExtensionPackageNameTests</c>.</summary>
+    public static string ExtensionVsix(string version) => $"{ExtensionName}-{ExtensionTarget}-{version}.vsix";
 
     public static IReadOnlyList<string> AllWorkflows => [.. Directory.EnumerateFiles(WorkflowDirectory, "*.yml").Order(StringComparer.Ordinal)];
 

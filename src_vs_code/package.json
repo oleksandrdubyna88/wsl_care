@@ -485,7 +485,7 @@
     "vscode:prepublish": "npm run bundle",
     "test:host": "npm run compile && npm run bundle && node scripts/run-host.mjs",
     "fieldmap:doc": "npm run compile && node scripts/field-map-doc.mjs",
-    "package": "vsce package --no-dependencies",
+    "package": "vsce package --no-dependencies --target win32-x64",
     "check:vsix": "node scripts/check-vsix.mjs",
     "fetch:windows-daemon": "node scripts/fetch-windows-daemon.mjs",
     "icon:make": "npm run compile && node scripts/make-icon.mjs"

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -25,11 +26,24 @@ const DENYLIST = listLines(fs.readFileSync(path.join(EXTENSION_ROOT, 'vsix-denyl
 const OPTIONS: VsixCheckOptions = { expectedFiles: ALLOWLIST, deniedWords: ['someowner', ...DENYLIST], release: false, ...(SHIPPED.exe === undefined ? {} : { bundledExeDigest: SHIPPED.exe.digest }) };
 const BUNDLE_ENTRY = 'extension/dist/extension.js';
 const BACKSLASH = String.fromCharCode(92);
+/** The vsixmanifest of a targeted package, as vsce 4.0.0 writes its Identity (E7.S5a §3.3). */
+const TARGETED_MANIFEST = '<?xml version="1.0"?><PackageManifest><Metadata><Identity Language="en-US" Id="ai-os-care" Version="0.4.0" Publisher="p" TargetPlatform="win32-x64"/></Metadata></PackageManifest>';
+
+test('E7.S5a: a RELEASE .vsix must target win32-x64 — the vsixmanifest is the artefact\'s truth, not the file name', () => {
+  const entries = cleanEntries();
+  const release = { ...OPTIONS, release: true, bundledExeDigest: OPTIONS.bundledExeDigest ?? '0'.repeat(64) };
+  assert.doesNotMatch(vsixFindings(entries, release).join(' | '), /TargetPlatform/);
+  for (const manifest of ['<?xml version="1.0"?><PackageManifest><Metadata><Identity Id="ai-os-care"/></Metadata></PackageManifest>', TARGETED_MANIFEST.replace('win32-x64', 'linux-x64')]) {
+    entries.set('extension.vsixmanifest', Buffer.from(manifest));
+    assert.match(vsixFindings(entries, release).join(' | '), /a release \.vsix must target win32-x64: extension\.vsixmanifest carries no TargetPlatform="win32-x64"/, manifest);
+    assert.doesNotMatch(vsixFindings(entries, OPTIONS).join(' | '), /TargetPlatform/, 'a pull request package is checked for content, not for its release target');
+  }
+});
 
 /** A clean archive: every allowlisted file as vsce names it, from disk (the fetched exe as fetched), plus vsce's own two files. */
 function cleanEntries(): Map<string, Buffer> {
   assert.ok(fs.existsSync(BUNDLE), 'npm test bundles before it tests');
-  const entries = new Map<string, Buffer>(VSIX_OWN_FILES.map((name) => [name, Buffer.from('<?xml version="1.0"?><x/>')]));
+  const entries = new Map<string, Buffer>(VSIX_OWN_FILES.map((name) => [name, Buffer.from(name === 'extension.vsixmanifest' ? TARGETED_MANIFEST : '<?xml version="1.0"?><x/>')]));
   for (const file of ALLOWLIST) {
     entries.set(vsixEntryName(file), fs.readFileSync(path.join(EXTENSION_ROOT, file)));
   }
@@ -282,8 +296,10 @@ test('the ZIP reader refuses what it cannot read safely: a climbing name, an abs
 });
 
 test('the packaged .vsix, when one is present here, is read by the reader and passes the checks (the real artefact)', (t) => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8')) as { name: string; version: string };
-  const vsix = path.join(EXTENSION_ROOT, `${manifest.name}-${manifest.version}.vsix`);
+  // E7.S5a: the targeted name, asked of the ONE Node implementation (check-vsix.mjs) rather than spelt again here.
+  const named = spawnSync(process.execPath, [path.join(EXTENSION_ROOT, 'scripts', 'check-vsix.mjs'), '--print-default-name'], { encoding: 'utf8' });
+  assert.equal(named.status, 0, named.stderr);
+  const vsix = path.join(EXTENSION_ROOT, named.stdout.trim());
   if (!fs.existsSync(vsix) || fs.statSync(vsix).mtimeMs < fs.statSync(BUNDLE).mtimeMs) {
     t.skip('no .vsix newer than the bundle — `npm run package` then `npm run check:vsix` checks the real artefact (CI does both)');
     return;

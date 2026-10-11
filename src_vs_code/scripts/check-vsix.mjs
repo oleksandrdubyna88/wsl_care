@@ -19,7 +19,8 @@
  *
  *     node scripts/check-vsix.mjs [<file.vsix>] [--release] [--min-daemon <x.y.z>] [--min-daemon-actions <x.y.z>]
  *                                  [--install-daemon <x.y.z>] [--bundled-daemon <x.y.z>] [--root-allowed true|false]
- *                                  (default: <name>-<version>.vsix, both from package.json; reads out/ and dist/ — compile and bundle first)
+ *                                  (default: <name>-win32-x64-<version>.vsix, from package.json; reads out/ and dist/ — compile and bundle first)
+ *     node scripts/check-vsix.mjs --print-default-name [<version>]   (the default name alone, E7.S5a)
  *
  * Exit 0 clean, 1 findings (each printed), 2 usage / missing inputs. The findings name the entry and the kind of leak;
  * a denied word itself is never printed.
@@ -38,6 +39,22 @@ const SUPPORT = join(ROOT, 'out', 'test', 'support');
 function fail(message, code) {
   console.error(`check-vsix: ${message}`);
   process.exit(code);
+}
+
+/**
+ * The one platform the package targets (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.3): `npm run package` is
+ * `vsce package --target win32-x64`, and vsce 4.0.0 names a targeted package `<name>-<target>-<version>.vsix`. The Node twin
+ * of lib/extension-package.sh's `vsix_name` and ReleaseFiles.ExtensionVsix — ExtensionPackageNameTests holds the three equal.
+ */
+const TARGET = 'win32-x64';
+const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const defaultName = (version) => `${manifest.name}-${TARGET}-${version}.vsix`;
+
+// `--print-default-name [<version>]`: the name, and nothing else — answered before anything compiled is needed, so the
+// daemon's CI legs (no npm) can ask it too.
+if (process.argv[2] === '--print-default-name') {
+  console.log(defaultName(process.argv[3] ?? manifest.version));
+  process.exit(0);
 }
 
 if (!existsSync(join(SUPPORT, 'vsixCheck.js'))) {
@@ -69,9 +86,9 @@ const releasedBundled = valueOf('--bundled-daemon', /^\d+\.\d+\.\d+$/, "the rele
 const rootAllowedText = valueOf('--root-allowed', /^(true|false)$/, 'true or false (the release guard\'s root_allowed)');
 const rootAllowed = rootAllowedText === undefined ? undefined : rootAllowedText === 'true';
 const positional = args.filter((a, i) => a !== '--release' && !VALUED.includes(a) && !VALUED.includes(args[i - 1]));
-const { name, version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-// The file `vsce package` writes is <name>-<version>.vsix — read from the manifest, never retyped beside it.
-const vsix = positional[0] ?? join(ROOT, `${name}-${version}.vsix`);
+const { version } = manifest;
+// The file `vsce package --target win32-x64` writes — its name and version read from the manifest, never retyped beside it.
+const vsix = positional[0] ?? join(ROOT, defaultName(version));
 if (positional.length > 1 || !existsSync(vsix)) {
   fail(`usage: check-vsix.mjs [<file.vsix>] [--release] — ${vsix} does not exist (npm run package writes it)`, 2);
 }

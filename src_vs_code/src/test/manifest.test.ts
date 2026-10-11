@@ -88,7 +88,7 @@ test('the Marketplace listing (plan §15f #6): a PNG icon of at least 128 px, Fr
 
 test('@vscode/vsce is a pinned development dependency — the one packager, the same in CI and in the release', () => {
   assert.match(manifest.devDependencies['@vscode/vsce'] ?? '', /^\d+\.\d+\.\d+$/);
-  assert.equal(manifest.scripts.package, 'vsce package --no-dependencies');
+  assert.equal(manifest.scripts.package, 'vsce package --no-dependencies --target win32-x64', 'E7.S5a: ONE targeted package — Linux, macOS and Windows on Arm keep the last universal 0.3.1');
   assert.equal(manifest.scripts['vscode:prepublish'], 'npm run bundle', 'vsce runs the bundle before it packs — the .vsix never carries a stale one');
 });
 

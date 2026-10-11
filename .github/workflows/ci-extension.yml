@@ -49,6 +49,10 @@ jobs:
     name: extension · typecheck · lint · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
+    # `attestations: read`: the fetch verifies the bundled daemon's attestation (E7.S5a) — reading one, never making one.
+    permissions:
+      contents: read
+      attestations: read
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +77,14 @@ jobs:
           cache: npm
           cache-dependency-path: src_vs_code/package-lock.json
 
+      # E7.S5a: the attested Windows daemon the .vsix carries — bundledDaemon of the checked-in min-daemon.json, read as JSON —
+      # through THE fetch (the asset set, the exact attestation, the one zip member), before npm test: on CI a missing exe
+      # FAILS the tests (support/bundledExe.ts), so a misordered workflow can never go green with the entry dropped.
+      - name: Fetch the bundled wsl-care.exe (bundledDaemon of min-daemon.json, attested)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run fetch:windows-daemon
+
       - name: Install (the lock file, exactly)
         run: npm ci
 
@@ -92,8 +104,8 @@ jobs:
       - name: Test (compile, bundle, run)
         run: npm test
 
-      # vsce package runs vscode:prepublish (the bundle, stamped with package.json's version) and writes
-      # ai-os-care-<version>.vsix (<name>-<version> of package.json) — the universal package, the one file the leak checks then open.
+      # vsce package --target win32-x64 runs vscode:prepublish (the bundle, stamped with package.json's version) and writes
+      # ai-os-care-win32-x64-<version>.vsix (E7.S5a: ONE targeted package, the bundled exe inside) — the one file the leak checks open.
       - name: Package the .vsix (vsce package)
         run: npm run package
 

@@ -5,9 +5,15 @@
 // The ONE reader for release-extension.yml's skip step and wait-marketplace-served.sh (coai code round 2026-10-09): two copies
 // could disagree, and a skip that misses what the wait calls served publishes again. The whole list decides; the newest five
 // are what a log shows. An answer that is not JSON with versions lists none — vsce 4.0.0 prints `undefined` and exits 0 for an
-// extension it does not know (observed 2026-10-04). Exit 0 with an answer, 2 a missing argument.
+// extension it does not know (observed 2026-10-04).
+//
+// Since E7.S5a (todo/PLAN_bundle_windows_binary.md §3.3) the package is TARGETED: a version counts as served only when its entry's
+// `targetPlatform` is `win32-x64`. A universal entry of the same version — uploaded by hand, say — is NOT the release, and reads
+// as not served. Exit 0 with an answer, 2 a missing argument.
 'use strict';
 const fs = require('fs');
+
+const TARGET = 'win32-x64';
 
 const [file, version] = process.argv.slice(2);
 if (!file || !version) {
@@ -15,10 +21,12 @@ if (!file || !version) {
   process.exit(2);
 }
 
-let versions = [];
+let entries = [];
 try {
-  versions = (JSON.parse(fs.readFileSync(file, 'utf8')).versions || []).map((entry) => entry.version);
+  entries = JSON.parse(fs.readFileSync(file, 'utf8')).versions || [];
 } catch {
-  versions = [];
+  entries = [];
 }
-process.stdout.write(`${versions.includes(version) ? 'served' : 'not'}|${versions.slice(0, 5).join(', ')}`);
+const versions = entries.map((entry) => entry.version);
+const served = entries.some((entry) => entry.version === version && entry.targetPlatform === TARGET);
+process.stdout.write(`${served ? 'served' : 'not'}|${versions.slice(0, 5).join(', ')}`);

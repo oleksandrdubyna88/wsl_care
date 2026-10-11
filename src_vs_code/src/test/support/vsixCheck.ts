@@ -200,6 +200,16 @@ function rootFindings(entries: VsixEntries, rootAllowed: boolean | undefined): s
     : [];
 }
 
+/** The one platform a release package targets (E7.S5a §3.3) — as the vsixmanifest's Identity says it, not the file name. */
+const RELEASE_TARGET = 'TargetPlatform="win32-x64"';
+
+/** A release .vsix is `vsce package --target win32-x64`: its extension.vsixmanifest carries the target. */
+function targetFindings(entries: VsixEntries, release: boolean): string[] {
+  const manifest = entries.get('extension.vsixmanifest')?.toString('utf8') ?? '';
+
+  return release && !manifest.includes(RELEASE_TARGET) ? [`a release .vsix must target win32-x64: extension.vsixmanifest carries no ${RELEASE_TARGET} (npm run package is vsce package --target win32-x64)`] : [];
+}
+
 function publisherFindings(entries: VsixEntries, release: boolean): string[] {
   const publisher = manifestOf(entries).publisher;
 
@@ -216,6 +226,7 @@ export function vsixFindings(entries: VsixEntries, options: VsixCheckOptions): s
     ...exeFindings(entries, options.release, options.bundledExeDigest),
     ...stampFindings(entries),
     ...publisherFindings(entries, options.release),
+    ...targetFindings(entries, options.release),
     ...rootFindings(entries, options.rootAllowed),
   ];
 }
