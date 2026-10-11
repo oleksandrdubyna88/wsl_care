@@ -1,3 +1,4 @@
+import type { WindowsDaemonView } from '../bundled/bundledView';
 import * as vscode from 'vscode';
 
 import type { RunOptions } from '../client/WslCareClient';
@@ -58,6 +59,9 @@ export interface PanelActions {
   readonly relays: () => RelaysControls;
   /** S7b.2b: *Stop client-gone relays* — A21 through the cleanup host's transaction. */
   readonly stopRelays: () => void;
+  /** E7.S5a: the bundled Windows daemon's row — read on the panel's refresh, never at activation. */
+  readonly windowsDaemon: () => WindowsDaemonView;
+  readonly onWindowsDaemonChange: (listener: () => void) => () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -68,7 +72,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   private readonly unsubscribe: readonly (() => void)[];
 
   constructor(private readonly extensionUri: vscode.Uri, private readonly store: OutcomeStore, private readonly actions: PanelActions) {
-    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post()), actions.onArchiveChange(() => this.post()), actions.onGpuChange(() => this.post())];
+    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post()), actions.onArchiveChange(() => this.post()), actions.onGpuChange(() => this.post()), actions.onWindowsDaemonChange(() => this.post())];
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -134,6 +138,6 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive(), this.actions.gpu(), this.actions.relays()) });
+    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive(), this.actions.gpu(), this.actions.relays(), this.actions.windowsDaemon()) });
   }
 }

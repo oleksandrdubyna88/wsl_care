@@ -14,7 +14,7 @@ name: ci · extension
 #
 # Shipped artefact -> what a pull request runs for it (.agents/conventions/common/platform-limits.md part 2):
 #
-#   - the extension's bundle (dist/extension.js, one universal .vsix, E5.S3) runs inside VS Code on Windows
+#   - the extension's bundle (dist/extension.js, one win32-x64 .vsix since E7.S5a, E5.S3) runs inside VS Code on Windows
 #     (extensionKind ["ui"])                                               -> windows-latest
 #   - the same bundle off Windows answers "Windows + WSL only" and starts nothing (E5.S2's notice: the extension-host
 #     scenarios assert it in a real VS Code on Linux, under xvfb)          -> ubuntu-24.04
@@ -24,7 +24,7 @@ name: ci · extension
 # wsl.exe: every test process carries a tripwire that throws on any start of `wsl` / `wsl.exe`, and a test asserts it
 # is armed; in the extension host the runner is the strict fake or the CLOSED one, never the real one (Test mode).
 #
-# PACKAGING ON EVERY PULL REQUEST, on both legs (E5.S3, plan §15g M8): `vsce package` builds the universal .vsix exactly
+# PACKAGING ON EVERY PULL REQUEST, on both legs (E5.S3, plan §15g M8): `vsce package --target win32-x64` builds the one .vsix exactly
 # as release-extension.yml does, and scripts/check-vsix.mjs checks the ARTEFACT — `vsce ls --no-dependencies` equal to
 # vsix-files.txt, and inside the unzipped .vsix: exactly the allowlist, no drive / home / mnt / wsl-share path, no user
 # name of the runner (derived when the check runs) or word of vsix-denylist.txt, no e-mail address, no source map, a
@@ -49,6 +49,10 @@ jobs:
     name: extension · typecheck · lint · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
+    # `attestations: read`: the fetch verifies the bundled daemon's attestation (E7.S5a) — reading one, never making one.
+    permissions:
+      contents: read
+      attestations: read
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +77,14 @@ jobs:
           cache: npm
           cache-dependency-path: src_vs_code/package-lock.json
 
+      # E7.S5a: the attested Windows daemon the .vsix carries — bundledDaemon of the checked-in min-daemon.json, read as JSON —
+      # through THE fetch (the asset set, the exact attestation, the one zip member), before npm test: on CI a missing exe
+      # FAILS the tests (support/bundledExe.ts), so a misordered workflow can never go green with the entry dropped.
+      - name: Fetch the bundled wsl-care.exe (bundledDaemon of min-daemon.json, attested)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run fetch:windows-daemon
+
       - name: Install (the lock file, exactly)
         run: npm ci
 
@@ -92,8 +104,8 @@ jobs:
       - name: Test (compile, bundle, run)
         run: npm test
 
-      # vsce package runs vscode:prepublish (the bundle, stamped with package.json's version) and writes
-      # ai-os-care-<version>.vsix (<name>-<version> of package.json) — the universal package, the one file the leak checks then open.
+      # vsce package --target win32-x64 runs vscode:prepublish (the bundle, stamped with package.json's version) and writes
+      # ai-os-care-win32-x64-<version>.vsix (E7.S5a: ONE targeted package, the bundled exe inside) — the one file the leak checks open.
       - name: Package the .vsix (vsce package)
         run: npm run package
 

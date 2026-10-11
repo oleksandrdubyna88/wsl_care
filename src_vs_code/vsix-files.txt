@@ -1,6 +1,7 @@
 CHANGELOG.md
 LICENSE
 README.md
+bin/wsl-care.exe
 dist/extension.js
 media/archive.js
 media/icon.png

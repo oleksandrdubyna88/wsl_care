@@ -97,6 +97,9 @@ jobs:
       # The daemon release Install daemon types (#37: a value of its own, at or above both minima), found published and
       # verified — the build checks its .vsix installs exactly that one.
       install_daemon: ${{ steps.guard.outputs.install_daemon }}
+      # The daemon release whose Windows build the .vsix carries (E7.S5a), found published with its win-x64 zip — the build
+      # fetches exactly that one and the attest job re-derives the bytes from it.
+      bundled_daemon: ${{ steps.guard.outputs.bundled_daemon }}
       # Whether the tags allow a root-capable extension (plan §15j B3, §15k #7) — check-vsix refuses the root module otherwise.
       root_allowed: ${{ steps.guard.outputs.root_allowed }}
     steps:
@@ -122,9 +125,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     # Reading only: this job runs `npm ci` with dependency install scripts, every test and a downloaded VS Code — none of
-    # it may sit beside a signing scope. The attestation is the attest job's (E5 code round #3).
+    # it may sit beside a signing scope. The attestation is the attest job's (E5 code round #3). `attestations: read` lets
+    # the fetch verify the bundled daemon's attestation (E7.S5a) — reading one, never making one.
     permissions:
       contents: read
+      attestations: read
     defaults:
       run:
         shell: bash
@@ -134,6 +139,7 @@ jobs:
       MIN_DAEMON: ${{ needs.guard.outputs.min_daemon }}
       MIN_DAEMON_ACTIONS: ${{ needs.guard.outputs.min_daemon_actions }}
       INSTALL_DAEMON: ${{ needs.guard.outputs.install_daemon }}
+      BUNDLED_DAEMON: ${{ needs.guard.outputs.bundled_daemon }}
       ROOT_ALLOWED: ${{ needs.guard.outputs.root_allowed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -145,6 +151,20 @@ jobs:
           node-version: 22.x
           cache: npm
           cache-dependency-path: src_vs_code/package-lock.json
+
+      # The package's ONE name (lib/extension-package.sh, E7.S5a): ai-os-care-win32-x64-<version>.vsix — never retyped.
+      - name: The package's name
+        run: |
+          . ../.github/scripts/lib/extension-package.sh
+          echo "VSIX=$(vsix_name "$VERSION")" >> "$GITHUB_ENV"
+
+      # E7.S5a: the attested Windows daemon the .vsix carries — daemon-v<bundled_daemon>, the guard's pin — fetched and verified
+      # (the asset set, the exact attestation, the one zip member) BEFORE any dependency code runs. This is the EARLY, friendly
+      # check: the attest job re-derives the bytes itself before it signs (verify-bundled-exe.sh). GH_TOKEN on this step only.
+      - name: Fetch the bundled wsl-care.exe (daemon-v<bundled_daemon>, attested)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash ../.github/scripts/fetch-windows-daemon.sh "$BUNDLED_DAEMON" .
 
       - name: Install (the lock file, exactly)
         run: npm ci
@@ -168,17 +188,17 @@ jobs:
         run: |
           set -euo pipefail
           npm run package
-          test -f "ai-os-care-$VERSION.vsix"
+          test -f "$VSIX"
           mkdir -p ../release-extension
-          mv "ai-os-care-$VERSION.vsix" ../release-extension/
-          (cd ../release-extension && sha256sum "ai-os-care-$VERSION.vsix" > "ai-os-care-$VERSION.vsix.sha256")
+          mv "$VSIX" ../release-extension/
+          (cd ../release-extension && sha256sum "$VSIX" > "$VSIX.sha256")
 
       # The ARTEFACT, not the source: exactly the allowlist, no machine path / user name / e-mail / source map, the build
       # stamp equal to the version, (--release) a real publisher, (--min-daemon / --min-daemon-actions) the minima this .vsix
       # renders and acts with equal to the ones the guard found published and verified, and (--root-allowed) no root module
       # in a bundle the tags keep root-free.
       - name: Leak checks on the .vsix
-        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --min-daemon-actions "$MIN_DAEMON_ACTIONS" --install-daemon "$INSTALL_DAEMON" --root-allowed "$ROOT_ALLOWED"
+        run: node scripts/check-vsix.mjs "../release-extension/$VSIX" --release --min-daemon "$MIN_DAEMON" --min-daemon-actions "$MIN_DAEMON_ACTIONS" --install-daemon "$INSTALL_DAEMON" --bundled-daemon "$BUNDLED_DAEMON" --root-allowed "$ROOT_ALLOWED"
 
       - name: The asset set
         run: bash ../.github/scripts/verify-extension-assets.sh "$VERSION" ../release-extension
@@ -202,6 +222,7 @@ jobs:
       attestations: write
     env:
       VERSION: ${{ needs.guard.outputs.version }}
+      BUNDLED_DAEMON: ${{ needs.guard.outputs.bundled_daemon }}
     steps:
       # The verification script's folder and nothing else: no package.json, no lock file — nothing here can be installed.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,9 +238,25 @@ jobs:
       - name: The build's pair, checked before it is signed
         run: bash .github/scripts/verify-extension-assets.sh "$VERSION" from-build
 
+      # The attested subject's name as a step OUTPUT (subject-path is a YAML input, never a shell): lib/extension-package.sh.
+      - id: name
+        name: The package's name
+        run: |
+          . .github/scripts/lib/extension-package.sh
+          echo "vsix=$(vsix_name "$VERSION")" >> "$GITHUB_OUTPUT"
+
+      # E7.S5a §3.5, THE REAL CHECK: the build is the untrusted domain, so the bundled exe is re-derived HERE from the attested
+      # daemon-v<bundled_daemon> release (the same fetch: asset set, exact attestation, one member) and compared byte for byte
+      # with extension/bin/wsl-care.exe inside the build's package — bash, gh and python only. Any difference: nothing is signed.
+      - name: The bundled exe, re-derived from the attested daemon release and compared byte for byte
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VSIX: ${{ steps.name.outputs.vsix }}
+        run: bash .github/scripts/verify-bundled-exe.sh "$BUNDLED_DAEMON" "from-build/$VSIX"
+
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: from-build/ai-os-care-${{ needs.guard.outputs.version }}.vsix
+          subject-path: from-build/${{ steps.name.outputs.vsix }}
 
   github-draft:
     name: release · extension · github draft
@@ -246,6 +283,12 @@ jobs:
 
       - name: The build produced the set
         run: bash .github/scripts/verify-extension-assets.sh "$VERSION" from-build
+
+      # The package's ONE name (lib/extension-package.sh, E7.S5a): ai-os-care-win32-x64-<version>.vsix — never retyped.
+      - name: The package's name
+        run: |
+          . .github/scripts/lib/extension-package.sh
+          echo "VSIX=$(vsix_name "$VERSION")" >> "$GITHUB_ENV"
 
       # release-please made this release a DRAFT when it cut the tag. An asset already on the release is never replaced —
       # not even on a draft: the Marketplace may already serve it, and a re-run of ALL jobs would have rebuilt different
@@ -276,7 +319,7 @@ jobs:
           set -euo pipefail
           gh release download "$GITHUB_REF_NAME" --dir from-release
           bash .github/scripts/verify-extension-assets.sh "$VERSION" from-release
-          cmp "from-build/ai-os-care-$VERSION.vsix" "from-release/ai-os-care-$VERSION.vsix" || {
+          cmp "from-build/$VSIX" "from-release/$VSIX" || {
             echo "::error::the release holds another .vsix than this run built — a 'Re-run all jobs' rebuilds it, and bytes on a release are never replaced. Re-run FAILED jobs only (docs/repo-settings.md, Cutting extension-v…)"
             exit 1
           }
@@ -325,6 +368,12 @@ jobs:
       - name: The attested file, checked again
         run: bash .github/scripts/verify-extension-assets.sh "$VERSION" from-build
 
+      # The package's ONE name (lib/extension-package.sh, E7.S5a): ai-os-care-win32-x64-<version>.vsix — never retyped.
+      - name: The package's name
+        run: |
+          . .github/scripts/lib/extension-package.sh
+          echo "VSIX=$(vsix_name "$VERSION")" >> "$GITHUB_ENV"
+
       # Idempotent: a re-run after a successful publish (or a publish by hand) skips. `vsce show` asks the Marketplace's
       # public gallery — no credential. For an extension it does not know, vsce 4.0.0 prints `undefined` and exits 0
       # (observed 2026-10-04), so an answer that is not JSON with versions reads as "not served". marketplace-served.cjs
@@ -351,7 +400,7 @@ jobs:
             echo "::error::VSCE_PAT is not set in the marketplace Environment — docs/repo-settings.md, step 9"
             exit 1
           fi
-          node src_vs_code/node_modules/@vscode/vsce/vsce publish --packagePath "from-build/ai-os-care-$VERSION.vsix"
+          node src_vs_code/node_modules/@vscode/vsce/vsce publish --packagePath "from-build/$VSIX"
 
       # Bounded: the Marketplace validates a new version before `vsce show` lists it — MORE than 20 minutes for extension 0.2.0
       # on 2026-10-09 (published 15:58:44Z, the gallery's own query served it at 16:12Z, `vsce show` had not by 16:23Z). So up
@@ -368,8 +417,11 @@ jobs:
     permissions:
       # Makes the draft public. The other job that writes the repository.
       contents: write
+      # The bundled daemon's attestation is READ once more before the release goes public (E7.S5a).
+      attestations: read
     env:
       VERSION: ${{ needs.guard.outputs.version }}
+      BUNDLED_DAEMON: ${{ needs.guard.outputs.bundled_daemon }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
@@ -390,7 +442,11 @@ jobs:
           set -euo pipefail
           gh release download "$GITHUB_REF_NAME" --dir from-release
           bash .github/scripts/verify-extension-assets.sh "$VERSION" from-release
-          cmp "from-build/ai-os-care-$VERSION.vsix" "from-release/ai-os-care-$VERSION.vsix" || {
+          . .github/scripts/lib/extension-package.sh
+          vsix="$(vsix_name "$VERSION")"
+          # E7.S5a: the exe in what goes public is re-derived from the attested daemon release once more (beside the cmp).
+          bash .github/scripts/verify-bundled-exe.sh "$BUNDLED_DAEMON" "from-release/$vsix"
+          cmp "from-build/$vsix" "from-release/$vsix" || {
             echo "::error::the draft holds another .vsix than the attested build of this run — nothing is made public. Re-run FAILED jobs only (docs/repo-settings.md, Cutting extension-v…)"
             exit 1
           }

@@ -26,17 +26,18 @@ internal static class ReleaseExtensionCheckout
     /// <summary>A checkout of the tag: package.json, the handshake's minimum, POST_DEPLOY.md — and a fake gh.</summary>
     /// <summary>The checked-in artefact the guard reads the minima from (E5 code round #2/#5; the actions minimum since E6.S2).</summary>
     /// <summary>The checked-in artefact: the two minima and, since #37, the release Install daemon types (defaulting to the
-    /// actions minimum, so a flow that does not name it asks GitHub about no extra tag).</summary>
-    internal static string MinDaemonJson(string min, string actions, string? install = null) => $"{{\n  \"minDaemonForRender\": \"{min}\",\n  \"minDaemonForActions\": \"{actions}\",\n  \"installDaemon\": \"{install ?? actions}\"\n}}\n";
+    /// actions minimum, so a flow that does not name it asks GitHub about no extra tag); since E7.S5a also `bundledDaemon`, the
+    /// release whose Windows build the .vsix carries (defaulting to the install pin).</summary>
+    internal static string MinDaemonJson(string min, string actions, string? install = null, string? bundled = null) => $"{{\n  \"minDaemonForRender\": \"{min}\",\n  \"minDaemonForActions\": \"{actions}\",\n  \"installDaemon\": \"{install ?? actions}\",\n  \"bundledDaemon\": \"{bundled ?? install ?? actions}\"\n}}\n";
 
-    internal static Checkout Make(TempRoot root, string version = "0.1.0", string publisher = "wsl-care-dev", string min = "0.1.0", string stamp = Verified, string? ghAnswer = Published, string? handshake = null, string? minDaemonJson = "", string? actions = null, bool rootModule = false, string? install = null, string drafts = "")
+    internal static Checkout Make(TempRoot root, string version = "0.1.0", string publisher = "wsl-care-dev", string min = "0.1.0", string stamp = Verified, string? ghAnswer = Published, string? handshake = null, string? minDaemonJson = "", string? actions = null, bool rootModule = false, string? install = null, string drafts = "", string? bundled = null, bool windowsAsset = true)
     {
         var dir = root.Dir("checkout");
         root.File("checkout/src_vs_code/package.json", $"{{\n  \"name\": \"{ReleaseFiles.ExtensionName}\",\n  \"version\": \"{version}\",\n  \"publisher\": \"{publisher}\",\n  \"scripts\": {{\n    \"version\": \"not-the-top-level-one\"\n  }}\n}}\n");
         root.File("checkout/src_vs_code/src/client/handshake.ts", handshake ?? $"export const SUPPORTED_SCHEMA: readonly number[] = [1];\n\nexport const MIN_DAEMON_FOR_RENDER = '{min}';\n");
         if (minDaemonJson is not null)
         {
-            root.File("checkout/src_vs_code/min-daemon.json", minDaemonJson.Length == 0 ? MinDaemonJson(min, actions ?? min, install) : minDaemonJson);
+            root.File("checkout/src_vs_code/min-daemon.json", minDaemonJson.Length == 0 ? MinDaemonJson(min, actions ?? min, install, bundled) : minDaemonJson);
         }
 
         if (rootModule)
@@ -48,9 +49,11 @@ internal static class ReleaseExtensionCheckout
         var log = root.Under("gh.log");
         // The extension's first release is answered apart (E6.S2 review S1: root is allowed only once it is published).
         var gh = root.File("bin/gh", "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\n[ -n \"$FAKE_GH_FAIL\" ] && { echo 'HTTP 404: Not Found' >&2; exit 1; }\ncase \"$*\" in *releases/tags/extension-v*) printf '%s\\n' \"$FAKE_GH_EXT_ANSWER\"; exit 0 ;; esac\n" +
+            // E7.S5a: the bundled pin's query also asks whether the release carries its win-x64 zip — a third column, FAKE_GH_WIN.
+            "w=''; case \"$*\" in *'any(.assets'*) w=\"$(printf '\\t%s' \"$FAKE_GH_WIN\")\" ;; esac\n" +
             // FAKE_GH_ANSWER=by-tag answers a daemon release query for ITS tag: published, unless listed in FAKE_GH_DRAFTS (#37).
-            "if [ \"$FAKE_GH_ANSWER\" = by-tag ]; then t=\"${*##*releases/tags/}\"; t=\"${t%% *}\"; case \" $FAKE_GH_DRAFTS \" in *\" $t \"*) d=true ;; *) d=false ;; esac; printf '%s\\t%s\\n' \"$d\" \"$t\"; exit 0; fi\n" +
-            "printf '%s\\n' \"$FAKE_GH_ANSWER\"\n");
+            "if [ \"$FAKE_GH_ANSWER\" = by-tag ]; then t=\"${*##*releases/tags/}\"; t=\"${t%% *}\"; case \" $FAKE_GH_DRAFTS \" in *\" $t \"*) d=true ;; *) d=false ;; esac; printf '%s\\t%s%s\\n' \"$d\" \"$t\" \"$w\"; exit 0; fi\n" +
+            "printf '%s%s\\n' \"$FAKE_GH_ANSWER\" \"$w\"\n");
         File.SetUnixFileMode(gh, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var env = new Dictionary<string, string?>
         {
@@ -62,6 +65,7 @@ internal static class ReleaseExtensionCheckout
             ["FAKE_GH_EXT_ANSWER"] = "false\textension-v0.1.0",
             ["FAKE_GH_FAIL"] = ghAnswer is null ? "1" : null,
             ["FAKE_GH_DRAFTS"] = drafts,
+            ["FAKE_GH_WIN"] = windowsAsset ? "true" : "false",
             ["GITHUB_OUTPUT"] = null,
         };
         return new Checkout(dir, env, log);

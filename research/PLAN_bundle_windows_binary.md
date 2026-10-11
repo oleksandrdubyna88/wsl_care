@@ -1,6 +1,8 @@
 # PLAN — the extension carries the attested Windows daemon (`bin/wsl-care.exe` in a `win32-x64` `.vsix`)
 
-> Status: **plan only, 2026-10-10, nothing implemented yet.**
+> Status: **IMPLEMENTED, 2026-10-11 (the code, PR #108).** Open, and the owner's: the first `win32-x64` extension release,
+> POST_DEPLOY item 6 against the real install folder, and the panel's Windows row on the owner's machine (§8 items 2–4).
+> What shipped differently is in §10 (the as-built record).
 >
 > **Scope:**
 > - `release-extension.yml`: the build, the attest job, and every job that names the `.vsix`;
@@ -11,12 +13,12 @@
 > - the one module that will start the bundled exe.
 >
 > **Related docs:**
-> - [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md), **E7.S5a** at `:2463` — the row this plan details. The coordinator calls it
+> - [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md), **E7.S5a** at `:2463` — the row this plan details. The coordinator calls it
 >   "E7.S3". E7.S3 itself is the tag check of `:2500-2502`. Finding #13 is at `:810`; the S5 test is at `:2487`.
-> - [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) § S7b — design item 1, the owner's decision.
-> - [module_vs_code.md](../research/module_vs_code.md) and [architecture.md](../research/architecture.md) § *The package and its
+> - [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md) § S7b — design item 1, the owner's decision.
+> - [module_vs_code.md](module_vs_code.md) and [architecture.md](architecture.md) § *The package and its
 >   leak checks*, § *`release-extension.yml`*.
-> - The measurement: [2026-10-10_windows_binary_bundle_facts.md](../research/2026-10-10_windows_binary_bundle_facts.md).
+> - The measurement: [2026-10-10_windows_binary_bundle_facts.md](2026-10-10_windows_binary_bundle_facts.md).
 
 ## 1. Goal and why now
 
@@ -32,7 +34,7 @@ The daemon release already builds, attests and publishes it:
 **Goal:** the extension's `.vsix` carries exactly the bytes of that attested member, and no step of the extension's release can
 ship different bytes unnoticed.
 
-## 2. Measured first (2026-10-10, read-only, on the owner's machine — [the record](../research/2026-10-10_windows_binary_bundle_facts.md))
+## 2. Measured first (2026-10-10, read-only, on the owner's machine — [the record](2026-10-10_windows_binary_bundle_facts.md))
 
 - **The asset verifies.** The `daemon-v0.3.0` asset passed `sha256sum -c`, and `gh attestation verify --cert-identity
   …/release.yml@refs/tags/daemon-v0.3.0 --deny-self-hosted-runners`, and with `--source-ref refs/tags/daemon-v0.3.0` too (another
@@ -188,7 +190,8 @@ ship different bytes unnoticed.
 
 **A forward note for S7b:** a long-lived child running from the extension folder locks its image on Windows and blocks the
 extension's update or uninstall. This story's short `--version` start is fine; S7b's watch is not, and must copy the exe or run
-briefly.
+briefly. S7b must also own the exe's whole process tree (a Job Object), so a timeout ends every child it starts; `--version`
+starts none (§10).
 
 ## 5. Tests (RED first)
 
@@ -258,12 +261,13 @@ Steps 4 and 5 land in ONE PR. The extension release that carries it is the first
 
 ## 8. Definition of Done
 
-- [ ] Every RED test above seen red for the right reason, then green; break-it on product code red, then restored.
+- [x] Every RED test above seen red for the right reason, then green; break-it on product code red, then restored.
 - [ ] An extension release whose `.vsix` holds `bin/wsl-care.exe` byte-equal to the attested `daemon-v<bundledDaemon>` member, the
       attest job's compare green, published through the Environment's approval.
 - [ ] POST_DEPLOY item 6 green against the real install folder, the exe compared and its version read.
 - [ ] The panel's Windows row shows the bundled version on the owner's machine.
-- [ ] Docs updated; the own Fable review of the code finds no way to ship another exe.
+- [x] Docs updated; the own Fable review of the code finds no way to ship another exe AS bin/wsl-care.exe (its one way, a
+      twin entry or a DLL beside the exe, is closed — §11). The JavaScript the build writes is NOT re-derived; see §11, scope.
 
 ## 9. Plan round (coai session `52122128`, 2026-10-10) and the own Fable review
 
@@ -286,3 +290,94 @@ Steps 4 and 5 land in ONE PR. The extension release that carries it is the first
   - the RED additions.
 - **One choice differs from the review's alternative.** The review offered to give `bundledDaemon` the same WSL-side stamp
   check. It gets none here, because the Windows binary is verified on the Windows side (item 6), not by a distro install.
+
+## 10. As built (2026-10-11, PR #108)
+
+The seven steps of §7 shipped in that order, steps 4 and 5 in one commit. What differs from §3–§5:
+
+- **Zip member names are read from `orig_filename`.** Python's `zipfile` turns `\` into `/` on Windows, so a member named
+  with a backslash passed the name check there. The backslash test was red on the Windows leg for that reason, then green.
+- **`attestations: read`** is on the build job, on `ci-extension.yml`'s job and on the github-public job. `gh attestation verify`
+  needs it; §3 named only `GH_TOKEN`.
+- **The tests that need the exe** read it through `src_vs_code/src/test/support/bundledExe.ts` (`shippedAllowlist`): under `CI` a
+  missing `bin/wsl-care.exe` fails; off CI the entry is dropped from the expected list. The client, fake and structure tests
+  use a synthetic exe; the `check-vsix` tests use the real one when it was fetched.
+- **The Windows row** is a line of the panel's *Health* section (`p[data-windows-daemon]`), read on the panel's refresh only,
+  never at activation (`BundledHost`); `buildPanelView` takes it as a seventh parameter.
+- **No new timeout key.** The `--version` start uses the existing `wslCare.timeouts.versionSeconds`.
+- **The Test-mode fake** has two scenario fields, `bundledExe` and `bundledVersion`, and records the exact path it was asked for.
+- **`ReleaseExtensionScriptFlows`' actions-minimum flow** has its own fake `gh`; it needed the asset column for the bundled
+  pin's one query. The Linux leg found it.
+- **The last universal version is not 0.3.1.** §3 was written when 0.3.1 was the newest release; 0.4.0 and 0.5.0 (built
+  from main before this PR) are universal too, so the docs say "up to 0.5.0" and "the last universal release".
+- **POST_DEPLOY item 6** sources `lib/extension-package.sh`, keeps the `win32-x64` entry, runs `verify-bundled-exe.sh` and reads
+  the installed exe's `--version`. It fails by design until the first `win32-x64` release exists.
+- **The coai round of this branch** (session `a938a988`) said proceed with one finding: kill the whole process tree on a
+  timeout. Rejected for this story with evidence: `wsl-care.exe --version` answers at `src_daemon/src/WslCare.Cli/Program.cs:151`
+  (`Output.Answer(stdout, VersionText)`) and starts no child, so the runner's kill of the one process is complete. The
+  requirement moves to S7b, whose watch does start work (§4, the forward note).
+
+**Still open** — none of it is code; all of it waits for the owner's release:
+
+- the first `win32-x64` extension release through the Environment's approval (§8 item 2);
+- POST_DEPLOY item 6 green against the real install folder, which also answers Q-B2 (§8 item 3);
+- the panel's Windows row on the owner's machine (§8 item 4).
+
+## 11. The own Fable review of the code (supply chain, 2026-10-11)
+
+One major finding, seven minor, seven notes. Each was checked against the code; none was rejected.
+
+**Scope of the guarantee (coai cadence consultation a8a5731c, 2026-10-11).** The attest job proves that the package's
+`bin/wsl-care.exe` — and no twin of it, and no other `.exe` or `.dll` — is the attested daemon member. It does NOT prove what
+the build's JavaScript (`dist/extension.js`, `package.json`) starts: extension code can start any program, and the build
+writes that code after `npm ci`. That is the same trust every extension release had before this story; bundling the exe does
+not widen it. Closing it needs an independent second build whose bundle is compared outside the signing job — a separate
+story, not this one. The consultant also confirmed POST_DEPLOY item 6's source: the released tag's pin is the expected
+value, and the package's own claim must not replace it.
+
+- **1 (major) — the attest job looked at one entry only.** VS Code's installer writes `<ext>/<name>` on case-insensitive NTFS
+  and the last of two colliding entries wins, so a package with the attested `extension/bin/wsl-care.exe` AND a twin
+  (`WSL-CARE.EXE`, `BIN/…`, `bin/./…`, `bin//…`, a backslash) passed `verify-bundled-exe.sh` and installed the twin; a DLL
+  beside the exe was not refused either. The build's allowlist catches both, but the build is the untrusted domain. Fixed:
+  the attest job now refuses an unsafe or symlink name, two names that are one file case-insensitively, anything but the
+  exe under `extension/bin/`, and any other `.exe` or `.dll`. Eight new refusal shapes, seven red before the fix (exit 0);
+  break-its (the code-beside rule off, the case fold off) red. The whole allowlist was NOT copied into the attest job: its
+  names pass through vsce's renames table in `vsixCheck.ts`, and a second copy of that table is the drift reuse-first forbids.
+- **2 — python without `-I`.** Every python of the fetch, the re-derivation and `compare-installed-extension.sh` now runs
+  isolated.
+- **3 — `native` and `python_cmd` copied into two scripts.** Moved to `.github/scripts/lib/windows-tools.sh`. A third
+  `cygpath` spelling in `package-daemon.sh` is not this story's code and is left as it is.
+- **4 — `ci-extension.yml` still said "universal".** Fixed.
+- **5 — POST_DEPLOY item 6** read the CHECKOUT's pin and matched `--version` with a regex built from it. It now reads
+  `min-daemon.json` at the released tag (`gh api …/contents/…?ref=$t`) and compares the part before `+` exactly; the workflow
+  test was red first.
+- **6 — the release target was a substring of the whole vsixmanifest.** It is now the `TargetPlatform` attribute of the one
+  `<Metadata><Identity>`, read with the strict `xmlTree` reader (a comment fails loudly); checked against a real targeted
+  package. Red first with the text in a description, in another element and in a comment.
+- **7 — the fetch's last moves were outside `refuse`.** The digest is written in the work folder first and both moves into
+  `bin/` are under `refuse`. No test: a failed write after a verified fetch (a full disk) is not reachable through the flows'
+  seams.
+- **8 — the host tier never showed the Windows row's happy path.** A host scenario now sets `bundledExe` to the exact path
+  under the extension folder and asserts the row; the Test-mode API gained `bundled()`. It runs on CI's legs (the host tier
+  downloads VS Code, which is not done on this machine).
+- **Notes:** 9 the guard reads `.assets[]?`, so a release without assets gets the right refusal; 10 the reason bound
+  is a named `MAX_REASON` (display bounds are named constants, as `TEXT_MAX` is beside them, not config keys); 11 the
+  extension folder must start with a drive letter — a share and a root without a drive start nothing (red first); 12 an
+  explicit `src_vs_code/bin/` ignore line; 14 `verify-bundled-exe.sh` says it trusts what the tag serves at its run time;
+  15 the `.mjs` header says a developer's `node_modules/.bin` comes first on PATH. 13 was the uncommitted promotion, now
+  committed.
+
+## 12. The coai code round (session `a938a988`, 2026-10-11)
+
+The operator's cadence first asked for a consultation of this one-epic group (`a8a5731c`, closed solved): it showed that the
+attest job proves the exe's bytes but not the build's JavaScript, and the guarantee was narrowed to that (§11, scope). The
+round then said **proceed** with four findings, all accepted:
+
+- **The entry-name rule was written twice** (the fetch and the attest job). It is now ONE python function,
+  `.github/scripts/lib/zip_entries.py` `unsafe`, imported by both (python `-I -B`, the folder put on `sys.path` by the
+  caller, no bytecode written into the checkout). A new refusal shape, a path traversal (`extension/../../evil.js`), is the
+  one only this rule catches; with the rule turned off it goes red.
+- **`module_tests.md` named the old `test -f "ai-os-care-$VERSION.vsix"`** — now `test -f "$VSIX"` from `vsix_name`.
+- **`docs/repo-settings.md` step 2 named the universal package** for the manual upload — now the targeted name.
+- **A mistyped version exited before the stale pair was removed.** The fetch removes `bin/wsl-care.exe` and its digest
+  before it judges anything; the usage test now also asserts an empty `bin/` and was red first.

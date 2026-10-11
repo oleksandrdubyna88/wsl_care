@@ -1,5 +1,6 @@
 import type { ArchiveHost } from './archive/archiveHost';
 import type { ArchiveRecorder } from './archive/archiveRecorder';
+import type { BundledHost } from './bundled/bundledHost';
 import type { CleanupHost } from './cleanup/cleanupHost';
 import type { CleanRecorder } from './cleanup/cleanRecorder';
 import type { GpuHost } from './gpu/gpuHost';
@@ -47,6 +48,8 @@ export interface WslCareTestApi {
   gpu(): GpuHost;
   /** *Enable <GPU>*'s recorded prompts, elevated requests, queries and reports — and the answers they give (no PowerShell runs). */
   gpuRecorder(): GpuRecorder;
+  /** E7.S5a: the host of the panel's Windows row — the bundled exe's last `--version`, read through the runner seam. */
+  bundled(): BundledHost;
   /** The host-side cleanup controller (E6.S2) — the API E6.S3's buttons will call; in Test mode the host suite reaches it here. */
   cleanup(): CleanupController;
   /** E6.S3: the cleanup buttons' host side — its journal, follower and transaction — as the panel's messages reach it. */

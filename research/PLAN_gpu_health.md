@@ -44,7 +44,7 @@ On 2026-10-10 the owner's local models did not work and nothing said why. Measur
 
 The daemon that computes verdicts runs INSIDE WSL; the Windows binary (`wsl-care.exe`, whose probe is
 `src_daemon/src/WslCare.Core/Collectors/WindowsProbe.cs:26-41`) is not reachable from the extension until E7.S5a bundles it
-([PLAN_bundle_windows_binary.md](../todo/PLAN_bundle_windows_binary.md), plan only). The extension runs on Windows
+([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md), implemented 2026-10-11 — its `WindowsCareClient` starts only `--version`). The extension runs on Windows
 (`extensionKind: ["ui"]`) and already reads Windows itself where the daemon cannot: the Windows Time guard's state comes from
 Task Scheduler through an unelevated PowerShell query (`src/windowsTime/guardScripts.ts:66-80`, `queryRequest` `:103-107`).
 G1 follows that precedent exactly.

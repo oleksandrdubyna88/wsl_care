@@ -1,6 +1,6 @@
 # Can the extension carry the release-built `wsl-care.exe`? — measured 2026-10-10
 
-> What [PLAN_bundle_windows_binary.md](../todo/PLAN_bundle_windows_binary.md) rests on. Every step was **read-only** on the
+> What [PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md) rests on. Every step was **read-only** on the
 > owner's machine (Windows 11 Pro 10.0.26300, Smart App Control enforced), in a scratch folder. One product binary was started
 > once, with `--version`. Nothing was installed or registered, and nothing was copied into any program or profile folder.
 

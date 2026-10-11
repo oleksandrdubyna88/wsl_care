@@ -59,11 +59,12 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var expected = new Dictionary<string, IReadOnlyDictionary<string, string>>
         {
             ["guard"] = read,
-            ["build"] = read,
+            // E7.S5a: attestations: read — the fetch verifies the bundled daemon's attestation; reading one, never making one.
+            ["build"] = new Dictionary<string, string> { ["contents"] = "read", ["attestations"] = "read" },
             ["attest"] = new Dictionary<string, string> { ["contents"] = "read", ["id-token"] = "write", ["attestations"] = "write" },
             ["github-draft"] = write,
             ["publish-marketplace"] = read,
-            ["github-public"] = write,
+            ["github-public"] = new Dictionary<string, string> { ["contents"] = "write", ["attestations"] = "read" },
         };
 
         Jobs(Load()).Keys.Should().Equal(expected.Keys, "the six jobs, in their order");
@@ -131,7 +132,8 @@ public sealed partial class ReleaseExtensionWorkflowTests
         new[] { served, publish, wait }.Should().NotContain(-1).And.BeInAscendingOrder("ask, publish only when not served, then wait until served");
         Run(steps[served]).Should().Contain("vsce show").And.Contain("served=", "the skip is decided by what the Marketplace serves");
         steps[publish]["if"].Text.Should().Be("steps.served.outputs.served != 'true'", "a re-run after a publish publishes nothing");
-        Run(steps[publish]).Should().Contain($"--packagePath \"from-build/{ReleaseFiles.ExtensionVsix("$VERSION")}\"", "the very file the build attested");
+        Run(steps[publish]).Should().Contain("--packagePath \"from-build/$VSIX\"", "the very file the build attested, named by lib/extension-package.sh (E7.S5a)");
+        StepIndex(job, "lib/extension-package.sh").Should().BeInRange(0, publish, "the package's name comes from the ONE POSIX function");
         job["env"].Map["EXTENSION_ID"].Text.Should().Be($"${{{{ needs.guard.outputs.publisher }}}}.{ReleaseFiles.ExtensionName}", "the Marketplace id is <publisher>.<the manifest's name>");
         StepIndex(job, AssetsScript).Should().BeInRange(0, served, "the downloaded file is checked against its .sha256 before anything uses it");
         Steps(job).Single(s => Uses(s).StartsWith("actions/download-artifact@", StringComparison.Ordinal))["with"].Map["name"].Text
@@ -237,14 +239,31 @@ public sealed partial class ReleaseExtensionWorkflowTests
             .And.Contain("--min-daemon \"$MIN_DAEMON\"", "the built minimum is the one the guard found published and verified")
             .And.Contain("--min-daemon-actions \"$MIN_DAEMON_ACTIONS\"", "the actions minimum too (E6.S2, plan §15j M5)")
             .And.Contain("--install-daemon \"$INSTALL_DAEMON\"", "the release the .vsix installs is the one the guard found published and verified (#37)")
+            .And.Contain("--bundled-daemon \"$BUNDLED_DAEMON\"", "the release whose Windows build the .vsix carries is the one the guard found published with its win-x64 zip (E7.S5a)")
             .And.Contain("--root-allowed \"$ROOT_ALLOWED\"", "the guard's tag answer reaches the artefact check (plan §15j B3, §15k #7)");
         steps[order[4]]["with"].Map["path"].Text.Should().Be("release-extension/", "the .vsix and its .sha256 travel together");
         build["env"].Map["VERSION"].Text.Should().Be("${{ needs.guard.outputs.version }}", "the build packs the version the guard approved");
         build["env"].Map["MIN_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.min_daemon }}");
         build["env"].Map["MIN_DAEMON_ACTIONS"].Text.Should().Be("${{ needs.guard.outputs.min_daemon_actions }}");
         build["env"].Map["INSTALL_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.install_daemon }}");
+        build["env"].Map["BUNDLED_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.bundled_daemon }}");
         build["env"].Map["ROOT_ALLOWED"].Text.Should().Be("${{ needs.guard.outputs.root_allowed }}");
         File.ReadAllText(ReleaseFiles.Workflow("ci-extension.yml")).Should().Contain("npm run package").And.Contain("npm run check:vsix", "every pull request packages and checks the same way (plan §15g M8)");
+
+        // E7.S5a: the attested exe is fetched — with the guard's pin, the token on that step only — before any dependency runs
+        // and before npm test, which FAILS on CI without it.
+        var fetch = StepIndex(build, "fetch-windows-daemon.sh");
+        fetch.Should().BeInRange(0, StepIndex(build, "npm ci"), "fetched before any dependency code runs");
+        fetch.Should().BeLessThan(StepIndex(build, "npm test"), "and before the tests that need it");
+        Run(steps[fetch]).Should().Contain("\"$BUNDLED_DAEMON\"", "the guard's pin — the release's one reader of it");
+        steps[fetch]["env"].Map["GH_TOKEN"].Text.Should().Be("${{ github.token }}");
+        build["env"].Map.Has("GH_TOKEN").Should().BeFalse("never job-level in the build, where dependency scripts run");
+        Run(steps[order[1]]).Should().Contain("test -f \"$VSIX\"").And.Contain("mv \"$VSIX\" ../release-extension/");
+        Run(steps[order[2]]).Should().Contain("\"../release-extension/$VSIX\"");
+        StepIndex(build, "lib/extension-package.sh").Should().BeInRange(0, order[1], "the package's name comes from the ONE POSIX function");
+
+        var ci = File.ReadAllText(ReleaseFiles.Workflow("ci-extension.yml"));
+        ci.IndexOf("npm run fetch:windows-daemon", StringComparison.Ordinal).Should().BeInRange(0, ci.IndexOf("run: npm test", StringComparison.Ordinal), "CI fetches with the same pin (min-daemon.json, read as JSON) before npm test");
     }
 
     /// <summary>E5 code round #3 (and security #1): the ONLY job with <c>id-token</c> / <c>attestations: write</c> downloads
@@ -256,15 +275,21 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var steps = Steps(attest);
 
         steps.Select(s => Uses(s).Split('@')[0] is { Length: > 0 } action ? action : "run").Should().Equal(
-            ["actions/checkout", "actions/download-artifact", "run", "actions/attest-build-provenance"],
-            "the verification script's folder, the build's artifact, the pair checked, the attestation — nothing else");
+            ["actions/checkout", "actions/download-artifact", "run", "run", "run", "actions/attest-build-provenance"],
+            "the scripts' folder, the build's artifact, the pair checked, the package's name, the bundled exe re-derived (E7.S5a §3.5), the attestation — nothing else");
         var checkout = steps[0]["with"].Map;
         checkout["sparse-checkout"].Text.Should().Be(".github/scripts", "only the verification script — no package.json, no lock file, nothing to install");
         checkout["persist-credentials"].Text.Should().Be("false");
         steps[1]["with"].Map["name"].Text.Should().Be(BuildArtifactName());
         steps[1]["with"].Map["path"].Text.Should().Be("from-build");
         Run(steps[2]).Should().Contain(AssetsScript).And.Contain("from-build");
-        steps[3]["with"].Map["subject-path"].Text.Should().Be($"from-build/{ReleaseFiles.ExtensionVsix("${{ needs.guard.outputs.version }}")}", "the attested subject is the file the build packaged, checked against its .sha256");
+        steps[3].Find("id")?.Text.Should().Be("name");
+        Run(steps[3]).Should().Contain(". .github/scripts/lib/extension-package.sh").And.Contain("vsix=$(vsix_name \"$VERSION\")").And.Contain("$GITHUB_OUTPUT");
+        Run(steps[4]).Should().Contain("bash .github/scripts/verify-bundled-exe.sh \"$BUNDLED_DAEMON\" \"from-build/$VSIX\"", "the bundled exe is re-derived from the attested daemon release BEFORE anything is signed (E7.S5a §3.5)");
+        steps[4]["env"].Map["GH_TOKEN"].Text.Should().Be("${{ github.token }}", "the token on the step that asks GitHub, never job-wide");
+        steps[4]["env"].Map["VSIX"].Text.Should().Be("${{ steps.name.outputs.vsix }}");
+        attest["env"].Map["BUNDLED_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.bundled_daemon }}", "the pin the guard found published with its win-x64 zip");
+        steps[5]["with"].Map["subject-path"].Text.Should().Be("from-build/${{ steps.name.outputs.vsix }}", "the attested subject is the file the build packaged — named by a step OUTPUT, never retyped (E7.S5a)");
         steps.Should().OnlyContain(s => !Run(s).Contains("npm", StringComparison.Ordinal) && !Run(s).Contains("node ", StringComparison.Ordinal) && !Uses(s).StartsWith("actions/setup-node", StringComparison.Ordinal),
             "no package manager and no JavaScript runtime beside the signing scope");
     }
@@ -300,11 +325,11 @@ public sealed partial class ReleaseExtensionWorkflowTests
     /// them by the extension's tests and by check-vsix. Its shape is held here, on every OS, rather than discovered on a
     /// release day.</summary>
     [Fact]
-    public void The_daemon_versions_artefact_the_guard_reads_is_three_json_members_each_an_x_y_z()
+    public void The_daemon_versions_artefact_the_guard_reads_is_four_json_members_each_an_x_y_z()
     {
         using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(ReleaseFiles.Root, MinDaemonFile)));
 
-        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender", "minDaemonForActions", "installDaemon"]);
+        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender", "minDaemonForActions", "installDaemon", "bundledDaemon"], "E7.S5a: the fourth pin, the release whose Windows build the .vsix carries");
         foreach (var member in json.RootElement.EnumerateObject())
         {
             member.Value.GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$", $"{member.Name} is what the guard compares and asks GitHub about");
@@ -330,6 +355,18 @@ public sealed partial class ReleaseExtensionWorkflowTests
         row.Should().Contain("require('./src_vs_code/package.json').name", "the extension's name is read from the manifest, like its publisher")
             .And.NotContain($"$p.{ReleaseFiles.ExtensionName}", "the id is never retyped beside the manifest")
             .And.NotContain(ReleaseFiles.ExtensionVsix("$v"), "nor the .vsix name");
+        // E7.S5a (§3.3, §3.8): the targeted package through the ONE POSIX name, only win32-x64 Marketplace entries, the targeted
+        // install folder, the bundled exe re-derived from the attested daemon member, and its --version the pin.
+        row.Should().Contain(". .github/scripts/lib/extension-package.sh").And.Contain("vsix_name \"$v\"")
+            .And.Contain("x.targetPlatform === \"win32-x64\"").And.Contain("$p.$n-$v-$EXTENSION_TARGET")
+            .And.Contain("bash .github/scripts/verify-bundled-exe.sh \"$b\" \"$f\"")
+            .And.Contain("\"$i/bin/wsl-care.exe\" --version");
+        // Own Fable review of the code, finding 5: the pin is the RELEASED tag's, never the checkout's (main may have moved it
+        // past the release), and the installed --version is compared exactly — a version's dots are regex metacharacters.
+        row.Should().Contain("contents/src_vs_code/min-daemon.json?ref=$t", "the bundled pin is read at the released tag")
+            .And.NotContain("require('./src_vs_code/min-daemon.json').bundledDaemon", "the checkout's pin may be newer than the release")
+            .And.Contain("cut -d+ -f1)\" = \"$b\" ]", "the version before the build stamp equals the pin exactly")
+            .And.NotContain("grep -q \"^$b+\"", "a regex built from a version matches 0x4y0 for 0.4.0");
         guard.Should().Contain("lib/versions.sh").And.Contain("version_at_least", "the guard and the item share one comparison");
         guard.Should().NotContain("sort -t.", "no second spelling of the comparison");
     }

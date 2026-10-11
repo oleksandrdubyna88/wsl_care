@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 
+import { BUNDLED_DAEMON } from '../../client/handshake';
 import { INSTALL_COMMAND } from '../../install/installCommand';
 import { FIELD_MAP } from '../../panel/fieldMap';
 import { CLOSED_REASON } from '../../process/runner';
@@ -130,6 +131,18 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       await api.settled();
       await until('the webview reported its rows', () => api.lastRendered() === FIELD_MAP.length);
       assert.equal(daemonCalls(api).filter((c) => c.endsWith('preview --all --json')).length, 1);
+    },
+  },
+  {
+    // E7.S5a (own Fable review of the code, finding 8): the Windows row's happy path in a real extension host — the bundled
+    // exe is asked by the absolute path under the extension's own folder, and the fake answers only that exact file.
+    name: 'the panel\'s Windows row: the bundled exe answers --version by its absolute path and the row says it is the build carried',
+    run: async (api) => {
+      const extension = vscode.extensions.getExtension(EXTENSION_ID);
+      assert.ok(extension !== undefined);
+      scenario({ ...RUNNING, bundledExe: path.win32.join(extension.extensionUri.fsPath, 'bin', 'wsl-care.exe'), bundledVersion: `${BUNDLED_DAEMON}+fake` });
+      await api.bundled().refresh();
+      assert.deepEqual(api.bundled().view(), { line: `Windows daemon (bundled): ${BUNDLED_DAEMON}+fake — the build this extension carries`, level: 'none' });
     },
   },
   {

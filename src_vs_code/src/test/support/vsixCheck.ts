@@ -1,6 +1,9 @@
+import { createHash } from 'node:crypto';
+
 import * as ts from 'typescript';
 
 import { stringLiteralsOf } from './sourceScan';
+import { at, parseXml } from './xmlTree';
 
 /**
  * What the packaged `.vsix` may hold, checked on the ARTEFACT (plan §15g M8; the family's *Verify the ARTEFACT* rule):
@@ -51,9 +54,42 @@ export interface VsixCheckOptions {
    * the first public extension stays root-free; absent (a pull request) asks nothing.
    */
   readonly rootAllowed?: boolean;
+  /**
+   * E7.S5a: the SHA-256 the fetch wrote beside the bundled exe (`bin/wsl-care.exe.sha256`, lower-case hex). The member at
+   * EXACTLY `extension/bin/wsl-care.exe` is exempt from the text scan only when its bytes hash to this; absent, the exe is
+   * refused and scanned — and a release requires it.
+   */
+  readonly bundledExeDigest?: string | undefined;
 }
 
 export type VsixEntries = ReadonlyMap<string, Buffer>;
+
+/** The one member the text scan may skip — by this exact name, and only with its digest (research/PLAN_bundle_windows_binary.md §3.4). */
+export const BUNDLED_EXE_ENTRY = 'extension/bin/wsl-care.exe';
+
+export function sha256Hex(data: Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+/** Whether `name` is the bundled exe AND its bytes are the fetched member's. `.exe` is never exempt by extension. */
+function exemptFromText(name: string, data: Buffer, digest: string | undefined): boolean {
+  return name === BUNDLED_EXE_ENTRY && digest !== undefined && sha256Hex(data) === digest;
+}
+
+/** The bundled exe compared with its digest; a release needs the digest even before the exe is there. */
+function exeFindings(entries: VsixEntries, release: boolean, digest: string | undefined): string[] {
+  const exe = entries.get(BUNDLED_EXE_ENTRY);
+  const needs = release && digest === undefined ? ['a release .vsix needs bin/wsl-care.exe.sha256 — the fetch\'s digest of the attested member (npm run fetch:windows-daemon)'] : [];
+  if (exe === undefined) {
+    return needs;
+  }
+  if (digest === undefined) {
+    return [...needs, `the .vsix carries ${BUNDLED_EXE_ENTRY} but no digest was given to check it against (bin/wsl-care.exe.sha256)`];
+  }
+  const actual = sha256Hex(exe);
+
+  return actual === digest ? [] : [`${BUNDLED_EXE_ENTRY} is not the fetched member: its SHA-256 is ${actual}, bin/wsl-care.exe.sha256 says ${digest}`];
+}
 
 /** Where vsce puts a file `vsce ls` names. */
 export function vsixEntryName(file: string): string {
@@ -118,8 +154,8 @@ function wordFindings(name: string, text: string, words: readonly string[]): str
   });
 }
 
-function textFindings(entries: VsixEntries, words: readonly string[]): string[] {
-  return [...entries].filter(([name]) => !BINARY.test(name)).flatMap(([name, data]) => {
+function textFindings(entries: VsixEntries, words: readonly string[], exeDigest: string | undefined): string[] {
+  return [...entries].filter(([name, data]) => !BINARY.test(name) && !exemptFromText(name, data, exeDigest)).flatMap(([name, data]) => {
     const text = data.toString('utf8');
     return [...pathFindings(name, text), ...wordFindings(name, text, words)];
   });
@@ -165,6 +201,29 @@ function rootFindings(entries: VsixEntries, rootAllowed: boolean | undefined): s
     : [];
 }
 
+/** The one platform a release package targets (E7.S5a §3.3) — as the vsixmanifest's Identity says it, not the file name. */
+const RELEASE_TARGET = 'win32-x64';
+
+/**
+ * The `TargetPlatform` attribute of the manifest's ONE `<Metadata><Identity>` — the parsed form, never a substring (own Fable
+ * review of the code, finding 6: the same text in a comment, a description or another element is not the target). '' when
+ * the manifest is outside the strict XML subset (a comment included) or has no single Identity: a release then fails loudly.
+ */
+function identityTarget(manifest: string): string {
+  try {
+    return at(parseXml(manifest), 'Metadata', 'Identity').attributes['TargetPlatform'] ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** A release .vsix is `vsce package --target win32-x64`: its extension.vsixmanifest's Identity carries the target. */
+function targetFindings(entries: VsixEntries, release: boolean): string[] {
+  const manifest = entries.get('extension.vsixmanifest')?.toString('utf8') ?? '';
+
+  return release && identityTarget(manifest) !== RELEASE_TARGET ? [`a release .vsix must target win32-x64: extension.vsixmanifest carries no TargetPlatform="${RELEASE_TARGET}" on its <Identity> (npm run package is vsce package --target win32-x64)`] : [];
+}
+
 function publisherFindings(entries: VsixEntries, release: boolean): string[] {
   const publisher = manifestOf(entries).publisher;
 
@@ -177,9 +236,11 @@ export function vsixFindings(entries: VsixEntries, options: VsixCheckOptions): s
   return [
     ...entryFindings(entries, options.expectedFiles),
     ...mapFindings(entries),
-    ...textFindings(entries, options.deniedWords),
+    ...textFindings(entries, options.deniedWords, options.bundledExeDigest),
+    ...exeFindings(entries, options.release, options.bundledExeDigest),
     ...stampFindings(entries),
     ...publisherFindings(entries, options.release),
+    ...targetFindings(entries, options.release),
     ...rootFindings(entries, options.rootAllowed),
   ];
 }
@@ -243,8 +304,11 @@ export interface MinDaemonInputs {
   readonly released?: string | undefined;
 }
 
-/** The two minima `min-daemon.json` holds: the daemon this build renders, and the one it acts with (E6.S2, §15j M5). */
-export type MinDaemonKey = 'minDaemonForRender' | 'minDaemonForActions' | 'installDaemon';
+/**
+ * The four pins `min-daemon.json` holds: the daemon this build renders, the one it acts with (E6.S2, §15j M5), the release
+ * *Install daemon* types (#37) and the release whose Windows build the `.vsix` carries (E7.S5a).
+ */
+export type MinDaemonKey = 'minDaemonForRender' | 'minDaemonForActions' | 'installDaemon' | 'bundledDaemon';
 
 function minDaemonOf(json: unknown, key: MinDaemonKey): string | undefined {
   const value = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>)[key] : undefined;
@@ -264,6 +328,7 @@ export function minDaemonFindings(inputs: MinDaemonInputs, key: MinDaemonKey = '
     minDaemonForRender: `the minimum daemon ${released ?? ''}, but this .vsix renders ${constant}`,
     minDaemonForActions: `the actions minimum ${released ?? ''}, but this .vsix acts with ${constant}`,
     installDaemon: `the daemon to install ${released ?? ''}, but this .vsix installs ${constant}`,
+    bundledDaemon: `the bundled daemon ${released ?? ''}, but this .vsix carries the Windows build of ${constant}`,
   }[key];
 
   return [

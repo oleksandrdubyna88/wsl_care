@@ -30,12 +30,17 @@
 #      non-draft GitHub release (the root-free one actually shipped). The answer is also an output, `root_allowed`, and the build hands it to
 #      check-vsix, which refuses the BUNDLE when it carries the root module's marker and root_allowed is false — the
 #      source here, the artefact there.
+#   7. THE BUNDLED PIN (E7.S5a, research/PLAN_bundle_windows_binary.md §3.1): min-daemon.json's `bundledDaemon` is the release
+#      whose Windows build the .vsix carries as bin/wsl-care.exe — a published, non-draft `daemon-v<bundled>` carrying its
+#      win-x64 zip (the contract name, lib/daemon-assets.sh), asked in ONE query. No stamp rule: the Windows binary is
+#      verified after install by POST_DEPLOY item 6, not by a distro install. Emitted as `bundled_daemon`; the build fetches
+#      exactly that release and the attest job re-derives the bytes from it.
 #
 #   release-extension-guard.sh <tag> [<main-ref>]
 #
 # Run from the repository root of the tag's checkout (the whole history: the tags are read, and main's tip, where the stamp
 # is read), with GH_REPO (owner/name) and
-# GH_TOKEN set for `gh api`. On success prints `version=…`, `publisher=…`, `min_daemon=…`, `min_daemon_actions=…` and
+# GH_TOKEN set for `gh api`. On success prints `version=…`, `publisher=…`, `min_daemon=…`, `min_daemon_actions=…`, `install_daemon=…`, `bundled_daemon=…` and
 # `root_allowed=…` — appended to $GITHUB_OUTPUT too when that is set; each is a declared output of release-extension.yml's
 # guard job, and the build checks its .vsix against them — and exits 0; any refusal exits 1 naming the reason. The tag
 # reaches this script as an argument from the environment, never pasted into shell source.
@@ -44,6 +49,8 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/versions.sh
 . "$here/lib/versions.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/daemon-assets.sh
+. "$here/lib/daemon-assets.sh"
 
 readonly EXTENSION_VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
 readonly PUBLISHER_PATTERN='^[a-z0-9][a-z0-9-]*$'
@@ -167,6 +174,20 @@ if [ "$install" != "$min" ] && [ "$install" != "$min_actions" ]; then
   require_published "$install"
 fi
 
+# The bundled pin (item 7): a release of its own whose Windows build the .vsix carries — published, non-draft, and carrying
+# its win-x64 zip by the asset contract's name. One query: the filter prints `false<TAB>daemon-v<B><TAB>true` for exactly
+# that, anything else is refused.
+bundled="$(minimum_of bundledDaemon)"
+[[ "$bundled" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no bundledDaemon \"x.y.z\" — restore it from the extension's BUNDLED_DAEMON (npm test holds the two equal)"
+require_windows_build() {
+  local daemon_tag="daemon-v$1" zip answer
+  zip="$(daemon_archive_name "$1" win-x64)"
+  answer="$(gh api "repos/${GH_REPO:?GH_REPO is required}/releases/tags/$daemon_tag" --jq "[(.draft | tostring), .tag_name, (any(.assets[]?; .name == \"$zip\") | tostring)] | @tsv" 2> /dev/null)" \
+    || refuse "the bundled daemon $daemon_tag is not a published release of $GH_REPO — the .vsix carries its Windows build, so it must be out first"
+  [ "$answer" = "false	$daemon_tag	true" ] || refuse "the bundled daemon $daemon_tag is not a published, non-draft release carrying $zip (GitHub answered '$answer')"
+}
+require_windows_build "$bundled"
+
 # …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above both minima and the install pin. The
 # stamp is a post-release fact, so it is read from MAIN'S TIP when a main ref is given — the minima and the pin above stay
 # the tag's (see the header, item 5).
@@ -189,7 +210,7 @@ version_at_least "$verified" "$min" || refuse "$stamp_source last verified daemo
 version_at_least "$verified" "$min_actions" || refuse "$stamp_source last verified daemon $verified, older than the actions minimum $min_actions this extension acts with ($stamp_advice)"
 version_at_least "$verified" "$install" || refuse "$stamp_source last verified daemon $verified, older than $install, the release Install daemon types ($stamp_advice)"
 
-for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "min_daemon_actions=$min_actions" "install_daemon=$install" "root_allowed=$root_allowed"; do
+for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "min_daemon_actions=$min_actions" "install_daemon=$install" "bundled_daemon=$bundled" "root_allowed=$root_allowed"; do
   echo "$line"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "$line" >> "$GITHUB_OUTPUT"

@@ -1371,7 +1371,7 @@ So the leak S7b exists for is closed EXACTLY from the distro side. The relay is 
 identified by pid and start ticks, and its "client gone" evidence is local to `/proc`. This **supersedes** S7b's "no interop
 stop": D2 is met by showing, per relay, that its client is gone. The Windows-side stop of S7b items 3–5 (for orphaned or
 agent-owned Windows servers that have no relay) stays a later story, S7b.3 (A22), and its bundled exe is E7.S5a
-([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)).
+([PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md)).
 
 **What is NOT measured, and how the design stands without it** (the review's findings 1 and 2):
 - what a relay's fd 0/1/2 are — pipes, sockets or files. Node's `child_process` gives a child socketpairs, and the two ends of
@@ -1716,7 +1716,8 @@ above where they differ:
 
   An empty process list is unbuildable: `act A21 --confirm` without `--process` would be refused by the daemon's binding.
 - **Words.**
-  - A `RELAY_RUN` label and `isRelayOnly(ids)` sit beside `isArchiveOnly` in `cleanupView.ts` and `resultText.ts`.
+  - The A21 words are a row of the shared words table `src_vs_code/src/cleanup/runWords.ts` (A13, A20, A21), which
+    replaced the `isRelayOnly(ids)` and `isArchiveOnly` checks at each site in #105 (E10.S2b).
   - After a reload: "Stopping client-gone relays…". The result: "ended N relays (their Windows programs end with them)". Never
     "freed 0.0 GB".
 - **The modal.**

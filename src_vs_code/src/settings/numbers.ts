@@ -25,7 +25,7 @@ function above(worstS: number): number {
 
 const TIMEOUTS = {
   statusSeconds: { key: 'timeouts.statusSeconds', default: 20, minimum: above(WORST_CASE_S.status), maximum: 600, description: 'How long `status --json` may take before `wsl.exe` is stopped and the call reads "timed out", in seconds.' },
-  versionSeconds: { key: 'timeouts.versionSeconds', default: 20, minimum: above(WORST_CASE_S.version), maximum: 600, description: 'How long `--version` may take (also the privileged check before a cleanup), in seconds.' },
+  versionSeconds: { key: 'timeouts.versionSeconds', default: 20, minimum: above(WORST_CASE_S.version), maximum: 600, description: 'How long `--version` may take (also the privileged check before a cleanup, and the bundled Windows daemon\'s `--version`), in seconds.' },
   doctorSeconds: { key: 'timeouts.doctorSeconds', default: 120, minimum: above(WORST_CASE_S.doctor), maximum: 3600, description: 'How long `doctor --json` may take, in seconds — at least its worst case: four `systemctl show`, `systemctl --version` and `docker version`, each to its ceiling.' },
   previewSeconds: { key: 'timeouts.previewSeconds', default: 350, minimum: above(WORST_CASE_S.preview), maximum: 7200, description: 'How long `preview --all --json` (one Docker snapshot, up to 100 containers) may take, in seconds.' },
   previewPerDockerRowSeconds: { key: 'timeouts.previewPerDockerRowSeconds', default: 350, minimum: above(WORST_CASE_S.preview), maximum: 7200, description: 'A cleanup\'s preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9\'s snap listing and a margin.' },

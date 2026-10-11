@@ -34,7 +34,7 @@ public sealed class ReleaseExtensionScriptFlows
         var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, new Dictionary<string, string?>(checkout.Env) { ["GITHUB_OUTPUT"] = output });
 
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
-        File.ReadAllText(output).Should().Be("version=0.1.0\npublisher=wsl-care-dev\nmin_daemon=0.1.0\nmin_daemon_actions=0.1.0\ninstall_daemon=0.1.0\nroot_allowed=false\n");
+        File.ReadAllText(output).Should().Be("version=0.1.0\npublisher=wsl-care-dev\nmin_daemon=0.1.0\nmin_daemon_actions=0.1.0\ninstall_daemon=0.1.0\nbundled_daemon=0.1.0\nroot_allowed=false\n");
         File.ReadAllText(checkout.GhLog).Should().Contain("api repos/oleksandrdubyna88/wsl_care/releases/tags/daemon-v0.1.0", "it asked GitHub for the minimum daemon's release");
     }
 
@@ -63,7 +63,7 @@ public sealed class ReleaseExtensionScriptFlows
             #!/bin/sh
             n=$(cat "$0.count" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$0.count"
             [ "$n" -eq 1 ] && { echo "gallery hiccup" >&2; exit 3; }
-            if [ "$n" -ge {{servedFrom}} ]; then echo '{"versions":[{"version":"0.2.0"},{"version":"0.1.0"}]}'; else echo '{"versions":[{"version":"0.1.0"}]}'; fi
+            if [ "$n" -ge {{servedFrom}} ]; then echo '{"versions":[{"version":"0.2.0","targetPlatform":"win32-x64"},{"version":"0.1.0","targetPlatform":"win32-x64"}]}'; else echo '{"versions":[{"version":"0.1.0","targetPlatform":"win32-x64"}]}'; fi
 
             """.Replace("\r\n", "\n", StringComparison.Ordinal));
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
@@ -314,6 +314,8 @@ public sealed class ReleaseExtensionScriptFlows
             ("a tampered .vsix", dir => File.AppendAllText(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0")), "x"), "does not match its .sha256"),
             ("a .sha256 naming another file", dir => File.WriteAllText(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0") + ".sha256"), new string('0', 64) + $"  {ReleaseFiles.ExtensionVsix("0.0.9")}\n"), $"names '{ReleaseFiles.ExtensionVsix("0.0.9")}'"),
             ("a .sha256 naming another package", dir => File.WriteAllText(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0") + ".sha256"), new string('0', 64) + "  another-package-0.1.0.vsix\n"), "is not one"),
+            // E7.S5a: from the targeted release on, the universal package name is refused by name.
+            ("the universal package", dir => File.WriteAllText(Path.Combine(dir, $"{ReleaseFiles.ExtensionName}-0.1.0.vsix"), "PK"), "the universal package name; from E7.S5a on the package is"),
         };
 
         using (var root = new TempRoot("ext-assets-ok"))
@@ -444,14 +446,14 @@ public sealed class ReleaseExtensionScriptFlows
             return (result, File.ReadAllText(output), File.ReadAllLines(calls), File.ReadAllLines(sleeps));
         }
 
-        const string uploaded = "{\"versions\":[{\"version\":\"0.0.9\"},{\"version\":\"0.1.0\"}]}";
+        const string uploaded = "{\"versions\":[{\"version\":\"0.0.9\",\"targetPlatform\":\"win32-x64\"},{\"version\":\"0.1.0\",\"targetPlatform\":\"win32-x64\"}]}";
 
         var served = await RunStep(servedScript, uploaded);
         served.Result.Exit.Should().Be(0, served.Result.Stderr);
         served.Output.Should().Contain("served=true", "the hand-uploaded version is found — after a version that is not it");
         served.Calls.Should().Equal($"show {id} --json");
 
-        foreach (var (answer, what) in new[] { ("{\"versions\":[{\"version\":\"0.0.9\"}]}", "another version only"), ("undefined", "vsce 4.0.0's answer for an unknown extension"), ("{\"versions\":[]}", "nothing served") })
+        foreach (var (answer, what) in new[] { ("{\"versions\":[{\"version\":\"0.0.9\"}]}", "another version only"), ("undefined", "vsce 4.0.0's answer for an unknown extension"), ("{\"versions\":[]}", "nothing served"), ("{\"versions\":[{\"version\":\"0.1.0\"}]}", "E7.S5a: a UNIVERSAL entry of the same version is not the targeted release"), ("{\"versions\":[{\"version\":\"0.1.0\",\"targetPlatform\":\"linux-x64\"}]}", "E7.S5a: another platform is not it either") })
         {
             var notServed = await RunStep(servedScript, answer);
             notServed.Result.Exit.Should().Be(0, $"{what}: {notServed.Result.Stderr}");
@@ -721,7 +723,8 @@ public sealed class ReleaseExtensionScriptFlows
         {
             var checkout = Make(root, actions: "0.2.0", ghAnswer: "false\tdaemon-v0.1.0");
             var gh = Path.Combine(root.Path, "bin", "gh");
-            File.WriteAllText(gh, "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\ncase \"$*\" in *daemon-v0.2.0*) printf 'false\\tdaemon-v0.2.0\\n' ;; *) printf 'false\\tdaemon-v0.1.0\\n' ;; esac\n");
+            // The bundled pin's query (E7.S5a) asks for the win-x64 zip too — answered with it, so the stamp is what refuses.
+            File.WriteAllText(gh, "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\ncase \"$*\" in *'any(.assets'*) printf 'false\\tdaemon-v0.2.0\\ttrue\\n' ;; *daemon-v0.2.0*) printf 'false\\tdaemon-v0.2.0\\n' ;; *) printf 'false\\tdaemon-v0.1.0\\n' ;; esac\n");
             var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
             result.Exit.Should().Be(1, result.Stdout);
             result.Stdout.Should().Contain("last verified daemon 0.1.0, older than the actions minimum 0.2.0");

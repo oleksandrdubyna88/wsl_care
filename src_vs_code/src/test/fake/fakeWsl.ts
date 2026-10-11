@@ -62,6 +62,13 @@ export interface FakeScenario {
   /** A file every call is appended to, one JSON line `{ argv, file }`. */
   readonly log?: string;
   /**
+   * E7.S5a: the bundled Windows daemon's absolute path (`<extension>\bin\wsl-care.exe`) — started as EXACTLY this file, the fake
+   * answers `--version` with {@link bundledVersion} and refuses any other argv; any other non-`wsl.exe` file stays refused.
+   */
+  readonly bundledExe?: string;
+  /** What the bundled exe's `--version` prints. */
+  readonly bundledVersion?: string;
+  /**
    * A `-d` to a stopped distribution STARTS it, as the real `wsl.exe` does — for the one call the user asks for
    * ("Start WSL and check", `startIfStopped`). Off by default: then such a `-d` is refused (95), because no other
    * call may start the VM. When on, the fake rewrites its scenario file so the distribution runs from then on.
@@ -375,6 +382,13 @@ export function decide(scenario: FakeScenario, argv: readonly string[], stdin: B
   return listReply(scenario, argv) ?? daemonReply(scenario, argv);
 }
 
+/** E7.S5a: the bundled exe answers `--version` alone — the one verb the extension sends it. */
+export function bundledReply(scenario: FakeScenario, argv: readonly string[]): Reply {
+  return argv.length === 1 && argv[0] === '--version'
+    ? { code: 0, stdout: Buffer.from(`${scenario.bundledVersion ?? '0.0.0+fake'}\r\n`, 'utf8') }
+    : { code: FAKE_EXIT.refused, stderr: `fake wsl-care.exe: only --version is ever sent to the bundled exe, not ${JSON.stringify(argv)}\n` };
+}
+
 /** Whether the runner started this fake as an absolute `…\System32\wsl.exe` (the client's one launcher). */
 export function isSystemWsl(file: string | undefined): boolean {
   return file !== undefined && /^[A-Za-z]:\\(?:[^\\/:*?"<>|]+\\)*System32\\wsl\.exe$/i.test(file);
@@ -416,6 +430,10 @@ async function main(): Promise<void> {
   const file = process.env.WSL_CARE_FAKE_REQUESTED_FILE;
   if (scenario.log !== undefined) {
     fs.appendFileSync(scenario.log, `${JSON.stringify({ argv, file: file ?? null, ...(stdin.length > 0 ? { stdin: stdin.toString('utf8') } : {}) })}\n`);
+  }
+  if (scenario.bundledExe !== undefined && file === scenario.bundledExe) {
+    emit(bundledReply(scenario, argv));
+    return;
   }
   if (!isSystemWsl(file)) {
     emit({ code: FAKE_EXIT.wrongFile, stderr: `fake wsl: started as ${JSON.stringify(file)}, not as an absolute ...\\System32\\wsl.exe\n` });
