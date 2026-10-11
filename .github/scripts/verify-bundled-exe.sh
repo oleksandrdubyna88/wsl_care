@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# THE REAL CHECK of the bundled Windows daemon (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.5 — own Fable review, finding 1,
+# THE REAL CHECK of the bundled Windows daemon (E7.S5a, research/PLAN_bundle_windows_binary.md §3.5 — own Fable review, finding 1,
 # Blocking): the build job is the untrusted domain by design (npm ci with install scripts, every test, a downloaded VS Code,
 # vsce package -> vscode:prepublish -> esbuild), and any of them could rewrite BOTH bin/wsl-care.exe and its digest after the
 # fetch. So the attest job — no npm, no node, a sparse .github/scripts checkout — re-derives the bytes itself before it signs,

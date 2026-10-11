@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The ONE fetch of the Windows daemon the extension bundles (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.2): the release
+# The ONE fetch of the Windows daemon the extension bundles (E7.S5a, research/PLAN_bundle_windows_binary.md §3.2): the release
 # build, pull-request CI, the attest job's re-derivation and a developer (`npm run fetch:windows-daemon`) all run it.
 #
 #   fetch-windows-daemon.sh <version> <out-dir>       ->  <out-dir>/bin/wsl-care.exe and <out-dir>/bin/wsl-care.exe.sha256

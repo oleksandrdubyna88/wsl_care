@@ -5,7 +5,7 @@ import { WindowsCareClient, type BundledRead } from '../client/WindowsCareClient
 import { closedRunner, type ProcessRequest, type ProcessResult } from '../process/runner';
 
 /**
- * The minimal client of the bundled Windows daemon (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.7): it starts ONLY
+ * The minimal client of the bundled Windows daemon (E7.S5a, research/PLAN_bundle_windows_binary.md §3.7): it starts ONLY
  * `<extension>/bin/wsl-care.exe`, by absolute path, with the `--version` verb, through the runner seam it is given — and
  * nothing at all off Windows or for an extension that is not on a local disk.
  */

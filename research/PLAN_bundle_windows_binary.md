@@ -1,6 +1,8 @@
 # PLAN — the extension carries the attested Windows daemon (`bin/wsl-care.exe` in a `win32-x64` `.vsix`)
 
-> Status: **plan only, 2026-10-10, nothing implemented yet.**
+> Status: **IMPLEMENTED, 2026-10-11 (the code, PR #108).** Open, and the owner's: the first `win32-x64` extension release,
+> POST_DEPLOY item 6 against the real install folder, and the panel's Windows row on the owner's machine (§8 items 2–4).
+> What shipped differently is in §10 (the as-built record).
 >
 > **Scope:**
 > - `release-extension.yml`: the build, the attest job, and every job that names the `.vsix`;
@@ -11,12 +13,12 @@
 > - the one module that will start the bundled exe.
 >
 > **Related docs:**
-> - [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md), **E7.S5a** at `:2463` — the row this plan details. The coordinator calls it
+> - [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md), **E7.S5a** at `:2463` — the row this plan details. The coordinator calls it
 >   "E7.S3". E7.S3 itself is the tag check of `:2500-2502`. Finding #13 is at `:810`; the S5 test is at `:2487`.
-> - [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) § S7b — design item 1, the owner's decision.
-> - [module_vs_code.md](../research/module_vs_code.md) and [architecture.md](../research/architecture.md) § *The package and its
+> - [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md) § S7b — design item 1, the owner's decision.
+> - [module_vs_code.md](module_vs_code.md) and [architecture.md](architecture.md) § *The package and its
 >   leak checks*, § *`release-extension.yml`*.
-> - The measurement: [2026-10-10_windows_binary_bundle_facts.md](../research/2026-10-10_windows_binary_bundle_facts.md).
+> - The measurement: [2026-10-10_windows_binary_bundle_facts.md](2026-10-10_windows_binary_bundle_facts.md).
 
 ## 1. Goal and why now
 
@@ -32,7 +34,7 @@ The daemon release already builds, attests and publishes it:
 **Goal:** the extension's `.vsix` carries exactly the bytes of that attested member, and no step of the extension's release can
 ship different bytes unnoticed.
 
-## 2. Measured first (2026-10-10, read-only, on the owner's machine — [the record](../research/2026-10-10_windows_binary_bundle_facts.md))
+## 2. Measured first (2026-10-10, read-only, on the owner's machine — [the record](2026-10-10_windows_binary_bundle_facts.md))
 
 - **The asset verifies.** The `daemon-v0.3.0` asset passed `sha256sum -c`, and `gh attestation verify --cert-identity
   …/release.yml@refs/tags/daemon-v0.3.0 --deny-self-hosted-runners`, and with `--source-ref refs/tags/daemon-v0.3.0` too (another
@@ -188,7 +190,8 @@ ship different bytes unnoticed.
 
 **A forward note for S7b:** a long-lived child running from the extension folder locks its image on Windows and blocks the
 extension's update or uninstall. This story's short `--version` start is fine; S7b's watch is not, and must copy the exe or run
-briefly.
+briefly. S7b must also own the exe's whole process tree (a Job Object), so a timeout ends every child it starts; `--version`
+starts none (§10).
 
 ## 5. Tests (RED first)
 
@@ -258,7 +261,7 @@ Steps 4 and 5 land in ONE PR. The extension release that carries it is the first
 
 ## 8. Definition of Done
 
-- [ ] Every RED test above seen red for the right reason, then green; break-it on product code red, then restored.
+- [x] Every RED test above seen red for the right reason, then green; break-it on product code red, then restored.
 - [ ] An extension release whose `.vsix` holds `bin/wsl-care.exe` byte-equal to the attested `daemon-v<bundledDaemon>` member, the
       attest job's compare green, published through the Environment's approval.
 - [ ] POST_DEPLOY item 6 green against the real install folder, the exe compared and its version read.
@@ -286,3 +289,33 @@ Steps 4 and 5 land in ONE PR. The extension release that carries it is the first
   - the RED additions.
 - **One choice differs from the review's alternative.** The review offered to give `bundledDaemon` the same WSL-side stamp
   check. It gets none here, because the Windows binary is verified on the Windows side (item 6), not by a distro install.
+
+## 10. As built (2026-10-11, PR #108)
+
+The seven steps of §7 shipped in that order, steps 4 and 5 in one commit. What differs from §3–§5:
+
+- **Zip member names are read from `orig_filename`.** Python's `zipfile` turns `\` into `/` on Windows, so a member named
+  with a backslash passed the name check there. The backslash test was red on the Windows leg for that reason, then green.
+- **`attestations: read`** is on the build job, on `ci-extension.yml`'s job and on the github-public job. `gh attestation verify`
+  needs it; §3 named only `GH_TOKEN`.
+- **The tests that need the exe** read it through `src_vs_code/src/test/support/bundledExe.ts` (`shippedAllowlist`): under `CI` a
+  missing `bin/wsl-care.exe` fails; off CI the entry is dropped from the expected list. The client, fake and structure tests
+  use a synthetic exe; the `check-vsix` tests use the real one when it was fetched.
+- **The Windows row** is a line of the panel's *Health* section (`p[data-windows-daemon]`), read on the panel's refresh only,
+  never at activation (`BundledHost`); `buildPanelView` takes it as a seventh parameter.
+- **No new timeout key.** The `--version` start uses the existing `wslCare.timeouts.versionSeconds`.
+- **The Test-mode fake** has two scenario fields, `bundledExe` and `bundledVersion`, and records the exact path it was asked for.
+- **`ReleaseExtensionScriptFlows`' actions-minimum flow** has its own fake `gh`; it needed the asset column for the bundled
+  pin's one query. The Linux leg found it.
+- **POST_DEPLOY item 6** sources `lib/extension-package.sh`, keeps the `win32-x64` entry, runs `verify-bundled-exe.sh` and reads
+  the installed exe's `--version`. It fails by design until the first `win32-x64` release exists.
+- **The coai round of this branch** (session `a938a988`) said proceed with one finding: kill the whole process tree on a
+  timeout. Rejected for this story with evidence: `wsl-care.exe --version` answers at `src_daemon/src/WslCare.Cli/Program.cs:151`
+  (`Output.Answer(stdout, VersionText)`) and starts no child, so the runner's kill of the one process is complete. The
+  requirement moves to S7b, whose watch does start work (§4, the forward note).
+
+**Still open** — none of it is code; all of it waits for the owner's release:
+
+- the first `win32-x64` extension release through the Environment's approval (§8 item 2);
+- POST_DEPLOY item 6 green against the real install folder, which also answers Q-B2 (§8 item 3);
+- the panel's Windows row on the owner's machine (§8 item 4).

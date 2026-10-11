@@ -9,7 +9,7 @@ using static WslCare.Scenarios.ReleaseExtensionCheckout;
 namespace WslCare.Scenarios;
 
 /// <summary>
-/// The bundled pin of release-extension-guard.sh (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.1), run as
+/// The bundled pin of release-extension-guard.sh (E7.S5a, research/PLAN_bundle_windows_binary.md §3.1), run as
 /// release-extension.yml runs it: min-daemon.json's <c>bundledDaemon</c> is the release whose Windows build the .vsix carries,
 /// a pin of its own. The guard admits it only when <c>daemon-v&lt;bundled&gt;</c> is a published, non-draft release carrying
 /// its win-x64 zip, and emits it as <c>bundled_daemon</c>. There is no WSL-side stamp rule for it: the Windows binary is

@@ -3,7 +3,7 @@ import { parseDaemonVersion } from '../client/handshake';
 import { safeText } from '../text/safeText';
 
 /**
- * The panel's Windows row (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.7): the version the BUNDLED `bin/wsl-care.exe`
+ * The panel's Windows row (E7.S5a, research/PLAN_bundle_windows_binary.md §3.7): the version the BUNDLED `bin/wsl-care.exe`
  * answers, compared with `BUNDLED_DAEMON` — the build this extension was packaged with. The WSL side runs whatever the owner
  * installed and keeps its own line; there is no "one version on both sides". Pure: the host holds the read.
  */

@@ -30,7 +30,7 @@
 #      non-draft GitHub release (the root-free one actually shipped). The answer is also an output, `root_allowed`, and the build hands it to
 #      check-vsix, which refuses the BUNDLE when it carries the root module's marker and root_allowed is false — the
 #      source here, the artefact there.
-#   7. THE BUNDLED PIN (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.1): min-daemon.json's `bundledDaemon` is the release
+#   7. THE BUNDLED PIN (E7.S5a, research/PLAN_bundle_windows_binary.md §3.1): min-daemon.json's `bundledDaemon` is the release
 #      whose Windows build the .vsix carries as bin/wsl-care.exe — a published, non-draft `daemon-v<bundled>` carrying its
 #      win-x64 zip (the contract name, lib/daemon-assets.sh), asked in ONE query. No stamp rule: the Windows binary is
 #      verified after install by POST_DEPLOY item 6, not by a distro install. Emitted as `bundled_daemon`; the build fetches

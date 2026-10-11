@@ -6,7 +6,7 @@ using WslCare.TestSupport;
 namespace WslCare.Scenarios;
 
 /// <summary>
-/// The extension package's file name in its three languages (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.3; the coai plan
+/// The extension package's file name in its three languages (E7.S5a, research/PLAN_bundle_windows_binary.md §3.3; the coai plan
 /// round 52122128): the POSIX <c>vsix_name</c> of .github/scripts/lib/extension-package.sh (the workflow, the asset check,
 /// POST_DEPLOY item 6), the C# <see cref="ReleaseFiles.ExtensionVsix"/> (these tests) and check-vsix.mjs's default name
 /// (<c>--print-default-name</c>, the build's own check) — asked for the SAME version, they must give the SAME name, and it is

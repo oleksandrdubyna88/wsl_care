@@ -462,7 +462,7 @@ test('pwsh D6: a GPU alert shows the engine Enable elevates as TEXT, only when t
   assert.equal(bare.root.one('div[data-gpu-alert]').all('p[data-gpu-engine]').length, 0);
 });
 
-// ---- E7.S5a (todo/PLAN_bundle_windows_binary.md §3.7): the bundled Windows daemon's row in Health, as TEXT ----
+// ---- E7.S5a (research/PLAN_bundle_windows_binary.md §3.7): the bundled Windows daemon's row in Health, as TEXT ----
 
 test('E7.S5a: the Windows row sits in Health as TEXT with its level — and renders nothing when the host says nothing', () => {
   const hostile = 'Windows daemon (bundled): 0.3.0+</script><img src=x onerror=alert(1)> — not 0.4.0, the build this extension was packaged with: reinstall the extension';

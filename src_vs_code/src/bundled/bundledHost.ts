@@ -2,7 +2,7 @@ import type { BundledRead } from '../client/WindowsCareClient';
 import { windowsDaemonView, type WindowsDaemonView } from './bundledView';
 
 /**
- * The host of the panel's Windows row (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.7): the last `--version` of the bundled
+ * The host of the panel's Windows row (E7.S5a, research/PLAN_bundle_windows_binary.md §3.7): the last `--version` of the bundled
  * exe and ONE read in flight. It starts nothing by itself — never at activation: the panel's refresh asks (its first render
  * included), because nothing is started unasked.
  */

@@ -2132,11 +2132,16 @@ sequenceDiagram
 
 ### The package and its leak checks (plan §15g M8, §15f #6 / #13)
 
-- **One universal `.vsix`** (`npm run package` = `vsce package --no-dependencies`, `@vscode/vsce` 4.0.0 pinned):
+- **One `.vsix`** — universal up to 0.4.x; since E7.S5a ONE `win32-x64` package carrying the attested Windows daemon
+  ([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)): `bin/wsl-care.exe` is the member of `daemon-v<bundledDaemon>`
+  (a fourth pin in `min-daemon.json`), fetched by THE fetch (`fetch-windows-daemon.sh`: asset set, exact attestation, one zip
+  member), exempt from the text scan by its exact path and digest only, RE-DERIVED by the attest job before it signs
+  (`verify-bundled-exe.sh`, repeated by github-public), and started by `WindowsCareClient` alone (`--version`, the panel's
+  Windows row) (`npm run package` = `vsce package --no-dependencies --target win32-x64`, `@vscode/vsce` 4.0.0 pinned):
   `vscode:prepublish` runs `scripts/bundle.mjs` — esbuild's API with the CLI's old options (CommonJS, node18, `vscode`
   external, no source map) plus a **build stamp**: `WSL_CARE_BUILD_STAMP` := `"wsl-care-build <package.json version>"`
   (`src/buildStamp.ts`; the test API reads it back in the extension host). It also EMITS `dist/min-daemon.json` —
-  `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>" }` — read by RUNNING `src/client/handshake.ts` (esbuild's transform in a bounded
+  `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>", "bundledDaemon": "<x.y.z>" }` — read by RUNNING `src/client/handshake.ts` (esbuild's transform in a bounded
   `node:vm`), never matched as text; the checked-in `src_vs_code/min-daemon.json` is the copy the release guard reads at
   the tag with a JSON parser (E5 code round #2/#5), held equal to the constant by `minDaemon.test.ts` on every pull request.
 - **`.vscodeignore` is an ALLOWLIST** (`**`, then `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE`,
@@ -2160,8 +2165,11 @@ sequenceDiagram
   `categories`, `keywords`, `galleryBanner`, `preview: true`; a README with no images (screenshots are a live-gate item:
   no synthetic-fixture pipeline exists here); `CHANGELOG.md` written by release-please. The publisher is the
   owner's `remsoftdev` (2026-10-06), so the Marketplace id is `remsoftdev.ai-os-care`; the guard and `--release`
-  still refuse the placeholder `publisher-tbd`. `vsce package` writes `<name>-<version>.vsix` — `ai-os-care-<version>.vsix`
-  — and `check-vsix.mjs` reads both from `package.json` for its default.
+  still refuse the placeholder `publisher-tbd`. `vsce package --target win32-x64` writes `<name>-<target>-<version>.vsix` —
+  `ai-os-care-win32-x64-<version>.vsix` since E7.S5a (before it `ai-os-care-<version>.vsix`) — named in ONE function per
+  language (`lib/extension-package.sh` `vsix_name`, `ReleaseFiles.ExtensionVsix`, `check-vsix.mjs --print-default-name`), held
+  equal by `ExtensionPackageNameTests`; a release `.vsix` must carry `TargetPlatform="win32-x64"` in its vsixmanifest, and the
+  Marketplace's served check counts only `win32-x64` entries.
 - **On every pull request** `ci · extension` packages and runs the checks on both legs (job names unchanged); the
   release's build job runs the same with `--release`.
 

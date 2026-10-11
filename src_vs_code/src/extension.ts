@@ -180,7 +180,7 @@ function build(context: vscode.ExtensionContext): Parts {
 }
 
 /**
- * E7.S5a (todo/PLAN_bundle_windows_binary.md §3.7): the bundled exe's client on the SAME runner as the read-only client — the
+ * E7.S5a (research/PLAN_bundle_windows_binary.md §3.7): the bundled exe's client on the SAME runner as the read-only client — the
  * Test-mode fake or the closed runner, never the Windows-Time real runner — so `test:host` never starts the real exe. It starts
  * `<extension>/bin/wsl-care.exe --version` only when the panel asks (its refresh), never at activation.
  */

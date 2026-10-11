@@ -716,7 +716,7 @@ test('root A20: each shape needs its capabilities advertised and A20 reported �
   });
 });
 
-// ---- E7.S5a (todo/PLAN_bundle_windows_binary.md §3.7): the strict fake learns the bundled exe's exact path ----
+// ---- E7.S5a (research/PLAN_bundle_windows_binary.md §3.7): the strict fake learns the bundled exe's exact path ----
 
 const BUNDLED_EXTENSION = { scheme: 'file', fsPath: 'C:\\Users\\u\\.vscode\\extensions\\pub.ai-os-care-0.5.0-win32-x64' };
 const BUNDLED_EXE_PATH = 'C:\\Users\\u\\.vscode\\extensions\\pub.ai-os-care-0.5.0-win32-x64\\bin\\wsl-care.exe';

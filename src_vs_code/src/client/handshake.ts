@@ -37,7 +37,7 @@ export const INSTALL_DAEMON = '0.1.2';
 export const MIN_DAEMON_FOR_ACTIONS = '0.1.0';
 
 /**
- * The daemon release whose Windows build the `.vsix` CARRIES as `bin/wsl-care.exe` (E7.S5a, todo/PLAN_bundle_windows_binary.md
+ * The daemon release whose Windows build the `.vsix` CARRIES as `bin/wsl-care.exe` (E7.S5a, research/PLAN_bundle_windows_binary.md
  * §3.1): a fourth pin of its own, never `INSTALL_DAEMON` — that one is what *Install daemon* types for the distribution and is
  * tied to POST_DEPLOY's WSL-side stamp. The release guard requires `daemon-v<this>` published, non-draft and carrying its
  * win-x64 zip; the fetch verifies the zip's attestation and the attest job re-derives the bytes before it signs. The WSL side

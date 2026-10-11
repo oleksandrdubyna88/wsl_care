@@ -819,9 +819,16 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   pinned to `INSTALL_DAEMON` (0.1.2 — 0.1.0's act unit carries the CollectMode defect), a value of its own never below the
   minimum the extension renders (`MIN_DAEMON_FOR_RENDER`) nor the one it acts with (`MIN_DAEMON_FOR_ACTIONS`, since
   E6.S2; both 0.1.0), never `--skip-attestation`.
-- **The package** is one universal `.vsix` (`npm run package`) holding exactly `vsix-files.txt` (`.vscodeignore` is an
-  allowlist); `npm run check:vsix` opens it and refuses machine paths, this machine's user name, e-mail addresses,
-  source maps and a bundle built for another version — on every pull request, on both CI legs.
+- **The package** is ONE `win32-x64` `.vsix` (`npm run package` is `vsce package --target win32-x64`, named
+  `ai-os-care-win32-x64-<version>.vsix`; E7.S5a — Linux, macOS and Windows on Arm keep the last universal 0.3.1 on the
+  Marketplace) holding exactly `vsix-files.txt` (`.vscodeignore` is an allowlist), the bundled Windows daemon
+  `bin/wsl-care.exe` among them: the attested member of `daemon-v<bundledDaemon>` (`src_vs_code/min-daemon.json`),
+  fetched and verified by `npm run fetch:windows-daemon` (`.github/scripts/fetch-windows-daemon.sh`: the release's asset
+  set, the exact attestation, the one zip member) and git-ignored. `npm run check:vsix` opens the package and refuses
+  machine paths, this machine's user name, e-mail addresses, source maps and a bundle built for another version — the exe
+  alone is exempt from that text scan, by its exact path and only with its fetched digest — on every pull request, on
+  both CI legs. The panel's *Health* section shows the bundled exe's `--version` against the pin (a mismatch, or a
+  refused start with Windows' own message, is said).
 
 - **The status bar** reads `WSL RAM <used>% · swap <x>G · <n> containers`, coloured (theme colours) by the worst memory
   or kernel verdict the daemon reports; "WSL stopped" when the distribution is not running; "daemon not installed",
@@ -959,7 +966,8 @@ npm run typecheck && npm run lint
 npm test        # compile, bundle (dist/extension.js), then every test — no test can start the real wsl.exe
 npm run test:host   # the extension in a real VS Code 1.85.0 and stable (downloads into .vscode-test/; xvfb-run on Linux)
 npm run fieldmap:doc   # rewrite the panel's field-map table in research/architecture.md from src/panel/fieldMap.ts
-npm run package        # vsce package: ai-os-care-<version>.vsix (runs the stamped bundle first)
+npm run fetch:windows-daemon   # bin/wsl-care.exe: the attested daemon-v<bundledDaemon> member (gh signed in)
+npm run package        # vsce package --target win32-x64: ai-os-care-win32-x64-<version>.vsix (runs the stamped bundle first)
 npm run check:vsix     # the leak checks on that .vsix (after npm test, which compiles the checker)
 npm run icon:make      # redraw media/icon.png from its recipe (src/test/support/iconPng.ts) — no third-party art
 ```
@@ -1031,10 +1039,12 @@ An extension release is the tag `extension-v<version>`: release-please's `extens
    last-verified daemon is at or above the install pin, and **the first public extension stays root-free**: a checkout carrying
    the root module is refused unless the release is above `extension-v0.1.0` AND that tag's own tree carries no root
    module AND it is a published, non-draft GitHub release — keyed on the tags, never on the manifest (`release-extension-guard.sh`; the build's check-vsix refuses the bundle the same way);
-2. **build** — every test, `vsce package` once, the leak checks with `--release` and the guard's minimum, the `.vsix`'s
-   `.sha256`; it can read the repository and nothing more;
-3. **attest** — the only job that can sign: it downloads the build's `.vsix`, checks it against its `.sha256` and
-   attests it — no npm, no dependency checkout;
+2. **build** — the bundled `wsl-care.exe` fetched first (the guard's `bundled_daemon`, attested), every test, `vsce package
+   --target win32-x64` once, the leak checks with `--release` and the guard's pins, the `.vsix`'s `.sha256`; it can read the
+   repository and nothing more;
+3. **attest** — the only job that can sign: it downloads the build's `.vsix`, checks it against its `.sha256`, RE-DERIVES the
+   bundled exe from the attested daemon release and compares it byte for byte (`verify-bundled-exe.sh` — the build is the
+   untrusted domain), and only then attests it — no npm, no node, no dependency checkout;
 4. **github-draft** — the `.vsix` and `.sha256` uploaded to the draft and read back FIRST, so the rollback source exists
    before anything is public;
 5. **publish-marketplace** — in the protected `marketplace` Environment: skipped when the Marketplace already serves the
@@ -1052,6 +1062,7 @@ first — that `release-extension.yml`, run for THAT tag on a GitHub-hosted runn
 identity: `--signer-workflow` would be a prefix match, which a run from any branch passes):
 
 ```bash
+# the package is ai-os-care-<previous>.vsix up to 0.4.x and ai-os-care-win32-x64-<previous>.vsix from the first win32-x64 release on (E7.S5a)
 gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && gh attestation verify ai-os-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<previous>" --deny-self-hosted-runners && code --install-extension ai-os-care-<previous>.vsix
 ```
 

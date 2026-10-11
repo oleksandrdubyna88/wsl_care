@@ -6,7 +6,7 @@ import { NO_WINDOWS_DAEMON, windowsDaemonView } from '../bundled/bundledView';
 import type { BundledRead } from '../client/WindowsCareClient';
 
 /**
- * The panel's Windows row (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.7): the bundled exe's version against BUNDLED_DAEMON,
+ * The panel's Windows row (E7.S5a, research/PLAN_bundle_windows_binary.md §3.7): the bundled exe's version against BUNDLED_DAEMON,
  * a mismatch shown, a refused start shown with Node's message, nothing off Windows — and the host starts nothing until the panel
  * asks.
  */

@@ -42,7 +42,7 @@ function fail(message, code) {
 }
 
 /**
- * The one platform the package targets (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.3): `npm run package` is
+ * The one platform the package targets (E7.S5a, research/PLAN_bundle_windows_binary.md §3.3): `npm run package` is
  * `vsce package --target win32-x64`, and vsce 4.0.0 names a targeted package `<name>-<target>-<version>.vsix`. The Node twin
  * of lib/extension-package.sh's `vsix_name` and ReleaseFiles.ExtensionVsix — ExtensionPackageNameTests holds the three equal.
  */

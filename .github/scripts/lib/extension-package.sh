@@ -1,7 +1,7 @@
 # shellcheck shell=sh
 # The constants are read by the scripts and workflow steps that source this file, which shellcheck cannot see from here.
 # shellcheck disable=SC2034
-# The extension package's file name in ONE POSIX function (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.3). From the release
+# The extension package's file name in ONE POSIX function (E7.S5a, research/PLAN_bundle_windows_binary.md §3.3). From the release
 # that carries the bundled wsl-care.exe on, the package is TARGETED — `vsce package --target win32-x64` — and vsce 4.0.0 names a
 # targeted package `<name>-<target>-<version>.vsix` (@vscode/vsce/out/package.js). Sourced by release-extension.yml's steps,
 # verify-extension-assets.sh and POST_DEPLOY.md item 6 (which runs under sh). The C# twin is ReleaseFiles.ExtensionVsix and the

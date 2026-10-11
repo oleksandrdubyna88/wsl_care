@@ -5,7 +5,7 @@ import { EXTENSION_ROOT } from './paths';
 import { listLines } from './vsixCheck';
 
 /**
- * The bundled Windows daemon as the tests see it (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.6): `bin/wsl-care.exe` is
+ * The bundled Windows daemon as the tests see it (E7.S5a, research/PLAN_bundle_windows_binary.md §3.6): `bin/wsl-care.exe` is
  * NOT in git — `npm run fetch:windows-daemon` (or the workflow's fetch step) writes it and its `.sha256` from the attested
  * `daemon-v<bundledDaemon>` release. Every test that reads the allowlisted files reads the exe through
  * {@link shippedAllowlist}:

@@ -6,7 +6,7 @@ import { fromExtensionRoot, shippedSources } from './support/paths';
 import { importsOf, stringLiteralsOf } from './support/sourceScan';
 
 /**
- * The bundled exe's structural guarantees (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.7, §4), over the SHIPPED sources:
+ * The bundled exe's structural guarantees (E7.S5a, research/PLAN_bundle_windows_binary.md §3.7, §4), over the SHIPPED sources:
  *
  * 1. ONE module names the exe — `src/client/WindowsCareClient.ts` — as a path segment (`'wsl-care.exe'`, or a path ending in
  *    it); a sentence that merely mentions it (a field-map note) is no path;

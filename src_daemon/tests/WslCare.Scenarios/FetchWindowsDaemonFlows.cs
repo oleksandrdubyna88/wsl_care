@@ -12,7 +12,7 @@ namespace WslCare.Scenarios;
 
 /// <summary>
 /// The ONE fetch of the Windows daemon the extension bundles (<c>fetch-windows-daemon.sh</c>, E7.S5a,
-/// todo/PLAN_bundle_windows_binary.md §3.2, §5), run as the release build, CI and the attest job run it: the real script
+/// research/PLAN_bundle_windows_binary.md §3.2, §5), run as the release build, CI and the attest job run it: the real script
 /// under bash (the Linux legs; Git for Windows' bash on the Windows leg and a Windows workstation), a fake <c>gh</c> on PATH
 /// that serves a release's assets from a folder and answers the attestation as told, zips made here in 7z's shape (the exe
 /// under its folder, with that folder's own directory entry) and in every shape the script must refuse. Each refusal is

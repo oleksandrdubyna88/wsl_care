@@ -41,7 +41,7 @@ internal static partial class ReleaseFiles
         }
     }
 
-    /// <summary>The one platform the package targets (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.3) — lib/extension-package.sh's
+    /// <summary>The one platform the package targets (E7.S5a, research/PLAN_bundle_windows_binary.md §3.3) — lib/extension-package.sh's
     /// <c>EXTENSION_TARGET</c>.</summary>
     public const string ExtensionTarget = "win32-x64";
 

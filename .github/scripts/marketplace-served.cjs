@@ -7,7 +7,7 @@
 // are what a log shows. An answer that is not JSON with versions lists none — vsce 4.0.0 prints `undefined` and exits 0 for an
 // extension it does not know (observed 2026-10-04).
 //
-// Since E7.S5a (todo/PLAN_bundle_windows_binary.md §3.3) the package is TARGETED: a version counts as served only when its entry's
+// Since E7.S5a (research/PLAN_bundle_windows_binary.md §3.3) the package is TARGETED: a version counts as served only when its entry's
 // `targetPlatform` is `win32-x64`. A universal entry of the same version — uploaded by hand, say — is NOT the release, and reads
 // as not served. Exit 0 with an answer, 2 a missing argument.
 'use strict';

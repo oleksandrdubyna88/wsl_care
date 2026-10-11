@@ -11,7 +11,7 @@
 > Evidence: [2026-10-10_disk.md](../research/2026-10-10_disk.md) (D1–D9). Related: [module_daemon.md](../research/module_daemon.md),
 > [module_vs_code.md](../research/module_vs_code.md), [module_mcp_servers.md](../research/module_mcp_servers.md),
 > [architecture.md](../research/architecture.md), [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) (S7b),
-> [PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md) (E7.S5a), [PLAN_shared_vscode_kit.md](PLAN_shared_vscode_kit.md).
+> [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a), [PLAN_shared_vscode_kit.md](PLAN_shared_vscode_kit.md).
 > Closes #87 only from the PR that ships its last item (E18.W5).
 
 ## 1. Symptom
@@ -342,7 +342,7 @@ this repository, one per lane; E18.K1 lives in the kit's repository.
 | Item | This epic | The other plan |
 |---|---|---|
 | GPU | E15.S8: the daemon's `gpu.adapters`, the contract table with one writer, a doctor check; a test holding G1's table equal | G1 (`research/PLAN_gpu_health.md`, IMPLEMENTED 2026-10-10 on branch `feat/wc-gpu-health`): the extension's read, the top alert, the bar mark, *Enable <GPU>*; builds no daemon code |
-| E7.S5a ([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)) | the Windows tab reads `wsl-care.exe status --json` through `WindowsCareClient` once it exists (a follow-up story) | the bundle, the attestation, `WindowsCareClient` and its first `--version` |
+| E7.S5a ([PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md)) | the Windows tab reads `wsl-care.exe status --json` through `WindowsCareClient` once it exists (a follow-up story) | the bundle, the attestation, `WindowsCareClient` and its first `--version` |
 | S7b ([PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md)) | the ladder's A21 rung as `arrivesWithS7b`; the Windows probe as a `watch` step S7b's runner will call; E15.S6 reuses S7b.1's Windows ledger | A21, the Windows `watch`, its runner |
 | The Archive page (E10.S2a, [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) §15s) | E18.W1 may move it into the full view on the kit's `DataTable` (sort, search, a per-row reveal of the session path) | §15s builds it on `logsPanel.ts`' shape: decisions in `archivePage/archiveController.ts` / `archiveViewModel.ts`, the rendering in ONE file (`media/archive.js`), a closed message set naming rows by index — no sort or search of its own |
 | E10 archive (#88, #92) | `configCall.ts` gains a second key; the archive's folder flow reused; a stats folder may not lie inside the archive base | unchanged |

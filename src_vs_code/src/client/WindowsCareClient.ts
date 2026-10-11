@@ -5,7 +5,7 @@ import { signed32 } from '../process/runner';
 import { VERBS } from './verbs';
 
 /**
- * The minimal client of the BUNDLED Windows daemon (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.7) — the ONE module that
+ * The minimal client of the BUNDLED Windows daemon (E7.S5a, research/PLAN_bundle_windows_binary.md §3.7) — the ONE module that
  * names the exe (`structure.test.ts` holds it, with a planted companion). The `.vsix` carries `bin/wsl-care.exe`, the attested
  * member of `daemon-v<BUNDLED_DAEMON>`; this client starts exactly that file:
  *

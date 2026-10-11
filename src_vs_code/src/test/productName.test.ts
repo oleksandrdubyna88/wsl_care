@@ -46,7 +46,7 @@ interface Shipped {
 /**
  * Every text file the `.vsix` allowlist names, read from disk (the bundle is `dist/extension.js`) — through the CI-guarded
  * allowlist (`support/bundledExe.ts`), and never the bundled `bin/wsl-care.exe`: that is the daemon's own attested build, by
- * this exact path only (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.4).
+ * this exact path only (E7.S5a, research/PLAN_bundle_windows_binary.md §3.4).
  */
 function shippedTexts(): Shipped[] {
   assert.ok(fs.existsSync(BUNDLE), 'npm test bundles before it tests');

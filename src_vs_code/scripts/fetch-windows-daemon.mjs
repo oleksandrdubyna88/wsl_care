@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `npm run fetch:windows-daemon` (E7.S5a, todo/PLAN_bundle_windows_binary.md §3.2, §3.6): fetches the Windows daemon the
+ * `npm run fetch:windows-daemon` (E7.S5a, research/PLAN_bundle_windows_binary.md §3.2, §3.6): fetches the Windows daemon the
  * `.vsix` carries into `src_vs_code/bin/` — `bin/wsl-care.exe` and its `.sha256` — through THE fetch script,
  * `.github/scripts/fetch-windows-daemon.sh`, which verifies the release's asset set, its exact attestation and the one zip
  * member. The version is `bundledDaemon` of the checked-in `min-daemon.json`, read as JSON (one reader in this context —

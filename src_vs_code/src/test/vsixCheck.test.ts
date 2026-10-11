@@ -77,7 +77,7 @@ test('the allowlist is what .vscodeignore lets in: the bundle, media, the icon, 
   assert.equal(listLines(ignore)[0], '**', '.vscodeignore starts by excluding everything — an allowlist');
 });
 
-// ---- E7.S5a (todo/PLAN_bundle_windows_binary.md §3.4, §3.6): the bundled exe, exempt from the TEXT scan by its digest only ----
+// ---- E7.S5a (research/PLAN_bundle_windows_binary.md §3.4, §3.6): the bundled exe, exempt from the TEXT scan by its digest only ----
 
 /** A stand-in exe carrying exactly what the real one carries and the text scan would refuse: the runner's build path and `\wsl`. */
 const FAKE_EXE = Buffer.from(`MZ${BACKSLASH}${BACKSLASH}wsl.localhost D:${BACKSLASH}a${BACKSLASH}wsl_care${BACKSLASH}src build`, 'utf8');

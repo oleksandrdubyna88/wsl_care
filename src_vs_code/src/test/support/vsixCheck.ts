@@ -63,7 +63,7 @@ export interface VsixCheckOptions {
 
 export type VsixEntries = ReadonlyMap<string, Buffer>;
 
-/** The one member the text scan may skip — by this exact name, and only with its digest (todo/PLAN_bundle_windows_binary.md §3.4). */
+/** The one member the text scan may skip — by this exact name, and only with its digest (research/PLAN_bundle_windows_binary.md §3.4). */
 export const BUNDLED_EXE_ENTRY = 'extension/bin/wsl-care.exe';
 
 export function sha256Hex(data: Buffer): string {
