@@ -280,4 +280,60 @@ public sealed class RestoreActionTests : IDisposable
     }
 
     private static string Restore(RestoredSession session) => RestoreJson(session);
+
+    // ---- E10.S2c follow-up: A20 believes only the entries it asked for ----------------------------------------------------
+
+    private static RestoredSession RestoredAs(string id, string key) =>
+        new(id, "claude-code", key, "2026/09", RestoreOutcomes.Restored, 2, 200, "2 file(s) created");
+
+    /// <summary>What a failed A20 must not leak: the planted keys of the answer, anywhere in the run root records.</summary>
+    private static void NoKeyIn(ActionRun run)
+    {
+        run.Failure.Should().NotContain("projects/p/");
+        JsonSerializer.Serialize(run, WslCareJsonContext.Default.ActionRun).Should().NotContain("projects/p/", "§15q R9: an entry id only, never a key");
+    }
+
+    [Fact]
+    public async Task A_restore_answer_naming_an_entry_the_run_did_not_ask_for_fails_and_records_nothing_of_it()
+    {
+        var answer = RestoreJson(RestoredAs(Removed1, "projects/p/asked.jsonl"), RestoredAs(Removed2, "projects/p/never-asked.jsonl"));
+
+        var (_, run, runner) = await PreviewAndRun(Context(ShownList.Of([Removed1])), Children(restore: answer));
+
+        runner.Requests.Single(r => r.Argv.Count > 6 && r.Argv[6] == "restore").Argv.Skip(5).Should().Equal("archive", "restore", "--entry", Removed1, "--json");
+        run.Succeeded.Should().BeFalse("an answer naming an entry root never asked for is not believed");
+        run.Failure.Should().Contain($"names an entry the run did not ask for ({Removed2})").And.Contain("not known").And.Contain("archive list");
+        run.Count.Should().Be(0);
+        run.Removed.Should().BeEmpty("nothing of an unbelieved answer is recorded as restored");
+        NoKeyIn(run);
+    }
+
+    [Fact]
+    public async Task A_restore_answer_naming_one_entry_twice_fails_and_records_nothing_of_it()
+    {
+        var answer = RestoreJson(RestoredAs(Removed1, "projects/p/once.jsonl"), RestoredAs(Removed1, "projects/p/twice.jsonl"));
+
+        var (_, run, _) = await PreviewAndRun(Context(ShownList.Of([Removed1, Removed2])), Children(restore: answer));
+
+        run.Succeeded.Should().BeFalse();
+        run.Failure.Should().Contain($"names an entry twice ({Removed1})");
+        run.Count.Should().Be(0);
+        run.Removed.Should().BeEmpty();
+        NoKeyIn(run);
+    }
+
+    [Fact]
+    public async Task A_restore_answer_naming_exactly_or_fewer_than_the_asked_entries_is_believed_as_before()
+    {
+        var exactly = RestoreJson(RestoredAs(Removed1, "projects/p/a.jsonl"), RestoredAs(Removed2, "projects/p/b.jsonl"));
+        var fewer = RestoreJson(RestoredAs(Removed2, "projects/p/b.jsonl"));
+
+        var (_, all, _) = await PreviewAndRun(Context(ShownList.Of([Removed1, Removed2])), Children(restore: exactly));
+        var (_, some, _) = await PreviewAndRun(Context(ShownList.Of([Removed1, Removed2])), Children(restore: fewer));
+
+        all.Succeeded.Should().BeTrue(all.Failure);
+        all.Count.Should().Be(2);
+        some.Succeeded.Should().BeTrue(some.Failure);
+        some.Removed.Should().ContainSingle().Which.Name.Should().Be(Removed2);
+    }
 }

@@ -87,7 +87,7 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
         }
 
         var answer = await ArchiveGates.StreamedAsync(context, commands, ArchiveChildren.Restore, [string.Join(',', ids)], ArchiveChildren.Restore.Ceiling, cancellationToken).ConfigureAwait(false);
-        return ArchiveGates.Contained(answer.Failure.Length > 0 ? ArchiveGates.Failed(commands, answer.Failure) : Restored(commands, ArchiveChildAnswers.Run(answer.Text, context.Config, string.Empty)), answer);
+        return ArchiveGates.Contained(answer.Failure.Length > 0 ? ArchiveGates.Failed(commands, answer.Failure) : Restored(commands, ArchiveChildAnswers.Run(answer.Text, context.Config, string.Empty), ids), answer);
     }
 
     /// <summary>Why this run restores nothing at all: no shown list, or more entries than one restore takes (the S4 plan round's
@@ -134,16 +134,44 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
     /// <summary>A preview that already says no — unread, a skip, a refusal — is not narrowed.</summary>
     private static bool Settled(ActionPreview preview) => !preview.Available || preview.Skip.Length > 0 || preview.Refusal.Length > 0;
 
-    /// <summary>The restore's judged answer: each session by entry id and agent — never its key — and a refusal fails the run.</summary>
-    private static ActionRun Restored(ActionCommands commands, ChildAnswer<ArchiveRunReport> answer) => answer switch
+    /// <summary>The restore's judged answer: each session by entry id and agent — never its key — and a refusal fails the run. Only
+    /// the entries root ASKED for are believed (E10.S2c's own review #2): an answer naming another one, or one twice, fails the run.</summary>
+    private static ActionRun Restored(ActionCommands commands, ChildAnswer<ArchiveRunReport> answer, IReadOnlyList<string> asked) => answer switch
     {
         ChildAnswer<ArchiveRunReport>.Invalid bad => ArchiveGates.Failed(commands, $"the archive child's answer could not be believed: {bad.Why}"),
-        ChildAnswer<ArchiveRunReport>.Valid { Value.Outcome: RunOutcomes.Done } valid => Counted(commands, valid.Value.Restore),
+        ChildAnswer<ArchiveRunReport>.Valid { Value.Outcome: RunOutcomes.Done } valid => Asked(commands, valid.Value.Restore, asked),
 
         // The S4 own review round C-2: a restore that stopped before it restored — busy, unreachable, refused — never reads as a success.
         ChildAnswer<ArchiveRunReport>.Valid valid => ArchiveGates.Failed(commands, $"nothing was restored: {ArchiveGates.OutcomeWords(valid.Value)}"),
         _ => throw new System.Diagnostics.UnreachableException("ChildAnswer is a closed set"),
     };
+
+    /// <summary>
+    /// The answer believed only when every session it names is one of the entry ids root handed the child, each once — else the run
+    /// FAILS and nothing of the answer is recorded (count 0, no removed item): the reason names the entry id, never its key (§15q R9),
+    /// and says that what the child restored is not known from this answer. A retry is safe: a restore never replaces a file.
+    /// </summary>
+    private static ActionRun Asked(ActionCommands commands, RestoreReport restore, IReadOnlyList<string> asked)
+    {
+        var problem = AnswerProblem(restore.Sessions.Select(s => s.EntryId).ToList(), asked);
+
+        return problem.Length == 0
+            ? Counted(commands, restore)
+            : ArchiveGates.Failed(commands, $"the archive child's answer {problem}; what it restored is not known from that answer — \"wsl-care archive list\", run as the user, shows each entry's state");
+    }
+
+    /// <summary>Why the named entries are not an answer to the asked ones — '' when each is one of them, once.</summary>
+    internal static string AnswerProblem(IReadOnlyList<string> named, IReadOnlyList<string> asked)
+    {
+        var stranger = named.FirstOrDefault(id => !asked.Contains(id, StringComparer.Ordinal));
+        if (stranger is not null)
+        {
+            return $"names an entry the run did not ask for ({stranger})";
+        }
+
+        var twice = named.GroupBy(id => id, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
+        return twice is null ? string.Empty : $"names an entry twice ({twice.Key})";
+    }
 
     private static ActionRun Counted(ActionCommands commands, RestoreReport restore)
     {

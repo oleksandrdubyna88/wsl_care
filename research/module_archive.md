@@ -253,7 +253,10 @@ flowchart TD
   `archive preview` and `archive list` answered indented, so their last line was a lone brace) — judged by
   `Archive/ArchiveChildAnswers.cs`, and counts only. Every string root writes is judged against a closed set or a shape: the outcome
   and stop kind, a skip rule (`SkipRule.InRuns`), ROOT's own run id for the run child, a restored session's agent / month / outcome,
-  a listed entry's month / status (S-m3). The reasons are root's own sentences per outcome (`ArchiveGates.OutcomeWords`), never the
+  a listed entry's month / status (S-m3) — and, since 2026-10-11, a restore answer's ENTRIES: every session it names must be one of
+  the entry ids A20 handed the child, each once; otherwise A20 fails, names the entry id (never a key) and says that what the child
+  restored is not known from that answer, and nothing of the answer is recorded (`RestoreAction.AnswerProblem`; E10.S2c's own
+  review #2). The reasons are root's own sentences per outcome (`ArchiveGates.OutcomeWords`), never the
   child's text. The child's notes, keys and first-skipped names never reach root's world-readable run detail. Progress lines are
   dropped after their check (`Archive/ArchiveChildStream.cs`).
 - **What bounds a run's answer:** only the sessions it COPIED are bounded by `archive.maxSessionsPerRun`; the waiting, removed,

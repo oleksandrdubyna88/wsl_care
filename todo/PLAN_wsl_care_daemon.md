@@ -5097,6 +5097,52 @@ README if the Logs page is described, this section's *as built*).
   machine-dependent entry id) — all taken. Left for the owner: `RestoreAction` believes a restore answer that names an entry it
   did not ask for (the own review's #2, a daemon check not built here).
 
+##### E10.S2c follow-up — A20 believes only the entries it asked for
+
+> Status: **built 2026-10-11 on `fix/wc-restore-answer-subset` — the code round and the own review next (see *As built* below).** Branch `fix/wc-restore-answer-subset`, from `main` befb57a (E10.S2c merged,
+> #114). Root path (A20's run): the own review runs on Fable. Found by E10.S2c's own review (#2).
+
+**Symptom.** `RestoreAction.RunAsync` (`src_daemon/src/WslCare.Core/Archive/RestoreAction.cs:76`) hands the child the shown entry
+ids as ONE `--entry <id,…>` argument and then believes whatever restore answer comes back: `Restored` (`:138`) takes every session
+the child reports as `restored` / `partial` into the run's `removed` items and its count, and `ArchiveChildAnswers.Run(answer, config,
+string.Empty)` checks the report's shape, not WHICH entries it names. A child answer that names an entry root did not ask for — or one
+entry twice — is recorded as restored by root, in the world-readable run detail and in the history line's count.
+
+**Fix.**
+1. `RestoreAction.Restored` gets the ids it asked for. Before anything of the answer is believed: every session's `EntryId` must be
+   one of those ids, and no entry may appear twice. Otherwise the run FAILS with a named reason — "the archive child's answer names
+   an entry the run did not ask for (<id>)" / "… names an entry twice (<id>)" — the entry id only, never a key (§15q R9); its `count`
+   is 0 and its `removed` list is empty: root restores nothing of that answer into its records. The child process has already run
+   by then; what root controls is what it believes and records — the child itself was given exactly the asked ids.
+   The reason also says that what the child restored is NOT KNOWN from that answer, and how to see it: "… what it restored is not
+   known — `wsl-care archive list`, run as the user, shows each entry's state" (the plan round's #0). A retry is safe: a restore
+   never replaces a file — a session already back reads *already there*.
+2. Nothing else changes: an answer naming FEWER entries than asked is unchanged (an entry the child found already there or refused
+   is reported as such; a missing one is simply not restored).
+
+**Tests (RED first, `src_daemon/tests/WslCare.Core.Tests/Archive/RestoreActionTests.cs`):**
+- a child answer naming an extra entry (asked `Removed1`, answered `Removed1` restored + `Removed2` restored) → the run fails, the
+  reason names `Removed2`, count 0, `removed` empty;
+- an answer naming one entry twice → fails, names it;
+- each invalid answer carries real-looking keys (`projects/p/…`), and neither the failure reason nor the serialized run holds one
+  (the plan round's #1);
+- the companion: an answer naming exactly the asked entries (and one naming fewer) still succeeds as today.
+
+**The plan round** (coai session b4bc2767, `proceed`, 2 gating of threshold 6, codex): #0 accepted — the reason says the outcome
+is not known from that answer and how to see it; no reconciliation step is built, because a retry cannot do harm (a restore never
+replaces a file). #1 accepted — the keys are planted and asserted absent.
+
+**As built (2026-10-11).** As planned: `RestoreAction.Asked` / `AnswerProblem` before `Counted`; the check applies to a `done`
+answer (any other outcome already fails with "nothing was restored" and records no session). RED first ("Expected run.Succeeded to
+be False … but found True" for both); break-its B1 (the subset check) and B2 (the twice check) each turn their test red.
+
+**Break-it:** the subset check removed → the extra-entry test red; the duplicate check removed → the twice test red.
+
+**Docs:** `research/module_archive.md` (A20's run), `research/module_tests.md` (a row), this section's *as built*.
+
+**DoD:** the coai plan and code rounds; RED first; break-its; an own review on Fable; all daemon suites (Windows executables, the
+Scenarios in WSL), dotnet format, the extension suite (unchanged, run before the PR), plan-lifecycle, family checks; squash merge.
+
 ##### E10.S2b and E10.S2c — the outline their own plan rounds start from (each refined by its build notes above)
 
 **E10.S2b, *Restore*** (from S2a's merge; root; an own review on Fable). Its stories:

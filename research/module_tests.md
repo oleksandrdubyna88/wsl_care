@@ -3784,6 +3784,16 @@ then broken one product line at a time (L1–L6), each red.
 | code round #0: the words table test walks every row (a new run without Logs words fails), then names the three | `restoreFlow.test.ts` | — |
 | code round #2: A13's size column is "Removed from its folder" — the bytes that left the agent's folder, not the bytes copied | `logsPage.test.ts` | red: `'Moved'` |
 
+### A20 believes only the entries it asked for (2026-10-11)
+
+E10.S2c's own review #2, fixed in the daemon. RED first; each check then broken in the product line it rests on (B1, B2).
+
+| Guarantee | Held by | RED, and teeth |
+|---|---|---|
+| a restore answer naming an entry A20 did not ask for fails the run, names the entry id, says the outcome is not known from that answer, records nothing of it — and holds no key | `RestoreActionTests` (*did not ask for*) | red: `Expected run.Succeeded to be False … but found True`; teeth B1 → 1 red |
+| an answer naming one entry twice fails the same way | `RestoreActionTests` (*one entry twice*) | red: `found True`; teeth B2 → 1 red |
+| an answer naming exactly the asked entries, or fewer, is believed as before | `RestoreActionTests` (*exactly or fewer*) | — (the companion) |
+
 
 Each break-it was one mutation of a product file, compiled, the named test files run (`--test-concurrency=8`), then the file
 restored and recompiled; the mutations are listed by their B-number in the plan's *As built — E10.S2a*.
