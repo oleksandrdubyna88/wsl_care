@@ -5,8 +5,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { elevatedRequest } from '../powershell/elevatedLauncher';
 import type { ProcessRequest } from '../process/runner';
-import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
+import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installScript, NOT_FOUND_HRESULT, OP_EXIT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT } from '../windowsTime/guardScripts';
 import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, START_TYPE_QUERY, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, xmlText, type GuardOptions } from '../windowsTime/guardTask';
 import { guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
@@ -170,14 +171,14 @@ test('install carries the XML verbatim in a single-quoted here-string, creates t
 });
 
 test('the install and remove requests are ONE absolute PowerShell whose encoded payload is exactly the script shown — under the length bound', () => {
-  const install = installRequest(ENV, LARGEST, 180_000) as ProcessRequest;
+  const install = elevatedRequest(ENV, installScript(LARGEST), 180_000) as ProcessRequest;
   assert.equal(install.file, POWERSHELL);
   assert.deepEqual(install.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
   assert.equal(encodedInner(install), installScript(LARGEST));
   assert.ok(commandLineLength(install) < ELEVATED_COMMAND_LINE_MAX, `${commandLineLength(install)} characters for the largest settings`);
-  const remove = removeRequest(ENV, 180_000) as ProcessRequest;
+  const remove = elevatedRequest(ENV, REMOVE_SCRIPT, 180_000) as ProcessRequest;
   assert.equal(encodedInner(remove), REMOVE_SCRIPT);
-  assert.equal(typeof installRequest({}, DEFAULTS, 1000), 'string', 'no SystemRoot: no request');
+  assert.equal(typeof elevatedRequest({}, installScript(DEFAULTS), 1000), 'string', 'no SystemRoot: no request');
 });
 
 test('removal is "if present" at every step, and never touches the service', () => {
@@ -194,7 +195,7 @@ test('the status query is unelevated and READ-only: no runas, no payload, no mut
   assert.equal(MUTATING.test(QUERY_SCRIPT), false);
   assert.equal(MUTATING.test(SUMMARY_FUNCTION), false);
   assert.equal(isElevatedPowerShell(query.file, query.args) || isMachineChange(query.file, query.args), false);
-  const install = installRequest(ENV, DEFAULTS, 1000) as ProcessRequest;
+  const install = elevatedRequest(ENV, installScript(DEFAULTS), 1000) as ProcessRequest;
   assert.equal(isMachineChange(install.file, install.args), true, 'the install is refused by its decoded payload, not only by its runas');
 });
 
@@ -227,9 +228,9 @@ test('PowerShell\'s parser reads the action, install, remove and query scripts w
   const out = withFiles(files, (dir) => check("$e=$null; $t=$null; foreach ($f in 'guard.ps1','install.ps1','remove.ps1','query.ps1') { $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 }; $names = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Select-Object -Unique; Write-Output ($f + '=' + ($names -join ',')) }; exit 0", dir));
   const names = Object.fromEntries(out.trim().split(/\r?\n/).map((l) => l.split('=') as [string, string]));
   assert.equal(names['guard.ps1'], 'Get-Service,Set-Service,Get-ItemPropertyValue,Test-WslCareStartAllowed,Test-Path,New-Item,Out-Null,Set-ItemProperty,Start-Service,Join-Path,Start-Sleep', 'the action runs these and nothing else (w32tm by absolute path through &), and no command before the module path is pinned');
-  assert.equal(names['install.ps1'], 'New-Object,Register-ScheduledTask,Out-Null');
+  assert.equal(names['install.ps1'], 'Import-Module,Join-Path,New-Object,Register-ScheduledTask,Out-Null', 'pwsh D4: ScheduledTasks by its absolute path first');
   assert.equal(names['remove.ps1'], 'New-Object,Test-Path,Remove-Item,Get-ChildItem,Get-Item');
-  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Get-WslCareSummary,ForEach-Object');
+  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Test-Path,Get-WslCareSummary,ForEach-Object', 'pwsh §11 R4: Test-Path reads the stamp');
 });
 
 test('Task Scheduler\'s own parser reads the definition IN MEMORY (nothing registered), and its read-back is exactly the expected summary', WINDOWS_ONLY, () => {
@@ -278,4 +279,33 @@ test('the status query really RUNS on the Windows leg — unelevated, read-only 
   const state = guardStateOf({ kind: 'exited', code: 0, stdout: Buffer.from(result.stdout), stderr: Buffer.alloc(0) });
   assert.notEqual(state.kind, 'unknown', result.stdout);
   assert.match(result.stdout, /^channel=(enabled|disabled|unknown)$/m);
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D2, D4: PowerShell 7 elevated, the facts from this query ----
+
+test('pwsh D4: the install imports ScheduledTasks by its absolute System32 path right after the module path is pinned — before the registration — and exits 33 when it cannot', () => {
+  const lines = installScript(DEFAULTS).split('\n');
+  assert.equal(lines[0], MODULES);
+  assert.equal(lines[1], `try { Import-Module -Name (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\Modules\\ScheduledTasks') -ErrorAction Stop } catch { exit ${OP_EXIT.importFailed} }`);
+  assert.equal(OP_EXIT.importFailed, 33);
+  assert.ok(lines.findIndex((l) => l.includes('Register-ScheduledTask')) > 1);
+  assert.doesNotMatch(REMOVE_SCRIPT, /Import-Module/, 'the removal needs no module beyond $PSHOME (measured 2026-10-11)');
+});
+
+test('pwsh §11 R3: the status query carries no PowerShell 7 probe — the engine has its own read (powershell/engineHost.ts)', () => {
+  assert.doesNotMatch(QUERY_SCRIPT, /Get-AppxPackage|Get-AuthenticodeSignature|pwsh\./);
+});
+
+test('pwsh §11 R4: the status query reports the rate-limit stamp under HKLM — read-only, before the task read whose catch ends the script', () => {
+  const stamp = QUERY_SCRIPT.indexOf("if (Test-Path -Path 'HKLM:\\SOFTWARE\\wsl-care\\windows-time-guard') { 'stamp=present' } else { 'stamp=absent' }");
+  assert.ok(stamp > 0);
+  assert.ok(stamp < QUERY_SCRIPT.indexOf('Schedule.Service'), 'an absent task still reports the stamp');
+  assert.equal(MUTATING.test(QUERY_SCRIPT), false);
+});
+
+test('pwsh §11 R4: a task that is gone with its stamp still there reads as such — a removal the Store engine virtualised is visible', () => {
+  const answer = (stamp: string): string => ['guard=absent', 'channel=enabled', `stamp=${stamp}`].join('\r\n');
+  const exitedWith = (text: string) => ({ kind: 'exited', code: 0, stdout: Buffer.from(text), stderr: Buffer.alloc(0) }) as const;
+  assert.deepEqual(guardStateOf(exitedWith(answer('present'))), { kind: 'absent', channel: 'enabled', stampLeft: true });
+  assert.deepEqual(guardStateOf(exitedWith(answer('absent'))), { kind: 'absent', channel: 'enabled' });
 });

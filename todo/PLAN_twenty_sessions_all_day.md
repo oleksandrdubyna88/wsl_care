@@ -1800,6 +1800,10 @@ stopRelays`).
 - **On the daemon side, two tests were added** and no code changed: the CLI parses `act A21 --confirm --manual --detach
   --process …` with several pairs, and the detached request carries them in order.
 
+**Open (2026-10-11):** `processes.fdScanMilliseconds` stays at the provisional **10000**. The coordinator's relay list at
+12:28Z showed no interop relays at all (the creds-side orphan fix has probably removed them), so the scan's cost with relays
+present and the pipes-vs-sockets question cannot be measured yet. Both wait for a day with relays.
+
 ### S8 — the 24 h × 20 sessions soak campaign
 
 **What is sampled, every `soak.periodMinutes` (10):** `wsl-care status --json` (the S1 MCP block, S5/S6 verdicts, memory,

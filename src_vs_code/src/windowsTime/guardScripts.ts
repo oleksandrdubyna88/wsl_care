@@ -1,6 +1,6 @@
 import type { ProcessRequest } from '../process/runner';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
-import { elevatedRequest, powerShellOf } from './windowsTimeFix';
+import { powerShellOf } from '../powershell/elevatedLauncher';
 
 /**
  * The three PowerShell texts around the guard's task (PLAN_windows_time_task.md D3, D5, D8) — install and remove, each run
@@ -11,7 +11,15 @@ import { elevatedRequest, powerShellOf } from './windowsTimeFix';
  */
 
 /** The install / remove scripts' own exit codes (the launcher's 13 and 1223, and PowerShell's 1, are read beside them). */
-export const OP_EXIT = { registerFailed: 30, unregisterFailed: 31, cleanupFailed: 32 } as const;
+export const OP_EXIT = { registerFailed: 30, unregisterFailed: 31, cleanupFailed: 32, importFailed: 33 } as const;
+
+/**
+ * `Register-ScheduledTask` by its module's ABSOLUTE path (PLAN_pwsh_engine_windows_time.md D4, measured 2026-10-11): with
+ * the module path pinned to `$PSHOME\Modules`, PowerShell 7 does not hold ScheduledTasks (Windows PowerShell 5.1 does, at
+ * this same System32 path). `[Environment]::SystemDirectory` is GetSystemDirectory, not a variable the elevated process
+ * inherits — G1's `PnpDevice` line, the same pattern.
+ */
+export const IMPORT_SCHEDULED_TASKS = `try { Import-Module -Name (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\Modules\\ScheduledTasks') -ErrorAction Stop } catch { exit ${OP_EXIT.importFailed} }`;
 
 /** `0x80070002` as PowerShell prints an `HResult` — "the system cannot find the file specified": no such folder or task. */
 export const NOT_FOUND_HRESULT = -2147024894;
@@ -28,6 +36,8 @@ export const HERE_END = "'@";
 export function installScript(options: GuardOptions): string {
   return [
     MODULES,
+    IMPORT_SCHEDULED_TASKS,
+    "$ProgressPreference = 'SilentlyContinue'",
     "$xml = @'",
     guardTaskXml(options),
     HERE_END,
@@ -68,6 +78,7 @@ export const QUERY_SCRIPT = [
   SUMMARY_FUNCTION,
   `$log = $null; try { $log = Get-WinEvent -ListLog '${TIME_SERVICE_CHANNEL}' -ErrorAction Stop } catch { $log = $null }`,
   "$channel = 'channel=unknown'; if ($null -ne $log) { if ($log.IsEnabled) { $channel = 'channel=enabled' } else { $channel = 'channel=disabled' } }",
+  `if (Test-Path -Path '${STAMP_KEY}') { 'stamp=present' } else { 'stamp=absent' }`,
   '$task = $null',
   `try { $service = New-Object -ComObject Schedule.Service; $service.Connect(); $task = $service.GetFolder('\\${GUARD_FOLDER}').GetTask('${GUARD_NAME}') } catch { $code = $_.Exception.HResult; if ($code -eq ${NOT_FOUND_HRESULT}) { 'guard=absent' } else { 'guard=unreadable'; 'hresult=0x{0:X8}' -f $code }; $channel; exit 0 }`,
   "'guard=present'",
@@ -89,14 +100,6 @@ export const ELEVATED_COMMAND_LINE_MAX = 16_000;
 /** The command line `CreateProcess` receives for a request: the program and each argument, quoted as Node quotes them. */
 export function commandLineLength(request: ProcessRequest): number {
   return [request.file, ...request.args].reduce((sum, arg) => sum + arg.length + 3, 0);
-}
-
-export function installRequest(env: Readonly<Record<string, string | undefined>>, options: GuardOptions, timeoutMs: number): ProcessRequest | string {
-  return elevatedRequest(env, installScript(options), timeoutMs);
-}
-
-export function removeRequest(env: Readonly<Record<string, string | undefined>>, timeoutMs: number): ProcessRequest | string {
-  return elevatedRequest(env, REMOVE_SCRIPT, timeoutMs);
 }
 
 /** The read-only query, UNELEVATED: the absolute PowerShell with the fixed script — no `runas`, no encoded payload. */

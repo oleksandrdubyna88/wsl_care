@@ -291,7 +291,7 @@ test('E6.S3 review C15: a Select press toggles the tick and posts NOTHING', () =
 
 test('the Windows Time guard line sits in the Health section as TEXT, and its buttons post only their bare ids', () => {
   const hostile = 'Windows Time guard: </script><img src=x onerror=alert(1)>';
-  const view = buildPanelView(snapshot(goldenOutcomes()), undefined, { line: hostile, level: 'warn', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }, { id: 'removeWindowsTimeGuard', label: 'Remove the Windows Time guard', enabled: true }] });
+  const view = buildPanelView(snapshot(goldenOutcomes()), undefined, { line: hostile, level: 'warn', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }, { id: 'removeWindowsTimeGuard', label: 'Remove the Windows Time guard', enabled: true }], engine: '' });
   const { page, root } = show(view);
   const box = root.one('section[data-section="health"]').one('div[data-guard]');
   assert.equal(box.one('p[data-guard-line]').textContent, hostile);
@@ -304,7 +304,7 @@ test('the Windows Time guard line sits in the Health section as TEXT, and its bu
 });
 
 test('while the guard elevated run is pending its buttons are disabled, and a press posts nothing', () => {
-  const view = buildPanelView(snapshot(goldenOutcomes()), undefined, { line: 'Windows Time guard: Waiting for the elevated PowerShell that installs it…', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: false }, { id: 'removeWindowsTimeGuard', label: 'Remove the Windows Time guard', enabled: false }] });
+  const view = buildPanelView(snapshot(goldenOutcomes()), undefined, { line: 'Windows Time guard: Waiting for the elevated PowerShell that installs it…', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: false }, { id: 'removeWindowsTimeGuard', label: 'Remove the Windows Time guard', enabled: false }], engine: '' });
   const { page, root } = show(view);
   const buttons = root.one('div[data-guard]').all('button[data-guard-action]');
   assert.equal(buttons.length, 2);
@@ -439,4 +439,25 @@ test('a greyed relays button shows why and posts nothing when pressed', () => {
 test('an older daemon (no interopRelays) renders no relays part at all', () => {
   const { root } = show(buildPanelView(snapshot(goldenOutcomes())));
   assert.equal(root.all('div[data-relays]').length, 0);
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D6: each part's engine, as TEXT ----
+
+test('pwsh D6: the guard part shows its engine line as TEXT under its line — and no paragraph when the host gives none', () => {
+  const hostile = 'Elevated runs here: PowerShell 7 (</script><img src=x onerror=alert(1)>).';
+  const guard = { line: 'Windows Time guard: not installed', level: 'none' as const, buttons: [], engine: hostile };
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, guard));
+  assert.equal(root.one('div[data-guard]').one('p[data-guard-engine]').textContent, hostile);
+  assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
+  const { root: plain } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, { ...guard, engine: '' }));
+  assert.equal(plain.one('div[data-guard]').all('p[data-guard-engine]').length, 0);
+});
+
+test('pwsh D6: a GPU alert shows the engine Enable elevates as TEXT, only when the host set it', () => {
+  const button = { index: 0, label: 'Enable AMD Radeon AI PRO R9700', enabled: true, readAt: 1 };
+  const alert = { level: 'critical' as const, line: 'GPU AMD Radeon AI PRO R9700 is not working (code 22: it is disabled)', fix: 'Enable it.', consequence: '', button };
+  const named = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [{ ...alert, engine: 'Enable runs elevated in: PowerShell 7 (P).' }], line: '' }));
+  assert.equal(named.root.one('div[data-gpu-alert]').one('p[data-gpu-engine]').textContent, 'Enable runs elevated in: PowerShell 7 (P).');
+  const bare = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [alert], line: '' }));
+  assert.equal(bare.root.one('div[data-gpu-alert]').all('p[data-gpu-engine]').length, 0);
 });

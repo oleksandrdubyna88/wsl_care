@@ -8,10 +8,12 @@ import type { Snapshot } from '../state/outcomeStore';
 import { INSTALL_CONFIRM, REMOVE_CONFIRM, runGuardOp, type GuardFlowDeps } from '../windowsTime/guardFlow';
 import { WindowsTimeGuardHost } from '../windowsTime/guardHost';
 import { PENDING_KEY, readPending } from '../windowsTime/guardPending';
-import { installScript, OP_EXIT, QUERY_SCRIPT, REMOVE_SCRIPT } from '../windowsTime/guardScripts';
+import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, installScript, OP_EXIT, QUERY_SCRIPT, REMOVE_SCRIPT } from '../windowsTime/guardScripts';
 import { guardScript, guardSummary, type GuardOptions } from '../windowsTime/guardTask';
 import { newGuardRecorder, type GuardRecorder } from '../windowsTime/guardRecorder';
 import { EXIT } from '../windowsTime/windowsTimeFix';
+import { elevatedRequest } from '../powershell/elevatedLauncher';
+import { elevatedProgramOf, failedRead, fixedEngine, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
 import { MapStore } from './support/memento';
 
 /**
@@ -58,6 +60,7 @@ function harness(answer: boolean, result: ProcessResult, env: Readonly<Record<st
       durable: store,
       nowUtcMs: () => now,
       afterRun: () => { events.push('query'); },
+      engine: fixedEngine(PS51_READ),
     },
   };
 }
@@ -155,7 +158,7 @@ function host(recorder: GuardRecorder, store = new MapStore()): WindowsTimeGuard
   return new WindowsTimeGuardHost({
     env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
     ui: { show: (t) => { recorder.shown.push(t); return Promise.resolve(); }, confirm: (p) => { recorder.prompts.push(p); return Promise.resolve(recorder.answer); }, run: (r) => { recorder.requests.push(r); return Promise.resolve(recorder.result); }, query: (r) => { recorder.queries.push(r); return Promise.resolve(recorder.queryResult); }, report: (message, failed) => { recorder.reports.push({ message, failed }); } },
-    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
   });
 }
 
@@ -183,7 +186,7 @@ test('the host runs one flow at a time, greys the buttons while the elevated run
   const slow = new WindowsTimeGuardHost({
     env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
     ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(true), run: () => { viewsWhileRunning.push(slowView()); return pendingRun; }, query: (r) => { recorder.queries.push(r); return Promise.resolve(exited(0, `guard=present\r\nenabled=True\r\nlastRunUtc=never\r\nlastResult=267011\r\n${guardSummary(OPTIONS).map((l) => `summary:${l}`).join('\r\n')}\r\nchannel=enabled\r\n`)); }, report: () => undefined },
-    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
   });
   const slowView = (): string => `${slow.view().line}|${slow.view().buttons.map((b) => `${b.id}:${b.enabled}`).join(',')}`;
   const first = slow.run('install');
@@ -209,7 +212,7 @@ test('own code review k4: a refresh asked during a query in flight is answered b
   const guard = new WindowsTimeGuardHost({
     env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
     ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: async (r) => { recorder.queries.push(r); const answer = answers.shift() ?? exited(1); if (recorder.queries.length === 1) { await gate; } return answer; }, report: () => undefined },
-    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
   });
   const first = guard.refresh();
   assert.match(guard.view().line, /checking…/);
@@ -226,7 +229,7 @@ test('gemini: a pending run Task Scheduler already shows finished is cleared on 
   const guard = new WindowsTimeGuardHost({
     env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
     ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
-    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
   });
   assert.match(guard.view().line, /Waiting for the elevated PowerShell/);
   await guard.refresh();
@@ -237,7 +240,7 @@ test('gemini: a pending run Task Scheduler already shows finished is cleared on 
   const removing = new WindowsTimeGuardHost({
     env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
     ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
-    durable: still, nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+    durable: still, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
   });
   await removing.refresh();
   assert.notEqual(still.get(PENDING_KEY), undefined, 'a removal is not finished while the task is still there');
@@ -249,7 +252,7 @@ test('gemini: a changed guard setting re-derives the line at once — no query n
   const guard = new WindowsTimeGuardHost({
     env: ENV, options: () => ({ ...OPTIONS, everyHours }), opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
     ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
-    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
   });
   guard.onChange(() => { changes += 1; });
   everyHours = 5;
@@ -261,7 +264,7 @@ test('gemini: a changed guard setting re-derives the line at once — no query n
 
 test('the panel view carries the guard\'s line, and the page may ask for the two flows only as BARE messages', () => {
   const snapshot: Snapshot = { status: undefined, preview: undefined, doctor: undefined, checking: false };
-  const view = buildPanelView(snapshot, undefined, { line: 'Windows Time guard: not installed', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }] });
+  const view = buildPanelView(snapshot, undefined, { line: 'Windows Time guard: not installed', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }], engine: '' });
   assert.equal(view.windowsTimeGuard.line, 'Windows Time guard: not installed');
   assert.match(buildPanelView(snapshot).windowsTimeGuard.line, /checking…/);
   for (const type of ['installWindowsTimeGuard', 'removeWindowsTimeGuard']) {
@@ -269,4 +272,92 @@ test('the panel view carries the guard\'s line, and the page may ask for the two
     assert.equal(parsePageMessage({ type, xml: '<Task/>' }), undefined, 'no text from the page reaches the task');
     assert.equal(parsePageMessage({ type, options: { everyHours: 1 } }), undefined);
   }
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D3, D5, §11 R5, R7: the engine, read before the modal and AGAIN before the launch ----
+
+function withEngine(h: Harness, source: GuardFlowDeps['engine']): GuardFlowDeps {
+  return { ...h.deps, engine: source };
+}
+
+test('pwsh D3: install with a verified Store PowerShell 7 — engine, script, modal naming it, a NEW read, then the pending run elevating that path', async () => {
+  const h = harness(true, exited(0));
+  assert.deepEqual(await runGuardOp('install', withEngine(h, fixedEngine(STORE_READ, STORE_READ, h.events))), { kind: 'done' });
+  assert.deepEqual(h.events, ['engine', 'show', 'confirm', 'reread', 'run(pending=install)', 'query', 'report']);
+  assert.equal(elevatedProgramOf(h.requests[0]), STORE_PWSH);
+  assert.ok((h.prompts[0] ?? '').includes(`The elevated program: PowerShell 7 (${STORE_PWSH})`));
+  assert.match(h.prompts[0] ?? '', /The task runs as SYSTEM in Windows PowerShell 5\.1/, 'D7: the task itself stays on 5.1, and the modal says so');
+  assert.match(h.reports[0]?.message ?? '', /Elevated program: PowerShell 7 \(.+\)\.$/);
+});
+
+test('pwsh D3: an engine that changed while the modal was open runs nothing and writes no pending record', async () => {
+  const h = harness(true, exited(0));
+  assert.equal((await runGuardOp('remove', withEngine(h, fixedEngine(STORE_READ, PS51_READ)))).kind, 'notRun');
+  assert.deepEqual(h.requests, []);
+  assert.equal(h.store.writes, 0);
+  assert.match(h.reports[0]?.message ?? '', /^Nothing ran: the elevated program changed while the question was open/);
+  assert.equal(h.reports[0]?.failed, true);
+});
+
+test('pwsh §11 R7: a re-read that did not answer starts nothing and says the read did not answer', async () => {
+  const h = harness(true, exited(0));
+  assert.equal((await runGuardOp('install', withEngine(h, fixedEngine(STORE_READ, failedRead('the read exited 1'))))).kind, 'notRun');
+  assert.equal(h.store.writes, 0);
+  assert.match(h.reports[0]?.message ?? '', /right before the launch did not answer \(the read exited 1\)/);
+});
+
+test('pwsh §11 R5: a run another window confirmed DURING the re-read still makes this one busy — the busy check comes after the read', async () => {
+  const h = harness(true, exited(0));
+  const source: GuardFlowDeps['engine'] = {
+    engine: () => Promise.resolve(STORE_READ),
+    reread: async () => { await h.store.update(PENDING_KEY, { op: 'remove', startedAtUtcMs: 999_000, deadlineUtcMs: 2_000_000 }); return STORE_READ; },
+    last: () => STORE_READ,
+  };
+  assert.deepEqual(await runGuardOp('install', withEngine(h, source)), { kind: 'busy' });
+  assert.deepEqual(h.requests, []);
+  assert.equal(readPending(h.store, 1_000_000)?.op, 'remove');
+});
+
+test('pwsh D4, D5: exit 33 names the ScheduledTasks module; exit 13 on the Store engine adds the Store note', async () => {
+  const imported = harness(true, exited(OP_EXIT.importFailed));
+  await runGuardOp('install', withEngine(imported, fixedEngine(STORE_READ)));
+  assert.match(imported.reports[0]?.message ?? '', /could not load its ScheduledTasks module/);
+  const launch = harness(true, exited(EXIT.launchFailed));
+  await runGuardOp('install', withEngine(launch, fixedEngine(STORE_READ)));
+  assert.match(launch.reports[0]?.message ?? '', /the Store package may not be available to the account that elevates/);
+});
+
+test('pwsh §11 R9: the largest install, elevating the LONGEST engine path, stays under the elevated command-line bound', () => {
+  const request = elevatedRequest(ENV, installScript({ setAutomaticStart: true, everyHours: 168, minMinutesBetweenStarts: 1440, delaySeconds: 3600, timeLimitMinutes: 60 }), 180_000, STORE_PWSH) as ProcessRequest;
+  assert.ok(commandLineLength(request) < ELEVATED_COMMAND_LINE_MAX, `${commandLineLength(request)} characters`);
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D6: the Windows Time part names its engines ----
+
+test('pwsh D6: the guard part names the elevated runs\' engine from the LAST engine read, and the task\'s SYSTEM 5.1 — "checking" before any read', () => {
+  const named = new WindowsTimeGuardHost({ ...hostDepsWith(fixedEngine(STORE_READ)) }).view();
+  assert.equal(named.engine, `Elevated runs here (Start Windows Time, install / remove the guard): PowerShell 7 (${STORE_PWSH}). The guard's task runs as SYSTEM in Windows PowerShell 5.1.`);
+  const none: GuardFlowDeps['engine'] = { engine: () => Promise.resolve(PS51_READ), reread: () => Promise.resolve(PS51_READ), last: () => undefined };
+  assert.match(new WindowsTimeGuardHost(hostDepsWith(none)).view().engine, /^Elevated runs here \(Start Windows Time, install \/ remove the guard\): checking which PowerShell… The guard's task runs as SYSTEM in Windows PowerShell 5\.1\.$/);
+});
+
+function hostDepsWith(engine: GuardFlowDeps['engine']): ConstructorParameters<typeof WindowsTimeGuardHost>[0] {
+  const recorder = newGuardRecorder();
+  return {
+    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(recorder.result), query: () => Promise.resolve(recorder.queryResult), report: () => undefined },
+    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine,
+  };
+}
+
+test('own code review, note 13: a timed-out guard run names the engine; exit 13 on the MSI engine carries no Store note', async () => {
+  const timedOut = harness(true, { kind: 'timedOut', timeoutMs: 180_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+  await runGuardOp('install', withEngine(timedOut, fixedEngine(STORE_READ)));
+  assert.match(timedOut.reports[0]?.message ?? '', /did not finish within 180 s .+ Elevated program: PowerShell 7 \(.+\)\.$/);
+  const msi = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  const msiRead = { engine: { file: msi, label: `PowerShell 7 (${msi})`, kind: 'msi' as const }, failure: '' };
+  const launch = harness(true, exited(EXIT.launchFailed));
+  await runGuardOp('remove', withEngine(launch, fixedEngine(msiRead)));
+  assert.match(launch.reports[0]?.message ?? '', /could not be started\. Elevated program: PowerShell 7/);
+  assert.doesNotMatch(launch.reports[0]?.message ?? '', /Store package/);
 });

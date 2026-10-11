@@ -1,7 +1,10 @@
+import { notAnsweredWords, type NotAnswered } from '../process/notAnswered';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
-import { DISABLED_CODE, INSTANCE_ID, TAGS, type PwshFacts, type PwshProbe } from './gpuScripts';
+import { tagsOf } from '../powershell/taggedAnswer';
+import { pwshFactsFromTags, type PwshFacts, type PwshProbe } from '../powershell/elevatedEngine';
+import { DISABLED_CODE, INSTANCE_ID, TAGS } from './gpuScripts';
 import { FIX_WORDS, problemOf, type FixKind } from './gpuProblems';
 import { choiceSentence, type OllamaRead } from './ollamaLog';
 
@@ -22,13 +25,13 @@ export interface Adapter {
 
 export type GpuState =
   | { readonly kind: 'unknown'; readonly reason: string }
-  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshProbe; readonly msi?: PwshProbe };
+  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshProbe; readonly msi?: PwshProbe; readonly programFiles?: string };
 
 export const NOT_ASKED: GpuState = { kind: 'unknown', reason: 'checking…' };
 
 /** The read's PowerShell 7 facts, for the enable — nothing for a state that is not a read. */
 export function pwshFactsOf(state: GpuState): PwshFacts | undefined {
-  return state.kind === 'read' ? { store: state.pwsh, msi: state.msi } : undefined;
+  return state.kind === 'read' ? { store: state.pwsh, msi: state.msi, ...(state.programFiles === undefined ? {} : { programFiles: state.programFiles }) } : undefined;
 }
 
 /**
@@ -41,32 +44,8 @@ const NAME_MAX = 120;
 
 const INTEGER = /^-?\d+$/;
 
-/** A line's tag and value, or nothing: a line without a `=`, and the `adapter=<i>` block marker (printed once per adapter, read by nobody). */
-function entryOf(line: string): readonly (readonly [string, string])[] {
-  const at = line.indexOf('=');
-  const name = line.slice(0, at);
-
-  return at > 0 && name !== TAGS.adapter ? [[name, line.slice(at + 1).trim()] as const] : [];
-}
-
-/** The answer's `name=value` lines, in order. */
-function entriesOf(stdout: string): readonly (readonly [string, string])[] {
-  return stdout.split(/\r?\n/).flatMap(entryOf);
-}
-
-interface Tags {
-  readonly tags: ReadonlyMap<string, string>;
-  /** The first tag the answer printed TWICE — a value that could have shadowed another (code round 2) — or `undefined`. */
-  readonly twice: string | undefined;
-}
-
-/** The answer as a map built ONCE from its lines; a tag printed twice is named, never read first- or last-wins. */
-function tagsOf(stdout: string): Tags {
-  const entries = entriesOf(stdout);
-  const twice = entries.find(([name], i) => entries.findIndex(([other]) => other === name) !== i)?.[0];
-
-  return { tags: new Map(entries), twice };
-}
+/** The `adapter=<i>` block marker: printed once per adapter, read by nobody. */
+const GPU_IGNORED: ReadonlySet<string> = new Set([TAGS.adapter]);
 
 function tag(tags: ReadonlyMap<string, string>, name: string, i: number): string {
   return tags.get(`${name}.${i}`) ?? '';
@@ -94,7 +73,7 @@ function overCap(count: number): GpuState {
 
 /** The query's stdout as one state: every adapter up to the count it printed LAST, or `unknown` with why. */
 export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
-  const { tags, twice } = tagsOf(stdout);
+  const { tags, twice } = tagsOf(stdout, GPU_IGNORED);
   if (twice !== undefined) {
     return { kind: 'unknown', reason: `the display-adapter query answered a tag twice (${safeText(twice, NAME_MAX)})` };
   }
@@ -106,39 +85,37 @@ export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
   return count > MAX_ADAPTERS ? overCap(count) : adaptersOf(tags, count, atUtcMs);
 }
 
-function isProbeKind(kind: string | undefined): kind is PwshProbe['kind'] {
-  return kind === 'signed' || kind === 'unsigned' || kind === 'absent';
-}
-
-/** A PowerShell 7 as the query verified it (`PWSH_PROBE`), when it answered one of the three kinds. */
-function probeOf(tags: ReadonlyMap<string, string>, kindTag: string, pathTag: string): PwshProbe | undefined {
-  const kind = tags.get(kindTag);
-
-  return isProbeKind(kind) ? { kind, path: tags.get(pathTag) ?? '' } : undefined;
-}
-
 function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: number): GpuState {
   const adapters = Array.from({ length: count }, (_v, i) => i).flatMap((i) => adapterAt(tags, i) ?? []);
   if (adapters.length !== count) {
     return { kind: 'unknown', reason: 'the display-adapter query answered an adapter without its name or code' };
   }
-  const pwsh = probeOf(tags, TAGS.pwshKind, TAGS.pwshPath);
-  const msi = probeOf(tags, TAGS.msiKind, TAGS.msiPath);
-
-  return { kind: 'read', adapters, atUtcMs, ...(pwsh === undefined ? {} : { pwsh }), ...(msi === undefined ? {} : { msi }) };
+  return { kind: 'read', adapters, atUtcMs, ...factFields(pwshFactsFromTags(tags)) };
 }
 
-const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {
-  timedOut: (r) => `the display-adapter query did not answer within ${Math.round(r.timeoutMs / 1000)} s (wslCare.timeouts.gpuQuerySeconds)`,
-  failedToStart: (r) => `the display-adapter query could not start: ${r.reason}`,
-  signalled: (r) => `the display-adapter query was stopped (${r.signal})`,
-  tooMuchOutput: () => 'the display-adapter query printed more than the extension reads',
-};
+/** The read's PowerShell 7 facts as the state's optional fields — each left out when the probe did not print it. */
+function factFields(facts: PwshFacts): { readonly pwsh?: PwshProbe; readonly msi?: PwshProbe; readonly programFiles?: string } {
+  return { ...probeField('pwsh', facts.store), ...probeField('msi', facts.msi), ...programFilesField(facts.programFiles) };
+}
+
+/** One probe as a typed optional field — nothing when the probe did not print it (own code review, note 12: no `unknown`). */
+function probeField<K extends 'pwsh' | 'msi'>(key: K, probe: PwshProbe | undefined): Partial<Record<K, PwshProbe>> {
+  return probe === undefined ? {} : ({ [key]: probe } as Record<K, PwshProbe>);
+}
+
+function programFilesField(programFiles: string | undefined): { readonly programFiles?: string } {
+  return programFiles === undefined ? {} : { programFiles };
+}
+
+/** Why this query did not answer — the shared wording (`process/notAnswered.ts`). */
+function notAnswered(result: NotAnswered): string {
+  return notAnsweredWords(result, 'the display-adapter query', 'wslCare.timeouts.gpuQuerySeconds');
+}
 
 /** The query's process result as one state. */
 export function gpuStateOf(result: ProcessResult, atUtcMs: number): GpuState {
   if (result.kind !== 'exited') {
-    return { kind: 'unknown', reason: (NOT_ANSWERED[result.kind] as (r: ProcessResult) => string)(result) };
+    return { kind: 'unknown', reason: notAnswered(result) };
   }
   const code = signed32(result.code);
 
@@ -180,6 +157,15 @@ export interface GpuAlert {
    * those two numbers and nothing else; the host holds the id, and refuses an index from an older read (code round 2).
    */
   readonly button: { readonly index: number; readonly label: string; readonly enabled: boolean; readonly readAt: number } | undefined;
+  /** "Enable runs elevated in: <engine>." beside the button (PLAN_pwsh_engine_windows_time.md D6) — absent or '' without one. */
+  readonly engine?: string;
+}
+
+/** The alerts' engine line, from the host's engine label — set only where an alert carries the button (D6, §11 R11: pure). */
+export function withEngineLine(view: GpuView, engineLabel: string): GpuView {
+  const line = engineLabel === '' ? '' : `Enable runs elevated in: ${engineLabel}.`;
+
+  return { ...view, alerts: view.alerts.map((alert) => (alert.button === undefined ? alert : { ...alert, engine: line })) };
 }
 
 export interface GpuView {

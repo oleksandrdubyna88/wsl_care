@@ -118,7 +118,7 @@ function actions(snapshot: Snapshot): PanelView['actions'] {
 export const NO_CLEANUP: CleanupControls = { enabled: false, state: '', stateLevel: 'none', reason: 'checking…', rows: [], fullCheck: false, stop: undefined, stopText: '', results: [], dockerAfter: '' };
 
 /** The guard's line before the host has read Task Scheduler. */
-export const NO_GUARD: GuardView = { line: 'Windows Time guard: checking…', level: 'none', buttons: [] };
+export const NO_GUARD: GuardView = { line: 'Windows Time guard: checking…', level: 'none', buttons: [], engine: '' };
 
 /** The GPU part before the host has read Windows (or off Windows): nothing to show. */
 export const NO_GPU: GpuView = { alerts: [], line: '' };

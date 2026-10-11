@@ -201,3 +201,11 @@ test('codex: while Task Scheduler is asked again, a line already shown says so �
   assert.match(guardView({ kind: 'absent', channel: 'enabled' }, OPTIONS, undefined, LOCAL, true).line, /not installed.*\(checking again…\)$/);
   assert.doesNotMatch(guardView({ kind: 'absent', channel: 'enabled' }, OPTIONS, undefined, LOCAL, false).line, /checking/);
 });
+
+
+test('pwsh §11 R4: the task gone with its stamp still there says so, and offers Remove again beside Install', () => {
+  const view = viewOf({ kind: 'absent', channel: 'enabled', stampLeft: true });
+  assert.match(view.line, /not installed.*its rate-limit stamp under HKLM.*is still there/);
+  assert.deepEqual(view.buttons.map((b) => [b.id, b.enabled]), [['installWindowsTimeGuard', true], ['removeWindowsTimeGuard', true]]);
+  assert.deepEqual(viewOf({ kind: 'absent', channel: 'enabled' }).buttons.map((b) => b.id), ['installWindowsTimeGuard'], 'no stamp: Install only, as before');
+});
