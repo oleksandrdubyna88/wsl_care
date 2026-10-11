@@ -906,9 +906,9 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   added up on the page: **Totals** (freed, objects, per action), **Runs** (with / without a cleanup, dry runs and what
   they would have freed, by trigger, failed, interrupted), **Max / min** (the runs that freed the most and the least, each
   figure's max and min with its time; `vmmemWSL` arrives in E7.S3 / E11), the **trend** (each full run's MemAvailable and
-  swap, as a table) and the **run list** (since E10.S2c an archive run reads "A13 ran (n) — AI sessions archived", a restore
-  "A20 ran (n) — archived sessions restored", and their detail tables are titled for what they hold: per agent, and the
-  sessions put back by entry id); *Show objects* on a line reads that run's `runs show` — every object removed and
+  swap, as a table) and the **run list** (since E10.S2c the archive's actions are named: "A13 ran (n) — archive of AI
+  sessions", "A20 ran (n) — restore of archived sessions", "A21 ran (n) — stop of client-gone relays", and the detail tables of
+  A13 and A20 are titled for what they hold: per agent, and the sessions put back by entry id, sizes in the unit they reach); *Show objects* on a line reads that run's `runs show` — every object removed and
   not removed, every command and its exit. The period is kept in VS Code's `globalState`, so it survives a reload. The
   page sends the host only a period's name, the picker's days or a line's index — never a run id or an argument; all
   three reads are unprivileged.

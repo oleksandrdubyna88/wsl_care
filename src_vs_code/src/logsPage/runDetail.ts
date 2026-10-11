@@ -1,5 +1,6 @@
 import { runWordsOf, type RemovedTable } from '../cleanup/runWords';
 import { safeText } from '../panel/format';
+import { sizeText } from '../text/format';
 import { isJson, list, num, text, type Json } from '../panel/read';
 import { blockOf, bytesOf, timeOf } from './logsBlocks';
 import type { LogsBlock, LogsLine, LogsTable, ReadState } from './logsView';
@@ -23,14 +24,14 @@ function wordsOf(id: string): string | undefined {
   return runWordsOf([id])?.logs;
 }
 
-/** "A4 ran (2)" — and, for a run the words table names (E10.S2c, D8), "A13 ran (3) — AI sessions archived": the count stays the daemon's. */
+/** "A4 ran (2)" — and, for an action the words table names (E10.S2c, D8), "A13 ran (3) — archive of AI sessions": the count stays the daemon's. */
 function actionText(action: Json): string {
   const named = wordsOf(text(action, 'id'));
 
   return `${text(action, 'id')} ${text(action, 'status')} (${text(action, 'count')})${named === undefined ? '' : ` — ${named}`}`;
 }
 
-/** "A13 — AI sessions archived" in *This run*'s actions table; a cleanup action by its id. */
+/** "A13 — archive of AI sessions" in *This run*'s actions table; a cleanup action by its id. */
 function actionName(id: string): string {
   const named = wordsOf(id);
 
@@ -67,13 +68,27 @@ function itemRows(items: readonly Json[]): string[][] {
   return items.map((item) => [text(item, 'kind'), text(item, 'name'), sizeOf(item), text(item, 'note', '')]);
 }
 
-/** The removed table of a run the words table names (E10.S2c, D8): its own title and headings over the daemon's name, size and note. */
+/** A session's or an agent's size in the unit it reaches — 200 B, never 0.0 GB (the own review's #5, as `runWords.ts`'s done words). */
+function smallSizeOf(item: Json): string {
+  const bytes = num(item, 'bytes');
+
+  return bytes === undefined ? '—' : sizeText(bytes);
+}
+
+/** The removed table of an action the words table names (E10.S2c, D8): its own title and headings over the daemon's name, size and note. */
 function namedRemovedTable(id: string, index: number, items: readonly Json[], named: RemovedTable): LogsTable {
-  return { id: `removed-${index}`, title: `${id} — ${named.title}`, headers: [...named.headers], rows: items.map((item) => [text(item, 'name'), sizeOf(item), text(item, 'note', '')]) };
+  return { id: `removed-${index}`, title: `${id} — ${named.title}`, headers: [...named.headers], rows: items.map((item) => [text(item, 'name'), smallSizeOf(item), text(item, 'note', '')]) };
+}
+
+/** The table's words when every item is of the kind they name — else none, so an unexpected item never sits under the wrong heading. */
+function namedFor(id: string, items: readonly Json[]): RemovedTable | undefined {
+  const named = runWordsOf([id])?.removed;
+
+  return named !== undefined && items.every((item) => text(item, 'kind') === named.kind) ? named : undefined;
 }
 
 function removedTable(id: string, index: number, items: readonly Json[]): LogsTable {
-  const named = runWordsOf([id])?.removed;
+  const named = namedFor(id, items);
 
   return named === undefined ? { id: `removed-${index}`, title: `${id} — removed`, headers: ['Type', 'Name', 'Size', 'Note'], rows: itemRows(items) } : namedRemovedTable(id, index, items, named);
 }

@@ -338,12 +338,13 @@ function removedOf(show: Json): Json[] {
   return ((((show.detail as Json).actions as Json[])[0] as Json).run as Json).removed as Json[];
 }
 
-test('D8: the run list names an archive run "AI sessions archived" and a restore run "archived sessions restored" — the daemon\'s count unchanged', () => {
+test('D8: the run list names an archive run "archive of AI sessions" and a restore run "restore of archived sessions" — the daemon\'s count unchanged', () => {
   const { archive, restore, parts } = archiveRuns();
   const { root } = show(viewOf(parts));
   const actions = block(root, 'runList').all('tr[data-run]').map((row) => row.all('[data-cell]')[3]?.textContent);
   const count = (show: Json): string => String((((show.run as Json).actions as Json[])[0] as Json).count);
-  assert.deepEqual(actions, [`A13 ran (${count(archive)}) — AI sessions archived`, `A20 ran (${count(restore)}) — archived sessions restored`]);
+  // The own review's #4: the words name the ACTION, never claim its result — "A13 skipped (0)" must not read "AI sessions archived".
+  assert.deepEqual(actions, [`A13 ran (${count(archive)}) — archive of AI sessions`, `A20 ran (${count(restore)}) — restore of archived sessions`]);
 });
 
 test('D8: an archive run\'s detail is the per-agent table it is — its own title and headings, each agent\'s row as the daemon wrote it', () => {
@@ -351,8 +352,9 @@ test('D8: an archive run\'s detail is the per-agent table it is — its own titl
   const { root } = show(viewOf(parts));
   const holder = root.one('[data-detail-for="0"]');
   assert.equal(titleOf(holder, 'removed-0'), 'A13 — AI sessions archived, per agent');
-  assert.deepEqual(headersOf(holder, 'removed-0'), ['Agent', 'Moved', 'What the archive did']);
-  assert.deepEqual(cells(holder, 'removed-0'), removedOf(archive).map((item) => [String(item.name), gbOf(Number(item.bytes)), String(item.note)]));
+  assert.deepEqual(headersOf(holder, 'removed-0'), ['Agent', 'Removed from its folder', 'What the archive did'], 'the code round #2: the bytes are what left the folder of the agent, not what was copied');
+  // The own review's #5: a size in the unit it reaches — the golden's 0 bytes read "0 B", never "0.0 GB".
+  assert.deepEqual(cells(holder, 'removed-0'), [['claude-code', '0 B', String(removedOf(archive)[0]?.note)]]);
   assert.equal(titleOf(holder, 'notRemoved-0'), 'A13 — not removed', 'the other tables stay as they are');
 });
 
@@ -362,13 +364,13 @@ test('D8 (the plan round\'s #1): a restore run\'s detail lists the sessions put 
   const holder = root.one('[data-detail-for="1"]');
   assert.equal(titleOf(holder, 'removed-0'), 'A20 — archived sessions restored');
   assert.deepEqual(headersOf(holder, 'removed-0'), ['Archived session', 'Size', 'Agent, month and outcome']);
-  assert.deepEqual(cells(holder, 'removed-0'), removedOf(restore).map((item) => [String(item.name), gbOf(Number(item.bytes)), String(item.note)]));
+  assert.deepEqual(cells(holder, 'removed-0'), [['fedcba9876543210', '200 B', String(removedOf(restore)[0]?.note)]], 'the synthetic entry id, its 200 bytes in B');
 });
 
 test('D8: This run of an archive run names it in its actions table too', () => {
   const archive = golden('runs-show-archive.json');
   const { root } = show(viewOf({ logs: { kind: 'idle' }, runs: { kind: 'idle' }, show: answered(archive) }, { kind: 'thisRun', runId: '20000101T000000Z-1' }));
-  assert.equal(cells(block(root, 'run'), 'actions')[0]?.[0], 'A13 — AI sessions archived');
+  assert.equal(cells(block(root, 'run'), 'actions')[0]?.[0], 'A13 — archive of AI sessions');
 });
 
 test('a cleanup action keeps the generic words — the table names only the runs it knows', () => {
@@ -377,4 +379,23 @@ test('a cleanup action keeps the generic words — the table names only the runs
   const holder = root.one('[data-detail-for="1"]');
   assert.equal(titleOf(holder, 'removed-0'), 'A10 — removed');
   assert.deepEqual(headersOf(holder, 'removed-0'), ['Type', 'Name', 'Size', 'Note']);
+});
+
+test('the own review\'s #6: a removed item of another kind than the named table holds falls back to the generic table — never an item under the wrong heading', () => {
+  const archive = golden('runs-show-archive.json');
+  const detail = archive.detail as Json;
+  const action = (detail.actions as Json[])[0] as Json;
+  const run = action.run as Json;
+  const mixed = { ...archive, detail: { ...detail, actions: [{ ...action, run: { ...run, removed: [...(run.removed as Json[]), { kind: 'volume', name: 'odd', bytes: 1, note: 'not an agent' }] } }] } };
+  const { root } = show(viewOf({ details: new Map([[1, answered(mixed)]]) }));
+  const holder = root.one('[data-detail-for="1"]');
+  assert.equal(titleOf(holder, 'removed-0'), 'A13 — removed');
+  assert.deepEqual(headersOf(holder, 'removed-0'), ['Type', 'Name', 'Size', 'Note']);
+});
+
+test('the own review\'s #7: a relay stop (A21) is named in the run list too, and keeps the generic removed table', () => {
+  const done = golden('runs-show-done.json');
+  const line = { ...(done.run as Json), actions: [{ id: 'A21', status: 'ran', count: 2, freedBytes: 0 }] };
+  const { root } = show(viewOf({ runs: answered({ ...golden('runs-local-day.json'), count: 1, runs: [line] }) }));
+  assert.equal(block(root, 'runList').all('tr[data-run]')[0]?.all('[data-cell]')[3]?.textContent, 'A21 ran (2) — stop of client-gone relays');
 });

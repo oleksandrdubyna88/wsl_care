@@ -45,12 +45,12 @@ function title(root: Element, table: string): string {
   return root.one(`[data-table-of="${table}"]`).one('[data-title]').textContent;
 }
 
-test('flow · This run of an ARCHIVE run: the daemon-made run renders as "A13 — AI sessions archived" with its per-agent table', async () => {
+test('flow · This run of an ARCHIVE run: the daemon-made run renders as "A13 — archive of AI sessions" with its per-agent table', async () => {
   const world = fakeWorld(UBUNTU_RUNNING);
   try {
     world.rewrite({ runsShow: 'runs-show-archive.json' });
     const root = await thisRun(world);
-    assert.equal(root.one('table[data-table="actions"]').one('tr[data-row]').all('[data-cell]')[0]?.textContent, 'A13 — AI sessions archived');
+    assert.equal(root.one('table[data-table="actions"]').one('tr[data-row]').all('[data-cell]')[0]?.textContent, 'A13 — archive of AI sessions');
     assert.equal(title(root, 'removed-0'), 'A13 — AI sessions archived, per agent');
     assert.match(root.one('table[data-table="removed-0"]').textContent, /claude-code/);
   } finally {
@@ -58,12 +58,12 @@ test('flow · This run of an ARCHIVE run: the daemon-made run renders as "A13 �
   }
 });
 
-test('flow · This run of a RESTORE run: the daemon-made run renders as "A20 — archived sessions restored", its sessions by entry id', async () => {
+test('flow · This run of a RESTORE run: the daemon-made run renders as "A20 — restore of archived sessions", its sessions by entry id', async () => {
   const world = fakeWorld(UBUNTU_RUNNING);
   try {
     world.rewrite({ runsShow: 'runs-show-restore.json' });
     const root = await thisRun(world);
-    assert.equal(root.one('table[data-table="actions"]').one('tr[data-row]').all('[data-cell]')[0]?.textContent, 'A20 — archived sessions restored');
+    assert.equal(root.one('table[data-table="actions"]').one('tr[data-row]').all('[data-cell]')[0]?.textContent, 'A20 — restore of archived sessions');
     assert.equal(title(root, 'removed-0'), 'A20 — archived sessions restored');
     assert.match(root.one('table[data-table="removed-0"]').one('tr[data-row]').all('[data-cell]')[0]?.textContent ?? '', /^[0-9a-f]{16}$/);
   } finally {

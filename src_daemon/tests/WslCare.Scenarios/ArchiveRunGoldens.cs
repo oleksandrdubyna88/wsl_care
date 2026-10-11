@@ -41,15 +41,39 @@ internal static class ArchiveRunGoldens
     /// out (the paths are the distro's own, as the child prints them on a machine).</summary>
     public sealed record ChildAnswers(string Preview, string Reach, string Run, string RestorableList, string Restore, IReadOnlyList<string> RestorableIds);
 
+    /// <summary>The synthetic entry ids, in the order the list names the real ones — the archive-list golden's own placeholder first.</summary>
+    private static readonly IReadOnlyList<string> SyntheticIds = ["0123456789abcdef", "fedcba9876543210", "00000000000000aa", "00000000000000bb"];
+
     /// <summary>The two <c>runs show</c> answers, from a fresh home that claims root (the engine's records are root's).</summary>
-    public static async Task<(ChildResult Archive, ChildResult Restore, ScenarioHome Home)> RunAsync(ChildAnswers answers)
+    public static async Task<(ChildResult Archive, ChildResult Restore, ScenarioHome Home)> RunAsync(ChildAnswers real)
     {
+        var answers = Synthetic(real);
         var home = new ScenarioHome("golden-archive-runs") { ClaimsRoot = true };
         Stage(home);
         var archiveRun = await ExecuteAsync(home, answers, new ActRequest([ActionId.Find("A13")!], RunTrigger.Manual, Execute: true));
         var restoreRun = await ExecuteAsync(home, answers, new ActRequest([ActionId.Find("A20")!], RunTrigger.Manual, Execute: true) { ShownEntries = ShownList.Of(answers.RestorableIds) });
 
         return (await home.RunAsync("runs", "show", archiveRun, "--json"), await home.RunAsync("runs", "show", restoreRun, "--json"), home);
+    }
+
+    /// <summary>
+    /// The answers with every entry id replaced by a synthetic one (the own review's #1): an entry id hashes the SIDE's name, which is
+    /// built from the machine's host name and its distro, so the real ones differ on every machine — and A20 copies them into its
+    /// items, its notes and the child's <c>--entry</c> argument, where the goldens' key-based normaliser cannot reach. The mapping
+    /// is applied before the engine runs, so every place the run writes an id writes the same synthetic one.
+    /// </summary>
+    private static ChildAnswers Synthetic(ChildAnswers real)
+    {
+        var ids = JsonNode.Parse(real.RestorableList)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!).Distinct(StringComparer.Ordinal).ToList();
+        ids.Count.Should().BeLessThanOrEqualTo(SyntheticIds.Count, "one synthetic id per real one");
+        string Mapped(string text) => ids.Select((id, i) => (id, i)).Aggregate(text, (t, p) => t.Replace(p.id, SyntheticIds[p.i], StringComparison.Ordinal));
+
+        return real with
+        {
+            RestorableList = Mapped(real.RestorableList),
+            Restore = Mapped(real.Restore),
+            RestorableIds = [.. real.RestorableIds.Select(Mapped)],
+        };
     }
 
     /// <summary>The distro the engine needs: the target user (uid 1000, home /home/user — the anonymised account every golden names), the boot id, runuser's PAM stack, the CPU

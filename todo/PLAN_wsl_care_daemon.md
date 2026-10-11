@@ -5043,7 +5043,7 @@ break-its on product code; an own review on Fable; the coai plan and code rounds
 
 **Story 2 — the words** (`cleanup/runWords.ts`, `logsPage/runDetail.ts`):
 - `RunWords` gains `logs` — A13 *AI sessions archived*, A20 *archived sessions restored*, A21 *client-gone relays stopped* — and an
-  optional `removed` table: A13 `{ title: 'AI sessions archived, per agent', headers: ['Agent', 'Moved', 'What the archive did'] }`,
+  optional `removed` table: A13 `{ title: 'AI sessions archived, per agent', headers: ['Agent', 'Removed from its folder', 'What the archive did'] }`,
   A20 `{ title: 'archived sessions restored', headers: ['Archived session', 'Size', 'Agent, month and outcome'] }`; A21 keeps the
   generic table (not in D8).
 - `runDetail.ts`: `actionText` adds ` — <logs>` for an action the table names (the count stays the daemon's, unreinterpreted);
@@ -5082,7 +5082,20 @@ README if the Logs page is described, this section's *as built*).
   goldens' key-based normaliser cannot reach).
 - The target user is `user`: the privacy rule of #109 found "as me:" in the first goldens.
 - The base folder is the scene home's own user layer (`IHostPaths.UserConfigFile`), which `ConfigLoader.Load` reads.
-- The rows of a named removed table drop the kind column (the title says what every row is).
+- The rows of a named removed table drop the kind column (the title says what every row is) — and only when every item is of the
+  kind the table names; otherwise the generic table (the own review's #6).
+- **D8's words are names, not results** (the own review's #4): a skipped or failed A13 must not read "AI sessions archived", and
+  the words follow the ACTION wherever it appears (a timer run holds A13 beside other actions). So the run list reads "A13 ran (3) —
+  archive of AI sessions", "A20 … — restore of archived sessions", "A21 … — stop of client-gone relays"; the removed tables keep
+  "AI sessions archived, per agent" / "archived sessions restored" (they list only what was done). A13's size column is "Removed
+  from its folder" (the code round's #2: the bytes that left the folder, not the bytes copied), and the named tables' sizes read in
+  the unit they reach ("200 B", the own review's #5).
+- The restore golden's entry ids are synthetic (the own review's #1: a real id hashes the side's name, so it differed on every
+  machine and sat where no key-based normaliser reaches); A20's child answer is the restore of exactly the shown entry (#2).
+- **The code round** (coai session 71d1ed42, `proceed`, 0 gating of 5, codex): #0 the words test walks the table; #1 the privacy
+  scan reads any script; #2 the size heading — all accepted and fixed. **The own review (Opus)**: 8 findings (1 high, the
+  machine-dependent entry id) — all taken. Left for the owner: `RestoreAction` believes a restore answer that names an entry it
+  did not ask for (the own review's #2, a daemon check not built here).
 
 ##### E10.S2b and E10.S2c — the outline their own plan rounds start from (each refined by its build notes above)
 

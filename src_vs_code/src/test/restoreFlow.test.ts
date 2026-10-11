@@ -289,8 +289,14 @@ test('own review #3: a list the daemon CUT opens no modal — refused before it,
 // ---- E10.S2c: the Logs page's words come from the same table ----
 
 test('the words table names each run for the Logs page, and A13 and A20 their removed tables — A21 keeps the generic one', () => {
-  assert.deepEqual(RUN_WORDS.map((w) => [w.id, w.logs]), [['A13', 'AI sessions archived'], ['A20', 'archived sessions restored'], ['A21', 'client-gone relays stopped']]);
-  assert.deepEqual(runWordsOf(['A13'])?.removed, { title: 'AI sessions archived, per agent', headers: ['Agent', 'Moved', 'What the archive did'] });
-  assert.deepEqual(runWordsOf(['A20'])?.removed, { title: 'archived sessions restored', headers: ['Archived session', 'Size', 'Agent, month and outcome'] });
+  // The code round #0: every row of the table, whatever it holds — a new run without its Logs words fails here — then the three D8 named.
+  for (const words of RUN_WORDS) {
+    assert.ok(words.logs.length > 0, `${words.id} has its Logs words`);
+  }
+  assert.equal(runWordsOf(['A13'])?.logs, 'archive of AI sessions');
+  assert.equal(runWordsOf(['A20'])?.logs, 'restore of archived sessions');
+  assert.equal(runWordsOf(['A21'])?.logs, 'stop of client-gone relays');
+  assert.deepEqual(runWordsOf(['A13'])?.removed, { title: 'AI sessions archived, per agent', headers: ['Agent', 'Removed from its folder', 'What the archive did'], kind: 'agent' });
+  assert.deepEqual(runWordsOf(['A20'])?.removed, { title: 'archived sessions restored', headers: ['Archived session', 'Size', 'Agent, month and outcome'], kind: 'archived session' });
   assert.equal(runWordsOf(['A21'])?.removed, undefined);
 });

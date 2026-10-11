@@ -41,23 +41,23 @@
         "status": "ran",
         "reason": "ran",
         "preview": {
-          "what": "restore archived AI-agent sessions as user: 1 removed at their source and verified; of the 1 entries the panel showed, the 1 still restorable",
+          "what": "restore archived AI-agent sessions as user: 2 removed at their source and verified; of the 1 entries the panel showed, the 1 still restorable",
           "available": true,
           "count": 1,
-          "bytes": 50,
+          "bytes": 200,
           "basis": "the archive child's own list (archive list --json), run as the target user; entry ids only",
           "facts": {
             "unverified": 0,
             "count": 1,
-            "bytes": 50
+            "bytes": 200
           },
           "refusal": "",
           "items": [
             {
               "kind": "archived session",
-              "name": "147fabef689a0fea",
-              "bytes": 50,
-              "note": "claude-code 2000/01, 1 file(s)"
+              "name": "fedcba9876543210",
+              "bytes": 200,
+              "note": "claude-code 2000/01, 2 file(s)"
             }
           ],
           "skip": "",
@@ -69,22 +69,22 @@
           "removed": [
             {
               "kind": "archived session",
-              "name": "147fabef689a0fea",
-              "bytes": 50,
-              "note": "claude-code 2000/01: restored, 1 file(s)"
+              "name": "fedcba9876543210",
+              "bytes": 200,
+              "note": "claude-code 2000/01: restored, 2 file(s)"
             }
           ],
           "commands": [
             {
               "template": "archive-list-shown",
-              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive list --restorable --entry 147fabef689a0fea --json",
+              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive list --restorable --entry fedcba9876543210 --json",
               "outcome": "exited",
               "exit": 0,
               "detail": ""
             },
             {
               "template": "archive-restore",
-              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive restore --entry 147fabef689a0fea --json",
+              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive restore --entry fedcba9876543210 --json",
               "outcome": "exited",
               "exit": 0,
               "detail": ""
@@ -94,7 +94,7 @@
           "succeeded": true,
           "notRemoved": [],
           "notes": [
-            "restored 1, already there 1, refused 0"
+            "restored 1, already there 0, refused 0"
           ]
         }
       }

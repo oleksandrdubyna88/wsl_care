@@ -324,16 +324,19 @@ internal static partial class GoldenContracts
             }
 
             File.Exists(second).Should().BeFalse("the second session was removed before the restore");
-            (await archive.RunAsync("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s1.jsonl", "--json")).Exit.Should().Be((int)ExitCode.Ok);
-            var ids = JsonNode.Parse((await archive.RunAsync("archive", "list", "--json")).Stdout)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!);
+            // E10.S2c: A20's children in the run golden below — what the list offers now (both sessions), and the restore of exactly the
+            // one entry it then restores (the own review's #2: the answer A20 gets is the answer to what it asked).
             var restorable = await archive.RunAsync("archive", "list", "--restorable", "--json");
+            var pathRestore = await archive.RunAsync("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s1.jsonl", "--json");
+            pathRestore.Exit.Should().Be((int)ExitCode.Ok, pathRestore.Stderr);
+            var ids = JsonNode.Parse((await archive.RunAsync("archive", "list", "--json")).Stdout)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!);
             var restore = await archive.RunAsync("archive", "restore", "--entry", string.Join(',', ids), "--json");
             files.Add(Answered("archive-restore.json", archive, restore with { Stdout = restore.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
 
             // E10.S2c: an A13 run and an A20 run, run by the daemon's ENGINE over those answers and read back by `runs show`.
-            var restorableIds = JsonNode.Parse(restorable.Stdout)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!).ToList();
+            var restored = JsonNode.Parse(restorable.Stdout)!["entries"]!.AsArray().Where(e => (string)e!["key"]! == "projects/p/s1.jsonl").Select(e => (string)e!["entryId"]!).ToList();
             var answers = new ArchiveRunGoldens.ChildAnswers(childPreview, childReach, ArchiveRunGoldens.Answer(run, archive.SandboxRoot),
-                ArchiveRunGoldens.Answer(restorable, archive.SandboxRoot), ArchiveRunGoldens.Answer(restore, archive.SandboxRoot), restorableIds);
+                ArchiveRunGoldens.Answer(restorable, archive.SandboxRoot), ArchiveRunGoldens.Answer(pathRestore, archive.SandboxRoot), restored);
             var (archiveShow, restoreShow, runs) = await ArchiveRunGoldens.RunAsync(answers);
             using (runs)
             {
