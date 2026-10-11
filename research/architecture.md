@@ -152,7 +152,7 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   and beside them `contracts/actions.json` / `contracts/exit-codes.json` held equal to `ActionId` / `ExitCode` by
   `ContractFilesTests` (section *The daemon read contract* of [architecture-daemon-e6.md](architecture-daemon-e6.md)), and since plan §15o `contracts/history-reasons.json` (the reason
   prefixes of a kind-less history line that is not a full check, from `HistoryReasons`; section *A full check's history line
-  names itself* of [architecture-daemon-e6.md](architecture-daemon-e6.md)). There is no `RunLine` field list in `contracts/`: that wire is pinned by the `runs-*.json` goldens.
+  names itself* of [architecture-daemon-e6.md](architecture-daemon-e6.md)). There is no `RunLine` field list in `contracts/`: that wire is pinned by the `runs-*.json` goldens. A rule that lives in both halves as source is held equal by a daemon architecture test that reads the extension's file: the PowerShell module-path pin (`HealthCommands.ModulePathPin` = `MODULES` in `elevatedEngine.ts`, 2026-10-11).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
 - Plans: the daemon and extension (`todo/PLAN_wsl_care_daemon.md`), the Windows side
   (`todo/PLAN_windows_care.md`), the AI-session archive (`todo/PLAN_ai_session_archive.md`), the shared
