@@ -5,7 +5,8 @@ import { noticeText } from '../text/safeText';
 import { clearPending, readPending, writePending } from './guardPending';
 import { installScript, OP_EXIT, REMOVE_SCRIPT } from './guardScripts';
 import { GUARD_FOLDER, GUARD_NAME, guardScript, type GuardOptions } from './guardTask';
-import { elevatedRequest, EXIT, FAILURES, type FixPrompt } from './windowsTimeFix';
+import { elevatedRequest } from '../powershell/elevatedLauncher';
+import { EXIT, FAILURES, type FixPrompt } from './windowsTimeFix';
 
 /**
  * *Install the Windows Time guard* and *Remove the Windows Time guard* (PLAN_windows_time_task.md D3, D4, D8) — in the order

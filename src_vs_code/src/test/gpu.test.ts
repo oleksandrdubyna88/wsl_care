@@ -19,7 +19,8 @@ import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '
 import { parsePageMessage } from '../panel/messages';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { withGpuMark } from '../statusBar/statusBarModel';
-import { EXIT, quotablePath } from '../windowsTime/windowsTimeFix';
+import { quotablePath } from '../powershell/elevatedLauncher';
+import { EXIT } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING, revealed } from './support/noRealWsl';
 
 /**

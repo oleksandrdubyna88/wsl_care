@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import * as ts from 'typescript';
 
 import { fromExtensionRoot, shippedSources } from './support/paths';
-import { stringLiteralsOf } from './support/sourceScan';
+import { importsOf, stringLiteralsOf } from './support/sourceScan';
 
 /**
  * ONE resolver of the elevated PowerShell (PLAN_pwsh_engine_windows_time.md D1): the probe that resolves and verifies
@@ -66,4 +66,13 @@ test('only the engine module declares the resolver\'s functions', () => {
 test('the declaration scan finds a planted copy of a resolver function, and ignores a mention in a comment', () => {
   assert.deepEqual(declaredFunctions('// function storePwsh() {}\nexport function storePwsh(): void {}'), ['storePwsh']);
   assert.deepEqual(declaredFunctions('const storePwsh = 1; // function engineOf'), []);
+});
+
+test('R2: the shared PowerShell modules import nothing from the stories that use them — launcher <- engine <- {gpu, windowsTime}, no cycle', () => {
+  const shared = sources().filter((s) => s.file.startsWith('src/powershell/'));
+  assert.ok(shared.some((s) => s.file === 'src/powershell/elevatedLauncher.ts') && shared.some((s) => s.file === ENGINE_MODULE));
+  const offending = shared.flatMap((s) => importsOf(s.text).filter((spec) => /\/(windowsTime|gpu)\//.test(spec)).map((spec) => `${s.file} -> ${spec}`));
+  assert.deepEqual(offending, []);
+  const launcher = shared.find((s) => s.file === 'src/powershell/elevatedLauncher.ts')?.text ?? '';
+  assert.deepEqual(importsOf(launcher).filter((spec) => spec.includes('elevatedEngine')), [], 'the launcher does not import the engine');
 });

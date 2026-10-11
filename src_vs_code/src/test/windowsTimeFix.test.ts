@@ -10,7 +10,8 @@ import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { spawnRunner } from '../process/runner';
 import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
-import { CONFIRM_LABEL, encoded, EXIT, fixPrompt, fixRequest, innerScript, outcomeOf, outerScript, startWindowsTime, type FixDeps, type FixPrompt } from '../windowsTime/windowsTimeFix';
+import { encoded, outerScript } from '../powershell/elevatedLauncher';
+import { CONFIRM_LABEL, EXIT, fixPrompt, fixRequest, innerScript, outcomeOf, startWindowsTime, type FixDeps, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
 import { ELEVATION_TRIPWIRE_MESSAGE, isElevatedPowerShell } from './support/noRealWsl';
 

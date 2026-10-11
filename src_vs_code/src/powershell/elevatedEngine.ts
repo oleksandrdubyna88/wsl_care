@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { powerShellOf, quotablePath } from '../windowsTime/windowsTimeFix';
+import { powerShellOf, quotablePath } from './elevatedLauncher';
 
 /**
  * The ONE resolver of the PowerShell that runs ELEVATED (PLAN_pwsh_engine_windows_time.md D1) — built by story G1 for

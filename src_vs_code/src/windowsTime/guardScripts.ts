@@ -1,7 +1,7 @@
 import type { ProcessRequest } from '../process/runner';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
 import { PWSH_PROBE, TAG_HELPER } from '../powershell/elevatedEngine';
-import { elevatedRequest, powerShellOf } from './windowsTimeFix';
+import { elevatedRequest, powerShellOf } from '../powershell/elevatedLauncher';
 
 /**
  * The three PowerShell texts around the guard's task (PLAN_windows_time_task.md D3, D5, D8) — install and remove, each run

@@ -1,6 +1,6 @@
 import type { ProcessRequest } from '../process/runner';
 import { elevatedArg, engineOf, PWSH_PROBE, PWSH_TAGS, TAG_HELPER, type Engine, type FileInfoOf, type PwshFacts } from '../powershell/elevatedEngine';
-import { elevatedRequest, powerShellOf } from '../windowsTime/windowsTimeFix';
+import { elevatedRequest, powerShellOf } from '../powershell/elevatedLauncher';
 
 /**
  * The two PowerShell texts of the GPU story (PLAN_gpu_health.md D1, D4): the UNELEVATED read of Windows' display adapters,
