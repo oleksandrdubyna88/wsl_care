@@ -134,7 +134,9 @@ button starts THAT path, resolved right before the launch, instead of the alias 
 
 So the query carries `pwsh.store` (`signed` / `unsigned` / `absent`) and `pwsh.path`, and the host elevates the path only
 while the LAST read — the one taken after the modal — said `signed` and the path has a Store package's exact shape under this
-machine's `Program Files\WindowsApps` with Microsoft's publisher id. The cost: about 1 s of one core more per read, ≈ 1.5 min a
+machine's `Program Files\WindowsApps` with Microsoft's publisher id. Since code round 4 the MSI install gets the same verdict
+(`pwsh.msi` / `pwsh.msiPath`, the path from `[Environment]::GetFolderPath('ProgramFiles')` — the registry's Program Files,
+not the environment's): on this machine `absent`; on a runner with the MSI install, `signed`. The cost: about 1 s of one core more per read, ≈ 1.5 min a
 day at the default 15 minutes, on top of G7.
 
 After the own review (2026-10-10 15:50Z), the elevated script finds System32 through `[Environment]::SystemDirectory`

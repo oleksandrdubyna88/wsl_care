@@ -225,8 +225,9 @@ is bounded by `ollamaLogTailKiB`.
   here, so its selection is unit-tested and its elevated run is not; the elevated run of either edition is first exercised
   by the owner's press.
 - Who disables the card is not found (research G3); G1 shows it, it does not prevent it.
-- `%ProgramFiles%` and `%SystemRoot%` come from the environment, as the Windows Time launcher's do; the UAC prompt shows
-  the program it elevates.
+- `%SystemRoot%` comes from the environment, as the Windows Time launcher's does (the unelevated query and the elevated 5.1
+  fallback both start the `powershell.exe` it names); the UAC prompt shows the program it elevates. `%ProgramFiles%` no
+  longer decides anything alone (round 4): both PowerShell 7 installs are elevated only at a path the read verified.
 - The daemon's own verdict (G2) and the contract table come later; until then `doctor` / `status --json` say nothing
   about the GPU.
 - **The Store package's path is the query's stdout** (2026-10-11, research G9): it becomes the elevated program through
@@ -371,14 +372,26 @@ Microsoft), so the button starts that path instead (research G9):
   with Microsoft's publisher id (`storePwsh`), AND PowerShell can quote it; else 5.1 runs, nothing is refused. A package the
   Store replaced while the modal stood open is a different path → "the elevated program changed while the question was
   open", nothing runs.
-- The order: the MSI install when `lstat` shows a real file (not a link, bytes in it) → the verified package → 5.1. The
-  launcher itself stays Windows PowerShell 5.1 (`elevatedRequest`'s unelevated outer script); only the elevated program
-  changes. The alias is never started.
+- The order: the MSI install → the verified package → 5.1. Since round 4 the MSI install is verified by the read the same
+  way (ONE PowerShell verdict for both: a real file, no link, Authenticode Valid from Microsoft), at the path Windows' known-
+  folder API names for Program Files — the environment's `ProgramFiles` must name the same file, so a variable pointed at a
+  user folder elevates nothing — and Node must still see a real file there. The launcher itself stays Windows PowerShell 5.1
+  (`elevatedRequest`'s unelevated outer script); only the elevated program changes. The alias is never started.
 - The modal names "The elevated program: PowerShell 7 (C:\Program Files\WindowsApps\…\pwsh.exe)" / "Windows PowerShell 5.1
   (…)"; every outcome sentence ends with "Elevated program: …".
 - Measured on this machine, read-only (G9): the built probe answered `pwsh.store=signed` at the 7.6.6 path (the suite's own
   Windows-leg test); the probe costs 0.9–1.3 s under 5.1 per read, most of it `Get-AppxPackage` — about 1.5 min of one core
   a day at the default 15 minutes, on top of G7's 45 s. The elevated run through this launcher is the owner's press.
+
+### Code round 4 (coai, 2026-10-11 on `2b469fb3`: `proceed`, all 4 codex reviewers answered)
+
+| Finding | Decision | Done |
+|---|---|---|
+| Blocking: the Test-mode recorder mutates its arrays | rejected — a recorder is the extension's standard Test-mode double (the install, Windows Time, guard, cleanup and archive recorders all accumulate the same way) and is read by the extension-host scenarios; the immutability rule governs product data, and a per-call snapshot would need a mutable owning reference anyway | — |
+| Major ×2 + Minor: `architecture.md`'s module map and `research/README.md`'s row still said "the Store alias" | accepted | both say the resolved package path, signature-checked |
+| Major: the MSI candidate trusted `ProgramFiles` from the environment — pointed at a user folder, a planted `PowerShell\7\pwsh.exe` would be elevated | accepted — the same class as the launcher's `SystemRoot` (a residual since the Windows Time story), closed the way the Store package is: the read verifies the MSI pwsh's signature at the path the known-folder API names, and that path must equal the environment's (`msiVerified`) | RED on a spoofed `ProgramFiles` with a real file planted under it, GREEN after; the probe reports `pwsh.msi` / `pwsh.msiPath` through ONE PowerShell verdict shared with the Store half |
+| Minor: a running check was not shown while an alert stood | accepted | the Health line reads "GPU: checking again…" beside an untouched alert while a query runs |
+| Minor: every render detached and re-inserted the `role="alert"` box (own review M5 again) | accepted | the live region is mounted once beside ONE container for the rest of the panel; a render replaces that container's children only (the page test counts detachments: none) |
 
 ### The rebase (2026-10-10)
 

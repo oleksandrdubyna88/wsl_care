@@ -14,7 +14,7 @@ import { elevatedRequest, powerShellOf, quotablePath } from '../windowsTime/wind
  * Nothing from WSL, the page or a setting's text reaches either script.</p>
  *
  * <p><b>Which PowerShell runs elevated</b> (the owner's decision of 2026-10-10, the path of 2026-10-11): PowerShell 7 — the
- * MSI install under `%ProgramFiles%\PowerShell\7` when that file exists, else the Store build by its RESOLVED package path
+ * MSI install under `%ProgramFiles%\PowerShell\7` when the read verified its signature there, else the Store build by its RESOLVED package path
  * `%ProgramFiles%\WindowsApps\Microsoft.PowerShell_<version>_<arch>__8wekyb3d8bbwe\pwsh.exe` — and Windows PowerShell 5.1
  * when neither is there. `WindowsApps` is written by TrustedInstaller and SYSTEM only, and Node cannot even see it (ENOENT,
  * measured 2026-10-11), so the unelevated QUERY resolves the package (`Get-AppxPackage`) and verifies its `pwsh.exe` — a real
@@ -25,7 +25,7 @@ import { elevatedRequest, powerShellOf, quotablePath } from '../windowsTime/wind
  */
 
 /** The query's tags, per adapter `i` (`name.<i>=` …), the count printed LAST so a cut-off answer is visible, and the Store package. */
-export const TAGS = { adapter: 'adapter', name: 'name', id: 'id', code: 'code', driver: 'driver', count: 'adapters', pwshKind: 'pwsh.store', pwshPath: 'pwsh.path' } as const;
+export const TAGS = { adapter: 'adapter', name: 'name', id: 'id', code: 'code', driver: 'driver', count: 'adapters', pwshKind: 'pwsh.store', pwshPath: 'pwsh.path', msiKind: 'pwsh.msi', msiPath: 'pwsh.msiPath' } as const;
 
 /**
  * The ONE road every printed field takes (code round 2): a value carrying a line break — a device name, say — would end its
@@ -35,25 +35,38 @@ export const TAGS = { adapter: 'adapter', name: 'name', id: 'id', code: 'code', 
 export const TAG_HELPER = "function tag($n, $v) { $n + '=' + (([string]$v) -replace '[\\r\\n]+', ' ') }";
 
 /**
- * The query's look at the Store PowerShell 7, as WINDOWS resolves and verifies it: `Get-AppxPackage -Name Microsoft.PowerShell`
- * names the package's install folder (the version in it moves with every Store update — measured 7.6.4 on 2026-10-10 and
- * 7.6.6 the next day — so it is resolved at every read, never pinned); `signed` means its `pwsh.exe` is a real file with
- * bytes, no link type, and `Get-AuthenticodeSignature` says Valid from `CN=Microsoft Corporation`; `unsigned` anything else
- * that is there; `absent` no package. Measured cost (research G9): 0.9–1.3 s under Windows PowerShell 5.1, most of it
- * `Get-AppxPackage`.
+ * ONE verdict for a PowerShell 7 the query looked at (the Store package and the MSI install alike, round 4): `signed` means
+ * a real file with bytes, no link type, and `Get-AuthenticodeSignature` says Valid from `CN=Microsoft Corporation`;
+ * `unsigned` anything else that is there; `absent` nothing.
  */
-export const STORE_PROBE = [
+export const SIGNED_HELPER = "function verdict($i, $s) { if ($null -eq $i) { 'absent' } elseif ($i.Length -gt 0 -and [string]::IsNullOrEmpty($i.LinkType) -and $null -ne $s -and $s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -like 'CN=Microsoft Corporation,*') { 'signed' } else { 'unsigned' } }";
+
+/**
+ * The query's look at the two PowerShell 7 installs, as WINDOWS resolves and verifies them. The Store package:
+ * `Get-AppxPackage -Name Microsoft.PowerShell` names its install folder (the version in it moves with every Store update —
+ * measured 7.6.4 on 2026-10-10 and 7.6.6 the next day — so it is resolved at every read, never pinned). The MSI install: the
+ * path under the Program Files the KNOWN-FOLDER API names (the registry's, not the environment's — round 4: a `ProgramFiles`
+ * variable pointed at a user folder must not name the program this extension elevates). Each gets {@link SIGNED_HELPER}'s
+ * verdict and its path. Measured cost (research G9): 0.9–1.3 s under Windows PowerShell 5.1, most of it `Get-AppxPackage`.
+ */
+export const PWSH_PROBE = [
+  SIGNED_HELPER,
   '$sp = Get-AppxPackage -Name Microsoft.PowerShell -ErrorAction SilentlyContinue | Select-Object -First 1',
   "$se = if ($null -ne $sp) { Join-Path $sp.InstallLocation 'pwsh.exe' } else { '' }",
   "$si = if ($se -ne '') { Get-Item -LiteralPath $se -ErrorAction SilentlyContinue } else { $null }",
   '$ss = if ($null -ne $si) { Get-AuthenticodeSignature -LiteralPath $se } else { $null }',
-  `tag '${TAGS.pwshKind}' $(if ($null -eq $si) { 'absent' } elseif ($si.Length -gt 0 -and [string]::IsNullOrEmpty($si.LinkType) -and $null -ne $ss -and $ss.Status -eq 'Valid' -and $ss.SignerCertificate.Subject -like 'CN=Microsoft Corporation,*') { 'signed' } else { 'unsigned' })`,
+  `tag '${TAGS.pwshKind}' (verdict $si $ss)`,
   `tag '${TAGS.pwshPath}' $se`,
+  "$mp = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'PowerShell\\7\\pwsh.exe'",
+  '$mi = Get-Item -LiteralPath $mp -ErrorAction SilentlyContinue',
+  '$ms = if ($null -ne $mi) { Get-AuthenticodeSignature -LiteralPath $mp } else { $null }',
+  `tag '${TAGS.msiKind}' (verdict $mi $ms)`,
+  `tag '${TAGS.msiPath}' $mp`,
 ].join('\n');
 
 /**
  * The UNELEVATED query (D1): `Win32_VideoController`, which lists a disabled adapter too (research G1), one tagged block per
- * adapter through {@link TAG_HELPER}, its NAME printed last (own review M6), the Store PowerShell 7 package as Windows resolves and verifies it, and the
+ * adapter through {@link TAG_HELPER}, its NAME printed last (own review M6), the two PowerShell 7 installs as Windows resolves and verifies them, and the
  * count LAST. `$ProgressPreference` keeps Windows PowerShell's "Preparing modules for first use" off stderr (research G5).
  * It changes nothing — no word of the tripwire's mutating list is in it (asserted).
  */
@@ -62,7 +75,7 @@ export const QUERY_SCRIPT = [
   TAG_HELPER,
   '$i = 0',
   `foreach ($a in @(Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop)) { '${TAGS.adapter}=' + $i; tag ('${TAGS.id}.' + $i) $a.PNPDeviceID; tag ('${TAGS.code}.' + $i) $a.ConfigManagerErrorCode; tag ('${TAGS.driver}.' + $i) $a.DriverVersion; tag ('${TAGS.name}.' + $i) $a.Name; $i++ }`,
-  STORE_PROBE,
+  PWSH_PROBE,
   `'${TAGS.count}=' + $i`,
   'exit 0',
 ].join('\n');
@@ -119,12 +132,19 @@ export interface FileInfo {
 
 export type FileInfoOf = (file: string) => FileInfo | undefined;
 
-/** The Store PowerShell 7 package as the LAST query resolved and verified it ({@link STORE_PROBE}). */
-export interface PwshStore {
+/** A PowerShell 7 as the LAST query verified it ({@link PWSH_PROBE}): the Store package, or the MSI install. */
+export interface PwshProbe {
   readonly kind: 'signed' | 'unsigned' | 'absent';
-  /** The resolved `pwsh.exe` — the query's stdout, used as a program path ONLY after {@link storePwsh} accepted its shape. */
+  /** The `pwsh.exe` the query looked at — its stdout, used as a program path ONLY after this module accepted it. */
   readonly path: string;
 }
+
+/** The read's two PowerShell 7 facts, as the host hands them to the enable. */
+export interface PwshFacts {
+  readonly store: PwshProbe | undefined;
+  readonly msi: PwshProbe | undefined;
+}
+
 
 /** The engine that runs ELEVATED — the program, the words the modal and the outcome name it by, and which of the three it is. */
 export interface Engine {
@@ -142,7 +162,7 @@ function programFilesOf(env: Readonly<Record<string, string | undefined>>): stri
   return programFiles === undefined || programFiles === '' ? undefined : programFiles;
 }
 
-/** The MSI PowerShell 7 — an administrator-only folder, preferred whenever it is installed. */
+/** The MSI PowerShell 7 — an administrator-only folder, preferred whenever it is installed; the read verifies it at this path. */
 export function msiPwsh(env: Readonly<Record<string, string | undefined>>): string | undefined {
   const programFiles = programFilesOf(env);
 
@@ -163,7 +183,7 @@ function storeShape(programFiles: string): RegExp {
 }
 
 /** The resolved path, when the read verified the package's signature. */
-function signedPath(store: PwshStore | undefined): string | undefined {
+function signedPath(store: PwshProbe | undefined): string | undefined {
   return store?.kind === 'signed' ? store.path : undefined;
 }
 
@@ -173,7 +193,7 @@ function signedPath(store: PwshStore | undefined): string | undefined {
  * `<ProgramFiles>\WindowsApps\Microsoft.PowerShell_<version>_<arch>__8wekyb3d8bbwe\pwsh.exe` — a folder only
  * TrustedInstaller and SYSTEM may write. The stdout of a query becomes a program path through this check alone.
  */
-export function storePwsh(env: Readonly<Record<string, string | undefined>>, store: PwshStore | undefined): string | undefined {
+export function storePwsh(env: Readonly<Record<string, string | undefined>>, store: PwshProbe | undefined): string | undefined {
   const programFiles = programFilesOf(env);
   const file = signedPath(store);
 
@@ -185,34 +205,59 @@ function realFile(info: FileInfo | undefined): boolean {
   return info !== undefined && !info.symlink && info.bytes > 0;
 }
 
-/** The MSI pwsh, when it is a real file PowerShell can quote. */
-function msiCandidate(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf): string | undefined {
+/** Whether the read verified a signed MSI pwsh at `file` — the path the known-folder API named, compared case-insensitively. */
+function msiVerified(msi: PwshProbe | undefined, file: string): boolean {
+  return msi !== undefined && msi.kind === 'signed' && msi.path.toLowerCase() === file.toLowerCase();
+}
+
+/**
+ * The MSI pwsh, when the read verified its signature at the very path this module computes from `ProgramFiles` (round 4: an
+ * environment pointed at a user folder makes the two differ, and nothing is elevated) and Node sees a real file there.
+ */
+function verifiedMsi(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, msi: PwshProbe | undefined): string | undefined {
   const file = msiPwsh(env);
 
-  return file !== undefined && realFile(fileInfo(file)) && quotablePath(file) ? file : undefined;
+  return file !== undefined && msiVerified(msi, file) && realFile(fileInfo(file)) ? file : undefined;
+}
+
+/** The MSI pwsh, when the read verified it and PowerShell can quote its path. */
+function msiCandidate(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, msi: PwshProbe | undefined): string | undefined {
+  const file = verifiedMsi(env, fileInfo, msi);
+
+  return file !== undefined && quotablePath(file) ? file : undefined;
 }
 
 /** The Store package's pwsh, when the last read verified it, its path has the Store shape, and PowerShell can quote it. */
-function storeCandidate(env: Readonly<Record<string, string | undefined>>, store: PwshStore | undefined): string | undefined {
+function storeCandidate(env: Readonly<Record<string, string | undefined>>, store: PwshProbe | undefined): string | undefined {
   const file = storePwsh(env, store);
 
   return file !== undefined && quotablePath(file) ? file : undefined;
 }
 
+/** No read yet: neither PowerShell 7 fact. */
+const NO_FACTS: PwshFacts = { store: undefined, msi: undefined };
+
+/** The PowerShell 7 that runs the enable elevated — the MSI one the read verified, else the verified Store package — and which. */
+function sevenOf(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, facts: PwshFacts): { readonly file: string; readonly kind: 'msi' | 'store' } | undefined {
+  const msi = msiCandidate(env, fileInfo, facts.msi);
+  if (msi !== undefined) {
+    return { file: msi, kind: 'msi' };
+  }
+  const store = storeCandidate(env, facts.store);
+
+  return store === undefined ? undefined : { file: store, kind: 'store' };
+}
+
 /** The PowerShell 7 that runs the enable elevated (the MSI one, else the verified Store package), or `undefined` for 5.1. */
-export function elevatedPowerShellFor(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, store: PwshStore | undefined): string | undefined {
-  return msiCandidate(env, fileInfo) ?? storeCandidate(env, store);
+export function elevatedPowerShellFor(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, facts: PwshFacts | undefined): string | undefined {
+  return sevenOf(env, fileInfo, facts ?? NO_FACTS)?.file;
 }
 
 /** The engine the enable elevates, named: PowerShell 7 when one is chosen, else Windows PowerShell 5.1 (or '' with no PowerShell at all). */
-export function engineOf(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, store: PwshStore | undefined): Engine {
-  const msi = msiCandidate(env, fileInfo);
-  if (msi !== undefined) {
-    return { file: msi, label: `PowerShell 7 (${msi})`, kind: 'msi' };
-  }
-  const seven = storeCandidate(env, store);
+export function engineOf(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, facts: PwshFacts | undefined): Engine {
+  const seven = sevenOf(env, fileInfo, facts ?? NO_FACTS);
   if (seven !== undefined) {
-    return { file: seven, label: `PowerShell 7 (${seven})`, kind: 'store' };
+    return { ...seven, label: `PowerShell 7 (${seven.file})` };
   }
   const windows = powerShellOf(env);
 
@@ -232,6 +277,6 @@ export function enableRequestFor(env: Readonly<Record<string, string | undefined
 }
 
 /** {@link enableRequestFor} with the engine derived here — the one road, for a caller that holds no engine yet. */
-export function enableRequest(env: Readonly<Record<string, string | undefined>>, id: string, timeoutMs: number, fileInfo: FileInfoOf, store: PwshStore | undefined, settleSeconds: number): ProcessRequest | string {
-  return enableRequestFor(env, id, timeoutMs, engineOf(env, fileInfo, store), settleSeconds);
+export function enableRequest(env: Readonly<Record<string, string | undefined>>, id: string, timeoutMs: number, fileInfo: FileInfoOf, facts: PwshFacts | undefined, settleSeconds: number): ProcessRequest | string {
+  return enableRequestFor(env, id, timeoutMs, engineOf(env, fileInfo, facts), settleSeconds);
 }

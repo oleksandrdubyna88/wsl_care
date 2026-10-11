@@ -1,7 +1,7 @@
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
-import { DISABLED_CODE, INSTANCE_ID, TAGS, type PwshStore } from './gpuScripts';
+import { DISABLED_CODE, INSTANCE_ID, TAGS, type PwshFacts, type PwshProbe } from './gpuScripts';
 import { FIX_WORDS, problemOf, type FixKind } from './gpuProblems';
 import { choiceSentence, type OllamaRead } from './ollamaLog';
 
@@ -22,9 +22,14 @@ export interface Adapter {
 
 export type GpuState =
   | { readonly kind: 'unknown'; readonly reason: string }
-  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshStore };
+  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshProbe; readonly msi?: PwshProbe };
 
 export const NOT_ASKED: GpuState = { kind: 'unknown', reason: 'checking…' };
+
+/** The read's PowerShell 7 facts, for the enable — nothing for a state that is not a read. */
+export function pwshFactsOf(state: GpuState): PwshFacts | undefined {
+  return state.kind === 'read' ? { store: state.pwsh, msi: state.msi } : undefined;
+}
 
 /**
  * At most this many adapters are read — and the page's index is held below it (`messages.ts`). An answer naming more is
@@ -101,15 +106,15 @@ export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
   return count > MAX_ADAPTERS ? overCap(count) : adaptersOf(tags, count, atUtcMs);
 }
 
-function isStoreKind(kind: string | undefined): kind is PwshStore['kind'] {
+function isProbeKind(kind: string | undefined): kind is PwshProbe['kind'] {
   return kind === 'signed' || kind === 'unsigned' || kind === 'absent';
 }
 
-/** The Store package as the query resolved it (`STORE_PROBE`), when it answered one of the three kinds. */
-function pwshOf(tags: ReadonlyMap<string, string>): PwshStore | undefined {
-  const kind = tags.get(TAGS.pwshKind);
+/** A PowerShell 7 as the query verified it (`PWSH_PROBE`), when it answered one of the three kinds. */
+function probeOf(tags: ReadonlyMap<string, string>, kindTag: string, pathTag: string): PwshProbe | undefined {
+  const kind = tags.get(kindTag);
 
-  return isStoreKind(kind) ? { kind, path: tags.get(TAGS.pwshPath) ?? '' } : undefined;
+  return isProbeKind(kind) ? { kind, path: tags.get(pathTag) ?? '' } : undefined;
 }
 
 function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: number): GpuState {
@@ -117,9 +122,10 @@ function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: n
   if (adapters.length !== count) {
     return { kind: 'unknown', reason: 'the display-adapter query answered an adapter without its name or code' };
   }
-  const pwsh = pwshOf(tags);
+  const pwsh = probeOf(tags, TAGS.pwshKind, TAGS.pwshPath);
+  const msi = probeOf(tags, TAGS.msiKind, TAGS.msiPath);
 
-  return pwsh === undefined ? { kind: 'read', adapters, atUtcMs } : { kind: 'read', adapters, atUtcMs, pwsh };
+  return { kind: 'read', adapters, atUtcMs, ...(pwsh === undefined ? {} : { pwsh }), ...(msi === undefined ? {} : { msi }) };
 }
 
 const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {
@@ -231,6 +237,9 @@ function alertFor(adapter: Adapter, index: number, ollama: OllamaRead | undefine
 /** The working line's tail while a query is in flight (code round 3): the last answer stays on screen, and says a check runs. */
 const CHECKING_AGAIN = ' — checking again…';
 
+/** The Health line while a query runs with an alert on screen (round 4): the alert stays as it was, this line says a check runs. */
+const CHECKING_LINE = 'GPU: checking again…';
+
 /**
  * The panel's GPU part (D3, D6): one critical alert per adapter that is not working, the unknown state as an alert of its
  * own, and — when all work — one muted line, with `checking` while a query runs. `formatTime` is the presentation edge's
@@ -242,7 +251,16 @@ export function gpuView(state: GpuState, ollama: OllamaRead | undefined, pending
   }
   const alerts = state.adapters.flatMap((a, i) => (a.code === 0 ? [] : [alertFor(a, i, ollama, pending, state.atUtcMs)]));
 
-  return { alerts, line: alerts.length > 0 ? '' : workingText(state, formatTime, checking) };
+  return { alerts, line: healthLine(state, alerts.length > 0, formatTime, checking) };
+}
+
+/** The Health line: with an alert on screen only the checking note (or nothing); otherwise the working line. */
+function healthLine(state: Extract<GpuState, { kind: 'read' }>, alerted: boolean, formatTime: (utcMs: number) => string, checking: boolean): string {
+  if (alerted) {
+    return checking ? CHECKING_LINE : '';
+  }
+
+  return workingText(state, formatTime, checking);
 }
 
 /** "GPU: … — working (checked 14:31)", and " — checking again…" while a query runs. */

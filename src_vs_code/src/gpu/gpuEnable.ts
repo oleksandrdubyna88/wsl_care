@@ -4,8 +4,8 @@ import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
 import { CONFIRM_LABEL, EXIT, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { clearGpuPending, PENDING_GRACE_MS, readGpuPending, writeGpuPending } from './gpuPending';
-import { DISABLED_CODE, ENABLE_EXIT, enableRequestFor, enableScript, engineOf, type Engine, type FileInfoOf, type PwshStore } from './gpuScripts';
-import { canEnable, meaningOf, NOT_ASKED, type Adapter, type GpuState } from './gpuState';
+import { DISABLED_CODE, ENABLE_EXIT, enableRequestFor, enableScript, engineOf, type Engine, type FileInfoOf, type PwshFacts } from './gpuScripts';
+import { canEnable, meaningOf, NOT_ASKED, pwshFactsOf, type Adapter, type GpuState } from './gpuState';
 
 /**
  * *Enable <GPU>* (PLAN_gpu_health.md D4, D5) in the order that makes it safe: the adapter is the host's OWN reading, chosen
@@ -148,8 +148,8 @@ export interface EnableDeps {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Node's `lstat` of a program the enable might elevate (the MSI pwsh), or `undefined` when it cannot be read. */
   readonly fileInfo: FileInfoOf;
-  /** The Store package as the host's LAST read of Windows resolved it (the query's `pwsh.*` tags), or `undefined`. */
-  readonly pwshStore: PwshStore | undefined;
+  /** The two PowerShell 7 facts of the host's LAST read of Windows (the query's `pwsh.*` tags), or `undefined`. */
+  readonly pwsh: PwshFacts | undefined;
   readonly timeoutMs: () => number;
   /** `wslCare.gpu.enableSettleSeconds`: how long the elevated script waits after the enable before it ends. */
   readonly settleSeconds: () => number;
@@ -196,7 +196,7 @@ function precondition(adapter: Adapter | undefined, deps: EnableDeps, timeoutMs:
   if (busy(deps)) {
     return { stop: 'busy' };
   }
-  const engine = engineOf(deps.env, deps.fileInfo, deps.pwshStore);
+  const engine = engineOf(deps.env, deps.fileInfo, deps.pwsh);
   const settle = deps.settleSeconds();
   const request = enableRequestFor(deps.env, adapter.id, timeoutMs, engine, settle);
 
@@ -208,18 +208,13 @@ function notStarted(adapter: Adapter, reason: string, deps: EnableDeps): { reado
   return { stop: 'notStarted' };
 }
 
-/** The Store package as a read resolved it — nothing for a state that is not a read. */
-function storeOf(state: GpuState): PwshStore | undefined {
-  return state.kind === 'read' ? state.pwsh : undefined;
-}
-
 /**
  * The confirmed run: the elevated program verified AGAIN from a fresh read of Windows (code round 3; 2026-10-11: that read
  * resolves the Store package and checks its signature right before the launch — a program other than the one the modal
  * named starts nothing), the pending record, the ONE elevated launcher, the read after it, and the sentence naming the engine.
  */
 async function launched(adapter: Adapter, request: ProcessRequest, engine: Engine, deps: EnableDeps, timeoutMs: number): Promise<EnableResult> {
-  const now = engineOf(deps.env, deps.fileInfo, storeOf(await deps.reread()));
+  const now = engineOf(deps.env, deps.fileInfo, pwshFactsOf(await deps.reread()));
   if (now.file !== engine.file) {
     deps.report(noticeText(`Nothing ran: the elevated program changed while the question was open (${engine.label} is now ${now.label}). Press the button again.`), true);
     return 'notStarted';

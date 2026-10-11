@@ -29,9 +29,10 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   A **disabled** adapter (code 22) gets **Enable <name>**: a modal shows the exact elevated script and the program it
   elevates first, then ONE elevated PowerShell (one UAC prompt) re-checks the device and runs `Enable-PnpDevice` for
   exactly it, and the panel says what Windows reports afterwards ("enabled — code 0", or the code it still has and whether
-  to restart) and which engine ran: PowerShell 7 — the MSI install when present, else the Store build by its resolved
-  package path under `%ProgramFiles%\WindowsApps`, which the extension's own read of Windows resolves and
-  signature-checks at every read and once more right before the launch — or Windows PowerShell 5.1 when neither is there.
+  to restart) and which engine ran: PowerShell 7 — the MSI install, or else the Store build by its resolved package path
+  under `%ProgramFiles%\WindowsApps`, each one only when the extension's own read of Windows verified its Microsoft
+  signature (at every read, and once more right before the launch) — or Windows PowerShell 5.1 when neither is there.
+  While a check runs the *Health* section says so; the last answer stays on screen.
 
 ## What it runs, and when
 

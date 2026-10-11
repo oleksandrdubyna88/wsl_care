@@ -371,8 +371,18 @@
     return isObject(data) && data.type === 'view' && isObject(data.view) && Array.isArray(data.view.sections);
   }
 
+  // The rest of the panel lives in ONE container beside the live region: a render replaces that container's children and
+  // never touches the root's, so the role="alert" box is mounted once and never detached (code round 4).
+  const rest = element('div', undefined, { part: 'rest' });
+  let mounted = false;
+
   function render(view) {
-    root.replaceChildren(updateGpu(view), header(view), ...view.sections.map(function (model) { return sectionWithExtras(model, view); }));
+    updateGpu(view);
+    if (!mounted) {
+      root.replaceChildren(gpuBox, rest);
+      mounted = true;
+    }
+    rest.replaceChildren(header(view), ...view.sections.map(function (model) { return sectionWithExtras(model, view); }));
     const rows = view.sections.reduce(function (sum, model) {
       return sum + model.rows.length;
     }, 0);

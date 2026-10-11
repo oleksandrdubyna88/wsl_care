@@ -11,7 +11,7 @@ import { enableExitOf, enableGpu, enablePrompt, enableSentence, type EnableDeps 
 import { GpuHost, type GpuHostDeps } from '../gpu/gpuHost';
 import { GPU_PENDING_KEY, readGpuPending, sweepGpuPending } from '../gpu/gpuPending';
 import { DEVICE_PROBLEMS, FIX_WORDS, NEEDS_RESTART } from '../gpu/gpuProblems';
-import { DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, engineOf, INSTANCE_ID, QUERY_SCRIPT, queryRequest, STORE_PROBE, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshStore } from '../gpu/gpuScripts';
+import { DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, engineOf, INSTANCE_ID, msiPwsh, PWSH_PROBE, QUERY_SCRIPT, queryRequest, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshFacts, type PwshProbe } from '../gpu/gpuScripts';
 import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, type Adapter, type GpuState } from '../gpu/gpuState';
 import { newGpuRecorder } from '../gpu/gpuRecorder';
 import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '../gpu/ollamaLog';
@@ -45,7 +45,15 @@ const PS51_LABEL = `Windows PowerShell 5.1 (${PS51})`;
 const MSI_PWSH = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
 /** The Store package's resolved path on the owner's machine, 2026-10-11 (research G9) — the version moves with every Store update. */
 const STORE_PWSH = 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe';
-const STORE: PwshStore = { kind: 'signed', path: STORE_PWSH };
+const STORE: PwshProbe = { kind: 'signed', path: STORE_PWSH };
+/** The MSI pwsh as the read verifies it: signed, at the path the known-folder API names. */
+const MSI: PwshProbe = { kind: 'signed', path: MSI_PWSH };
+const REAL_MSI = { [MSI_PWSH]: { bytes: 300_000, symlink: false } };
+
+/** The read's two PowerShell 7 facts, as the host hands them to the enable. */
+function facts(store?: PwshProbe, msi?: PwshProbe): PwshFacts {
+  return { store, msi };
+}
 const PS51_ENGINE: Engine = { file: PS51, label: PS51_LABEL, kind: 'windows' };
 const STORE_ENGINE: Engine = { file: STORE_PWSH, label: `PowerShell 7 (${STORE_PWSH})`, kind: 'store' };
 
@@ -210,41 +218,47 @@ test('the elevated script re-checks the device as administrator before it acts: 
 
 test('an id that could be more than text is refused before any request exists: a quote, $, a backtick, whitespace, a newline, 201 characters', () => {
   for (const id of [`${R9700_ID}'`, `${R9700_ID}$x`, `${R9700_ID}\``, 'PCI\\VEN 1002', 'PCI\\VEN\r\nexit', `PCI\\${'A'.repeat(197)}`, '', `PCI\\VEN';Remove-Item C:\\ -Recurse;'`]) {
-    assert.equal(typeof enableRequest(ENV, id, 120_000, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), STORE, 3), 'string', JSON.stringify(id));
+    assert.equal(typeof enableRequest(ENV, id, 120_000, files(REAL_MSI), facts(STORE, MSI), 3), 'string', JSON.stringify(id));
     assert.equal(INSTANCE_ID.test(id), false, JSON.stringify(id));
   }
   assert.equal(INSTANCE_ID.test(`PCI\\${'A'.repeat(196)}`), true, '200 characters is the largest accepted');
 });
 
-test('owner 2026-10-10 / 2026-10-11: the elevated engine is PowerShell 7 — the MSI install when it is a real file, else the Store package by its RESOLVED path when the LAST read saw it signed by Microsoft under Program Files\\WindowsApps — and Windows PowerShell 5.1 otherwise', () => {
-  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), STORE), MSI_PWSH, 'an administrator-only install is preferred');
-  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: true } }), undefined), undefined, 'a link where the MSI pwsh should be is not elevated');
-  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 0, symlink: false } }), undefined), undefined, 'an empty file there is not elevated');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), STORE), STORE_PWSH, 'the Store package, resolved and signature-checked by the query');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'unsigned', path: STORE_PWSH }), undefined, 'a package whose pwsh.exe is not a valid Microsoft signature is not elevated');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'absent', path: '' }), undefined);
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'C:\\Users\\user\\pwsh.exe' }), undefined, 'a signed file OUTSIDE Program Files\\WindowsApps is not elevated — the path is the query\'s stdout');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'C:\\Program Files\\WindowsApps\\Evil.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe' }), undefined, 'another package name is not elevated');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__abcdefghijkl\\pwsh.exe' }), undefined, 'another publisher id is not elevated');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'D:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe' }), undefined, 'not under THIS machine\'s Program Files');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: STORE_PWSH.toUpperCase() }), STORE_PWSH.toUpperCase(), 'the same path in another case is the same path');
-  assert.equal(elevatedPowerShellFor({ ...ENV, ProgramFiles: "C:\\Pro'gram Files" }, files({}), { kind: 'signed', path: "C:\\Pro'gram Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe" }), undefined, 'a path PowerShell could not quote is skipped — 5.1 runs, nothing is refused');
+test('owner 2026-10-10 / 2026-10-11: the elevated engine is PowerShell 7 — the MSI install when the read verified its signature at the path the known-folder API names and Node sees a real file, else the Store package by its RESOLVED path when the read saw it signed under Program Files\\WindowsApps — and Windows PowerShell 5.1 otherwise', () => {
+  assert.equal(elevatedPowerShellFor(ENV, files(REAL_MSI), facts(STORE, MSI)), MSI_PWSH, 'an administrator-only install is preferred');
+  assert.equal(elevatedPowerShellFor(ENV, files(REAL_MSI), facts(STORE, { kind: 'unsigned', path: MSI_PWSH })), STORE_PWSH, 'an MSI pwsh whose signature does not verify is not elevated — the Store package is next');
+  assert.equal(elevatedPowerShellFor(ENV, files(REAL_MSI), facts(undefined, { kind: 'absent', path: MSI_PWSH })), undefined, 'the read saw no MSI pwsh: Node\'s file alone is not enough');
+  assert.equal(elevatedPowerShellFor({ ...ENV, ProgramFiles: 'C:\\Users\\user\\Evil' }, files({ 'C:\\Users\\user\\Evil\\PowerShell\\7\\pwsh.exe': { bytes: 300_000, symlink: false } }), facts(undefined, MSI)), undefined, 'ProgramFiles pointed at a user folder: the read named the real Program Files, the paths differ, nothing is elevated (round 4)');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts(undefined, MSI)), undefined, 'the read verified it but Node sees no real file there: not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: true } }), facts(undefined, MSI)), undefined, 'a link where the MSI pwsh should be is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 0, symlink: false } }), facts(undefined, MSI)), undefined, 'an empty file there is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files(REAL_MSI), facts(undefined, { kind: 'signed', path: MSI_PWSH.toUpperCase() })), MSI_PWSH, 'the same path in another case is the same path');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts(STORE)), STORE_PWSH, 'the Store package, resolved and signature-checked by the query');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts({ kind: 'unsigned', path: STORE_PWSH })), undefined, 'a package whose pwsh.exe is not a valid Microsoft signature is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts({ kind: 'absent', path: '' })), undefined);
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts({ kind: 'signed', path: 'C:\\Users\\user\\pwsh.exe' })), undefined, 'a signed file OUTSIDE Program Files\\WindowsApps is not elevated — the path is the query\'s stdout');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts({ kind: 'signed', path: 'C:\\Program Files\\WindowsApps\\Evil.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe' })), undefined, 'another package name is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts({ kind: 'signed', path: 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__abcdefghijkl\\pwsh.exe' })), undefined, 'another publisher id is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts({ kind: 'signed', path: 'D:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe' })), undefined, 'not under THIS machine\'s Program Files');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), facts({ kind: 'signed', path: STORE_PWSH.toUpperCase() })), STORE_PWSH.toUpperCase(), 'the same path in another case is the same path');
+  assert.equal(elevatedPowerShellFor({ ...ENV, ProgramFiles: "C:\\Pro'gram Files" }, files({}), facts({ kind: 'signed', path: "C:\\Pro'gram Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe" })), undefined, 'a path PowerShell could not quote is skipped — 5.1 runs, nothing is refused');
   assert.equal(elevatedPowerShellFor(ENV, files({}), undefined), undefined, 'before any read: 5.1');
-  const withStore = enableRequest(ENV, R9700_ID, 120_000, files({}), STORE, 3) as ProcessRequest;
+  const withStore = enableRequest(ENV, R9700_ID, 120_000, files({}), facts(STORE), 3) as ProcessRequest;
   assert.match(withStore.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe'/);
   assert.equal(withStore.file, PS51, 'the LAUNCHER stays Windows PowerShell; only the elevated program changes');
   const without = enableRequest(ENV, R9700_ID, 120_000, files({}), undefined, 3) as ProcessRequest;
   assert.match(without.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe'/);
-  assert.deepEqual(engineOf(ENV, files({}), STORE), STORE_ENGINE);
+  assert.deepEqual(engineOf(ENV, files({}), facts(STORE)), STORE_ENGINE);
   assert.deepEqual(engineOf(ENV, files({}), undefined), PS51_ENGINE);
-  assert.equal(engineOf(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), undefined).kind, 'msi');
+  assert.equal(engineOf(ENV, files(REAL_MSI), facts(undefined, MSI)).kind, 'msi');
   assert.equal(storePwsh(ENV, { kind: 'signed', path: STORE_PWSH }), STORE_PWSH);
+  assert.equal(msiPwsh(ENV), MSI_PWSH);
 });
 
-test('code round 2 / 2026-10-11: the query prints every field through ONE helper that strips line breaks, and resolves the Store package and its signature as WINDOWS sees them — RUN by Windows PowerShell on this machine, once, read-only', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
+test('code round 2 / 2026-10-11 / round 4: the query prints every field through ONE helper that strips line breaks, and resolves the Store package and the MSI pwsh with their signatures as WINDOWS sees them — RUN by Windows PowerShell on this machine, once, read-only', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
   assert.equal((QUERY_SCRIPT.match(/\btag \(/g) ?? []).length, 4, 'id, code, driver and name each go through the helper');
   // ONE PowerShell for both probes: the suite runs its files in parallel, and every extra child loads the timing tests.
-  const probe = `${TAG_HELPER}\ntag 'name.0' ("GPU\`r\`nadapters=0")\ntag 'code.0' $null\n${STORE_PROBE}\nexit 0`;
+  const probe = `${TAG_HELPER}\ntag 'name.0' ("GPU\`r\`nadapters=0")\ntag 'code.0' $null\n${PWSH_PROBE}\nexit 0`;
   const result = childProcess.spawnSync(PS51, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(probe, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 60_000 });
   assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
   const lines = result.stdout.split(/\r?\n/).filter((l) => l !== '');
@@ -256,6 +270,9 @@ test('code round 2 / 2026-10-11: the query prints every field through ONE helper
   if (pwsh?.kind === 'signed') {
     assert.equal(storePwsh(process.env, pwsh), pwsh.path, 'a signed package resolves under this machine\'s Program Files\\WindowsApps with Microsoft\'s publisher id');
   }
+  const msi = state.kind === 'read' ? state.msi : undefined;
+  assert.ok(msi !== undefined && ['signed', 'unsigned', 'absent'].includes(msi.kind), JSON.stringify(msi));
+  assert.equal(msi?.path.toLowerCase(), msiPwsh(process.env)?.toLowerCase(), 'the known-folder API and ProgramFiles name the same file (round 4)');
 });
 
 // ---- D4: the outcome, worded from what Windows says AFTER ----
@@ -283,7 +300,7 @@ function enableDeps(over: Partial<EnableDeps> & { readonly answers?: ProcessResu
   const log: string[] = [];
   const store = new MemoryStore();
   return {
-    env: ENV, fileInfo: files({}), pwshStore: undefined, timeoutMs: () => 120_000, settleSeconds: () => 3,
+    env: ENV, fileInfo: files({}), pwsh: undefined, timeoutMs: () => 120_000, settleSeconds: () => 3,
     confirm: () => { log.push('confirm'); return Promise.resolve(true); },
     run: (request) => { log.push(`run ${request.file}`); log.push(`pending ${store.get(GPU_PENDING_KEY) === undefined ? 'absent' : 'written'}`); return Promise.resolve(over.answers ?? exited(0)); },
     report: (message, failed) => { log.push(`${failed ? 'error' : 'info'}: ${message}`); },
@@ -472,13 +489,13 @@ test('2026-10-11: the host elevates the Store package only when ITS OWN read of 
 
 test('code round 3: the elevated program is verified AGAIN after the modal, from a fresh read — a Store package whose signature no longer verifies (or that the Store replaced) while the question was open starts nothing', async () => {
   const replaced: GpuState = { ...(measured() as Extract<GpuState, { kind: 'read' }>), pwsh: { kind: 'unsigned', path: STORE_PWSH } };
-  const deps = enableDeps({ pwshStore: STORE, after: replaced });
+  const deps = enableDeps({ pwsh: facts(STORE), after: replaced });
   assert.equal(await enableGpu(r9700(), deps), 'notStarted');
   assert.ok(!deps.log.some((l) => l.startsWith('run')), 'nothing was launched');
   assert.equal(deps.store.get(GPU_PENDING_KEY), undefined, 'no pending record was written');
   assert.match(deps.log.at(-1) ?? '', /^error: Nothing ran: the elevated program changed while the question was open \(PowerShell 7 \(C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe\) is now Windows PowerShell 5\.1/);
 
-  const same = enableDeps({ pwshStore: STORE, after: { ...(measured(0) as Extract<GpuState, { kind: 'read' }>), pwsh: STORE } });
+  const same = enableDeps({ pwsh: facts(STORE), after: { ...(measured(0) as Extract<GpuState, { kind: 'read' }>), pwsh: STORE } });
   assert.equal(await enableGpu(r9700(), same), 'ran', 'the same program at the last look: the run goes ahead');
   assert.deepEqual(same.log.slice(0, 3), ['confirm', 'reread', `run ${PS51}`], 'the fresh read comes AFTER the modal and BEFORE the launch');
 });
@@ -497,6 +514,24 @@ test('code round 3: while a query runs, the working line says a check is in flig
   answer(exited(0, MEASURED.replace('code.1=22', 'code.1=0')));
   await second;
   assert.equal(host.view().line, 'GPU: AMD Radeon(TM) 890M Graphics, AMD Radeon AI PRO R9700 — working (checked 14:31)');
+});
+
+test('code round 4: while a query runs with an alert on screen, the Health line says a check is in flight — the alert itself stays as it was', async () => {
+  const base = hostDeps();
+  let answer: (r: ProcessResult) => void = () => undefined;
+  const deps = hostDeps({ ui: { ...base.ui, query: () => new Promise((resolve) => { answer = resolve; }) } });
+  const host = new GpuHost(deps);
+  const first = host.refresh();
+  answer(exited(0, MEASURED));
+  await first;
+  assert.equal(host.view().alerts.length, 1);
+  assert.equal(host.view().line, '');
+  const second = host.refresh();
+  assert.equal(host.view().line, 'GPU: checking again…');
+  assert.equal(host.view().alerts[0]?.line, 'GPU AMD Radeon AI PRO R9700 is not working (code 22: it is disabled)', 'the alert is untouched while the check runs');
+  answer(exited(0, MEASURED));
+  await second;
+  assert.equal(host.view().line, '');
 });
 
 test('off Windows the host is silent: no query, no alert, no mark, no timer', async () => {
@@ -646,7 +681,7 @@ test('own review 2 F2: a path carrying one of PowerShell\'s smart quotes is not 
     const programs = `C:\\Pro${quote}gram Files`;
     const pwsh = `${programs}\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe`;
     assert.equal(quotablePath(pwsh), false, JSON.stringify(quote));
-    assert.equal(elevatedPowerShellFor({ ...ENV, ProgramFiles: programs }, files({}), { kind: 'signed', path: pwsh }), undefined, JSON.stringify(quote));
+    assert.equal(elevatedPowerShellFor({ ...ENV, ProgramFiles: programs }, files({}), facts({ kind: 'signed', path: pwsh })), undefined, JSON.stringify(quote));
   }
   assert.equal(quotablePath(STORE_PWSH), true);
 });

@@ -379,6 +379,22 @@ test('own review 2 F4: a new READ with the same words does not rebuild (re-annou
   assert.deepEqual(page.posted.at(-1), { type: 'enableGpu', index: 1, readAt: GPU_ALERT.button.readAt + 900_000 }, 'the click names the read the host holds NOW, not the one the element was built from');
 });
 
+test('code round 4: the live region is mounted ONCE and never detached — a render replaces the rest of the panel beside it, so an unrelated update cannot re-announce the alert', () => {
+  const { page, root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [GPU_ALERT], line: '' }));
+  const box = root.children[0];
+  const rest = root.children[1];
+  assert.ok(box !== undefined && rest !== undefined && root.children.length === 2, 'two children: the live region and the rest of the panel');
+  assert.equal(rest.one('header[data-part="header"]').dataset.part, 'header', 'the heading, the notice and the sections live in the second child');
+  let detached = 0;
+  let parent = box.parent;
+  Object.defineProperty(box, 'parent', { configurable: true, get: () => parent, set: (value: Element | undefined) => { if (value === undefined) { detached++; } parent = value; } });
+  page.message({ type: 'view', view: buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [GPU_ALERT], line: '' }) });
+  page.message({ type: 'view', view: buildPanelView(snapshot(goldenOutcomes())) });
+  assert.equal(detached, 0, 'the live region was never taken out of the document');
+  assert.equal(root.children[0], box);
+  assert.equal(root.children[1], rest, 'the rest of the panel is the same container, its children replaced');
+});
+
 test('hostile adapter text renders as inert TEXT; an unknown check is an alert without a button; all working is one muted line in Health', () => {
   const hostile = 'GPU </script><img src=x onerror=alert(1)> is not working (code 22: it is disabled)';
   const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [{ ...GPU_ALERT, line: hostile }, { level: 'unknown', line: 'GPU state could not be checked: x', fix: 'Refresh to try again.', consequence: '', button: undefined }], line: '' }));

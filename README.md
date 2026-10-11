@@ -825,7 +825,8 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   disabled GPU…*): a modal with the exact script and the program it elevates, then ONE elevated PowerShell through *Start
   Windows Time*'s launcher re-checks the device and runs `Enable-PnpDevice`; the outcome is worded from what Windows
   reports afterwards and names the engine that ran. The engine is **PowerShell 7** — the MSI install under
-  `%ProgramFiles%\PowerShell\7` when present, else the Store build by its RESOLVED package path
+  `%ProgramFiles%\PowerShell\7` when the extension's own read verified its signature there (at the path Windows' known-folder
+  API names, not the environment's), else the Store build by its RESOLVED package path
   `%ProgramFiles%\WindowsApps\Microsoft.PowerShell_<version>_<arch>__8wekyb3d8bbwe\pwsh.exe` (a folder only TrustedInstaller
   writes), which the extension's own read of Windows resolves with `Get-AppxPackage` and verifies (a real file, Authenticode
   Valid from Microsoft) at every read and once more right after the modal, before the launch — and Windows PowerShell 5.1

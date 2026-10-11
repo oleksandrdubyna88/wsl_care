@@ -3,7 +3,7 @@ import { noticeText } from '../text/safeText';
 import { enableGpu, type EnableResult } from './gpuEnable';
 import { clearGpuPending, readGpuPending } from './gpuPending';
 import { DISABLED_CODE, queryRequest, type FileInfoOf } from './gpuScripts';
-import { gpuBarMark, gpuStateOf, gpuView, NOT_ASKED, type GpuBarMark, type GpuState, type GpuView } from './gpuState';
+import { gpuBarMark, gpuStateOf, gpuView, NOT_ASKED, pwshFactsOf, type GpuBarMark, type GpuState, type GpuView } from './gpuState';
 import type { GpuUi } from './gpuRecorder';
 import { ollamaLogPath, ollamaReadOf, readTail, type OllamaRead, type TailRead } from './ollamaLog';
 
@@ -192,7 +192,7 @@ export class GpuHost {
     return enableGpu(read?.adapters[index], {
       env: this.deps.env,
       fileInfo: this.deps.fileInfo,
-      pwshStore: read?.pwsh,
+      pwsh: pwshFactsOf(this.state),
       timeoutMs: this.deps.enableTimeoutMs,
       settleSeconds: this.deps.enableSettleSeconds,
       confirm: this.deps.ui.confirm,
