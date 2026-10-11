@@ -43,7 +43,7 @@ public static class StatusReports
         _ => new NumberFigure(false, null, reading.ReasonOrEmpty),
     };
 
-    private static TextFigure Text(Reading<string> reading) => reading switch
+    public static TextFigure Text(Reading<string> reading) => reading switch
     {
         Reading<string>.Available a => new TextFigure(true, a.Value, null),
         _ => new TextFigure(false, null, reading.ReasonOrEmpty),

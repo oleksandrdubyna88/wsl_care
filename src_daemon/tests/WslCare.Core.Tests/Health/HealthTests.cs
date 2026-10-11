@@ -119,7 +119,64 @@ public sealed class HealthTests : IDisposable
         Value(health.WslConfig).Should().Match<WslConfigAudit>(a => a.Present && a.Settings.Memory == "36GB" && a.Warnings.Count == 1);
         runner.Requests.Select(r => r.Argv).Should().OnlyContain(a =>
             (a[0] == "systemctl" || a[0] == "journalctl" || a[0] == "timedatectl") ? SystemdCommands.IsReadVerb(a.Skip(1).ToList())
-            : a[0] == HealthCommands.Curl ? ReadCommandTemplates.ClockReference.Matches(a.Skip(1).ToList()) : a.SequenceEqual(HealthCommands.WindowsClock.Argv));
+            : a[0] == HealthCommands.Curl ? ReadCommandTemplates.ClockReference.Matches(a.Skip(1).ToList()) : HealthCommands.FixedScripts.Any(c => a.SequenceEqual(c.Argv)));
+    }
+
+    /// <summary>E15.S1: the full run reads the Windows disk facts through the second fixed script, AFTER the clock probe, and
+    /// keeps what it said in the sample.</summary>
+    [Fact]
+    public async Task The_full_run_reads_the_windows_disk_facts_after_the_clock_probe()
+    {
+        var paths = new LinuxHostPaths(LinuxEnvironment.Sandboxed(_root.Path));
+        var runner = HealthFixture.Script(new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("not scripted") })
+            .Script(WindowsDiskCommands.WindowsDisk.Argv, 0, WindowsDiskFixture.Answer);
+
+        var health = await new HealthCollector(runner, new PhysicalFileSystem(paths), paths, new FixedTimeProvider(WindowsDiskFixture.CapturedAt)).CollectAsync(WindowsDiskFixture.CapturedAt.AddHours(-4), CancellationToken.None);
+
+        var facts = Value(health.WindowsDisk.Facts);
+        Value(facts.Volumes).Should().HaveCount(4);
+        Value(facts.Events).Read.Should().Be(63);
+        health.WindowsDisk.SampledAt.Should().Be(WindowsDiskFixture.CapturedAt);
+        var argv = runner.Requests.Select(r => r.Argv).ToList();
+        var clockAt = argv.FindIndex(a => a.SequenceEqual(HealthCommands.WindowsClock.Argv));
+        clockAt.Should().BeGreaterThanOrEqualTo(0, "the clock probe ran, so the order below compares two real positions");
+        argv.FindIndex(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().BeGreaterThan(clockAt, "the disk script runs after the clock probe");
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "once per full run");
+        runner.Requests.Single(r => r.Argv.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Timeout.Should().Be(TimeSpan.FromSeconds(30), "its own ceiling, health.windowsDiskTimeoutSeconds");
+    }
+
+    [Fact]
+    public async Task The_windows_disk_script_s_run_time_is_kept_and_its_answer_parsed()
+    {
+        var runner = new RecordingCommandRunner().Script(WindowsDiskCommands.WindowsDisk.Argv,
+            new CommandOutcome.Exited(0, new CapturedText(WindowsDiskFixture.Answer, false), CapturedText.Empty, TimeSpan.FromMilliseconds(3316)));
+
+        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(WindowsDiskFixture.CapturedAt), TestContext.Current.CancellationToken);
+
+        Value(sample.Elapsed).Should().Be(TimeSpan.FromMilliseconds(3316));
+        Value(sample.Facts).MalformedLines.Should().Be(0);
+    }
+
+    public static TheoryData<string, CommandOutcome, string> FailedDiskScripts() => new()
+    {
+        { "a timeout", new CommandOutcome.TimedOut(new CapturedText("distro=1|0|", false), CapturedText.Empty, TimeSpan.FromSeconds(30)), "did not answer within 30 s; its process tree was killed" },
+        { "an exit code", RecordingCommandRunner.Exited(1, stderr: "Get-WinEvent : access denied"), "exited 1: Get-WinEvent : access denied" },
+        { "a cut answer", RecordingCommandRunner.Exited(0, "distro=1|0|2026-10-10T18:29:09Z|C:\\x\\ext4.vhdx|Ubuntu\nvolume=C|0|NTFS|10|5|\n"), "cut" },
+        { "no interop", new CommandOutcome.FailedToStart("no WSL interop"), "powershell.exe could not be started" },
+        { "a refusal", new CommandOutcome.Refused("refused by the never-list"), "the command policy refused powershell.exe (the Windows disk script)" },
+    };
+
+    [Theory]
+    [MemberData(nameof(FailedDiskScripts))]
+    public async Task A_windows_disk_script_that_fails_leaves_the_whole_sample_unavailable_with_the_reason(string what, CommandOutcome outcome, string reason)
+    {
+        var runner = new RecordingCommandRunner().Script(WindowsDiskCommands.WindowsDisk.Argv, outcome);
+
+        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(), TestContext.Current.CancellationToken);
+
+        sample.Facts.IsAvailable.Should().BeFalse(what);
+        sample.Facts.ReasonOrEmpty.Should().Contain(reason, what);
+        sample.Elapsed.IsAvailable.Should().BeFalse("no run time is claimed for {0}", what);
     }
 
     /// <summary>
@@ -176,6 +233,7 @@ public sealed class HealthTests : IDisposable
         health.FailedUnits.ReasonOrEmpty.Should().Be(HealthCollector.WindowsSide);
         health.WindowsClock.Unavailable.Should().Be(HealthCollector.WindowsIsTheReference);
         Value(health.WslConfig).Settings.Memory.Should().Be("40GB");
+        health.WindowsDisk.Facts.ReasonOrEmpty.Should().Be(HealthCollector.WindowsDiskIsTheDistros, "the Windows binary never runs the disk script (E15.S1)");
         runner.Requests.Should().BeEmpty();
     }
 
@@ -190,6 +248,7 @@ public sealed class HealthTests : IDisposable
         health.FailedUnits.ReasonOrEmpty.Should().Contain("systemctl could not be started");
         health.WindowsClock.Unavailable.Should().Contain("powershell.exe could not be started");
         health.WindowsProfile.IsAvailable.Should().BeFalse();
+        health.WindowsDisk.Facts.ReasonOrEmpty.Should().Contain("powershell.exe could not be started");
         health.RootDiscard.ReasonOrEmpty.Should().Contain("mounts", "a file part is read, and its own reason says why not");
     }
 }

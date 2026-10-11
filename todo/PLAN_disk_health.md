@@ -1,6 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **plan only, nothing implemented yet, 2026-10-10.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-10 — E15.S1 built on its branch `feat/wc-e15s1-windows-disk` (*E15.S1 as built* at the
+> end); E15.S2 onwards not started.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -100,6 +101,19 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
   written to the share as temp + rename, read back and compared with its digest (the archive's pattern), skipped when the
   share's drive is not mounted or the Offline Files guard refuses, bounded by `stats.flushTimeoutSeconds`, run LAST in a run.
   `index.json` lists the pending days; a doctor check and a verdict warn past `stats.pendingWarnDays`.
+- **The archive's guarantees do NOT transfer to drvfs as they are** (the cadence consultation, verified 2026-10-10): the
+  Offline Files guard exists only on the Windows path (`Files/PhysicalFileSystem.Archive.Windows.cs:244-248`, `TrustedHash`);
+  the Linux read-back opens and hashes synchronously with no such guard and no cancellation
+  (`Files/PhysicalFileSystem.Archive.cs:464-470`). So E17.S2 starts with a **transport proof** before any pruning is enabled:
+  the share I/O runs in a bounded, isolated worker (its own process, so a blocked drvfs call cannot hold the run lock past
+  `stats.flushTimeoutSeconds` — cancelling a wait is not stopping a write), tracked as a survivor the next run waits out
+  (the archive's `Archive/ArchiveChildren.cs` `Survivor` shape) and FENCED: each flush writes temp files named with its own
+  generation id and renames only while that generation is still the newest, so an old worker that resumes cannot replace a
+  newer day file. A read-back — even from a later process — can be answered by the client's cache, so it is NOT proof of
+  server-backed storage: **local pruning stays OFF** (`stats.pruneConfirmedDays`, default false) — the local store is
+  authoritative and bounded by the backlog cap below; the share is a verified-as-far-as-possible copy. The interruption tests
+  (connectivity cut during open, write, rename and read-back on a disposable share; a worker that outlives its timeout) are
+  E17.S2's acceptance, and turning pruning on is a later decision with its own measurement.
 - **Never lose a record:** local append first; a local raw day is pruned only after `stats.localRetentionDays` AND a
   confirmed share copy (or with no share set, never below the key). Rollups are kept forever everywhere; the share keeps
   everything forever (the owner).
@@ -141,19 +155,25 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
 - **Baseline** (per side, per boot id): the median total of the first `probe.baselineSamples` (6) CALM samples after
   `timer.bootDelayMinutes` (15) and within `probe.baselineWindowMinutes` (60); fewer than 3 → "no baseline for this boot".
 - **N** = median of the last `probe.nowSamples` (3) calm samples ÷ the baseline; N < 1.1 → "no slowdown measured since boot".
-- **K** = the median, over the last `probe.maxBootsUsed` (10) boots with a baseline, of the hours until the factor stayed ≥
-  `probe.degradedFactorPercent` (150) for `probe.degradedSamples` (3) calm samples; a boot that never degraded is censored
-  and said ("no previous boot slowed past 1.5×; the longest ran H h"). **M** = the uncensored boots used.
+- **K** = the Kaplan–Meier median, over the last `probe.maxBootsUsed` (10) boots with a baseline, of the hours until the factor
+  stayed ≥ `probe.degradedFactorPercent` (150) for `probe.degradedSamples` (3) calm samples. A boot is censored at its LAST
+  adequately observed calm sample — a gap over `probe.maxGapMinutes` (30) without a calm sample ends its observation, so a
+  busy afternoon is not counted as healthy hours. When the median is not reached the text says so with its coverage: *"median
+  degradation time not reached; 1 of 4 boots observed degrading, observed for 1–10 h"*. **M** = the boots used, with how many
+  were observed degrading. (Calm-only sampling and restarts prompted by poor performance can make censoring depend on
+  degradation; the estimate is a product gate, not a statistical guarantee — said in the research note.)
 - **The minimum (the owner's rule):** while the history spans < `probe.minHistoryDays` (7; 1–90) days OR fewer than
   `probe.minBoots` (2) boots have a baseline, there is NO factor and the text is exactly *"a minimum forecast needs at least 7
   days of history; N days so far"* (7 = the key's value); the verdict `probe.factor` is `unknown` with that reason.
-- **The sentence** (daemon-made, shown verbatim): *"now 412 ms vs 180 ms after the last boot → a restart is expected to make
-  local steps ~2.3× faster for about the next 9 hours (based on 4 boots)"*, per side (`wsl --shutdown` for the VM, a Windows
-  restart for the host).
-- **Validation (falsifiable):** at each boot-id change a `boot` record keeps the last forecast (N, K) and, as they become
-  known, the realised N′ = last calm score before ÷ the new baseline and K′ = the new boot's degradation hour. The Statistics
-  tab shows predicted vs realised per boot; a forecast wrong (N′ below the degraded factor) on 3 of the last 5 boots reads
-  "uncertain".
+- **The sentence** (daemon-made, shown verbatim): descriptive by default — *"local steps now take 2.3× as long as after the
+  last boot (412 ms vs 180 ms)"*; the predictive form (*"a restart is expected to make local steps ~2.3× faster for about the
+  next 9 hours (based on 4 boots)"*) only under the calibration gate below. Per side: `wsl --shutdown` for the VM; for the host
+  (a Windows restart, advice only, never `advised`) the sentence stays descriptive.
+- **Validation (falsifiable) — shadow predictions:** every *Shut down WSL…* press records, BEFORE the restart and immutably, a
+  shadow prediction (N, K) computed by the same function whether or not it is shown; at the next boot the realised N′ = last
+  calm score before ÷ the new baseline and K′ = the new boot's degradation hour (or `unresolved` while censored) are scored
+  against it. The Statistics tab shows predicted vs realised per advised boot. A censored K′ is unresolved evidence, never a
+  success.
 - **Only a boot that FOLLOWED the advice validates it** (plan round). Each `boot` record carries its cause: `advised` — the
   extension's *Shut down WSL…* ran after showing the forecast: before it starts `wsl.exe --shutdown` it calls the new
   unprivileged verb `wsl-care probe mark-restart --forecast <id of the shown forecast>`, which writes
@@ -162,6 +182,24 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
   product only advises). The predicted-vs-realised table and the "uncertain" rule use `advised` boots only; `other` boots
   are listed apart and still feed the baselines and K (a boot is a boot for how fast the machine degrades). A marker older
   than `probe.restartMarkerMaxMinutes` (10) is ignored.
+- **Descriptive first, predictive only when calibrated** (the cadence consultation of epics 1–3, 2026-10-10, verified against
+  the formulas above). Two synthetic cases break the predictive sentence as written: a forecast of 5× for 9 h realised five
+  times as 1.6× for 1 h is never declared wrong (the "uncertain" rule only tests N′ < 1.5); and four boots where one degrades
+  at hour 1 and three stay healthy until a shutdown at hour 10 give K = 1 h from the uncensored median. So:
+  1. **The default sentence is descriptive:** *"local steps now take 2.3× as long as after the last boot (412 ms vs 180 ms)"*
+     — a claim about the probe, true as measured.
+  2. **K is a survival estimate** (Kaplan–Meier over all boots with a baseline, censored at their shutdown), reported as "about
+     K hours" only when the estimate's median is reached; otherwise "no previous boot slowed past 1.5× within H h".
+  3. **The predictive sentence** appears only when, over the last `probe.calibrationWindowBoots` (10) scored `advised` boots, at
+     least `probe.calibrationBoots` (3) were within `probe.calibrationTolerancePercent` (30) of the shadow prediction AND they
+     are at least `probe.calibrationSuccessPercent` (70) of the scored ones — for N and for K separately (unresolved K′ count
+     in neither numerator nor denominator; each of N and K can read "insufficient evidence" on its own). Three successes are a
+     provisional product gate, not proof of reliability. The 7-day / 2-boot minimum stays — an eligibility rule, not evidence.
+- **Freshness gates** (the same consultation): "now" is the median of the last `probe.nowSamples` calm samples taken within
+  `probe.nowMaxAgeMinutes` (30); older or skipped samples give "no current measurement (the machine was busy since HH:MM)". The
+  ladder (E16.S3) acts only on verdicts whose basis is younger than `ladder.maxEvidenceAgeMinutes` (60); an older carried
+  verdict is shown with its age but never drives the recommendation (the `fullRun` basis keeps its severity today,
+  `Status/StatusVerdicts.cs:54-59`).
 
 ### 3.4 The shared webview kit and its Storybook (the owner's Q1: a shared kit)
 
@@ -250,7 +288,7 @@ The template for a threshold key is commit `95448096` (E14 S5).
 | Story | What it builds | Risk |
 |---|---|---|
 | **E16.S1** the probe | §3.3's components in `Probe/ResponsivenessProbe.cs` (one implementation, both OS), `Probe/ProbeStore.cs` (`{state}/probe.jsonl`, `probe.localRetentionDays` 400 until E17 takes the forever copy), the watch step and the full-run step under the lock, `wsl-care probe [--json]` (+ the verb register), `status.probe`, `probe.budget`; `RunBudget.WatchRunWorstCase` grows by `probe.maxMilliseconds`. Measured FIRST: ten probe runs on the owner's distro. RED: fixed work; over-budget kept and flagged; a busy machine skips and says why; the files live only under the state folder. | medium |
-| **E16.S2** the forecast | `Probe/Forecast.cs` (PURE: baseline, N, K, M, censoring, the minimum, the sentence), `Probe/BootChanges.cs` (a `boot` record with the last forecast; realised values fill in later); the keys of §3.3; `probe.factor`. RED, with the owner's words: six days of history give NO factor and say "a minimum forecast needs at least 7 days of history; 6 days so far"; the minimum in the sentence is the key's value; a 30-day synthetic fixture with four boots gives N, K, M; a forecast wrong on 3 of 5 boots reads "uncertain". A `research/` note states the method with the fixture's numbers. | high — statistics the gate will argue |
+| **E16.S2** the forecast | `Probe/Forecast.cs` (PURE: baseline, N, K, M, censoring, the minimum, the sentence), `Probe/BootChanges.cs` (a `boot` record with the shadow prediction; realised values fill in later); the keys of §3.3; `probe.factor`. RED, with the owner's words: six days of history give NO factor and say "a minimum forecast needs at least 7 days of history; 6 days so far"; the minimum in the sentence is the key's value; a 30-day synthetic fixture with four boots gives N, K, M; the consultation's two cases are fixtures (5× / 9 h predicted, 1.6× / 1 h realised five times → the predictive sentence never unlocks; one boot degrading at 1 h and three censored at 10 h → "median degradation time not reached; 1 of 4 boots observed degrading"); a gap of busy samples ends observation; a shadow prediction is recorded before every advised restart and scored at the next boot. A `research/` note states the method with the fixture's numbers. | high — statistics the gate will argue |
 | **E16.S3** the ladder and the ONE recommendation | the previews and measured results of A19, A11, A18, A1, A2, the container stats, `VmmemAdvice`, the forecast, the run history → `Thresholds/Ladder.cs` (PURE: rungs in cost order, each `{id, kind: action|extensionButton|advice, addresses[], state, wouldFree, lastEffect, text}`; the recommendation = the first rung with something to do among those addressing the WORST non-ok verdict; "all within limits"); S7b's A21 shown as `arrivesWithS7b` on the wire, never in the sidebar. RED: the recommendation names the group, the limit, the measured value and the button; severity first, then cost; a rung's last effect comes from the history, never a guess. | medium |
 | **E16.S4** *Shut down WSL…* (ask first) and the Disk & memory section | the restart marker first (`wsl-care probe mark-restart`, §3.3), then `WslCareClient` (the only argv speller, `src/client/WslCareClient.ts:17-28`) gains the one request `wsl.exe --shutdown`; a modal names what ends ("every WSL session and every program in the distro — N agent processes, M containers now"), the forecast line and that the effect is measured; greyed while a run is live / queued or the archive runs; `wslCare.timeouts.wslShutdownSeconds` (120); command + button; the sidebar's section renders `status.disk`, `host.*`, the forecast and the ladder (rungs as buttons where the cleanup controller offers the action, advice lines otherwise). RED: exactly `wsl.exe --shutdown`; a decline starts nothing; the strict fake accepts only `['--shutdown']`; the tripwire refuses the real one. Never automatic. | medium |
 
@@ -363,3 +401,89 @@ consultants first.
 - [ ] Statistics carry the machine id, build and install date; the share is a verified copy; no record is lost offline.
 - [ ] Docs, module maps, the research index and this plan's as-built are updated; each finished story is recorded here;
       the epic's last PR closes #87; the plan is promoted when its last story ships.
+
+## E15.S1 as built (2026-10-10, branch `feat/wc-e15s1-windows-disk`)
+
+**What shipped.** `Health/WindowsDiskCommands.cs` — the second fixed interop script, one line of ASCII with no slot (only
+`disk.eventsSinceDays` and `disk.eventsMaxRead`, clamped integers), TAGGED lines and a last `end=1`; it reads the Lxss map and
+each distro's VHDX (size, sparse bit, last write), Docker's data disk at its default path, the lettered volumes with their disk
+numbers, the physical disks, the reliability counters (refused unelevated, the refusal kept), the System log's storage events
+aggregated per UTC day, provider, id and `HarddiskN` inside PowerShell, commit / limit, Memory Compression, the edition /
+version / build / install date, the MachineGuid and the display adapters' problem codes. `Health/WindowsDiskSample.cs` (every
+figure a `Reading<T>`), `Health/WindowsDiskParsers.cs` (by tag; a cut answer unavailable as a whole; a malformed line counted
+and skipped), `HealthCollector.MeasureWindowsDiskAsync` run by the full run once, after the clock probe and its reference,
+`HealthSample.WindowsDisk`, and the run detail's `health.windowsDisk` (`Collect/WindowsDiskReport.cs`). The never-list's
+`powershell` rule is a CLOSED SET (`HealthCommands.FixedScripts`: the clock probe and the disk script, program AND arguments,
+under the configuration in force); the read template `ReadCommandTemplates.WindowsDisk` has one slot,
+`SlotKind.WindowsDiskScript`, that accepts exactly the current script. Keys `health.windowsDiskTimeoutSeconds` (5–120, 30,
+machine-only), `disk.eventsSinceDays` (1–365, 60), `disk.eventsMaxRead` (100–100 000, 5000, machine-only);
+`contracts/config-keys.json` regenerated; the derived timer worst case grew from 259 to 260 min (still under 276). The anonymised
+capture is `src_daemon/tests/fixtures/health/windows-disk-2026-10-10`; the scenarios are `WindowsDiskFlows`; the live contract
+gained the script through interop. Measured first (18:29Z, the product's own text, Windows PowerShell 5.1 unelevated): 2.4–3.3 s
+warm, 10.7 s cold, 26 lines.
+
+**Deviations.**
+
+1. **Windows PowerShell 5.1, not `pwsh` 7 — a follow-up, not a setting.** The owner's preference is `pwsh` first. The Store
+   `pwsh` is an app-execution alias under the USER's profile (`%LOCALAPPDATA%\Microsoft\WindowsApps`), a file the Windows user can
+   replace; the resolver's system-drive fallback starts only programs from a closed list in administrator-only folders, after
+   checking root-owned ancestors and the `MZ` header (an alias is a reparse point, not checked). Admitting it would let the root
+   daemon start a user-writable program — a policy decision for the owner and the gate. Also, as of this story the distro's own
+   PATH answered `command -v pwsh.exe` with nothing (only `powershell.exe`), unlike D9. The clock probe's program is unchanged.
+2. **Not measured as root.** The implementer may not run anything as root on the owner's machine: the script was timed as the
+   Windows user from Windows, and the live contract runs it as the distro's user. The first timer run is the first root run.
+3. **The sample is in the run detail only** — not in `SlowParts` / the history line, and `status` is unchanged. E15.S2 decides how
+   `status` carries it (`basis: fullRun` + age).
+4. **The never-list is stricter than before on the PROGRAM**: `pwsh` (or an absolute `powershell.exe`) with the clock probe's
+   exact arguments used to pass; it is refused now. Nothing in the product spells either.
+5. **A parameterised template with a new slot kind**, not `CommandTemplate.Fixed`: `Fixed` freezes an argv at first use, and two
+   of the script's integers are configuration (the clock reference's reason).
+6. `disk.eventsSinceDays` is a display key (a user layer may set it; the work stays bounded by the machine-only `eventsMaxRead`).
+
+**RED first** (against stubs): *Expected Broken(Disk) to be &lt;null&gt; because the Windows disk script is the second member of
+the closed set, but found "powershell"*; *Expected Broken([program, .. HealthCommands.WindowsClock.Arguments]) to be
+"powershell" because the closed set names the program too, but found &lt;null&gt;*; *Expected rule.Description "PowerShell with
+anything but the fixed Windows clock probe" to contain "closed set"*; the parser and collector tests *"not built yet" to contain
+"cut"* / *"did not answer within 30 s; its process tree was killed"*. **Break-its**, each restored: the never-list line back to
+the clock's arguments (5 red), the sample not stored (2 red), the end-line check removed (4 red), the template removed (3 red) —
+messages in [module_tests.md](../research/module_tests.md) *E15.S1*.
+
+**The story's plan round** (coai, 2026-10-10, `proceed`, 1 of 1 reviewer — codex): three findings, all accepted. (1) *Whose
+HKCU?* — interop starts Windows programs as the Windows user who started the VM (Microsoft documents it; the cadence
+consultation agreed), so the script now also prints `windows.account=` (the SID), the run detail carries it, and the live
+contract asserts a user SID (`S-1-5-21-…`) and that the distro it runs in is in the Lxss map. RED first: the fixture's new line
+read as malformed (*Expected facts.MalformedLines to be 0, but found 1*) before the parser knew the tag; break-it: the account's
+parse replaced by a missing reading → 2 red, restored. (2) *Size and retention of the new payload* — the captured answer is
+1 473 bytes; the run detail's `health.windowsDisk` block is a few KB per full run, 6 a day × the run details' existing
+retention `runs.historyRetentionDays` (90, `Records/RunRetention.cs`) ≈ 2–3 MB, retired by that same sweep; no new growth
+surface. (3) *A window cut by `disk.eventsMaxRead`* — already carried: `StorageEvents.Capped` (`Read >= MaxRead`) is in the
+sample and the report (`capped`), tested by the captured answer (`!e.Capped`). The epics' cadence consultation (epics 1–3,
+gpt-6-astra, two turns, closed `solved`) changed §3.2 (the share's fenced isolated worker; local pruning off by default) and
+§3.3 (a descriptive sentence by default, a Kaplan–Meier K, shadow predictions behind a calibration gate, freshness gates).
+
+**The story's code round** (coai, 2026-10-11, `proceed`, 4 of 4 reviewers — codex): four findings, three accepted, one
+rejected. Rejected: (0) "the output list is mutated" — the `List[string]` is the script's own local buffer, written once at
+the end; nothing else holds it. Accepted: (1) a failed `Get-Partition` was swallowed into "on no partition" — it now prints
+`!<exception type>` and reads "Get-Partition failed for X: (type)"; (2) a registry-named path could be UNC or mapped, and
+`Get-Item` on it would send the user's NTLM credentials to that host — the script now opens a file only on a local FIXED
+drive and otherwise reads "is not on a local fixed drive, so it was not opened"; (3) the event groups were unbounded — they
+are cut at the new key `disk.eventGroupsMax` (10–800, 500, machine-only; 800 × a 64-byte line + 8 KB of other sections stays
+under `health.outputCapBytes`' 64 KiB floor) and the script prints the total, so `StorageEvents.GroupsCut` says when the list
+is short. **Own review** (Opus) found three more, all fixed: `Join-Path` resolves the drive and threw on an unmounted letter,
+ending the whole distro section (now `[IO.Path]::Combine`); the event day was formatted in the user's calendar (a Thai or
+Persian year parsed as a valid date; now invariant); and Windows PowerShell 5.1 wrote the answer in the OEM code page, so a
+Cyrillic label or user name reached the UTF-8 reader as U+FFFD (now UTF-8 bytes on the raw stdout stream). RED first, each:
+*the test named the reason / the `DriveType` check / `GroupsCut` / `[IO.Path]::Combine` / the invariant format / the UTF-8
+write, and the script lacked it*. **Break-its** (product code, each restored): the partition reason arm removed → 1 red; the
+drive check removed from the script → 1 red; `GroupsCut` forced false → 1 red. Re-measured: 6.1–6.2 s warm, 21.9 s cold under
+load (research D10). Left open for the owner and later stories (own review, below 80 % confidence): a timed-out script's
+Windows process may survive the WSL tree kill; the `Message` fallback per event is not measured against the ceiling at the
+100 000 maximum; a machine with no `stornvme` provider may answer `events.error`; access denied reads as "not there".
+
+**The final code round** (coai, 2026-10-11, `again`, `proceed`, 4 of 4 reviewers — codex): five findings, all accepted and
+fixed. The run detail dropped the cut flag (two reviewers) — `StorageEventsReport` now carries `groupsTotal` and `groupsCut`;
+`IsVolume` was above complexity 4 — split into `IsLetter` and `IsDiskField`; the parser's tag set could drift from the
+script's tags — a test holds every printed tag to `WindowsDiskParsers.KnownTags`; physical disks went on the wire as the
+domain record — now `PhysicalDiskReport` (same JSON shape). RED first for the report fields and the wire record; break-its in
+[module_tests.md](../research/module_tests.md) *E15.S1*.
+

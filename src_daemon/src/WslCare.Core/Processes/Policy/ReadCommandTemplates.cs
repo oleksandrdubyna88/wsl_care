@@ -66,6 +66,21 @@ public static class ReadCommandTemplates
     /// <summary>journald's backward jumps of this boot, monotonic stamps (<see cref="SystemdCommands.TimeJumpsBackThisBoot"/>).</summary>
     public static CommandTemplate TimeJumpsBack { get; } = CommandTemplate.Fixed(() => SystemdCommands.TimeJumpsBackThisBoot);
 
+    /// <summary>
+    /// The Windows disk script (E15.S1, <see cref="WindowsDiskCommands.WindowsDisk"/>): its three fixed words and ONE slot that
+    /// accepts exactly the script the configuration in force builds (<see cref="SlotKind.WindowsDiskScript"/>) — not
+    /// <see cref="CommandTemplate.Fixed(Func{ToolCommand})"/>, which freezes the argv at its first call while two of the script's
+    /// integers are configuration. Its ceiling is <c>health.windowsDiskTimeoutSeconds</c>, its cap the health probes'. The
+    /// never-list's closed set says the same thing first (<see cref="HealthCommands.FixedScripts"/>). Declared BEFORE <see cref="All"/>.
+    /// </summary>
+    public static CommandTemplate WindowsDisk { get; } = new(
+        WindowsDiskCommands.Name,
+        CommandScope.Machine,
+        HealthCommands.PowerShell,
+        [L("-NoProfile"), L("-NonInteractive"), L("-Command"), S("script", new SlotKind.WindowsDiskScript())],
+        ConfigKeys.Health.WindowsDiskTimeoutSeconds,
+        ConfigKeys.Health.OutputCapBytes);
+
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
         .. new Func<ToolCommand>[]
@@ -78,6 +93,7 @@ public static class ReadCommandTemplates
         ClockReference,
         TimesyncStatus,
         TimeJumpsBack,
+        WindowsDisk,
         ContainerInspect,
         Machine(
             "events",

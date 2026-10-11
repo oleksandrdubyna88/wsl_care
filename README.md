@@ -339,6 +339,15 @@ say — `[wsl2]` `memory=36GB` (`wslConfig.recommendedMemoryGb`), `swap=16GB` (`
 `[experimental]` `autoMemoryReclaim=dropcache` — with what the file says now and the measurement behind it; it is advice for
 you to copy, never applied. Every command is a read; each has its ceiling.
 
+Since E15.S1 the full run also starts a second fixed Windows PowerShell script (after the clock probe; never `status`, never the
+watch) and records in the run detail's `health.windowsDisk` what it read: each distro's virtual disk and Docker's data disk
+(size, sparse bit, last write), the lettered volumes with the disk each is on, the physical disks and their health, the
+reliability counters' refusal (they need elevation, which wsl-care never asks for), the System log's storage events of the last
+`disk.eventsSinceDays` (60) days counted per day, provider, id and disk (at most `disk.eventsMaxRead`, 5000, read, and at most
+`disk.eventGroupsMax`, 500, groups printed — the report says when it cut them), commit and
+Memory Compression, Windows' edition, build and install date, the machine id and the display adapters' problem codes. Its
+ceiling is `health.windowsDiskTimeoutSeconds` (30). No verdict judges these facts yet; the later disk stories do.
+
 **Before the evening** (E14 S5, a report: nothing acts on these):
 - `memory.swapFree` warns when the swap LEFT is under `thresholds.swapFreeWarnGb` (4). The 2026-10-07 evening had 2.4 GB of
   12 GB left. A swap smaller than the key is judged by `memory.swap` only.

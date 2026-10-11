@@ -4,9 +4,10 @@ using WslCare.Core.Processes;
 namespace WslCare.Core.Health;
 
 /// <summary>
-/// The two health commands that are neither systemd's nor Docker's, in ONE place — read-only, each with its ceiling:
-/// the Windows clock probe (a SLOW process, so only <c>collect</c> starts it — plan §15b #5) and <c>snap list --all</c>
-/// for A9's disabled revisions.
+/// The health commands that are neither systemd's nor Docker's, in ONE place — read-only, each with its ceiling:
+/// the Windows clock probe (a SLOW process, so only <c>collect</c> starts it — plan §15b #5), <c>snap list --all</c>
+/// for A9's disabled revisions, the clock reference's HEAD, and the closed set of fixed PowerShell scripts
+/// (<see cref="FixedScripts"/>: the clock probe and, since E15.S1, <see cref="WindowsDiskCommands.WindowsDisk"/>).
 /// </summary>
 public static class HealthCommands
 {
@@ -48,6 +49,14 @@ public static class HealthCommands
         {
             Summary = "powershell.exe (the Windows clock probe)",
         };
+
+    /// <summary>
+    /// The CLOSED set of PowerShell commands the product starts (PLAN_disk_health.md §3.1, E15.S1): the clock probe and the
+    /// Windows disk script, each a fixed argv with no slot. The never-list refuses every PowerShell argv that is not EXACTLY one
+    /// of these (program and arguments), so a third script, a variant of one of these, or <c>-File</c> never runs. Built from the
+    /// configuration in force, as the commands themselves are.
+    /// </summary>
+    public static IReadOnlyList<ToolCommand> FixedScripts => [WindowsClock, WindowsDiskCommands.WindowsDisk];
 
     public static ToolCommand SnapList => new(Snap, "snap-list-all", ["list", "--all"], SnapCeiling, Cap);
 

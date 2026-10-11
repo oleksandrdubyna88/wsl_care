@@ -2303,6 +2303,58 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "health.windowsDiskTimeoutSeconds",
+      "shape": "int",
+      "min": 5,
+      "max": 120,
+      "default": 30,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "disk.eventsSinceDays",
+      "shape": "int",
+      "min": 1,
+      "max": 365,
+      "default": 60,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "disk.eventsMaxRead",
+      "shape": "int",
+      "min": 100,
+      "max": 100000,
+      "default": 5000,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "disk.eventGroupsMax",
+      "shape": "int",
+      "min": 10,
+      "max": 800,
+      "default": 500,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "health.snapTimeoutSeconds",
       "shape": "int",
       "min": 5,
