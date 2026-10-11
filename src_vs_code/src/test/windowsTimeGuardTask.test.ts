@@ -8,8 +8,7 @@ import { test } from 'node:test';
 import type { ProcessRequest } from '../process/runner';
 import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, OP_EXIT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
 import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, START_TYPE_QUERY, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, xmlText, type GuardOptions } from '../windowsTime/guardTask';
-import { PWSH_PROBE, TAG_HELPER } from '../powershell/elevatedEngine';
-import { guardPwshOf, guardStateOf } from '../windowsTime/guardState';
+import { guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING } from './support/noRealWsl';
 import { at, parseXml, type XmlElement } from './support/xmlTree';
@@ -230,7 +229,7 @@ test('PowerShell\'s parser reads the action, install, remove and query scripts w
   assert.equal(names['guard.ps1'], 'Get-Service,Set-Service,Get-ItemPropertyValue,Test-WslCareStartAllowed,Test-Path,New-Item,Out-Null,Set-ItemProperty,Start-Service,Join-Path,Start-Sleep', 'the action runs these and nothing else (w32tm by absolute path through &), and no command before the module path is pinned');
   assert.equal(names['install.ps1'], 'Import-Module,Join-Path,New-Object,Register-ScheduledTask,Out-Null', 'pwsh D4: ScheduledTasks by its absolute path first');
   assert.equal(names['remove.ps1'], 'New-Object,Test-Path,Remove-Item,Get-ChildItem,Get-Item');
-  assert.equal(names['query.ps1'], 'Get-AppxPackage,Select-Object,Join-Path,Get-Item,Get-AuthenticodeSignature,tag,verdict,New-Object,Get-WinEvent,Get-WslCareSummary,ForEach-Object', 'pwsh D2: the shared probe (read-only) before the Task Scheduler read');
+  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Test-Path,Get-WslCareSummary,ForEach-Object', 'pwsh §11 R4: Test-Path reads the stamp');
 });
 
 test('Task Scheduler\'s own parser reads the definition IN MEMORY (nothing registered), and its read-back is exactly the expected summary', WINDOWS_ONLY, () => {
@@ -292,21 +291,20 @@ test('pwsh D4: the install imports ScheduledTasks by its absolute System32 path 
   assert.doesNotMatch(REMOVE_SCRIPT, /Import-Module/, 'the removal needs no module beyond $PSHOME (measured 2026-10-11)');
 });
 
-test('pwsh D2: the status query prints the shared PowerShell 7 probe BEFORE the Task Scheduler read (whose catch ends the script), with progress off', () => {
-  const probe = QUERY_SCRIPT.indexOf(PWSH_PROBE);
-  assert.ok(probe > 0, 'the probe is embedded verbatim');
-  assert.ok(QUERY_SCRIPT.indexOf(TAG_HELPER) < probe, 'its tag helper first');
-  assert.ok(QUERY_SCRIPT.indexOf("$ProgressPreference = 'SilentlyContinue'") < probe);
-  assert.ok(probe < QUERY_SCRIPT.indexOf('Schedule.Service'), 'an absent task still reports the engine');
-  assert.ok(QUERY_SCRIPT.startsWith(MODULES), 'the module path is still pinned first');
+test('pwsh §11 R3: the status query carries no PowerShell 7 probe — the engine has its own read (powershell/engineHost.ts)', () => {
+  assert.doesNotMatch(QUERY_SCRIPT, /Get-AppxPackage|Get-AuthenticodeSignature|pwsh\./);
 });
 
-test('pwsh D2: the facts are read from the same answer — first occurrence wins, so a task summary printed later cannot forge them', () => {
-  const store = 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe';
-  const msi = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-  const answer = ['pwsh.store=signed', `pwsh.path=${store}`, 'pwsh.msi=absent', `pwsh.msiPath=${msi}`, 'guard=absent', 'channel=enabled', 'pwsh.store=unsigned'].join('\r\n');
-  const result = { kind: 'exited', code: 0, stdout: Buffer.from(answer), stderr: Buffer.alloc(0) } as const;
-  assert.deepEqual(guardPwshOf(result), { store: { kind: 'signed', path: store }, msi: { kind: 'absent', path: msi } });
-  assert.deepEqual(guardStateOf(result), { kind: 'absent', channel: 'enabled' }, 'the guard state reads as before');
-  assert.equal(guardPwshOf({ kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), undefined, 'no answer: no facts');
+test('pwsh §11 R4: the status query reports the rate-limit stamp under HKLM — read-only, before the task read whose catch ends the script', () => {
+  const stamp = QUERY_SCRIPT.indexOf("if (Test-Path -Path 'HKLM:\\SOFTWARE\\wsl-care\\windows-time-guard') { 'stamp=present' } else { 'stamp=absent' }");
+  assert.ok(stamp > 0);
+  assert.ok(stamp < QUERY_SCRIPT.indexOf('Schedule.Service'), 'an absent task still reports the stamp');
+  assert.equal(MUTATING.test(QUERY_SCRIPT), false);
+});
+
+test('pwsh §11 R4: a task that is gone with its stamp still there reads as such — a removal the Store engine virtualised is visible', () => {
+  const answer = (stamp: string): string => ['guard=absent', 'channel=enabled', `stamp=${stamp}`].join('\r\n');
+  const exitedWith = (text: string) => ({ kind: 'exited', code: 0, stdout: Buffer.from(text), stderr: Buffer.alloc(0) }) as const;
+  assert.deepEqual(guardStateOf(exitedWith(answer('present'))), { kind: 'absent', channel: 'enabled', stampLeft: true });
+  assert.deepEqual(guardStateOf(exitedWith(answer('absent'))), { kind: 'absent', channel: 'enabled' });
 });

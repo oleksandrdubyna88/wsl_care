@@ -1,4 +1,3 @@
-import { pwshFactsFromTags, type PwshFacts } from '../powershell/elevatedEngine';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
@@ -16,7 +15,8 @@ export type Channel = 'enabled' | 'disabled' | 'unknown';
 
 export type GuardState =
   | { readonly kind: 'unknown'; readonly reason: string }
-  | { readonly kind: 'absent'; readonly channel: Channel }
+  /** `stampLeft`: the task is gone but its rate-limit stamp under HKLM is still there (§11 R4 of PLAN_pwsh_engine_windows_time.md). */
+  | { readonly kind: 'absent'; readonly channel: Channel; readonly stampLeft?: true }
   | { readonly kind: 'unreadable'; readonly hresult: string; readonly channel: Channel }
   | {
     readonly kind: 'present';
@@ -75,7 +75,7 @@ function present(t: Tagged, channel: Channel): GuardState {
 }
 
 const BY_GUARD: Readonly<Record<string, (t: Tagged, channel: Channel) => GuardState>> = {
-  absent: (_t, channel) => ({ kind: 'absent', channel }),
+  absent: (t, channel) => ({ kind: 'absent', channel, ...(tag(t, 'stamp') === 'present' ? { stampLeft: true } : {}) }),
   unreadable: (t, channel) => ({ kind: 'unreadable', hresult: tag(t, 'hresult') || '?', channel }),
   present,
 };
@@ -236,12 +236,21 @@ function settledView(state: GuardState, options: GuardOptions, formatInstant: (i
     case 'unknown':
       return { line: unknownLine(state), level: 'unknown', ids: [] };
     case 'absent':
-      return { line: `not installed — it would start the Windows Time service by itself whenever it stops${channelNote(state.channel)}`, level: 'none', ids: ['installWindowsTimeGuard'] };
+      return absentView(state);
     case 'unreadable':
       return { line: `Task Scheduler does not let this account read it (${state.hresult}) — installed or not cannot be told`, level: 'unknown', ids: ['installWindowsTimeGuard', 'removeWindowsTimeGuard'] };
     default:
       return presentView(state, options, formatInstant);
   }
+}
+
+/** Not installed — and, when its rate-limit stamp outlived the task (a removal the Store engine may have virtualised, §11 R4), saying so and offering Remove again. */
+function absentView(state: Extract<GuardState, { kind: 'absent' }>): Omit<GuardView, 'buttons'> & { readonly ids: readonly GuardAction[] } {
+  const line = `not installed — it would start the Windows Time service by itself whenever it stops${channelNote(state.channel)}`;
+
+  return state.stampLeft === true
+    ? { line: `${line}; its rate-limit stamp under HKLM\\SOFTWARE\\wsl-care is still there — Remove the guard again to clear it`, level: 'none', ids: ['installWindowsTimeGuard', 'removeWindowsTimeGuard'] }
+    : { line, level: 'none', ids: ['installWindowsTimeGuard'] };
 }
 
 /** Whether Task Scheduler already shows the end a pending run was for: installed as these settings, or gone. */
@@ -270,13 +279,4 @@ export function guardView(state: GuardState, options: GuardOptions, pending: Pen
 /** While Task Scheduler is asked again, an answer already shown says so (codex: a stale line must not look current). */
 function checkingNote(state: GuardState, checking: boolean): string {
   return checking && state !== NOT_ASKED ? ' (checking again…)' : '';
-}
-
-/**
- * The PowerShell 7 facts the same query printed FIRST (PLAN_pwsh_engine_windows_time.md D2) — the engine the Windows Time
- * launcher elevates is chosen from them; `undefined` when the query did not answer, or answered with a failing exit (as
- * {@link guardStateOf} reads it).
- */
-export function guardPwshOf(result: ProcessResult): PwshFacts | undefined {
-  return result.kind === 'exited' && signed32(result.code) === 0 ? pwshFactsFromTags(tagged(result.stdout.toString('utf8')).tags) : undefined;
 }

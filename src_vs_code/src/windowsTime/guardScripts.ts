@@ -1,6 +1,5 @@
 import type { ProcessRequest } from '../process/runner';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
-import { PWSH_PROBE, TAG_HELPER } from '../powershell/elevatedEngine';
 import { elevatedRequest, powerShellOf } from '../powershell/elevatedLauncher';
 
 /**
@@ -75,12 +74,10 @@ export const REMOVE_SCRIPT = [
  */
 export const QUERY_SCRIPT = [
   MODULES,
-  "$ProgressPreference = 'SilentlyContinue'",
-  TAG_HELPER,
-  PWSH_PROBE,
   SUMMARY_FUNCTION,
   `$log = $null; try { $log = Get-WinEvent -ListLog '${TIME_SERVICE_CHANNEL}' -ErrorAction Stop } catch { $log = $null }`,
   "$channel = 'channel=unknown'; if ($null -ne $log) { if ($log.IsEnabled) { $channel = 'channel=enabled' } else { $channel = 'channel=disabled' } }",
+  `if (Test-Path -Path '${STAMP_KEY}') { 'stamp=present' } else { 'stamp=absent' }`,
   '$task = $null',
   `try { $service = New-Object -ComObject Schedule.Service; $service.Connect(); $task = $service.GetFolder('\\${GUARD_FOLDER}').GetTask('${GUARD_NAME}') } catch { $code = $_.Exception.HResult; if ($code -eq ${NOT_FOUND_HRESULT}) { 'guard=absent' } else { 'guard=unreadable'; 'hresult=0x{0:X8}' -f $code }; $channel; exit 0 }`,
   "'guard=present'",
