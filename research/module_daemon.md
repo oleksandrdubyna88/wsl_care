@@ -67,6 +67,7 @@ flowchart TB
 | Entity | Where | What it is |
 |---|---|---|
 | `EffectiveConfig` / `ConfigLoadResult` | `Core/Config` | the three layers merged with each value's layer; `ObserveOnly` when a layer is invalid; `UserLayerSkipped` when root has no single target user |
+| `ConfigKeys` | `Core/Config` | the one register of keys, one `partial` class in many files: `ConfigKeys.cs` holds the older keys and `All`; `ConfigKeys.Numbers.cs` holds the E7.S2c header and `NumberKeys()` (the order `config get` lists the number keys in); each number-key group has its own `ConfigKeys.<Group>.cs` (`ConfigKeys.Walk.cs`, `ConfigKeys.Timer.cs`, `ConfigKeys.Archive.cs`, `ConfigKeys.Disk.cs`, … — 40 group files, split 2026-10-11 so that no file passes the 800-line cap). A group that also has older keys (`Archive`, `Clock`, `Thresholds`, …) is a `partial` in both files. A key's name (`ConfigKeys.<Group>.<Key>`) does not depend on its file |
 | `Reading<T>` | `Core/Collectors` | a figure or the reason it is unavailable — never a silent zero |
 | `RunRecord` / run detail | `Core/Records`, `Core/Collect` | one `history.jsonl` line per run, written AFTER its `runs/{day}/{runId}.json` detail |
 | `ActionId`, `ICleanupAction`, `ActionPreview`, `ActionRun` | `Core/Actions` | an action's id (= its `auto.*` key), its live preview and its measured result |
