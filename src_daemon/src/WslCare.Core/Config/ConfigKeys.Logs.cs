@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Logs
+    public static class Logs
     {
         /// <summary>Run details one logs answer opens. Default 50.</summary>
         public static readonly ConfigKey.IntKey MaxDetailsRead = new("logs.maxDetailsRead", 1, 50) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

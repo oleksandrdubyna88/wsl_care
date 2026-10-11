@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Act
+    public static class Act
     {
         /// <summary>Names in one shown list (--volume, --only, a request). Default 10000.</summary>
         public static readonly ConfigKey.IntKey MaxShownNames = new("act.maxShownNames", 1, 10000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

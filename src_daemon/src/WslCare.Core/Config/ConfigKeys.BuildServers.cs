@@ -1,12 +1,14 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>buildServers.*</c> number keys (E7.S2c), in their own file: one file per key group, split from
-/// <c>ConfigKeys.Numbers.cs</c> (the doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other
-/// number key. Its older keys stay in <c>ConfigKeys.cs</c>.</summary>
+/// <summary>The <c>buildServers.*</c> keys, in their own file: one file per key group, never one group in two files (the doctrine caps
+/// a file at 800 lines). The older keys come first; the E7.S2c number keys after them join <c>NumberKeys()</c> like every
+/// other number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class BuildServers
+    public static class BuildServers
     {
+        public static readonly ConfigKey.IntKey IdleHours = new("buildServers.idleHours", 0, HoursCeiling) { Trust = KeyTrust.Higher };
+
         /// <summary>dotnet build-server shutdown. Default 120.</summary>
         public static readonly ConfigKey.IntKey ShutdownTimeoutSeconds = new("buildServers.shutdownTimeoutSeconds", 10, 120) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 

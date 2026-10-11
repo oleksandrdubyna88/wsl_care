@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Runs
+    public static class Runs
     {
         /// <summary>How long a stop marker is kept. Default 24.</summary>
         public static readonly ConfigKey.IntKey StopMarkerRetentionHours = new("runs.stopMarkerRetentionHours", 1, 168) { Trust = KeyTrust.Higher };

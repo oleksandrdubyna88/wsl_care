@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class McpWatchdog
+    public static class McpWatchdog
     {
         /// <summary>A19 (plan E14 S2a): an MCP server with NO CPU for at least this long, measured by identity over the timer's CPU
         /// history, is stopped — the owner's "idle > 60 min" of 2026-10-08. It decides what ends, so a user layer may only lengthen

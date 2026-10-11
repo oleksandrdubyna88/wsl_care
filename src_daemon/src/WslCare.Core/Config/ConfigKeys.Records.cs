@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Records
+    public static class Records
     {
         /// <summary>Characters of a tool's message a record keeps. Default 300.</summary>
         public static readonly ConfigKey.IntKey MaxReasonChars = new("records.maxReasonChars", 0, 300) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

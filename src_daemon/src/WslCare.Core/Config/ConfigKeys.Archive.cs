@@ -1,14 +1,38 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>archive.*</c> number keys (E7.S2c), in their own file: one file per key group, split from
-/// <c>ConfigKeys.Numbers.cs</c> (the doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other
-/// number key. Its older keys stay in <c>ConfigKeys.cs</c>.</summary>
+/// <summary>The <c>archive.*</c> keys, in their own file: one file per key group, never one group in two files (the doctrine caps
+/// a file at 800 lines). The older keys come first; the E7.S2c number keys after them join <c>NumberKeys()</c> like every
+/// other number key.</summary>
 public static partial class ConfigKeys
 {
     /// <summary>The AI-session archive (plan §15r, E9.S0). Group A: the ages and the base's free space, the user's to choose;
     /// group B: what bounds a run root starts and waits on — the budget, the ceilings, the caps of what root reads back.</summary>
-    public static partial class Archive
+    public static class Archive
     {
+        public static readonly ConfigKey.IntKey OlderThanDays = new("archive.olderThanDays", 1, DaysCeiling) { Trust = KeyTrust.Higher };
+
+        /// <summary>The E9.S5 amendment (owner decision 2026-10-09): while Claude Code runs on Windows — whose working folder cannot be
+        /// read — a Claude Code session moves only when ALL its files were untouched this many days. At least a day: a session idle for
+        /// less is likely the one open in a window this evening. At most a year: past it the rule would only restate "nothing moves
+        /// while Claude runs".</summary>
+        public static readonly ConfigKey.IntKey WindowsIdleDays = new("archive.windowsIdleDays", 1, WindowsIdleCeilingDays) { Trust = KeyTrust.Higher };
+
+        /// <summary>The tolerance of "now" against a file's time (the E9.S5 amendment): a NAS stamps a share's files, a WSL VM clock drifts
+        /// after sleep. A file dated later than now by more than this keeps its session — which clock is wrong is not guessed.</summary>
+        public static readonly ConfigKey.IntKey ClockSkewMinutes = new("archive.clockSkewMinutes", 0, MinutesPerDay) { Trust = KeyTrust.Higher };
+
+        /// <summary>Empty means no archive is configured and A13 does not run. The folder as THIS side sees it. An ordinary key since
+        /// plan §15r D1 (E9.S0): root never opens, writes or removes anything under it — the TARGET USER's own process moves — so the
+        /// user layer may name it; the base rules (§15r D7, <c>Archive.BaseFolderRules</c>) are judged by that user's process at
+        /// <c>config set</c>, by <c>archive check-base</c> and at the start of every run, never trusted because they held once. It
+        /// was machine-layer only until then (§15q R1.3, review B1).</summary>
+        public static readonly ConfigKey.TextKey BaseFolder = new("archive.baseFolder", new TextRule.AbsolutePathOrEmpty()) { Trust = KeyTrust.Display };
+
+        /// <summary>Which agents are archived (plan §15r): only agents whose catalogue entry carries an <c>archive</c> block — never one
+        /// whose layout nobody confirmed — and, off by default, manual agents named <c>manual:&lt;name&gt;</c> that carry a session
+        /// glob (E9.S0 review round decision (b)). Fewer is the safe direction.</summary>
+        public static readonly ConfigKey.TextListKey Agents = new("archive.agents", WslCare.Core.Agents.AgentCatalogue.ArchivableIds, manualAgents: true) { Trust = new(SafeDirection.Subset) };
+
         /// <summary>Phase 2 (§15r D2) removes a source only this long after its copy was indexed, once the copy is read again. Default 24.</summary>
         public static readonly ConfigKey.IntKey RemoveAfterHours = new("archive.removeAfterHours", 1, 720) { Trust = KeyTrust.Higher };
 

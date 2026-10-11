@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Units
+    public static class Units
     {
         /// <summary>The services drop-in Nice. Default 19.</summary>
         public static readonly ConfigKey.IntKey Nice = new("units.nice", 0, 19) { Trust = new(SafeDirection.Higher, MachineOnly: true) };

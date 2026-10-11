@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Stops
+    public static class Stops
     {
         /// <summary>Bytes of a stop marker read. Default 4096.</summary>
         public static readonly ConfigKey.IntKey MaxMarkerBytes = new("stops.maxMarkerBytes", 256, 4096) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Patterns
+    public static class Patterns
     {
         /// <summary>The match ceiling of every fixed pattern (a ReDoS guard). Default 250.</summary>
         public static readonly ConfigKey.IntKey MatchTimeoutMilliseconds = new("patterns.matchTimeoutMilliseconds", 50, 1000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

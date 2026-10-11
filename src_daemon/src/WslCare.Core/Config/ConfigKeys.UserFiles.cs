@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class UserFiles
+    public static class UserFiles
     {
         /// <summary>Bytes of a user's small file read by root (nvm's alias). Default 4096.</summary>
         public static readonly ConfigKey.IntKey MaxSmallFileBytes = new("userFiles.maxSmallFileBytes", 256, 4096) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

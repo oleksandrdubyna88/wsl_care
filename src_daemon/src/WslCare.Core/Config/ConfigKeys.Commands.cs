@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Commands
+    public static class Commands
     {
         /// <summary>Output kept of a command without its own cap. Default 1048576.</summary>
         public static readonly ConfigKey.IntKey OutputCapBytes = new("commands.outputCapBytes", 65536, 1048576) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

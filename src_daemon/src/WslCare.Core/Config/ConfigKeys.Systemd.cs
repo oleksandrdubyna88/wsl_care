@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Systemd
+    public static class Systemd
     {
         /// <summary>systemctl / journalctl / timedatectl reads. Default 15.</summary>
         public static readonly ConfigKey.IntKey TimeoutSeconds = new("systemd.timeoutSeconds", 1, 15) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

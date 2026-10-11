@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Snap
+    public static class Snap
     {
         /// <summary>snap remove --revision. Default 300.</summary>
         public static readonly ConfigKey.IntKey RemoveTimeoutSeconds = new("snap.removeTimeoutSeconds", 30, 300) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Agents
+    public static class Agents
     {
         /// <summary>agents list --measure and agents probe: the whole walk; below every host call ceiling. Default 60.</summary>
         public static readonly ConfigKey.IntKey MeasureBudgetSeconds = new("agents.measureBudgetSeconds", 5, 60) { Trust = KeyTrust.Lower };

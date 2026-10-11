@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class ToolCaches
+    public static class ToolCaches
     {
         /// <summary>A17 trims when one tool cache is above this size. Default 5.</summary>
         public static readonly ConfigKey.IntKey TriggerGb = new("toolCaches.triggerGb", 0, 100000) { Trust = KeyTrust.Higher };

@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Docker
+    public static class Docker
     {
         /// <summary>docker version / network inspect / help. Default 10.</summary>
         public static readonly ConfigKey.IntKey ProbeTimeoutSeconds = new("docker.probeTimeoutSeconds", 1, 10) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

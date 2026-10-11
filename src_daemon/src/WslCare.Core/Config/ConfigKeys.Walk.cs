@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Walk
+    public static class Walk
     {
         /// <summary>The folders are walked again when the newest walk is older than this. Default 20.</summary>
         public static readonly ConfigKey.IntKey IntervalHours = new("walk.intervalHours", 4, 168) { Trust = KeyTrust.Higher };

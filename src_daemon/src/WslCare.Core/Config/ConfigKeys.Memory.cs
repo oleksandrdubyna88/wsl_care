@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Memory
+    public static class Memory
     {
         /// <summary>sync before dropping caches. Default 120.</summary>
         public static readonly ConfigKey.IntKey SyncTimeoutSeconds = new("memory.syncTimeoutSeconds", 10, 120) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

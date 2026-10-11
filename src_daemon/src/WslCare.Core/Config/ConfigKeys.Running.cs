@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Running
+    public static class Running
     {
         /// <summary>running.json heartbeat period (wedged-after must be at least 3 times this). Default 5.</summary>
         public static readonly ConfigKey.IntKey HeartbeatSeconds = new("running.heartbeatSeconds", 1, 60) { Trust = new(SafeDirection.None, MachineOnly: true) };

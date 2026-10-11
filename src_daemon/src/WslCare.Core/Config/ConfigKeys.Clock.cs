@@ -1,12 +1,29 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>clock.*</c> number keys (E7.S2c), in their own file: one file per key group, split from
-/// <c>ConfigKeys.Numbers.cs</c> (the doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other
-/// number key. Its older keys stay in <c>ConfigKeys.cs</c>.</summary>
+/// <summary>The <c>clock.*</c> keys, in their own file: one file per key group, never one group in two files (the doctrine caps
+/// a file at 800 lines). The older keys come first; the E7.S2c number keys after them join <c>NumberKeys()</c> like every
+/// other number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Clock
+    public static class Clock
     {
+        public static readonly ConfigKey.IntKey MaxDriftSeconds = new("clock.maxDriftSeconds", 1, 3600) { Trust = KeyTrust.Higher };
+
+        /// <summary>The HTTPS address whose <c>Date</c> header is the independent clock reference (PLAN_windows_time_guard.md D2);
+        /// empty turns the HTTP reference off. Root sends the request, so only the MACHINE layer may set it.</summary>
+        public static readonly ConfigKey.TextKey ReferenceUrl = new("clock.referenceUrl", new TextRule.HttpsUrlOrEmpty())
+        {
+            Trust = new(SafeDirection.None, MachineOnly: true),
+        };
+
+        /// <summary>How far a clock may stand from the reference and still agree with it (D3). A smaller tolerance makes A16
+        /// skip more, so lower is safer.</summary>
+        public static readonly ConfigKey.IntKey ReferenceToleranceSeconds = new("clock.referenceToleranceSeconds", 5, 3600) { Trust = KeyTrust.Lower };
+
+        /// <summary>Whether a Windows Time service that starts Manual is a warning (D4) — what the report SAYS; the extension's
+        /// fix has its own switch for what it DOES.</summary>
+        public static readonly ConfigKey.BoolKey ManualStartWarns = new("clock.manualStartWarns") { Trust = KeyTrust.Display };
+
         /// <summary>A16 corrects the clock at most once in this time. Default 60.</summary>
         public static readonly ConfigKey.IntKey MinimumGapMinutes = new("clock.minimumGapMinutes", 60, 1440) { Trust = KeyTrust.Higher };
 

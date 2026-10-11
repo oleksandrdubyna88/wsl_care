@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class FileLocks
+    public static class FileLocks
     {
         /// <summary>Windows: how long a busy rename is retried. Default 2000.</summary>
         public static readonly ConfigKey.IntKey RenameRetryMilliseconds = new("files.renameRetryMilliseconds", 100, 10000) { Trust = new(SafeDirection.None, MachineOnly: true) };

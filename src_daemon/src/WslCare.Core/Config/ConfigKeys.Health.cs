@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Health
+    public static class Health
     {
         /// <summary>The Windows clock probe. Default 20.</summary>
         public static readonly ConfigKey.IntKey WindowsClockTimeoutSeconds = new("health.windowsClockTimeoutSeconds", 5, 20) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

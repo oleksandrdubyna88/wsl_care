@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class AptCache
+    public static class AptCache
     {
         /// <summary>A9 cleans the apt cache above this size. Default 200.</summary>
         public static readonly ConfigKey.IntKey TriggerMb = new("aptCache.triggerMb", 0, 100000) { Trust = KeyTrust.Higher };

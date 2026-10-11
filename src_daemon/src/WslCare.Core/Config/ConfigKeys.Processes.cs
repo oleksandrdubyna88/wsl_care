@@ -1,12 +1,22 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>processes.*</c> number keys (E7.S2c), in their own file: one file per key group, split from
-/// <c>ConfigKeys.Numbers.cs</c> (the doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other
-/// number key. Its older keys stay in <c>ConfigKeys.cs</c>.</summary>
+/// <summary>The <c>processes.*</c> keys, in their own file: one file per key group, never one group in two files (the doctrine caps
+/// a file at 800 lines). The older keys come first; the E7.S2c number keys after them join <c>NumberKeys()</c> like every
+/// other number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Processes
+    public static class Processes
     {
+        public static readonly ConfigKey.IntKey IdleOlderThanHours = new("processes.idleOlderThanHours", 0, HoursCeiling) { Trust = KeyTrust.Higher };
+        /// <summary>A11's families (§15q R1.3, review B1): only the catalogue's named families — never <c>other</c>, the catch-all, which
+        /// would let root end every account's idle orphans; and not <c>ai-agents</c>, whose processes are the owner's work (§15q Q13).</summary>
+        public static readonly ConfigKey.TextListKey Families = new("processes.families", Collectors.ProcessFamilies.ChoosableForA11) { Trust = new(SafeDirection.Subset) };
+
+        /// <summary>A18 (plan §15q E7.S2b, owner decision 2026-10-05): an AI agent's orphaned process is ended only after this many
+        /// hours with NO CPU, measured by identity, and with no session of its agent written in that window. A longer window is
+        /// stricter.</summary>
+        public static readonly ConfigKey.IntKey AiAgentsIdleHours = new("processes.aiAgentsIdleHours", 1, 168) { Trust = KeyTrust.Higher };
+
         /// <summary>A11: a suspect must use no CPU in this window. Default 5.</summary>
         public static readonly ConfigKey.IntKey CpuWindowSeconds = new("processes.cpuWindowSeconds", 5, 60) { Trust = KeyTrust.Higher };
 

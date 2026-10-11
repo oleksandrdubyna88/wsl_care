@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Preview
+    public static class Preview
     {
         /// <summary>How many objects a preview names (the confirmation modal). Default 20.</summary>
         public static readonly ConfigKey.IntKey MaxItems = new("preview.maxItems", 1, 100) { Trust = KeyTrust.Display };

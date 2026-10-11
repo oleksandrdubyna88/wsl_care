@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class EditorServers
+    public static class EditorServers
     {
         /// <summary>A14 keeps this many newest builds of each editor server. Default 2.</summary>
         public static readonly ConfigKey.IntKey KeepNewest = new("editorServers.keepNewest", 1, 20) { Trust = KeyTrust.Higher };

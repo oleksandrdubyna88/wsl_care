@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class ConfigLayerLimits
+    public static class ConfigLayerLimits
     {
         /// <summary>Bytes of the user layer read (the machine layer is read with this range maximum). Default 262144.</summary>
         public static readonly ConfigKey.IntKey MaxLayerBytes = new("config.maxLayerBytes", 4096, 262144) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

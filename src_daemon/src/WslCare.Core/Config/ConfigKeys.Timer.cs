@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Timer
+    public static class Timer
     {
         /// <summary>The timer runs dry this many days after its first run (raise-only). Default 7.</summary>
         public static readonly ConfigKey.IntKey FirstDryWindowDays = new("timer.firstDryWindowDays", 7, 3650) { Trust = new(SafeDirection.Higher, MachineOnly: true) };

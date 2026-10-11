@@ -1,12 +1,25 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>mcpServers.*</c> number keys (E7.S2c), in their own file: one file per key group, split from
-/// <c>ConfigKeys.Numbers.cs</c> (the doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other
-/// number key. Its older keys stay in <c>ConfigKeys.cs</c>.</summary>
+/// <summary>The <c>mcpServers.*</c> keys, in their own file: one file per key group, never one group in two files (the doctrine caps
+/// a file at 800 lines). The older keys come first; the E7.S2c number keys after them join <c>NumberKeys()</c> like every
+/// other number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class McpServers
+    public static class McpServers
     {
+        /// <summary>The MCP servers of the AI agents the daemon counts (plan §15q E7.S2d): a list CLOSED over the catalogue's names
+        /// (the E7.S0 B1 rule), every catalogued server by default. Since E14 S2a it also says which servers A19 may stop; it stays a display key — A19 stops only the target user's own idle servers, with every guard.</summary>
+        public static readonly ConfigKey.TextListKey Watched = new("mcpServers.watched", Mcp.McpServerCatalogue.Names) { Trust = KeyTrust.Display };
+
+        /// <summary>The user's OWN MCP servers, by program file name (plan E14 S2c, the owner's Q-M2 of 2026-10-08): an OPEN list,
+        /// every member a file name that is no AI agent, interpreter, shell, launcher, this product or catalogue server
+        /// (<see cref="TextRule.McpProgramName"/>), at most <see cref="Mcp.McpUserPrograms.MaxMembers"/>. Root's A19 and CPU history
+        /// read it, and it WIDENS what A19 may stop — yet it is an ordinary user key (no safe direction, not machine-only): A19 stops
+        /// only the TARGET user's own processes (the uid re-read from /proc) with every S2a guard, and never an orphan of a user
+        /// program, so a name a user adds lets root stop only what that user could stop. <c>auto.A19</c> off, or the name removed,
+        /// keeps a program running.</summary>
+        public static readonly ConfigKey.TextListKey Programs = new("mcpServers.programs", [], new TextRule.McpProgramName(), Mcp.McpUserPrograms.MaxMembers) { Trust = KeyTrust.Display };
+
         /// <summary>The window an MCP server's CPU is measured across: two /proc reads this far apart (plan §15q E7.S2d). Root waits on
         /// it inside a full run, so machine-only; at 100 ticks/s one tick is 1 % of a core over 1 s. Default 1000.</summary>
         public static readonly ConfigKey.IntKey CpuWindowMilliseconds = new("mcpServers.cpuWindowMilliseconds", 200, 5000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

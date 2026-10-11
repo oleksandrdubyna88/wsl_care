@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Requests
+    public static class Requests
     {
         /// <summary>Request files one reader opens (at least requests.maxQueued). Default 64.</summary>
         public static readonly ConfigKey.IntKey MaxRead = new("requests.maxRead", 1, 64) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

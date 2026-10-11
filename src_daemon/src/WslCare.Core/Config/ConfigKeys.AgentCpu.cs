@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class AgentCpu
+    public static class AgentCpu
     {
         /// <summary>The timer's CPU history (A18, A19, A3's timer): the most process identities kept. Default 512.</summary>
         public static readonly ConfigKey.IntKey MaxEntries = new("agentCpu.maxEntries", 16, 512) { Trust = new(SafeDirection.Lower, MachineOnly: true) };

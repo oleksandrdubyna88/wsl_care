@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class WslConfig
+    public static class WslConfig
     {
         /// <summary>The .wslconfig memory the audit recommends (shown, never applied). Default 36.</summary>
         public static readonly ConfigKey.IntKey RecommendedMemoryGb = new("wslConfig.recommendedMemoryGb", 1, 1024) { Trust = KeyTrust.Display };

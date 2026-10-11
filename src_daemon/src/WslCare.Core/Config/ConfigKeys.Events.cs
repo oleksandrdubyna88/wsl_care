@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Events
+    public static class Events
     {
         /// <summary>Container-start lines are kept this long. Default 14.</summary>
         public static readonly ConfigKey.IntKey StartsRetentionDays = new("events.startsRetentionDays", 1, 90) { Trust = new(SafeDirection.Higher, MachineOnly: true) };

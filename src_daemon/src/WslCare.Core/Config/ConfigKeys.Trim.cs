@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Trim
+    public static class Trim
     {
         /// <summary>A15 trims the filesystems once in this many days. Default 7.</summary>
         public static readonly ConfigKey.IntKey PeriodDays = new("trim.periodDays", 1, 90) { Trust = KeyTrust.Higher };

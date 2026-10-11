@@ -1,12 +1,16 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>thresholds.*</c> number keys (E7.S2c), in their own file: one file per key group, split from
-/// <c>ConfigKeys.Numbers.cs</c> (the doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other
-/// number key. Its older keys stay in <c>ConfigKeys.cs</c>.</summary>
+/// <summary>The <c>thresholds.*</c> keys, in their own file: one file per key group, never one group in two files (the doctrine caps
+/// a file at 800 lines). The older keys come first; the E7.S2c number keys after them join <c>NumberKeys()</c> like every
+/// other number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Thresholds
+    public static class Thresholds
     {
+        public static readonly ConfigKey.IntKey MemAvailableWarnPercent = new("thresholds.memAvailableWarnPercent", 0, 100);
+        public static readonly ConfigKey.IntKey MemAvailableActPercent = new("thresholds.memAvailableActPercent", 0, 100) { Trust = KeyTrust.Lower };
+        public static readonly ConfigKey.IntKey SwapWarnGb = new("thresholds.swapWarnGb", 0, GbCeiling);
+
         /// <summary>The page cache warns above this. Default 15.</summary>
         public static readonly ConfigKey.IntKey PageCacheWarnGib = new("thresholds.pageCacheWarnGib", 0, 100000) { Trust = KeyTrust.Display };
 
