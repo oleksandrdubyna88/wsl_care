@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.4.0...extension-v0.5.0) (2026-10-11)
+
+
+### Features
+
+* **extension:** Stop client-gone relays, the panel's A21 button (E14 S7b.2b) ([#100](https://github.com/oleksandrdubyna88/wsl_care/issues/100)) ([8ccece6](https://github.com/oleksandrdubyna88/wsl_care/commit/8ccece645dd00b72b0b28226232884222aa4a560))
+* **extension:** Windows Time elevated runs use the PowerShell 7 resolver; the panel names each engine ([#104](https://github.com/oleksandrdubyna88/wsl_care/issues/104)) ([8e5185d](https://github.com/oleksandrdubyna88/wsl_care/commit/8e5185ddc18712a9bf2580962cb8f9220265ef91))
+
 ## [0.4.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.3.1...extension-v0.4.0) (2026-10-11)
 
 
