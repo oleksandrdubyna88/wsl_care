@@ -52,6 +52,8 @@ export interface ArchivePageView {
   /** The session paths are shown whole (the toggle is pressed). */
   readonly pathsShown: boolean;
   readonly pathsLabel: string;
+  /** *Refresh* may be pressed: no read is in flight (own review #5: a second read would start a second `wsl.exe`). */
+  readonly refreshEnabled: boolean;
   /** The entry table's column headers. */
   readonly headers: readonly string[];
   readonly agents: readonly ArchiveAgent[];

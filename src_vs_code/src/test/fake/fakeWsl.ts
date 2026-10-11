@@ -78,6 +78,8 @@ export interface FakeScenario {
   readonly checkBase?: string;
   /** E10.S2a: the file (in `answers`) `archive list --json` answers; `archive-list.json` by default. */
   readonly archiveList?: string;
+  /** E10.S2a own review #1: the exit `archive list` answers with — the daemon exits 1 AFTER its answer for every outcome but done / no-base. */
+  readonly archiveListExit?: number;
   /** E10.S1: `config set archive.baseFolder <v>` exits with this code and stderr instead of writing. */
   readonly configExit?: { readonly code: number; readonly stderr: string };
 }
@@ -213,7 +215,8 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
   }
   const archive = archiveReadOf(tail);
   if (archive !== undefined) {
-    return distroReply(scenario, argv) ?? { code: 0, stdout: fs.readFileSync(path.join(scenario.answers, archive(scenario))), ...delay(scenario) };
+    const code = tail[1] === 'list' ? (scenario.archiveListExit ?? 0) : 0;
+    return distroReply(scenario, argv) ?? { code, stdout: fs.readFileSync(path.join(scenario.answers, archive(scenario))), ...delay(scenario) };
   }
   const runRead = runReadOf(tail);
   if (runRead !== undefined) {

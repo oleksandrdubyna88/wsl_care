@@ -49,17 +49,18 @@ interface Harness {
   readonly asked: RunRead[];
   readonly views: ArchivePageView[];
   /** What the next read answers — a test replaces it. */
-  readonly script: { answer: (request: RunRead) => Promise<ReadOutcome> };
+  readonly script: { answer: (request: RunRead) => Promise<ReadOutcome>; status: VerbOutcome | undefined };
 }
 
 function harness(status: VerbOutcome | undefined = answered('status', headBody('status'))): Harness {
   const asked: RunRead[] = [];
   const views: ArchivePageView[] = [];
-  const script = { answer: (_request: RunRead): Promise<ReadOutcome> => Promise.resolve(read(goldenFile('archive-list.json'))) };
-  const controller = new ArchiveController({ read: (request) => { asked.push(request); return script.answer(request); }, status: () => status, post: (view) => { views.push(view); } });
+  const script = { answer: (_request: RunRead): Promise<ReadOutcome> => Promise.resolve(read(goldenFile('archive-list.json'))), status };
+  const controller = new ArchiveController({ read: (request) => { asked.push(request); return script.answer(request); }, status: () => script.status, post: (view) => { views.push(view); } });
 
   return { controller, asked, views, script };
 }
+
 function last(h: Harness): ArchivePageView {
   const view = h.views.at(-1);
   assert.ok(view !== undefined, 'a view was posted');
@@ -87,7 +88,8 @@ test('a daemon that does not advertise archive.list is not asked, and the page s
   await h.controller.receive({ type: 'ready' });
   assert.deepEqual(h.asked, []);
   assert.equal(last(h).state, 'unavailable');
-  assert.match(last(h).notice, /does not list its archive \(archive\.list\) — update the daemon/);
+  assert.match(last(h).notes.join(' '), /does not list its archive \(archive\.list\) — update the daemon/);
+  assert.equal(last(h).notice, '', 'said once, as the note of the page — not twice (own review #7)');
 });
 
 test('a read that fails is said in the client\'s own words, never as an empty archive', async () => {
@@ -99,19 +101,20 @@ test('a read that fails is said in the client\'s own words, never as an empty ar
   assert.match(last(h).notes.join(' '), /did not answer within 630 s/, 'the client sentence for a timeout');
 });
 
-test('an answer to an OLDER read is dropped — the newest read wins', async () => {
+test('an answer to an OLDER read is dropped — the newest read wins (a page closed and reopened while the first read ran)', async () => {
   const h = harness();
   let release: (value: ReadOutcome) => void = () => undefined;
   h.script.answer = () => new Promise((resolve) => { release = resolve; });
   const first = h.controller.receive({ type: 'refresh' });
   const releaseFirst = release;
+  h.controller.pageClosed();
   h.script.answer = () => Promise.resolve(read(TWO_MONTHS));
-  await h.controller.receive({ type: 'refresh' });
+  await h.controller.receive({ type: 'ready' });
   releaseFirst(read(goldenFile('archive-list.json')));
   await first;
+  assert.equal(h.asked.length, 2);
   assert.equal(last(h).agents.length, 2, 'the newer answer (two agents) stands; the older one (one agent) was dropped');
 });
-
 test('a month is opened and closed by its INDEX into the list the host holds — and stays open across a refresh, by agent and month', async () => {
   const h = harness();
   h.script.answer = () => Promise.resolve(read(TWO_MONTHS));
@@ -162,12 +165,71 @@ test('the full session paths are the host\'s toggle — off at first, on after s
   assert.equal(h.asked.length, 1, 'the toggle reads nothing');
 });
 
-test('rendered is recorded for the extension-host scenarios, and a new status re-posts the view', async () => {
+test('rendered is recorded for the extension-host scenarios', async () => {
   const h = harness();
   await h.controller.receive({ type: 'ready' });
   await h.controller.receive({ type: 'rendered', blocks: 2 });
   assert.equal(h.controller.lastRendered(), 2);
-  const before = h.views.length;
-  h.controller.statusChanged();
-  assert.equal(h.views.length, before + 1);
+});
+
+/** The golden status, with archive.list advertised or not. */
+function statusListing(lists: boolean): VerbOutcome {
+  const status = headBody('status');
+  return answered('status', { ...status, capabilities: stringsAt(status, 'capabilities').filter((c) => lists || c !== 'archive.list') });
+}
+
+test('own review #3: a status that newly advertises archive.list reads the list; one that drops it ends the held list; an unchanged one posts nothing', async () => {
+  const h = harness(statusListing(false));
+  await h.controller.receive({ type: 'ready' });
+  assert.equal(last(h).state, 'unavailable');
+  h.script.status = statusListing(true);
+  await h.controller.statusChanged();
+  assert.deepEqual(h.asked, [{ read: 'archiveList' }], 'the gate opened: the list is read');
+  assert.equal(last(h).state, 'answered');
+  const posts = h.views.length;
+  await h.controller.statusChanged();
+  assert.equal(h.views.length, posts, 'nothing changed for the page: no rebuild');
+  h.script.status = statusListing(false);
+  await h.controller.statusChanged();
+  assert.equal(last(h).state, 'unavailable', 'the gate closed: the held list is not shown as current');
+});
+
+test('own review #5: Refresh while a read is in flight starts no second read — and the view greys Refresh meanwhile', async () => {
+  const h = harness();
+  let release: (value: ReadOutcome) => void = () => undefined;
+  h.script.answer = () => new Promise((resolve) => { release = resolve; });
+  const first = h.controller.receive({ type: 'refresh' });
+  assert.equal(last(h).refreshEnabled, false, 'reading: Refresh greyed');
+  // The second Refresh SHARES the read in flight — awaiting it here would wait for that read, so it is awaited after the release.
+  const second = h.controller.receive({ type: 'refresh' });
+  await h.controller.receive({ type: 'ready' });
+  assert.equal(h.asked.length, 1, 'one wsl.exe for the read in flight, however often Refresh is pressed');
+  release(read(goldenFile('archive-list.json')));
+  await Promise.all([first, second]);
+  assert.equal(last(h).refreshEnabled, true);
+});
+
+test('own review #7: a read in flight when the gate closes does not overwrite the "update the daemon" state', async () => {
+  const h = harness();
+  let release: (value: ReadOutcome) => void = () => undefined;
+  h.script.answer = () => new Promise((resolve) => { release = resolve; });
+  const first = h.controller.receive({ type: 'refresh' });
+  h.script.status = statusListing(false);
+  await h.controller.statusChanged();
+  release(read(goldenFile('archive-list.json')));
+  await first;
+  assert.equal(last(h).state, 'unavailable');
+});
+
+test('own review #2: a page closed and opened again starts afresh — one new read, no month open, the session paths SHORT again', async () => {
+  const h = harness();
+  await h.controller.receive({ type: 'ready' });
+  await h.controller.receive({ type: 'expandMonth', index: 0 });
+  await h.controller.receive({ type: 'showPaths' });
+  assert.equal(last(h).pathsShown, true);
+  h.controller.pageClosed();
+  await h.controller.receive({ type: 'ready' });
+  assert.equal(h.asked.length, 2, 'the reopened page reads the list again');
+  assert.equal(last(h).pathsShown, false, 'the full paths are off on every open');
+  assert.ok(last(h).agents.every((a) => a.months.every((m) => !m.expanded)));
 });

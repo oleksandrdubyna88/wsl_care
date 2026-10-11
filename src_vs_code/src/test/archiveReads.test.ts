@@ -95,6 +95,21 @@ test('archive list: after the three WSL questions, unprivileged, the archive pre
   assert.ok(rec.requests.every((r) => !r.args.includes('-u')));
 });
 
+test('own review #1: archive list exits 1 WITH its answer when the base is unreachable — the answer is read, the daemon\'s note kept', async () => {
+  const unreachable = JSON.stringify({ ...JSON.parse(goldenText('archive-list.json')), outcome: 'unreachable', note: 'the base did not answer within archive.reachabilitySeconds (5 s)', entries: [] });
+  const { c } = client({ ...wsl(), [LIST]: exited(1, unreachable) });
+  const body = bodyOf(await c.read({ read: 'archiveList' }));
+  assert.equal(body.outcome, 'unreachable');
+  assert.match(String(body.note), /did not answer within archive\.reachabilitySeconds/);
+});
+
+test('own review #1: an exit 1 WITHOUT a readable answer is still the exit\'s own failure — and only the list reads exit 1 as an answer', async () => {
+  const { c } = client({ ...wsl(), [LIST]: exited(1, '', 'wsl-care: something failed\n') });
+  assert.notEqual((await c.read({ read: 'archiveList' })).kind, 'read');
+  const status = client({ ...wsl(), [STATUS]: exited(1, goldenText('archive-status.json')) });
+  assert.notEqual((await status.c.read({ read: 'archiveStatus' })).kind, 'read', 'archive status is unchanged: exit 1 is a failure there');
+});
+
 for (const [bad, why] of [
   ['', 'an empty path'],
   ['-rf', 'a path starting with a dash (an option to the daemon)'],

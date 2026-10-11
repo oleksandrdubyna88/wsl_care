@@ -14,8 +14,8 @@ import { ArchiveController, type ArchiveControllerOptions } from './archiveContr
  * - what the page sends goes to the controller's closed set; what the controller builds is posted back as `{type: 'view'}`;
  * - exactly ONE panel receives the views (`panel/panelSlot.ts`): created or revealed synchronously, before any await;
  * - a page open when the window reloads is restored by `registerWebviewPanelSerializer` (`onWebviewPanel:wslCare.archive`) and
- *   reads the list again on its `ready` — nothing of the page is persisted;
- * - a new `status` (the store's) re-posts the view: the capability gate follows what the daemon advertises.
+ *   reads the list again on its `ready` — nothing of the page is persisted, and a CLOSED page's state is dropped (own review #2);
+ * - a new `status` (the store's) moves the capability gate: a daemon that now lists is read, one that no longer does ends the list.
  */
 
 export class ArchivePanel implements vscode.Disposable {
@@ -50,7 +50,7 @@ export class ArchivePanel implements vscode.Disposable {
   /** The store's newest `status` changed: the open page is re-posted. */
   statusChanged(): void {
     if (this.slot.current() !== undefined) {
-      this.controller.statusChanged();
+      void this.controller.statusChanged();
     }
   }
 
@@ -71,6 +71,8 @@ export class ArchivePanel implements vscode.Disposable {
       styleUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(media, 'panel.css')).toString(),
       page: 'archive',
     });
+    // Own review #2: a closed page's state is dropped, so the next page starts afresh (one new read, the session paths short).
+    panel.onDidDispose(() => { this.controller.pageClosed(); });
     // The detached edge (as the Logs page's): a fault is written to the extension's log, never an unhandled rejection.
     panel.webview.onDidReceiveMessage((raw: unknown) => { this.controller.receive(raw).catch((error: unknown) => this.log(`archive page: ${String(error)}`)); });
   }

@@ -63,6 +63,30 @@ test('flow · open the Archive page: ONE unprivileged archive list --json, the p
   }
 });
 
+test('flow · an unreachable base: the daemon answers its list with exit 1, and the page shows the daemon\'s OWN note, not a bare exit', async () => {
+  const world = fakeWorld(UBUNTU_RUNNING);
+  try {
+    const folder = path.join(world.folder, 'answers');
+    fs.mkdirSync(folder);
+    for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
+      fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(folder, file));
+    }
+    const unreachable = { ...goldenFile('archive-list.json'), outcome: 'unreachable', note: 'the base did not answer within archive.reachabilitySeconds (5 s)', entries: [] };
+    fs.writeFileSync(path.join(folder, 'archive-list-unreachable.json'), JSON.stringify(unreachable));
+    world.rewrite({ answers: folder, archiveList: 'archive-list-unreachable.json', archiveListExit: 1 });
+    const client = new WslCareClient({ runner: world.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '' });
+    const status = await statusOf(client);
+    const views: ArchivePageView[] = [];
+    const controller = new ArchiveController({ read: (request) => client.read(request), status: () => status, post: (view) => { views.push(view); } });
+    await controller.receive({ type: 'ready' });
+    const text = page(views).root.textContent;
+    assert.match(text, /The daemon could not list the archive: unreachable — the base did not answer within archive\.reachabilitySeconds/);
+    assert.ok(!/Nothing is archived/.test(text), 'an unreachable base is never an empty archive');
+  } finally {
+    world.dispose();
+  }
+});
+
 test('flow · a daemon that does not advertise archive.list: the page asks nothing and says to update the daemon', async () => {
   const world = fakeWorld(UBUNTU_RUNNING);
   const folder = path.join(world.folder, 'no-list');

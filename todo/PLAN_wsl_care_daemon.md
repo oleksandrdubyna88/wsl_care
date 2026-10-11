@@ -4805,7 +4805,40 @@ As planned, with these specifics:
   answer kept; B4 the capability gate removed; B5 *Open archive…* never greyed; B6 extra message keys accepted; B7 an index past the
   list clamped to a month; B8 the unverified sentence dropped; B9 the list on the run-read ceiling. Teeth per guarantee:
   [module_tests.md](../research/module_tests.md), *What each E10.S2a guarantee rests on*.
-
+- **The code round** (coai session af2da363, `proceed`, 4 gating of threshold 5, all four codex roles answered; gemini out of
+  quota). Four findings accepted, one rejected:
+  - **#4 (blocking)** — the grouping copied a month's entries for every entry: 60 000 entries of one month took 17.8 s (RED,
+    measured). Grouping is now one pass of run boundaries and slices (`runsOf`); the same 60 000 take well under a second.
+  - **#3** — a month or agent with an entry whose size is missing read a partial sum; it now reads "size unknown" (RED first).
+  - **#0, #1** — the agent list and the open months were edited in place; both are now built or replaced whole.
+  - **#2, rejected** — "the message-type test duplicates the source of truth": that list is the closed set's ORACLE, written out
+    independently as `logsMessages.test.ts`, `structure.test.ts` (`VERBS`) and the fake's `ALLOWED_TAILS` are. A new page
+    message is a new surface into the host and must fail until it is decided.
+- **The own review** (Opus, read-only, in parallel with the code round; no blocker, 6 should-fix, 4 nits). Taken, each RED first and
+  then broken in product code (B10–B16):
+  - **#1** — `archive list` exits 1 AFTER its JSON answer for every outcome but `done` / `no-base` (`ArchiveRunCommand.List`), so the
+    client threw away the daemon's own reason for an unreachable share. The list read now takes exit 1 with a readable answer
+    (`LIST_ANSWERS`; every other read keeps 0 / 4); the fake can answer the list with exit 1 (`archiveListExit`), and a scenario shows
+    the daemon's note on the page. (B10)
+  - **#2** — the controller outlives the panel, so a page closed and opened again showed the old list and kept *Show full session
+    paths* on. `pageClosed()` (called on the panel's dispose) drops the held answer, the open months and the toggle. (B11)
+  - **#3** — a status change rebuilt the page for nothing and never moved the gate. `statusChanged()` now reads the list when the
+    daemon starts advertising `archive.list`, ends the held list when it stops, and otherwise posts nothing. (B12)
+  - **#4** — a missing `verified` read as "no" (with the terminal instruction); it reads "unknown". (B14) The partial size sum and
+    the quadratic grouping it also named were already fixed by the code round's #3 / #4.
+  - **#5** — *Refresh* during a read started another `wsl.exe`. A read in flight is now SHARED by every Refresh, and the view greys
+    *Refresh* while it runs. (B13, B15)
+  - **#6** — the docs said the daemon bounds the user's list by `archive.previewTimeoutSeconds`; it bounds it only by the reachability
+    window (`archive.reachabilitySeconds`, `BaseWindow`). The ceiling stays the archive preview's setting — what the daemon allows its
+    OWN list child — and the docs say so (`verbs.ts`, `module_tests.md`, `architecture-extension-e6.md`). The build notes' item 1
+    above keeps the first wording as the record of the plan.
+  - **#7** — the "update the daemon" state now advances the generation, so a read in flight cannot overwrite it, and the sentence is
+    said once (the page's note), not twice. (B16)
+  - **#9** — `ARCHIVE_LIST_CAPABILITY` moved to `shared/archiveCapabilities.ts`, so the panel section no longer imports the page's
+    controller. **#10** — a stale test title.
+  - **Not taken now — #8** (a view generation in `expandMonth` / `collapseMonth`, refused on mismatch): S2a's months are kept by
+    agent and month, and `refresh` posts a view with no months before it awaits, so an index cannot name another month than the one
+    shown today. Selection makes it matter: it is **E10.S2b's**, written into its story 3.
 ##### E10.S2b and E10.S2c — the outline their own plan rounds start from
 
 **E10.S2b, *Restore*** (from S2a's merge; root; an own review on Fable). Its stories:
@@ -4824,7 +4857,8 @@ As planned, with these specifics:
    (`shown.length == min(count, cap)`: the daemon cuts it, `RestoreAction.cs:42`, `RunRequests.cs:269`); `cleanFlow.ts:40` and
    `cleanupHost.ts:27`'s `Pick<…>` gain `previewRestore`; ONE root-free `cleanup/runWords.ts` table for single-action runs (A13,
    A20) replacing `isArchiveOnly` at its three sites; the fake's A20 shapes.
-3. **The selection and the button**: the selection held by ENTRY ID (the plan round's finding 0), kept across a list
+3. **The selection and the button**: every index message carries the view generation it was shown in, refused on mismatch (the S2a
+   own review's #8); the selection held by ENTRY ID (the plan round's finding 0), kept across a list
    replacement only for ids still present and selectable, the dropped ones said; counted against `restoreCeiling`; *Select month*
    (its newest up to the room left, said); *Restore* greyed and refused on the same conditions; an unverified entry never reaches
    stdin. `src/archivePage/` stays far from root: the page hands entry ids as text to `cleanup/`, which converts them.

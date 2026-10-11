@@ -96,19 +96,27 @@ function entriesOf(body: Body): readonly Body[] {
   return Array.isArray(body.entries) ? body.entries.filter(isBody) : [];
 }
 
-/** The answer's entries grouped by agent and month, in the daemon's order — the months the page's indexes name. */
-export function monthsOf(body: Body): readonly MonthGroup[] {
-  return entriesOf(body).reduce<MonthGroup[]>((groups, entry) => grouped(groups, entry), []);
+/** Where each run of equal keys starts, in a list the daemon sorted by that key — one pass, nothing mutated. */
+function runStarts<T>(items: readonly T[], keyOf: (item: T) => string): readonly number[] {
+  return items.flatMap((item, i) => (i === 0 || keyOf(items[i - 1]) !== keyOf(item) ? [i] : []));
 }
 
-/** groups with ntry added: to the last group when it is the same agent and month (the daemon sorted them), else as a new one. */
-function grouped(groups: MonthGroup[], entry: Body): MonthGroup[] {
-  const agent = text(entry, 'agent');
-  const month = text(entry, 'month');
-  const last = groups.at(-1);
-  const same = last !== undefined && last.agent === agent && last.month === month;
+/** The runs of equal keys of `items`, each a slice — linear in the list (the code round's #4: no copy per item). */
+function runsOf<T>(items: readonly T[], keyOf: (item: T) => string): readonly (readonly T[])[] {
+  const starts = runStarts(items, keyOf);
 
-  return same ? [...groups.slice(0, -1), { ...last, entries: [...last.entries, entry] }] : [...groups, { agent, month, entries: [entry] }];
+  return starts.map((start, k) => items.slice(start, starts[k + 1] ?? items.length));
+}
+
+function groupOf(entries: readonly Body[]): MonthGroup {
+  const first = entries[0] ?? {};
+
+  return { agent: text(first, 'agent'), month: text(first, 'month'), entries };
+}
+
+/** The answer's entries grouped by agent and month, in the daemon's order (`ArchiveList.List` sorts by agent, month, key) — the months the page's indexes name. */
+export function monthsOf(body: Body): readonly MonthGroup[] {
+  return runsOf(entriesOf(body), (e) => monthKey(text(e, 'agent'), text(e, 'month'))).map(groupOf);
 }
 
 // ---- one entry ----
@@ -126,8 +134,12 @@ function statusText(entry: Body): string {
   return status.kind === 'known' ? STATUS_WORDS[status.value] : status.label;
 }
 
+/** Verified as the daemon said — a missing flag is "unknown", never "no" (own review #4: absent is not false). */
 function verifiedText(entry: Body): string {
-  if (entry.verified === true) {
+  if (typeof entry.verified !== 'boolean') {
+    return 'unknown';
+  }
+  if (entry.verified) {
     return 'yes';
   }
 
@@ -148,14 +160,23 @@ function entryRow(entry: Body, pathsShown: boolean): ArchiveEntryRow {
 
 // ---- the groups ----
 
-function bytesOf(entries: readonly Body[]): number {
-  return entries.reduce((sum, e) => sum + (count(e, 'bytes') ?? 0), 0);
+/** The bytes of `entries` — or `undefined` when one of them has no size (the code round's #3: absent is not zero, never a partial sum). */
+function bytesOf(entries: readonly Body[]): number | undefined {
+  const sizes = entries.map((e) => count(e, 'bytes'));
+
+  return sizes.every((s) => s !== undefined) ? sizes.reduce<number>((sum, s) => sum + (s ?? 0), 0) : undefined;
+}
+
+function sizeOf(entries: readonly Body[]): string {
+  const bytes = bytesOf(entries);
+
+  return bytes === undefined ? 'size unknown' : sizeText(bytes);
 }
 
 function monthSummary(entries: readonly Body[]): string {
   const verified = entries.filter((e) => e.verified === true).length;
 
-  return `${entries.length} listed · ${verified} verified · ${sizeText(bytesOf(entries))}`;
+  return `${entries.length} listed · ${verified} verified · ${sizeOf(entries)}`;
 }
 
 function monthOf(group: MonthGroup, index: number, state: ArchiveHostState): ArchiveMonth {
@@ -164,27 +185,27 @@ function monthOf(group: MonthGroup, index: number, state: ArchiveHostState): Arc
   return { index, month: group.month, summary: monthSummary(group.entries), expanded, rows: expanded ? group.entries.map((e) => entryRow(e, state.pathsShown)) : [] };
 }
 
-function agentsOf(body: Body, state: ArchiveHostState): ArchiveAgent[] {
-  const agents: ArchiveAgent[] = [];
-  monthsOf(body).forEach((group, index) => {
-    const month = monthOf(group, index, state);
-    const last = agents.at(-1);
-    if (last !== undefined && last.agent === group.agent) {
-      agents[agents.length - 1] = { ...last, months: [...last.months, month] };
-    } else {
-      agents.push({ agent: group.agent, summary: '', months: [month] });
-    }
-  });
-
-  return agents.map((agent) => ({ ...agent, summary: agentSummary(body, agent.agent, agent.months.length) }));
+/** One month as the view shows it, beside the group it was built from. */
+interface Placed {
+  readonly group: MonthGroup;
+  readonly month: ArchiveMonth;
 }
 
-function agentSummary(body: Body, agent: string, months: number): string {
-  const entries = entriesOf(body).filter((e) => text(e, 'agent') === agent);
+function agentOf(run: readonly Placed[]): ArchiveAgent {
+  const months = run.length;
 
-  return `${months} month${months === 1 ? '' : 's'} · ${entries.length} listed · ${sizeText(bytesOf(entries))}`;
+  return {
+    agent: run[0]?.group.agent ?? '',
+    summary: `${months} month${months === 1 ? '' : 's'} · ${run.reduce((n, p) => n + p.group.entries.length, 0)} listed · ${sizeOf(run.flatMap((p) => p.group.entries))}`,
+    months: run.map((p) => p.month),
+  };
 }
 
+function agentsOf(body: Body, state: ArchiveHostState): readonly ArchiveAgent[] {
+  const placed = monthsOf(body).map((group, index): Placed => ({ group, month: monthOf(group, index, state) }));
+
+  return runsOf(placed, (p) => p.group.agent).map(agentOf);
+}
 // ---- the head ----
 
 function linesOf(list: Extract<ListState, { kind: 'read' }>): ArchiveLine[] {
@@ -254,6 +275,7 @@ export function buildArchiveView(state: ArchiveHostState): ArchivePageView {
     ...body(state),
     pathsShown: state.pathsShown,
     pathsLabel: 'Show full session paths',
+    refreshEnabled: state.list.kind !== 'reading',
     headers: HEADERS,
   };
 }

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { ARCHIVE_CAPABILITY, ARCHIVE_LABELS, ARCHIVE_NOW_CAPABILITIES, deriveArchive } from '../archive/archiveView';
-import { ARCHIVE_LIST_CAPABILITY } from '../archivePage/archiveController';
+import { ARCHIVE_LIST_CAPABILITY } from '../shared/archiveCapabilities';
 import { COMMAND_BUTTONS } from '../panel/commandButtons';
 import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { PAGE_ACTIONS } from '../panel/view';

@@ -135,8 +135,9 @@ export const RUN_READ_CALLS: { readonly [K in RunReadName]: 'runRead' | 'archive
   archiveStatus: 'runRead',
   archivePreview: 'archivePreview',
   archiveCheckBase: 'runRead',
-  // E10.S2a: the daemon bounds its own list child by `archive.previewTimeoutSeconds` (`ArchiveChildren.List`); the user's list
-  // reads the same months over the same base, with no child — the archive preview's ceiling.
+  // E10.S2a (own review #6): the daemon bounds the USER's own `archive list` only by its reachability window
+  // (`archive.reachabilitySeconds`, `BaseWindow`) — reading the month indexes after it has no daemon limit. The ceiling is the one the
+  // daemon gives its OWN list child (`ArchiveChildren.List`, `archive.previewTimeoutSeconds`, at most 600 s): the archive preview's setting.
   archiveList: 'archivePreview',
 };
 

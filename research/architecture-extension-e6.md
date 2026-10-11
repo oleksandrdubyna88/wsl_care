@@ -370,9 +370,11 @@ sequenceDiagram
 
 - **`archiveMessages.ts`** — the page's closed set; a month is an INDEX into the list the host holds, checked there.
 - **`archiveController.ts`** — vscode-free: ONE read (`archive list --json`, the client's `archiveList`, unprivileged, the archive
-  preview's ceiling `wslCare.timeouts.archivePreviewSeconds` — the daemon bounds its own list child by
-  `archive.previewTimeoutSeconds`), on the page's first `ready` and on *Refresh*; a capability gate on `status.capabilities`
-  (`archive.list`); a generation count; the open months by agent and month; the paths toggle; an index past the list told.
+  preview's ceiling `wslCare.timeouts.archivePreviewSeconds` — the daemon bounds the user's own list only by its reachability window
+  (`archive.reachabilitySeconds`); 630 s is what it allows its own list child, `archive.previewTimeoutSeconds` at most 600 s), on the page's first `ready` and on *Refresh*; a capability gate on `status.capabilities`
+  (`archive.list`) that a status change moves; a read in flight shared by every Refresh; the list's exit 1 WITH an answer (an
+  unreachable base) read as the answer; a generation count; the open months by agent and month; the paths toggle; a fresh start
+  when the page is closed; an index past the list told.
 - **`archiveViewModel.ts`** + **`archiveView.ts`** — the view: the entries grouped in the daemon's order (agent, month, key),
   each group's counts and bytes summed over the answer's own entries; the status from ONE table of the daemon's index events;
   a session path SHORT until *Show full session paths* (the owner's rule for arguments, carried to session paths).

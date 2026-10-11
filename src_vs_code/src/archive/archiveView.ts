@@ -1,4 +1,4 @@
-import { ARCHIVE_LIST_CAPABILITY } from '../archivePage/archiveController';
+import { ARCHIVE_LIST_CAPABILITY } from '../shared/archiveCapabilities';
 import type { ReadOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
 import { confirmNeeds, previewNeeds } from '../root/cleanupController';

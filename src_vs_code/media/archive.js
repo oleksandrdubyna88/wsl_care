@@ -62,7 +62,9 @@
     top.appendChild(notice);
     top.appendChild(element('p', view.scope, { scope: '' }));
     const tools = element('div', undefined, { part: 'tools' });
-    tools.appendChild(button('Refresh', { action: 'refresh' }, function () { return { type: 'refresh' }; }));
+    const refresh = button('Refresh', { action: 'refresh' }, function () { return { type: 'refresh' }; });
+    refresh.disabled = !view.refreshEnabled;
+    tools.appendChild(refresh);
     tools.appendChild(pathsButton(view));
     top.appendChild(tools);
     return top;

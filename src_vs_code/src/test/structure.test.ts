@@ -269,7 +269,7 @@ test('only the archive flow imports configCall.ts', () => {
   assert.deepEqual(importersOf(sources(), CONFIG_CALL), [ARCHIVE_FLOW]);
 });
 
-test('no panel, status-bar, poller, install, store or Logs-page module imports anything under src/config/', () => {
+test('no panel, status-bar, poller, install, store, Logs-page or Archive-page module imports anything under src/config/', () => {
   const offenders = sources().filter((s) => FAR_FROM_ROOT.some((dir) => s.file.startsWith(dir)) && resolvedImports(s).some((m) => m.startsWith('src/config/')));
   assert.deepEqual(offenders.map((s) => s.file), []);
 });

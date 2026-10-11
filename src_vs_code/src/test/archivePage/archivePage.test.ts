@@ -117,12 +117,44 @@ test('an UNVERIFIED entry removed at its source says how to restore it in a term
   ]);
 });
 
+test('own review #4: an entry whose verified flag is missing reads "unknown" — never "no", never the terminal instruction', () => {
+  const body = listWith([{ status: 'sourceRemoved', verified: undefined }]);
+  const { root } = show(viewOf(state(body, { expanded: new Set([monthKey('claude-code', '2000/01')]) })));
+  assert.equal(entryCells(root)[0]?.[4], 'unknown');
+});
+
+test('own review #5: while the list is being read, Refresh is greyed (the host decides; the page only lays it out)', () => {
+  const reading = show(viewOf({ ...state(goldenFile('archive-list.json')), list: { kind: 'reading' } }));
+  assert.equal(reading.root.one('button[data-action="refresh"]').disabled, true);
+  const answered = show(viewOf(state(goldenFile('archive-list.json'))));
+  assert.equal(answered.root.one('button[data-action="refresh"]').disabled, false);
+});
+
 test('hostile text from the index is inert: it reaches the page as text, cut, with control characters shown as U+FFFD', () => {
   const body = listWith([{ key: 'projects/<img src=x onerror=alert(1)>\u0007.jsonl', agent: 'claude-code' }]);
   const { root } = show(viewOf(state(body, { expanded: new Set([monthKey('claude-code', '2000/01')]), pathsShown: true })));
   const cell = entryCells(root)[0]?.[0] ?? '';
   assert.ok(cell.includes('<img src=x onerror=alert(1)>'), 'shown as text');
   assert.ok(!cell.includes('\u0007'), 'the control character is replaced');
+});
+
+test('code round #3: a month or agent with an entry whose size is missing reads "size unknown", never a partial sum', () => {
+  const body = listWith([{ bytes: 200 }, { entryId: '00000000000000a2', key: 'projects/p/s2.jsonl', bytes: undefined }]);
+  const view = viewOf(state(body));
+  assert.equal(view.agents[0]?.months[0]?.summary, '2 listed · 2 verified · size unknown');
+  assert.match(view.agents[0]?.summary ?? '', / · size unknown$/);
+  const known = viewOf(state(listWith([{ bytes: 200 }, { entryId: '00000000000000a2', key: 'projects/p/s2.jsonl', bytes: 300 }])));
+  assert.equal(known.agents[0]?.months[0]?.summary, `2 listed · 2 verified · ${sizeText(500)}`);
+});
+
+test('code round #4: grouping is linear — 60 000 entries of ONE month are grouped and summarised well inside a second', () => {
+  const entries = Array.from({ length: 60_000 }, (_, i) => ({ entryId: i.toString(16).padStart(16, '0'), key: `projects/p/${i}.jsonl` }));
+  const body = listWith(entries);
+  const started = performance.now();
+  const view = viewOf(state(body));
+  const took = performance.now() - started;
+  assert.equal(view.agents[0]?.months[0]?.summary.startsWith('60000 listed'), true);
+  assert.ok(took < 1000, `grouping 60 000 entries took ${Math.round(took)} ms`);
 });
 
 test('a failed read is said, with no agents; a daemon without archive.list says to update it; and nothing is drawn as an empty archive', () => {
