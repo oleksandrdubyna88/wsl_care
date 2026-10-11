@@ -3687,6 +3687,18 @@ E10.S1b* (a malformed A13 item list cannot change what the daemon archives, and 
 The pre-S1b casts in files this branch did not write (`archiveFlow`, `archiveHost`'s older tests, `cleanupView`,
 `cleanupController`, `client` tests; the hand-built verdicts status in `commandButtons.test.ts`) stay — a later tidy.
 
+### An agent row of the archive reads as one line (2026-10-11)
+
+The owner's panel (extension 0.5.0) ran each per-agent row together — "Claude Code3 sessions · … older than 14 dits own cleanup
+deletes after 90 d". The page test had counted the rows and never read one whole; the model tests read each part alone. RED first
+("actual: 'Claude Code1 session · 2 files · 200 B older than 14 dits own cleanup deletes after 30 d'"), then green; the page script
+broken one line at a time (R1–R3: `media/panel.js` mutated, `archiveView.test.js` run, the file restored by its sha256).
+
+| Guarantee | Held by | RED, and teeth |
+|---|---|---|
+| a row's WHOLE rendered text is "name — due — retention", for every enabled agent, in the strict page harness | `archiveView.test.ts` (*an agent row reads as one line*) | red: the owner's run-together text; teeth R1 (no separator), R2 (a separator after each part) |
+| a row with the retention badge sets the badge apart with " — " too, and the badge keeps its own span and `warn` level (the plan round's #0) | `archiveView.test.ts` (*sets the badge apart too*) | red: as above; teeth R1, R2, R3 (the badge outside the separated parts) |
+
 ### What each E10.S2a guarantee rests on (2026-10-10)
 
 The Archive page, browse only (plan §15s *E10.S2 split into three epics*, *E10.S2a build notes*). RED first, then green; every

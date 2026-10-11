@@ -148,3 +148,33 @@ test('own review #1: a daemon that answered no archive status after a refresh sa
   assert.equal(deriveArchive(state({ status: undefined, asked: true })).line, 'Archive: this daemon does not report its archive status — update the daemon');
   assert.equal(deriveArchive(state({ status: undefined, asked: false })).line, 'Archive: checking…');
 });
+
+// ---- the owner's panel (extension 0.5.0): each agent row ran its parts together ----
+
+/** Every per-agent row of the page as rendered — read as a WHOLE row (its textContent), not its parts one by one. */
+function renderedAgentRowElements(controls: ReturnType<typeof deriveArchive>): Element[] {
+  const view = buildPanelView(answeredSnapshot(), undefined, undefined, controls);
+  const root = new Element('MAIN');
+  const page = runPageScript(fs.readFileSync(PAGE_SCRIPT, 'utf8'), { panel: root });
+  page.message({ type: 'view', view: structuredClone(view) });
+  return root.one('section[data-section="aiAgents"]').all('li[data-archive-agent]');
+}
+
+function renderedAgentRows(controls: ReturnType<typeof deriveArchive>): string[] {
+  return renderedAgentRowElements(controls).map((row) => row.textContent);
+}
+
+test('an agent row reads as one line — its name, what is due and its own retention each set apart by " — "', () => {
+  const controls = deriveArchive(state());
+  const rows = renderedAgentRows(controls);
+  assert.equal(rows[0], 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 30 d', 'the owner saw "Claude Code1 session · …14 dits own cleanup…"');
+  assert.deepEqual(rows, controls.agents.map((a) => `${a.name} — ${a.due} — ${a.retention}`), 'every enabled agent, the same way');
+});
+
+test('a row with the retention badge sets the badge apart too', () => {
+  const preview = goldenFile('archive-preview.json');
+  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
+  const rows = renderedAgentRowElements(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })));
+  assert.equal(rows[0]?.one('span[data-retention-badge]').dataset.level, 'warn', 'the badge keeps its own span and its warn level (plan round #0)');
+  assert.equal(rows[0]?.textContent, 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 7 d — its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d');
+});

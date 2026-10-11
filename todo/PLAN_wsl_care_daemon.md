@@ -4696,6 +4696,45 @@ Each epic is one branch and one PR with its own coai plan and code rounds. S2a s
 
 Sorting and search arrive with the kit's `DataTable` (E18.K1, E18.W1), not here. The boundary is written into E18's table too.
 
+##### E10.S1 follow-up — an agent row reads as one line
+
+> Status: **built 2026-10-11 on `fix/wc-agent-row-separators` — the code round and the own review next (see *As built* below).** Branch `fix/wc-agent-row-separators`, from `main` 1f3a0c6. Extension only
+> (`media/panel.js`, `src/test/archiveView.test.ts`); not a root path, so the own review runs on Opus.
+
+**The symptom (the owner's panel, extension 0.5.0, *AI agents*).** Each per-agent line of the archive runs its parts together:
+"Claude Code3 sessions · 153 files · 71.9 MB older than 14 dits own cleanup deletes after 90 d", "Gemini CLInothing older than 14
+dno deletion of its own known". **The cause:** `media/panel.js:256-264` (`archiveAgent`) appends the name, what is due, the
+retention and the badge as four `span`s with nothing between them; the view model (`src/archive/archiveView.ts:29-37`,
+`ArchiveAgentLine`) gives four separate strings, and no CSS spaces them. **Why it slipped through:** the page test
+(`src/test/archiveView.test.ts:98-110`) counts the rows and never reads a row's whole text; the model tests read each part alone.
+
+**The fix.** `archiveAgent` puts a separator `span` (`data-agent-separator`, text " — ") between each two parts it shows — the
+name, what is due, the retention, and the badge when there is one. The parts keep their own `span`s and data attributes, so the
+badge keeps its `warn` level. Text only, as the page's rule says (`createElement` / `textContent`); the strict page harness does not
+model text nodes, and a span is what every other part of the page uses. The view model does not change: the parts stay separate
+because the badge is styled on its own.
+
+**Tests (RED first).** Two page tests render the panel in the strict harness and assert the `textContent` of WHOLE rows:
+the golden Claude Code row is exactly "Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after
+30 d", every enabled agent reads `name — due — retention`, and a row with the badge ends "… — its own cleanup deletes after 7 d —
+its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d". RED on `main`: "actual: 'Claude Code1 session ·
+2 files · 200 B older than 14 dits own cleanup deletes after 30 d'". Break-its on `media/panel.js` only: the separator removed;
+the separator put after the last part instead of between parts.
+
+**Build order:** the RED tests → the separator in `archiveAgent` → the whole extension suite, lint, package, check:vsix →
+`research/module_vs_code.md` (the archive section's row) and `research/module_tests.md` → the code round and the own review → merge.
+
+**DoD:** the two page tests green and red under each break-it; every extension suite and check green; the docs say the row's shape.
+
+**The plan round** (coai session 0967b21e, `proceed`, codex, one minor finding): #0 accepted — the badge-row test also asserts the
+badge keeps its own span and its `warn` level.
+
+**As built (2026-10-11).** As planned: `archiveAgent` gathers the parts it shows (the badge only when there is one) and puts a
+`data-agent-separator` span " — " between each two. RED first (both page tests, the owner's run-together text); break-its R1 (the
+separator's text emptied) → 2 red, R2 (a separator after each part) → 2 red, R3 (the badge appended outside the separated parts) →
+1 red, each restored by its sha256. The whole extension suite (1244 tests, 0 failed), lint, package and check:vsix (with the
+attested Windows daemon fetched) green.
+
 ##### E10.S2a build notes — the Archive page, browse only
 
 **Goal.** A person presses *Open archive* in the panel's *AI agents* section (or runs *AI OS Care: Open archive*) and sees this
