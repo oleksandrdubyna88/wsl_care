@@ -16,6 +16,33 @@ public sealed record FirstTimerRun(int SchemaVersion, DateTimeOffset At);
 public sealed record DryRunDecision(bool DryRun, string Reason);
 
 /// <summary>
+/// The dry-run state as a timer run NOW would find it, read without writing anything (<see cref="DryRunWindow.Peek"/>, WR-D1 of
+/// PLAN_windows_runner.md): what <c>tasks render</c> shows the person before the first task run.
+/// </summary>
+/// <param name="DryRun">Whether a timer run now would only preview.</param>
+/// <param name="Setting">Whether the setting <c>dryRun</c> is on.</param>
+/// <param name="Week">The dry-run week: one of <see cref="DryWeek"/>.</param>
+/// <param name="Until">When the running week ends; <c>null</c> unless <see cref="Week"/> is <see cref="DryWeek.Running"/>.</param>
+/// <param name="Reason">The sentence a person reads.</param>
+public sealed record DryRunPeek(bool DryRun, bool Setting, string Week, DateTimeOffset? Until, string Reason);
+
+/// <summary>The states of the dry-run week as <see cref="DryRunPeek.Week"/> names them.</summary>
+public static class DryWeek
+{
+    /// <summary>No stamp yet: the first timer (or task) run starts the week.</summary>
+    public const string NotStarted = "notStarted";
+
+    /// <summary>A stamp that cannot be read: the next timer run rewrites it, so the week restarts.</summary>
+    public const string Restarts = "restarts";
+
+    /// <summary>The week runs until <see cref="DryRunPeek.Until"/>.</summary>
+    public const string Running = "running";
+
+    /// <summary>The week has passed.</summary>
+    public const string Passed = "passed";
+}
+
+/// <summary>
 /// Plan §5 <i>Global guards</i>: <c>dryRun = true</c> for the first 7 days for the TIMER; buttons always preview, then
 /// execute on confirmation.
 /// </summary>
@@ -54,6 +81,30 @@ public static class DryRunWindow
         return Week(start, now, note);
     }
 
+    /// <summary>What <see cref="Decide"/> would find for a timer run now — READ-ONLY (WR-D1 of PLAN_windows_runner.md): the stamp is
+    /// read and never written, so showing the state (<c>tasks render</c>) never starts the week. A missing or unreadable stamp is a
+    /// dry run, because the timer run that finds it writes now and starts the week there.</summary>
+    public static DryRunPeek Peek(IHostPaths paths, IFileSystem files, EffectiveConfig config, DateTimeOffset now)
+    {
+        var setting = config.Bool(ConfigKeys.DryRun);
+        var week = PeekWeek(ReadStamp(paths, files), paths, TimeSpan.FromDays(config.Int(ConfigKeys.Timer.FirstDryWindowDays)), now);
+        return new DryRunPeek(setting || week.Dry, setting, week.State, week.Until, setting ? $"the setting dryRun is on; {week.Reason}" : week.Reason);
+    }
+
+    /// <summary>The week as a peek sees it.</summary>
+    private sealed record WeekPeek(bool Dry, string State, DateTimeOffset? Until, string Reason);
+
+    private static WeekPeek PeekWeek(FileReadResult read, IHostPaths paths, TimeSpan length, DateTimeOffset now) => (read, Recorded(read)) switch
+    {
+        (FileReadResult.Missing, _) => new(true, DryWeek.NotStarted, null, "the dry-run week has not started: the first timer or task run starts it"),
+        (_, null) => new(true, DryWeek.Restarts, null, $"{File(paths)} could not be read: the next timer or task run restarts the dry-run week"),
+        (_, { At: var at }) when now < at + length => new(true, DryWeek.Running, at + length, $"the first {length.TotalDays:0} days run dry: until {(at + length).UtcDateTime:yyyy-MM-dd HH:mm}Z"),
+        (_, { At: var at }) => new(false, DryWeek.Passed, null, $"the {length.TotalDays:0} days since the first timer run ({at.UtcDateTime:yyyy-MM-dd}) have passed"),
+    };
+
+    /// <summary>The stamp, read the one way <see cref="Decide"/> and <see cref="Peek"/> both read it.</summary>
+    private static FileReadResult ReadStamp(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths), RootFileCaps.State);
+
     /// <summary>With <c>dryRun</c> off: dry while the week since <paramref name="start"/> runs, or while its start is unknown.</summary>
     private static DryRunDecision Week(DateTimeOffset? start, DateTimeOffset now, string note) => start switch
     {
@@ -65,7 +116,7 @@ public static class DryRunWindow
     /// <summary>The recorded start, writing it when it is missing or unreadable; <c>null</c> when it could not be written.</summary>
     private static (DateTimeOffset? Start, string Note) Start(IHostPaths paths, IFileSystem files, DateTimeOffset now)
     {
-        var read = files.ReadFile(File(paths), RootFileCaps.State);
+        var read = ReadStamp(paths, files);
         if (Recorded(read) is { } stamp)
         {
             return (stamp.At, string.Empty);

@@ -114,6 +114,9 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/History/RunLogs.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/History/RunShow.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/Archive/AgentRetentionReader.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
+        // WR-D1 (PLAN_windows_runner.md §3.7): stage.json beside a staged copy, under %LOCALAPPDATA%\wsl-care\bin — the unelevated
+        // Windows binary's own file, read capped (records.maxStateFileBytes).
+        ["WslCare.Core/Scheduler/StageRecord.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
         ["WslCare.Core/Archive/InUse.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ListEntries"] = (1, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Archive/Selection.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/GitTrees.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },

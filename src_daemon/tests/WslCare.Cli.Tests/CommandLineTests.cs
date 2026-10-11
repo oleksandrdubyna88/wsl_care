@@ -123,6 +123,21 @@ public sealed class CommandLineTests
         CommandLine.Parse(["config", "list"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("get, set, reset");
     }
 
+    /// <summary>WR-D1: <c>tasks render</c> takes one task of the closed set and optionally <c>--json</c>; anything else is refused
+    /// naming the two tasks.</summary>
+    [Fact]
+    public void Tasks_render_takes_one_task_of_the_closed_set_and_optionally_json()
+    {
+        CommandLine.Parse(["tasks", "render", "watch", "--json"]).Should().Be(new Request.TasksRender(Core.Scheduler.WindowsTask.Watch, true));
+        CommandLine.Parse(["tasks", "render", "archive"]).Should().Be(new Request.TasksRender(Core.Scheduler.WindowsTask.Archive, false));
+        foreach (var refused in new[] { new[] { "tasks", "render" }, ["tasks", "render", "collect"], ["tasks", "render", "Watch"], ["tasks", "render", "watch", "--xml"], ["tasks", "render", "watch", "archive"], ["tasks", "render", "--json", "watch"] })
+        {
+            CommandLine.Parse(refused).Should().BeOfType<Request.Failed>(string.Join(' ', refused)).Which.Message.Should().Contain("watch, archive");
+        }
+
+        CommandLine.Parse(["tasks"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("render");
+    }
+
     [Fact]
     public void Every_registered_command_is_in_the_help_text_and_its_example_parses()
     {

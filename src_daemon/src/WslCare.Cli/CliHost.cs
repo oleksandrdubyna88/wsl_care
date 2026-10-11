@@ -39,6 +39,15 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// unless <see cref="ForThisMachine"/> wires the real one on Windows; without it every instance is measured across the window.</summary>
     public IWindowsBoot WindowsBoot { get; init; } = new UnreadWindowsBoot("a host built by a test reads no Windows boot counter");
 
+    /// <summary>The current user's SID — the principal a Windows task XML names (WR-D1, <c>tasks render</c>). Empty unless
+    /// <see cref="ForThisMachine"/> wires <c>WindowsIdentity.GetCurrent().User</c> in the Windows binary; a test hands its own.</summary>
+    public Func<string> UserSid { get; init; } = static () => string.Empty;
+
+    /// <summary>This process's own executable path — what a Windows task's action would start, and what <c>tasks render</c> checks
+    /// is a verified staged copy (WR-D1). Empty unless <see cref="ForThisMachine"/> wires <c>Environment.ProcessPath</c>; a test
+    /// hands its own.</summary>
+    public Func<string> ProcessPath { get; init; } = static () => string.Empty;
+
     /// <summary>What the archive's open-file check asks on the Windows side (plan §15r E9.S5): the Restart Manager and
     /// <see cref="WindowsProcesses"/> in the Windows binary; a check that did not run in the distro's.</summary>
     public IWindowsSide ArchiveWindows() =>
@@ -160,6 +169,8 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
             Signals = SignalsFor(paths, files),
             WindowsProcesses = WindowsProcessesFor(paths),
             WindowsBoot = WindowsBootFor(paths),
+            UserSid = static () => UserSidOfThisProcess(),
+            ProcessPath = static () => Environment.ProcessPath ?? string.Empty,
             InteropRefusal = () => paths is LinuxHostPaths linux ? UserLayerTrusts.InteropRefusal(linux, files) : string.Empty,
         };
     }
@@ -222,6 +233,19 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         paths is WindowsHostPaths && OperatingSystem.IsWindows()
             ? new Win32Boot()
             : new UnreadWindowsBoot("the distro's binary keeps the distro's CPU ledger (mcpServers)");
+
+    /// <summary>The SID of the user this process runs as, on Windows; empty in the distro (no Windows principal there) and when the
+    /// token names none.</summary>
+    private static string UserSidOfThisProcess()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return string.Empty;
+        }
+
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return identity.User?.Value ?? string.Empty;
+    }
 
     private static IHostProbe ProbeFor(IHostPaths paths, IFileSystem files, TimeProvider clock)
     {

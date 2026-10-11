@@ -124,7 +124,30 @@ public sealed class ContractFilesTests
     };
 
     public static IReadOnlyList<(string File, string Text)> Expected =>
-        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText()), ("config-keys.json", ConfigKeysText()), ("status-limits.json", StatusLimitsText())];
+        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText()), ("config-keys.json", ConfigKeysText()), ("status-limits.json", StatusLimitsText()), (WindowsTasksGolden.File, WindowsTasksGolden.Text())];
+
+    /// <summary>WR-D1, the companion of the render golden: it holds both tasks, a registrable answer AND a refused one, each XML is
+    /// one Task Scheduler document naming the SID, and the summary is the shape the extension compares — a golden derived from
+    /// nothing would pass the equality test as well.</summary>
+    [Fact]
+    public void The_windows_tasks_render_golden_holds_both_tasks_and_both_verdicts()
+    {
+        var answers = JsonNode.Parse(WindowsTasksGolden.Text())!["answers"]!.AsArray().Select(a => a!["answer"]!).ToList();
+
+        answers.Select(a => (string)a["task"]!).Should().Equal("watch", "archive", "watch");
+        answers.Select(a => (bool)a["registrable"]!).Should().Equal(true, true, false);
+        ((string)answers[2]["reason"]!).Should().Contain("not a staged copy");
+        foreach (var answer in answers)
+        {
+            var xml = System.Xml.Linq.XDocument.Parse((string)answer["xml"]!);
+            xml.Root!.Name.LocalName.Should().Be("Task");
+            ((string)answer["summary"]![0]!).Should().Be($"principal={WindowsTasksGolden.Sid} logon=3 level=0");
+            ((string)answer["dry"]!["week"]!).Should().Be(Core.Actions.Engine.DryWeek.NotStarted);
+        }
+
+        ((string)answers[0]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT60S interval=PT5M");
+        ((string)answers[1]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT20M interval=PT4H");
+    }
 
     /// <summary>The companion of the config-keys contract: it carries every key, the closed families list and the trust of the
     /// keys R1 is about — a contract derived from nothing would pass the equality test as well.</summary>
@@ -249,6 +272,6 @@ public sealed class ContractFilesTests
 
     private static string Camel(string name) => char.ToLowerInvariant(name[0]) + name[1..];
 
-    private static string Indented(JsonNode node) =>
+    internal static string Indented(JsonNode node) =>
         node.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }).Replace("\r\n", "\n", StringComparison.Ordinal) + "\n";
 }
