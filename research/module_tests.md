@@ -20,8 +20,9 @@
 
 Shared doubles live in `src_daemon/tests/WslCare.TestSupport` (`TempRoot` — removed on dispose, and the first root of a test
 process sweeps the `wsl-care-test-*-<32 hex>` roots that EARLIER processes left behind (a held handle, or an archive run that keeps
-its lock after a stuck base check) once they are older than `TempRoot.LeftoverAge` (24 h); nothing else in `%TEMP%` is touched,
-`TempRootTests` — `SandboxHost`,
+its lock after a stuck base check) once they are older than `TempRoot.LeftoverAge` (24 h) AND their `<root>.owner` marker (pid
+and start time, written beside the root) names no live process; nothing else in `%TEMP%` is touched, `TempRootTests` —
+`SandboxHost`,
 `RecordingCommandRunner`, `FixedTimeProvider`, `DirectoryLinks`, `AccessDenial` — a real access
 denial on one directory, `chmod 000` on Linux and an inherited `icacls` deny for the current user's
 SID on Windows, lifted on dispose and reported as unavailable when it does not take — `TerminalText`
