@@ -75,6 +75,25 @@ public sealed class TasksCommandTests
         File.Exists(DryRunWindow.File(world.Paths)).Should().BeFalse("the render peeks at the dry state and never starts the week");
     }
 
+    /// <summary>The coai plan round on WR-D1: the real command line for BOTH tasks — the archive task from a verified copy names its
+    /// own cadence keys and its own arguments.</summary>
+    [Fact]
+    public void A_verified_staged_copy_renders_the_archive_task_with_its_own_numbers()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new WindowsWorld("tasks-render-archive");
+        var exe = world.Stage();
+
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(exe), "tasks", "render", "archive", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var answer = JsonNode.Parse(stdout)!;
+        answer["registrable"]!.GetValue<bool>().Should().BeTrue(answer["reason"]!.GetValue<string>());
+        answer["taskPath"]!.GetValue<string>().Should().Be("\\wsl-care\\archive");
+        answer["xml"]!.GetValue<string>().Should().Contain("<Arguments>tasks run archive --json</Arguments>");
+        answer["numbers"]!.AsArray().Select(n => (string)n!["key"]!).Should().Equal("windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours", "timer.runLimitMinutes");
+    }
+
     [Fact]
     public void A_render_from_outside_the_staging_root_answers_but_is_not_registrable()
     {

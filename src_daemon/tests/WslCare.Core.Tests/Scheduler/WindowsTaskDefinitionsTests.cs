@@ -21,11 +21,11 @@ public sealed class WindowsTaskDefinitionsTests
 
     private const string Digest = "a14ad2eb0c6f1d9e8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f";
 
-    private static readonly string Staged = $"C:\\Users\\me\\AppData\\Local\\wsl-care\\bin\\{Digest}\\wsl-care.exe";
+    private static readonly string Staged = $"C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\{Digest}\\wsl-care.exe";
 
     private static readonly ConfigLayerFile Machine = new(ConfigLayer.Machine, "C:\\ProgramData\\wsl-care\\config.json");
 
-    private static readonly ConfigLayerFile User = new(ConfigLayer.User, "C:\\Users\\me\\AppData\\Roaming\\wsl-care\\config.json");
+    private static readonly ConfigLayerFile User = new(ConfigLayer.User, "C:\\Users\\user\\AppData\\Roaming\\wsl-care\\config.json");
 
     private static EffectiveConfig Config(string machine = "{}", string user = "{}")
     {
@@ -119,11 +119,11 @@ public sealed class WindowsTaskDefinitionsTests
     [Fact]
     public void A_path_with_xml_characters_is_escaped_in_the_xml_and_plain_in_the_summary()
     {
-        const string odd = "C:\\Users\\R&D <lab>\\AppData\\Local\\wsl-care\\bin\\x\\wsl-care.exe";
+        const string odd = "C:\\Users\\user\\R&D <lab>\\AppData\\Local\\wsl-care\\bin\\x\\wsl-care.exe";
 
         var definition = WindowsTaskDefinitions.Render(WindowsTask.Watch, Config(), new TaskIdentity(Sid, odd));
 
-        definition.Xml.Should().Contain("<Command>C:\\Users\\R&amp;D &lt;lab&gt;\\AppData");
+        definition.Xml.Should().Contain("<Command>C:\\Users\\user\\R&amp;D &lt;lab&gt;\\AppData");
         Element(definition.Xml, "Command").Value.Should().Be(odd);
         definition.Summary[^1].Should().Be($"action type=0 path={odd} args=tasks run watch --json");
     }
