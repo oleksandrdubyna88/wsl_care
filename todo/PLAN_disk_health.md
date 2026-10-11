@@ -1,7 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **in progress, 2026-10-10 — E15.S1 built on its branch `feat/wc-e15s1-windows-disk` (*E15.S1 as built* at the
-> end); E15.S2 onwards not started.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built* at the end); the owner's answers to Q1–Q6
+> recorded (§9); E15.S2 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -70,10 +70,12 @@ exactly the clock probe's argv; it becomes "any PowerShell argv not equal to one
 `HealthCommands.FixedScripts` (`WindowsClock`, `WindowsDisk`)", with a RED test that a third script, the clock script with
 one word changed, and `-File` are still refused. `wsl --shutdown` and `--set-sparse` stay refused for the daemon
 (`NeverList.cs:46`, `:49`, `:138-139`). **PowerShell (the owner, 2026-10-10):** user-context launches use `pwsh` 7 (the
-Store build, through the user's alias), falling back to 5.1; the SYSTEM task stays on 5.1. The interop script runs in the
-Windows user's context — `pwsh.exe` resolves from WSL to the alias and answered in 0.5–2.8 s (D9); as root it is NOT yet
-measured, so E15.S1 measures it first and takes `pwsh.exe` when it answers, `powershell.exe` otherwise (both a closed,
-absolute path; the never-list judges the program AND the script).
+Store build, through the user's alias), falling back to 5.1; the SYSTEM task stays on 5.1. **The daemon's root interop scripts (decided 2026-10-11, Q3):** the MSI `pwsh` at the known folder
+`%ProgramFiles%\PowerShell\7\pwsh.exe` when it is present and its signature checks out the way G1 checks it, otherwise Windows
+PowerShell 5.1. The daemon never resolves the Store package: its cost and its path churn buy nothing for fixed, read-only
+ASCII scripts. (The Store package's own folder under `%ProgramFiles%\WindowsApps` is TrustedInstaller-only; only the
+per-user alias, `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`, is user-writable.) Story E15.S1b builds it; until then both
+scripts run under 5.1 (E15.S1's deviation 1). The never-list judges the program AND the script.
 
 Rejected: *everything through the Windows binary* (blocks the report on E7.S5a, an unbuilt plan of another agent, and the
 binary has no WMI under Native AOT for the disk status and the event log); *the extension reads and judges in TypeScript*
@@ -274,6 +276,7 @@ The template for a threshold key is commit `95448096` (E14 S5).
 | Story | What it builds (reuse → new) | Risk |
 |---|---|---|
 | **E15.S1** the second fixed interop script | `HealthCommands`' tagged-line shape → `Health/WindowsDiskCommands.cs` (Lxss map, VHDX size / sparse / last write, `Get-Volume` + `Get-Partition` with the disk number, `Get-PhysicalDisk`, `Get-StorageReliabilityCounter` in a try (its refusal kept), `Get-WinEvent` System / disk, stornvme, Ntfs, volmgr, storahci / 7, 11, 51, 129, 153, 157 bounded by `disk.eventsSinceDays` (60) and `-MaxEvents disk.eventsMaxRead` (5000), commit and compression lines, MachineGuid + edition + build + install date, `Win32_VideoController` codes for G2, a trailing `end=1`); `Health/WindowsDiskSample.cs` (every figure a `Reading<T>`); the never-list's closed set (§3.1); key `health.windowsDiskTimeoutSeconds` (5–120, 30); `RunBudget` grows by it. Measured FIRST on the owner's machine: the script's wall time, as the target user and as root, with `pwsh.exe` and `powershell.exe`. RED: a third script / a one-word variant / `-File` refused; a cut answer is unavailable, never 0; the D1–D5 answer as an anonymised fixture. No verdict yet. | high — a policy change; the event query's duration |
+| **E15.S1b** the MSI `pwsh` for the root interop scripts (Q3, 2026-10-11) | the resolver's system-drive fallback (a closed list of administrator-only folders, root-owned ancestors, the `MZ` header) gains ONE absolute candidate, `%ProgramFiles%\PowerShell\7\pwsh.exe`, taken only when its signature checks out as G1 checks it (`src_vs_code/src/gpu/gpuScripts.ts:166` `msiPwsh` and the probe's `signed` verdict); how the root daemon checks that signature without trusting a user-writable path is settled in the story's own plan round; the closed set names the two programs (`pwsh` MSI, `powershell.exe`) for each fixed script; the run detail names the engine that ran. Never the Store package, never the alias. Measured FIRST: both scripts under the MSI `pwsh`, cold and warm, where it is installed (the owner's machine has only the Store build today; the story then ships the fallback and its tests). RED: the alias and the Store package path are refused; an unsigned file at the MSI path is refused and 5.1 runs; `pwsh` with a third script is refused. | medium — a policy change |
 | **E15.S2** the virtual disks and the hosting volume | `ThresholdRules.FromFullRun` (`Thresholds/ThresholdRules.cs:130-148`), `RunMetrics` for growth since the previous run, `DockerTotal` / `docker system df` for Docker's data disk (no second Docker walk), `VolumeUsage` for the distro's own `/` → `Thresholds/DiskRules.cs`: `disk.vhdxGap` (warn > `disk.vhdxGapWarnGb` 20), `disk.vhdxGrowth` (> `disk.vhdxGrowthWarnGbPerDay` 10), `disk.hostFree` (the hosting volume's free < the VHDX files' possible growth, or < `disk.hostFreeWarnGb` 100), the sparse advice as TEXT naming `wsl --manage <distro> --set-sparse true` (no button: the daemon may not run it); `status.disk {vhdx[], volumes[], hostGrowth}` replaces the `host.vhdx` placeholder; `mappedBy: mount|size|none` on the wire. RED: 237.7 − 194.0 = 43.7 GiB warns; growth is a difference of two measured sizes, never of one. | medium |
 | **E15.S3** who uses the disk | the two-point ledger of `Mcp/McpCpuLedger.cs` → a per-device `disk-io.json` ledger over `/proc/diskstats` (read class `System`), the root device by mount, others by size; Windows top I/O by `GetProcessIoCounters` in the Windows binary with the fixed caveat "I/O bytes count pipes and network too; the VM's disk traffic is vmmem's" (D6); `disk.busy` (a device above `disk.ioWarnMbPerSec` 200 while `pressure.io` warns). RED: deltas over the ledger interval, a reused device is no baseline. | medium |
 | **E15.S4** disk health by disk number | S1's sample → `disk.events` (events on a disk that hosts a working volume; Harddisk1 counted apart), `disk.physical` (critical when not Healthy / OK), `disk.reliability` (`unknown`: "needs elevation; never elevated"). RED: 64 × `disk` 11 on Harddisk1 do not warn for disk 0. | low |
@@ -299,11 +302,14 @@ The template for a threshold key is commit `95448096` (E14 S5).
 | Story | What it builds | Risk |
 |---|---|---|
 | **E17.S1** the local store, records, rollups and `stats` | §3.2's records, `Stats/StatsWriter.cs` (append under the lock), `Stats/Rollups.cs` (PURE daily / monthly counts: not-ok verdicts by id, actions with freed bytes, recommendations by rung, probe min / median / max, boots predicted / realised, self-cost), `Stats/StatsReader.cs`, `wsl-care stats [--period today|yesterday|week|month|year|<from>..<to>] [--json]`, `stats rebuild`; machine identity cached from S1's lines. RED: every record carries machine id, build and install date; a year view reads twelve monthly rollups and no raw file; a bad line is counted, never fatal; rebuilt rollups equal the incremental ones. A new `research/module_stats.md`. | medium |
-| **E17.S2** the share, the flush, the folder picker | `Archive/BaseFolderRules.cs` with a stats context, `Files/NetworkPaths.cs`, `MountTable.IsWholeDrive`, the archive's read-back → `stats check-base`, `stats check`, `Stats/StatsShare.cs`; keys `stats.baseFolder`, `stats.flushMinutes` (60), `stats.flushTimeoutSeconds` (30), `stats.pendingWarnDays` (3); doctor `stats.store`, `stats.share`; the extension's *Choose statistics folder…* / *Keep statistics local* asked ONCE per install. Measured FIRST (read-only): a 100 KB temp + rename + read-back on `V:` through `/mnt/v`. RED: a day is confirmed only on a digest match; an offline share queues locally and blocks nothing; a stats folder inside the archive base is refused; nothing on the share is ever deleted. | high — SMB from WSL |
+| **E17.S2** the share, the flush, the folder picker | `Archive/BaseFolderRules.cs` with a stats context, `Files/NetworkPaths.cs`, `MountTable.IsWholeDrive`, the archive's read-back → `stats check-base`, `stats check`, `Stats/StatsShare.cs`; keys `stats.baseFolder`, `stats.flushMinutes` (60), `stats.flushTimeoutSeconds` (30), `stats.pendingWarnDays` (3); doctor `stats.store`, `stats.share`; the extension's *Choose statistics folder…* / *Keep statistics local* asked ONCE per install (Q2: a fresh install ASKS; the dialog may pre-fill a local default folder and never pre-fills a network path on its own; on the owner's machine he picks `V:\AiOsCare`). Measured FIRST (read-only): a 100 KB temp + rename + read-back on `V:` through `/mnt/v`. RED: a day is confirmed only on a digest match; an offline share queues locally and blocks nothing; a stats folder inside the archive base is refused; nothing on the share is ever deleted. | high — SMB from WSL |
 | **E17.S3** export, always redacted | `wsl-care stats export --period … --json` (records with `program` only — never a command line), capped by `stats.exportMaxRecords` (100 000). RED: a planted `--token=…` and a creds key never reach an export. | low |
 | **E17.S4** the Windows spool merged | after E7.S5a: the Windows binary writes only its spool; the root daemon merges by watermark and never deletes it. | low (blocked on E7.S5a) |
 
 ### E18 — the KIT and the FULL VIEW (#87)
+
+> **Waits for the owner's go** (2026-10-11): no E18 story starts before he says so. Publishing the kit to npmjs is approved
+> (Q1).
 
 | Story | What it builds | Risk |
 |---|---|---|
@@ -317,7 +323,7 @@ The template for a threshold key is commit `95448096` (E14 S5).
 
 ## 5. Build order and pull requests
 
-E15.S1 → E15.S2 → E15.S5 → E15.S10 → E15.S7 → E15.S6 → E15.S4 → E15.S3 → E15.S9 → E15.S8 ‖ E16.S1 → E16.S2 → E16.S3 → E16.S4 ‖ E16.S5 (after E15.S10; its checkbox half does not wait for the ladder) ‖
+E15.S1 → E15.S2 → E15.S1b → E15.S5 → E15.S10 → E15.S7 → E15.S6 → E15.S4 → E15.S3 → E15.S9 → E15.S8 ‖ E16.S1 → E16.S2 → E16.S3 → E16.S4 ‖ E16.S5 (after E15.S10; its checkbox half does not wait for the ladder) ‖
 E17.S1 → E17.S2 → E17.S3 ‖ E18.K1 → W0 → W1 → W2 → W3 → W4 → W5. E16 starts after E15.S1; E17.S1 after E16.S1 (the probe
 records). E17.S4 and the Windows halves' panel rows wait for E7.S5a and S7b's runner. At most three open pull requests in
 this repository, one per lane; E18.K1 lives in the kit's repository.
@@ -360,12 +366,12 @@ this repository, one per lane; E18.K1 lives in the kit's repository.
 
 | # | Question | Options and the recommendation | Blocks |
 |---|---|---|---|
-| Q1 | The kit on npmjs (public) as the kit plan decided on 2026-10-02? | (a) publish 0.2.0 to npmjs with provenance, wsl_care pins it — recommended; (b) a committed tarball per release (no Dependabot, a blob in git); (c) a submodule (rejected earlier with a reason) | E18.W0 |
-| Q2 | Pre-fill the statistics folder dialog with the archive base's drive? | (a) yes — recommended; (b) a blank dialog | E17.S2's UI |
-| Q3 | The root daemon runs a second fixed PowerShell script every full run (System log, registry, storage cmdlets) | (a) yes, `pwsh.exe` if it answers as root, else 5.1 — recommended; (b) only through the Windows binary (waits for E7.S5a, needs new P/Invoke families) | E15.S1 |
-| Q4 | Who writes the ru / uk / de / es Help? | (a) AI-drafted, reviewed by the owner, one PR per language — recommended; (b) English with "not translated yet" | nothing in W4 itself |
-| Q5 | *Shut down WSL…* while a cleanup or the archive runs | (a) greyed — recommended; (b) available with a stronger modal | E16.S4's modal |
-| Q6 | This machine's Defender exclusions came BEFORE the first per-run record, so the weekly saving has no "before" days here | (a) say so, and offer *Measure now* as the only figure on this machine — recommended; (b) the owner unchecks the box for 7 days to build a baseline (costs Defender CPU for a week); (c) take F1's probe as the baseline (a synthetic workload, not core-hours per week — rejected) | E16.S5's saving line only |
+| Q1 | The kit on npmjs (public) as the kit plan decided on 2026-10-02? | **Decided 2026-10-11 (the owner): (a), publish to npmjs — but E18 does not start before his go.** (a) publish 0.2.0 to npmjs with provenance, wsl_care pins it — recommended; (b) a committed tarball per release (no Dependabot, a blob in git); (c) a submodule (rejected earlier with a reason) | E18.W0 |
+| Q2 | Pre-fill the statistics folder dialog with the archive base's drive? | **Decided 2026-10-11 (the owner): a fresh install ASKS where to store the statistics; the dialog may pre-fill a local default folder, never a network path on its own; on this machine the owner picks `V:\AiOsCare`.** (a) yes — recommended; (b) a blank dialog | E17.S2's UI |
+| Q3 | The root daemon runs a second fixed PowerShell script every full run (System log, registry, storage cmdlets) | **Decided 2026-10-11 (the coordinator, with the recommendation): yes; the MSI `pwsh` at `%ProgramFiles%\PowerShell\7\pwsh.exe` when present and signature-checked, otherwise 5.1; never the Store package (E15.S1b).** (a) yes, `pwsh.exe` if it answers as root, else 5.1 — recommended; (b) only through the Windows binary (waits for E7.S5a, needs new P/Invoke families) | E15.S1 |
+| Q4 | Who writes the ru / uk / de / es Help? | **Decided 2026-10-11: an agent writes them, as coai's were, each language its own content PR through the gate; the UI stays English.** (a) AI-drafted, reviewed by the owner, one PR per language — recommended; (b) English with "not translated yet" | nothing in W4 itself |
+| Q5 | *Shut down WSL…* while a cleanup or the archive runs | **Decided 2026-10-11: (a), greyed with the reason shown while a cleanup or an archive run is in flight.** (a) greyed — recommended; (b) available with a stronger modal | E16.S4's modal |
+| Q6 | This machine's Defender exclusions came BEFORE the first per-run record, so the weekly saving has no "before" days here | **Decided 2026-10-11: (a) — the panel says the exclusions predate the first record, so there are no "before" days on this machine, and offers *Measure now*.** (a) say so, and offer *Measure now* as the only figure on this machine — recommended; (b) the owner unchecks the box for 7 days to build a baseline (costs Defender CPU for a week); (c) take F1's probe as the baseline (a synthetic workload, not core-hours per week — rejected) | E16.S5's saving line only |
 
 Stated assumptions (decided, not asked): `git status` is not a probe component; Windows top I/O stays a labelled slice of
 E15.S3; the Statistics tab shows this machine only; the self-cost defaults come from D8; a restart's effect is attributed to
@@ -447,11 +453,13 @@ warm, 10.7 s cold, 26 lines.
 **Deviations.**
 
 1. **Windows PowerShell 5.1, not `pwsh` 7 — a follow-up, not a setting.** The owner's preference is `pwsh` first. The Store
-   `pwsh` is an app-execution alias under the USER's profile (`%LOCALAPPDATA%\Microsoft\WindowsApps`), a file the Windows user can
-   replace; the resolver's system-drive fallback starts only programs from a closed list in administrator-only folders, after
+   `pwsh` is reached through an app-execution alias under the USER's profile (`%LOCALAPPDATA%\Microsoft\WindowsApps`), a file the
+   Windows user can replace (the package's own folder under `%ProgramFiles%\WindowsApps` is TrustedInstaller-only); the resolver's system-drive fallback starts only programs from a closed list in administrator-only folders, after
    checking root-owned ancestors and the `MZ` header (an alias is a reparse point, not checked). Admitting it would let the root
    daemon start a user-writable program — a policy decision for the owner and the gate. Also, as of this story the distro's own
    PATH answered `command -v pwsh.exe` with nothing (only `powershell.exe`), unlike D9. The clock probe's program is unchanged.
+   **Decided 2026-10-11 (Q3):** the MSI `pwsh` when present and signature-checked, otherwise 5.1, never the Store package —
+   story E15.S1b.
 2. **Not measured as root.** The implementer may not run anything as root on the owner's machine: the script was timed as the
    Windows user from Windows, and the live contract runs it as the distro's user. The first timer run is the first root run.
 3. **The sample is in the run detail only** — not in `SlowParts` / the history line, and `status` is unchanged. E15.S2 decides how
