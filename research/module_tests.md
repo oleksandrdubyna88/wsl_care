@@ -3716,6 +3716,7 @@ time (C1–C6 and C2b, `badge-breakit`: the file mutated, a `.ts` recompiled, th
 | the badge's warn level has `color: var(--vscode-editorWarning-foreground)` (a rule of `media/panel.css` read from the file), and the rendered badge is that rule's SPAN with `data-retention-badge` and `data-level="warn"` and keeps its words (the plan round's #0) | `archiveView.test.ts` (*the editor's warning colour*) | red: `[]`; teeth C2 (a rule of its own with another token), C2b (the badge left out of the warn rule) → 1 red each |
 | an Archive page line reads "label: value" whole — "Archive folder: /golden-root/mnt/v/ai-archive" — every line so, the value span alone, the separator INSIDE the label span | `archivePage.test.ts` (*label: value*) | red: the run-together text; teeth C3 (no separator), C5 (a sibling span after the label) |
 | a Logs page line the same — "Freed in total: 0.3 GB", every line of the page | `logsPage.test.ts` (*label: value*) | red: the run-together text; teeth C4, C6 |
+| follow-up 3 (the coordinator's wording): the badge says what is at risk — "sessions are deleted before the archive takes them at <N> d" — alone, in the derived view, in the WHOLE row and in the colour test | `archiveView.test.ts` (the same four tests) | red: "actual: 'before the archive takes them at 14 d'" (3 tests); teeth D1 (the follow-up-2 text back) |
 
 ### What each E10.S2a guarantee rests on (2026-10-10)
 
