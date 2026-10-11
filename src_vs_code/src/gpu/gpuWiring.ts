@@ -1,11 +1,10 @@
-import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 
 import type { Numbers } from '../settings/numbers';
+import { fileInfoOf } from '../powershell/elevatedEngine';
 import { runnerFor } from '../process/runnerSelection';
 import { enableChoices, noChoiceMessage, type EnableChoice } from './gpuCommand';
 import { GpuHost } from './gpuHost';
-import type { FileInfo } from './gpuScripts';
 import type { GpuState, GpuView } from './gpuState';
 import { sweepGpuPending } from './gpuPending';
 import { gpuUiFor, newGpuRecorder, type GpuRecorder } from './gpuUi';
@@ -58,17 +57,6 @@ export function gpuParts(context: vscode.ExtensionContext, testMode: boolean, nu
   context.subscriptions.push({ dispose: () => host.dispose() });
 
   return { host, recorder, enable };
-}
-
-/** Node's `lstat` of a program the enable might elevate — `undefined` when it cannot be read (absent; ENOENT under WindowsApps, EACCES on an app-execution alias). */
-function fileInfoOf(file: string): FileInfo | undefined {
-  try {
-    const info = fs.lstatSync(file);
-
-    return { bytes: info.size, symlink: info.isSymbolicLink() };
-  } catch {
-    return undefined;
-  }
 }
 
 /** The panel's three GPU members (`PanelActions`): the view, its change, and the button (its index and the read it came from). */

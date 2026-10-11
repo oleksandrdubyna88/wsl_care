@@ -4,7 +4,8 @@ import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
 import { CONFIRM_LABEL, EXIT, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { clearGpuPending, PENDING_GRACE_MS, readGpuPending, writeGpuPending } from './gpuPending';
-import { DISABLED_CODE, ENABLE_EXIT, enableRequestFor, enableScript, engineOf, type Engine, type FileInfoOf, type PwshFacts } from './gpuScripts';
+import { engineChangedSentence, engineOf, withStoreNote, type Engine, type FileInfoOf, type PwshFacts } from '../powershell/elevatedEngine';
+import { DISABLED_CODE, ENABLE_EXIT, enableRequestFor, enableScript } from './gpuScripts';
 import { canEnable, meaningOf, NOT_ASKED, pwshFactsOf, type Adapter, type GpuState } from './gpuState';
 
 /**
@@ -52,12 +53,9 @@ function notRanOf(code: number): EnableExit {
   return why === undefined ? { kind: 'failed', sentence: FAILED[code] ?? `the elevated PowerShell exited ${code}`, launchFailed: code === EXIT.launchFailed } : { kind: 'nothingDone', why };
 }
 
-/** Why the Store package may not start under `runas` (own review 2, F5): the elevating account may not have it. */
-const STORE_NOTE = ' — the Store package may not be available to the account that elevates; install PowerShell 7 (MSI) or elevate as your own account';
-
 /** A failed exit's sentence, with the Store note when the elevated program itself could not be started and it was the package. */
 function failedWords(exit: Extract<EnableExit, { kind: 'failed' }>, engine: Engine): string {
-  return exit.sentence + (exit.launchFailed && engine.kind === 'store' ? STORE_NOTE : '');
+  return withStoreNote(exit.sentence, exit.launchFailed, engine);
 }
 
 function exitedOf(code: number): EnableExit {
@@ -216,7 +214,7 @@ function notStarted(adapter: Adapter, reason: string, deps: EnableDeps): { reado
 async function launched(adapter: Adapter, request: ProcessRequest, engine: Engine, deps: EnableDeps, timeoutMs: number): Promise<EnableResult> {
   const now = engineOf(deps.env, deps.fileInfo, pwshFactsOf(await deps.reread()));
   if (now.file !== engine.file) {
-    deps.report(noticeText(`Nothing ran: the elevated program changed while the question was open (${engine.label} is now ${now.label}). Press the button again.`), true);
+    deps.report(noticeText(engineChangedSentence(engine, now)), true);
     return 'notStarted';
   }
   const startedAtUtcMs = deps.nowUtcMs();

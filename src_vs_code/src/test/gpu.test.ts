@@ -11,7 +11,8 @@ import { enableExitOf, enableGpu, enablePrompt, enableSentence, type EnableDeps 
 import { GpuHost, type GpuHostDeps } from '../gpu/gpuHost';
 import { GPU_PENDING_KEY, readGpuPending, sweepGpuPending } from '../gpu/gpuPending';
 import { DEVICE_PROBLEMS, FIX_WORDS, NEEDS_RESTART } from '../gpu/gpuProblems';
-import { DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, engineOf, INSTANCE_ID, msiPwsh, PWSH_PROBE, QUERY_SCRIPT, queryRequest, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshFacts, type PwshProbe } from '../gpu/gpuScripts';
+import { DISABLED_CODE, ENABLE_EXIT, enableRequest, enableScript, INSTANCE_ID, QUERY_SCRIPT, queryRequest } from '../gpu/gpuScripts';
+import { elevatedPowerShellFor, engineOf, msiPwsh, PWSH_PROBE, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshFacts, type PwshProbe } from '../powershell/elevatedEngine';
 import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, type Adapter, type GpuState } from '../gpu/gpuState';
 import { newGpuRecorder } from '../gpu/gpuRecorder';
 import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '../gpu/ollamaLog';

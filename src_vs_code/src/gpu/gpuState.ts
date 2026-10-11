@@ -1,7 +1,8 @@
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
-import { DISABLED_CODE, INSTANCE_ID, TAGS, type PwshFacts, type PwshProbe } from './gpuScripts';
+import { pwshFactsFromTags, type PwshFacts, type PwshProbe } from '../powershell/elevatedEngine';
+import { DISABLED_CODE, INSTANCE_ID, TAGS } from './gpuScripts';
 import { FIX_WORDS, problemOf, type FixKind } from './gpuProblems';
 import { choiceSentence, type OllamaRead } from './ollamaLog';
 
@@ -106,24 +107,12 @@ export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
   return count > MAX_ADAPTERS ? overCap(count) : adaptersOf(tags, count, atUtcMs);
 }
 
-function isProbeKind(kind: string | undefined): kind is PwshProbe['kind'] {
-  return kind === 'signed' || kind === 'unsigned' || kind === 'absent';
-}
-
-/** A PowerShell 7 as the query verified it (`PWSH_PROBE`), when it answered one of the three kinds. */
-function probeOf(tags: ReadonlyMap<string, string>, kindTag: string, pathTag: string): PwshProbe | undefined {
-  const kind = tags.get(kindTag);
-
-  return isProbeKind(kind) ? { kind, path: tags.get(pathTag) ?? '' } : undefined;
-}
-
 function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: number): GpuState {
   const adapters = Array.from({ length: count }, (_v, i) => i).flatMap((i) => adapterAt(tags, i) ?? []);
   if (adapters.length !== count) {
     return { kind: 'unknown', reason: 'the display-adapter query answered an adapter without its name or code' };
   }
-  const pwsh = probeOf(tags, TAGS.pwshKind, TAGS.pwshPath);
-  const msi = probeOf(tags, TAGS.msiKind, TAGS.msiPath);
+  const { store: pwsh, msi } = pwshFactsFromTags(tags);
 
   return { kind: 'read', adapters, atUtcMs, ...(pwsh === undefined ? {} : { pwsh }), ...(msi === undefined ? {} : { msi }) };
 }
