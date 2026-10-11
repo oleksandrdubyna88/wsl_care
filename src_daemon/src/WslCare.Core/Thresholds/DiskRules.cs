@@ -87,9 +87,15 @@ public static class DiskRules
     private static string GapAdvice(VirtualDiskFacts disk) => disk switch
     {
         { MappedBy: MappedBy.DockerDf } => $"{disk.Name}: {VirtualDisks.DockerNote}",
-        { Sparse: Reading<bool>.Available { Value: false } } => $"{disk.Name}: the space freed inside the file comes back to Windows only when the file is compacted with WSL stopped (wsl --shutdown, then Optimize-VHD or diskpart compact vdisk, as an administrator) — wsl-care never compacts; sparse VHD is not advised: WSL disabled it after data-corruption reports, and a sparse VHDX cannot be compacted",
+        { Sparse: Reading<bool>.Available { Value: false } } => CompactionAdvice(disk),
         _ => $"{disk.Name}: freed blocks reach the file only through discard or fstrim (disk.discard)",
     };
+
+    /// <summary>The compaction advice for ONE file, usable as written (plan round, 2026-10-11): its own path, the prerequisite (WSL
+    /// stopped, an administrator), and both ways — <c>Optimize-VHD</c> (needs the Hyper-V module) or DiskPart's select, attach, compact
+    /// and detach. TEXT only: wsl-care never compacts and never elevates.</summary>
+    private static string CompactionAdvice(VirtualDiskFacts disk) =>
+        $"{disk.Name}: the space freed inside the file comes back to Windows only when the file is compacted with WSL stopped — run wsl --shutdown, then as an administrator either Optimize-VHD -Path \"{disk.Path}\" -Mode Full (needs the Hyper-V module) or, in diskpart: select vdisk file=\"{disk.Path}\", attach vdisk readonly, compact vdisk, detach vdisk — wsl-care never compacts; sparse VHD is not advised: WSL disabled it after data-corruption reports, and a sparse VHDX cannot be compacted";
 
     private static string DockerLabel(IReadOnlyList<VirtualDiskFacts> mapped) =>
         mapped.Any(d => d.MappedBy == MappedBy.DockerDf) ? $" ({VirtualDisks.DockerNote})" : string.Empty;

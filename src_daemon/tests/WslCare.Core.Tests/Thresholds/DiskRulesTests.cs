@@ -80,6 +80,18 @@ public sealed class DiskRulesTests : IDisposable
         gap.Reason.Should().NotContain("--set-sparse true", "WSL disabled sparse VHD after data-corruption reports, and a sparse VHDX cannot be compacted (research/2026-10-02_competitor_survey.md; the never-list's sparse-vhd rule)");
         gap.Reason.Should().Contain("wsl --shutdown").And.Contain("compact").And.Contain("wsl-care never compacts");
         gap.Reason.Should().Contain("sparse VHD is not advised");
+        gap.Reason.Should().Contain($"Optimize-VHD -Path \"{MeasuredUbuntu().Path}\"", "the advice names the file it is about, usable as written (plan round)")
+            .And.Contain($"select vdisk file=\"{MeasuredUbuntu().Path}\"").And.Contain("attach vdisk readonly").And.Contain("detach vdisk")
+            .And.Contain("as an administrator");
+    }
+
+    [Fact]
+    public void Dockers_data_disk_keeps_its_estimate_label_and_gets_no_compaction_advice()
+    {
+        var gap = Find(Evaluate(Facts([Disk("docker-data", 120 * Gib, Reading.Of(60 * Gib), MappedBy.DockerDf)])), DiskRules.GapId);
+
+        gap.Level.Should().Be(Level.Warn, "the level is unchanged by the advice text");
+        gap.Reason.Should().Contain("estimate").And.NotContain("compact vdisk").And.NotContain("--set-sparse");
     }
 
     [Fact]
