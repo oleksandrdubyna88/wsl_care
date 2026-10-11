@@ -223,3 +223,14 @@ test('the selection bar: the host summary, Restore and Clear selection enabled e
   const failed = show(viewOf({ ...state(body), list: { kind: 'failed', sentence: 'The call timed out after 630 s.' } }));
   assert.equal(failed.root.all('[data-block="selection"]').length, 0, 'no list, no selection bar');
 });
+
+// ---- the owner's follow-up to #120: a label and its value read as one text ----
+
+test('a line reads "label: value" as ONE text — what textContent and copy-paste give; the value span stays the value alone', () => {
+  const view = viewOf(state(goldenFile('archive-list.json')));
+  const { root } = show(view);
+  assert.equal(root.one('div[data-line="base"]').textContent, 'Archive folder: /golden-root/mnt/v/ai-archive', 'it read "Archive folder/golden-root/…" before');
+  assert.deepEqual(root.all('div[data-line]').map((line) => line.textContent), view.lines.map((line) => `${line.label}: ${line.value}`));
+  assert.equal(root.one('div[data-line="base"]').one('span[data-value]').textContent, '/golden-root/mnt/v/ai-archive');
+  assert.equal(root.one('div[data-line="base"]').one('span[data-label]').textContent, 'Archive folder: ', 'the separator is INSIDE the label — the line stays two flex items, the gap and the value column unchanged');
+});

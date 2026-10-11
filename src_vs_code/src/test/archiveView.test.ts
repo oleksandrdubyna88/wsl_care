@@ -56,11 +56,11 @@ test('the retention badge shows EXACTLY when the agent\'s own retention is below
   const agent = (days: number, known: boolean, age: number): Record<string, unknown> => ({ retention: { known, days }, effectiveAgeDays: age });
   assert.equal(retentionBadge(agent(30, true, 14)), '', 'retention above the age');
   assert.equal(retentionBadge(agent(14, true, 14)), '', 'equal: the archive takes them on the same day the agent would delete them');
-  assert.equal(retentionBadge(agent(7, true, 14)), 'its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d');
+  assert.equal(retentionBadge(agent(7, true, 14)), 'before the archive takes them at 14 d', 'the retention beside it already says "after 7 d" — never said twice');
   assert.equal(retentionBadge(agent(7, false, 14)), '', 'an unknown retention says nothing it does not know');
   const preview = goldenFile('archive-preview.json');
   const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
-  assert.equal(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0]?.badge, 'its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d');
+  assert.equal(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0]?.badge, 'before the archive takes them at 14 d');
 });
 
 test('a daemon without the archive capability: said, and every button greyed; before any status: checking, greyed', () => {
@@ -176,7 +176,30 @@ test('a row with the retention badge sets the badge apart too', () => {
   const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
   const rows = renderedAgentRowElements(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })));
   assert.equal(rows[0]?.one('span[data-retention-badge]').dataset.level, 'warn', 'the badge keeps its own span and its warn level (plan round #0)');
-  assert.equal(rows[0]?.textContent, 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 7 d — its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d');
+  assert.equal(rows[0]?.textContent, 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 7 d — before the archive takes them at 14 d', 'the retention is said once (the follow-up to #120, #1)');
+});
+
+// ---- the follow-up to #120, #2: the badge's warn level is shown in the editor's warning colour, and the word stays ----
+
+/** The declarations of every rule in panel.css whose selector list names `selector` exactly. */
+function cssDeclarationsFor(selector: string): string[] {
+  const css = fs.readFileSync(PAGE_SCRIPT.replace(/panel\.js$/, 'panel.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((rule) => (rule[1] ?? '').split(',').map((s) => s.trim()).includes(selector))
+    .flatMap((rule) => (rule[2] ?? '').split(';').map((d) => d.trim().replace(/\s+/g, ' ')).filter((d) => d !== ''));
+}
+
+test('the badge\'s warn level has the editor\'s warning colour (a theme token) — and its words stay, so colour is never the only signal', () => {
+  assert.deepEqual(cssDeclarationsFor('span[data-retention-badge][data-level="warn"]'), ['color: var(--vscode-editorWarning-foreground)']);
+  const preview = goldenFile('archive-preview.json');
+  const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
+  const badge = renderedAgentRowElements(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })))[0]?.one('span[data-retention-badge]');
+  assert.equal(badge?.textContent, 'before the archive takes them at 14 d');
+  // The rule's selector, part by part, on the RENDERED badge (the harness matches one attribute at a time; the plan round's #0):
+  // a SPAN, with data-retention-badge (found by it above), with data-level="warn".
+  assert.equal(badge?.tagName, 'SPAN');
+  assert.equal(badge?.dataset.retentionBadge, '');
+  assert.equal(badge?.dataset.level, 'warn');
 });
 
 test('own review #1: a part with no text is left out with its separator — an agent with neither name nor id never starts with " — "', () => {

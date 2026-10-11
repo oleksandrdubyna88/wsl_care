@@ -66,6 +66,11 @@ p[data-level="warn"] {
   color: var(--vscode-editorWarning-foreground);
 }
 
+/* The archive row's retention badge: the warning colour beside its words, never instead of them. */
+span[data-retention-badge][data-level="warn"] {
+  color: var(--vscode-editorWarning-foreground);
+}
+
 tr[data-level="critical"] td[data-value],
 p[data-level="critical"] {
   color: var(--vscode-editorError-foreground);
