@@ -80,9 +80,21 @@ public sealed class DiskRulesTests : IDisposable
         gap.Reason.Should().NotContain("--set-sparse true", "WSL disabled sparse VHD after data-corruption reports, and a sparse VHDX cannot be compacted (research/2026-10-02_competitor_survey.md; the never-list's sparse-vhd rule)");
         gap.Reason.Should().Contain("wsl --shutdown").And.Contain("compact").And.Contain("wsl-care never compacts");
         gap.Reason.Should().Contain("sparse VHD is not advised");
-        gap.Reason.Should().Contain($"Optimize-VHD -Path \"{MeasuredUbuntu().Path}\"", "the advice names the file it is about, usable as written (plan round)")
+        gap.Reason.Should().Contain($"Optimize-VHD -Path '{MeasuredUbuntu().Path}'", "the advice names the file it is about, usable as written (plan round)")
             .And.Contain($"select vdisk file=\"{MeasuredUbuntu().Path}\"").And.Contain("attach vdisk readonly").And.Contain("detach vdisk")
             .And.Contain("as an administrator");
+    }
+
+    [Fact]
+    public void The_suggested_powershell_command_carries_the_path_as_a_literal_that_expands_nothing()
+    {
+        var hostile = Disk("it's $(Remove-Item x)", 255_195_086_848, Reading.Of(208_337_252_352L));
+
+        var reason = Find(Evaluate(Facts([hostile])), DiskRules.GapId).Reason;
+
+        reason.Should().Contain(@"Optimize-VHD -Path 'C:\vhd\it''s $(Remove-Item x)\ext4.vhdx'",
+            "a single-quoted PowerShell literal with the apostrophe doubled expands no $(...) or $env: in the administrator's session (code round)");
+        reason.Should().NotContain("Optimize-VHD -Path \"");
     }
 
     [Fact]
