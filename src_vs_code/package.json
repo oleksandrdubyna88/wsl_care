@@ -274,6 +274,14 @@
           "scope": "application",
           "markdownDescription": "How long the read-only Task Scheduler query behind the panel's *Windows Time guard* line may take, in seconds."
         },
+        "wslCare.timeouts.engineProbeSeconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 5,
+          "maximum": 120,
+          "scope": "application",
+          "markdownDescription": "How long the read-only check of which PowerShell runs elevated (PowerShell 7 resolved and signature-checked, else Windows PowerShell 5.1) may take, in seconds — read when the panel opens or refreshes and again right before every elevated Windows Time run (measured: 0.9–1.8 s)."
+        },
         "wslCare.timeouts.gpuQuerySeconds": {
           "type": "integer",
           "default": 20,

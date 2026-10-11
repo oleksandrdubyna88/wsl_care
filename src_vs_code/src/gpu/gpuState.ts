@@ -1,6 +1,7 @@
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
+import { tagsOf } from '../powershell/taggedAnswer';
 import { pwshFactsFromTags, type PwshFacts, type PwshProbe } from '../powershell/elevatedEngine';
 import { DISABLED_CODE, INSTANCE_ID, TAGS } from './gpuScripts';
 import { FIX_WORDS, problemOf, type FixKind } from './gpuProblems';
@@ -42,32 +43,8 @@ const NAME_MAX = 120;
 
 const INTEGER = /^-?\d+$/;
 
-/** A line's tag and value, or nothing: a line without a `=`, and the `adapter=<i>` block marker (printed once per adapter, read by nobody). */
-function entryOf(line: string): readonly (readonly [string, string])[] {
-  const at = line.indexOf('=');
-  const name = line.slice(0, at);
-
-  return at > 0 && name !== TAGS.adapter ? [[name, line.slice(at + 1).trim()] as const] : [];
-}
-
-/** The answer's `name=value` lines, in order. */
-function entriesOf(stdout: string): readonly (readonly [string, string])[] {
-  return stdout.split(/\r?\n/).flatMap(entryOf);
-}
-
-interface Tags {
-  readonly tags: ReadonlyMap<string, string>;
-  /** The first tag the answer printed TWICE — a value that could have shadowed another (code round 2) — or `undefined`. */
-  readonly twice: string | undefined;
-}
-
-/** The answer as a map built ONCE from its lines; a tag printed twice is named, never read first- or last-wins. */
-function tagsOf(stdout: string): Tags {
-  const entries = entriesOf(stdout);
-  const twice = entries.find(([name], i) => entries.findIndex(([other]) => other === name) !== i)?.[0];
-
-  return { tags: new Map(entries), twice };
-}
+/** The `adapter=<i>` block marker: printed once per adapter, read by nobody. */
+const GPU_IGNORED: ReadonlySet<string> = new Set([TAGS.adapter]);
 
 function tag(tags: ReadonlyMap<string, string>, name: string, i: number): string {
   return tags.get(`${name}.${i}`) ?? '';
@@ -95,7 +72,7 @@ function overCap(count: number): GpuState {
 
 /** The query's stdout as one state: every adapter up to the count it printed LAST, or `unknown` with why. */
 export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
-  const { tags, twice } = tagsOf(stdout);
+  const { tags, twice } = tagsOf(stdout, GPU_IGNORED);
   if (twice !== undefined) {
     return { kind: 'unknown', reason: `the display-adapter query answered a tag twice (${safeText(twice, NAME_MAX)})` };
   }
