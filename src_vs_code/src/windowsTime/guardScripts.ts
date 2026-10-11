@@ -1,5 +1,6 @@
 import type { ProcessRequest } from '../process/runner';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
+import { PWSH_PROBE, TAG_HELPER } from '../powershell/elevatedEngine';
 import { elevatedRequest, powerShellOf } from './windowsTimeFix';
 
 /**
@@ -11,7 +12,15 @@ import { elevatedRequest, powerShellOf } from './windowsTimeFix';
  */
 
 /** The install / remove scripts' own exit codes (the launcher's 13 and 1223, and PowerShell's 1, are read beside them). */
-export const OP_EXIT = { registerFailed: 30, unregisterFailed: 31, cleanupFailed: 32 } as const;
+export const OP_EXIT = { registerFailed: 30, unregisterFailed: 31, cleanupFailed: 32, importFailed: 33 } as const;
+
+/**
+ * `Register-ScheduledTask` by its module's ABSOLUTE path (PLAN_pwsh_engine_windows_time.md D4, measured 2026-10-11): with
+ * the module path pinned to `$PSHOME\Modules`, PowerShell 7 does not hold ScheduledTasks (Windows PowerShell 5.1 does, at
+ * this same System32 path). `[Environment]::SystemDirectory` is GetSystemDirectory, not a variable the elevated process
+ * inherits — G1's `PnpDevice` line, the same pattern.
+ */
+export const IMPORT_SCHEDULED_TASKS = `try { Import-Module -Name (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\Modules\\ScheduledTasks') -ErrorAction Stop } catch { exit ${OP_EXIT.importFailed} }`;
 
 /** `0x80070002` as PowerShell prints an `HResult` — "the system cannot find the file specified": no such folder or task. */
 export const NOT_FOUND_HRESULT = -2147024894;
@@ -28,6 +37,7 @@ export const HERE_END = "'@";
 export function installScript(options: GuardOptions): string {
   return [
     MODULES,
+    IMPORT_SCHEDULED_TASKS,
     "$xml = @'",
     guardTaskXml(options),
     HERE_END,
@@ -65,6 +75,9 @@ export const REMOVE_SCRIPT = [
  */
 export const QUERY_SCRIPT = [
   MODULES,
+  "$ProgressPreference = 'SilentlyContinue'",
+  TAG_HELPER,
+  PWSH_PROBE,
   SUMMARY_FUNCTION,
   `$log = $null; try { $log = Get-WinEvent -ListLog '${TIME_SERVICE_CHANNEL}' -ErrorAction Stop } catch { $log = $null }`,
   "$channel = 'channel=unknown'; if ($null -ne $log) { if ($log.IsEnabled) { $channel = 'channel=enabled' } else { $channel = 'channel=disabled' } }",

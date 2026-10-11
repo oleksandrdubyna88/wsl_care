@@ -1,3 +1,4 @@
+import { pwshFactsFromTags, type PwshFacts } from '../powershell/elevatedEngine';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
@@ -269,4 +270,13 @@ export function guardView(state: GuardState, options: GuardOptions, pending: Pen
 /** While Task Scheduler is asked again, an answer already shown says so (codex: a stale line must not look current). */
 function checkingNote(state: GuardState, checking: boolean): string {
   return checking && state !== NOT_ASKED ? ' (checking again…)' : '';
+}
+
+/**
+ * The PowerShell 7 facts the same query printed FIRST (PLAN_pwsh_engine_windows_time.md D2) — the engine the Windows Time
+ * launcher elevates is chosen from them; `undefined` when the query did not answer, or answered with a failing exit (as
+ * {@link guardStateOf} reads it).
+ */
+export function guardPwshOf(result: ProcessResult): PwshFacts | undefined {
+  return result.kind === 'exited' && signed32(result.code) === 0 ? pwshFactsFromTags(tagged(result.stdout.toString('utf8')).tags) : undefined;
 }

@@ -6,9 +6,10 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import type { ProcessRequest } from '../process/runner';
-import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
+import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, OP_EXIT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
 import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, START_TYPE_QUERY, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, xmlText, type GuardOptions } from '../windowsTime/guardTask';
-import { guardStateOf } from '../windowsTime/guardState';
+import { PWSH_PROBE, TAG_HELPER } from '../powershell/elevatedEngine';
+import { guardPwshOf, guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING } from './support/noRealWsl';
 import { at, parseXml, type XmlElement } from './support/xmlTree';
@@ -227,9 +228,9 @@ test('PowerShell\'s parser reads the action, install, remove and query scripts w
   const out = withFiles(files, (dir) => check("$e=$null; $t=$null; foreach ($f in 'guard.ps1','install.ps1','remove.ps1','query.ps1') { $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 }; $names = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Select-Object -Unique; Write-Output ($f + '=' + ($names -join ',')) }; exit 0", dir));
   const names = Object.fromEntries(out.trim().split(/\r?\n/).map((l) => l.split('=') as [string, string]));
   assert.equal(names['guard.ps1'], 'Get-Service,Set-Service,Get-ItemPropertyValue,Test-WslCareStartAllowed,Test-Path,New-Item,Out-Null,Set-ItemProperty,Start-Service,Join-Path,Start-Sleep', 'the action runs these and nothing else (w32tm by absolute path through &), and no command before the module path is pinned');
-  assert.equal(names['install.ps1'], 'New-Object,Register-ScheduledTask,Out-Null');
+  assert.equal(names['install.ps1'], 'Import-Module,Join-Path,New-Object,Register-ScheduledTask,Out-Null', 'pwsh D4: ScheduledTasks by its absolute path first');
   assert.equal(names['remove.ps1'], 'New-Object,Test-Path,Remove-Item,Get-ChildItem,Get-Item');
-  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Get-WslCareSummary,ForEach-Object');
+  assert.equal(names['query.ps1'], 'Get-AppxPackage,Select-Object,Join-Path,Get-Item,Get-AuthenticodeSignature,tag,verdict,New-Object,Get-WinEvent,Get-WslCareSummary,ForEach-Object', 'pwsh D2: the shared probe (read-only) before the Task Scheduler read');
 });
 
 test('Task Scheduler\'s own parser reads the definition IN MEMORY (nothing registered), and its read-back is exactly the expected summary', WINDOWS_ONLY, () => {
@@ -278,4 +279,34 @@ test('the status query really RUNS on the Windows leg — unelevated, read-only 
   const state = guardStateOf({ kind: 'exited', code: 0, stdout: Buffer.from(result.stdout), stderr: Buffer.alloc(0) });
   assert.notEqual(state.kind, 'unknown', result.stdout);
   assert.match(result.stdout, /^channel=(enabled|disabled|unknown)$/m);
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D2, D4: PowerShell 7 elevated, the facts from this query ----
+
+test('pwsh D4: the install imports ScheduledTasks by its absolute System32 path right after the module path is pinned — before the registration — and exits 33 when it cannot', () => {
+  const lines = installScript(DEFAULTS).split('\n');
+  assert.equal(lines[0], MODULES);
+  assert.equal(lines[1], `try { Import-Module -Name (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\Modules\\ScheduledTasks') -ErrorAction Stop } catch { exit ${OP_EXIT.importFailed} }`);
+  assert.equal(OP_EXIT.importFailed, 33);
+  assert.ok(lines.findIndex((l) => l.includes('Register-ScheduledTask')) > 1);
+  assert.doesNotMatch(REMOVE_SCRIPT, /Import-Module/, 'the removal needs no module beyond $PSHOME (measured 2026-10-11)');
+});
+
+test('pwsh D2: the status query prints the shared PowerShell 7 probe BEFORE the Task Scheduler read (whose catch ends the script), with progress off', () => {
+  const probe = QUERY_SCRIPT.indexOf(PWSH_PROBE);
+  assert.ok(probe > 0, 'the probe is embedded verbatim');
+  assert.ok(QUERY_SCRIPT.indexOf(TAG_HELPER) < probe, 'its tag helper first');
+  assert.ok(QUERY_SCRIPT.indexOf("$ProgressPreference = 'SilentlyContinue'") < probe);
+  assert.ok(probe < QUERY_SCRIPT.indexOf('Schedule.Service'), 'an absent task still reports the engine');
+  assert.ok(QUERY_SCRIPT.startsWith(MODULES), 'the module path is still pinned first');
+});
+
+test('pwsh D2: the facts are read from the same answer — first occurrence wins, so a task summary printed later cannot forge them', () => {
+  const store = 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe';
+  const msi = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  const answer = ['pwsh.store=signed', `pwsh.path=${store}`, 'pwsh.msi=absent', `pwsh.msiPath=${msi}`, 'guard=absent', 'channel=enabled', 'pwsh.store=unsigned'].join('\r\n');
+  const result = { kind: 'exited', code: 0, stdout: Buffer.from(answer), stderr: Buffer.alloc(0) } as const;
+  assert.deepEqual(guardPwshOf(result), { store: { kind: 'signed', path: store }, msi: { kind: 'absent', path: msi } });
+  assert.deepEqual(guardStateOf(result), { kind: 'absent', channel: 'enabled' }, 'the guard state reads as before');
+  assert.equal(guardPwshOf({ kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), undefined, 'no answer: no facts');
 });
