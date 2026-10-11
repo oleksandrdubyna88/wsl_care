@@ -342,7 +342,7 @@ flowchart LR
   "not a measurement") and only forward in time ("the clock moved back"). A negative growth is a shrink.
 - **The verdicts** (`Thresholds/DiskRules.cs`, spread into `ThresholdRules.FromFullRun` after `disk.discard`, so `status`
   carries them with the run and their age): `disk.vhdxGap` (warn above `disk.vhdxGapWarnGib`, 20; "file − guest = gap"; the
-  sparse advice `wsl --manage <distro> --set-sparse true` as TEXT for a distro file that is not sparse — never run; Docker's gap
+  advice, as TEXT, for a distro file that is not sparse: compaction with WSL stopped (`wsl --shutdown`, then `Optimize-VHD` or `diskpart compact vdisk`, as an administrator — wsl-care never compacts) and the warning that sparse VHD is NOT advised (WSL disabled it after data-corruption reports, and a sparse VHDX cannot be compacted) (2026-10-11: the first version named `--set-sparse`, a defect); Docker's gap
   labelled its estimate; a known breach warns, otherwise it is `unknown` — never `ok` — while a mapped disk's gap could not be
   read or THIS distro's own disk is not mapped (its name not known, or matching no file: Docker's estimate alone never reads ok);
   another distro, `none` by design, is outside it), `disk.vhdxGrowth` (warn above `disk.vhdxGrowthWarnGibPerDay`, 10; a known

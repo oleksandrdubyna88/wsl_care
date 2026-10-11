@@ -359,8 +359,7 @@ root `collect` started through `wsl.exe` (the panel's *Run full check now*) carr
 `/var/lib/wsl-care/distro-name.json`; the timer's run, a systemd unit without that variable, reads it back. Until the name is
 recorded no distro is mapped, and the reason says how it becomes known. Three verdicts (none colours the status bar):
 - `disk.vhdxGap` warns when a mapped file is more than `disk.vhdxGapWarnGib` (1–1024, 20) GiB larger than its guest uses. Its
-  value reads "file − guest = gap"; a distro file that is not sparse gets the advice, as TEXT, `wsl --manage <distro> --set-sparse
-  true` (it lets Windows reclaim the space freed inside the file — wsl-care never runs it).
+  value reads "file − guest = gap"; a distro file that is not sparse gets the advice, as TEXT, of compaction with WSL stopped (`wsl --shutdown`, then `Optimize-VHD` or `diskpart compact vdisk`, as an administrator — wsl-care never compacts) and the warning that sparse VHD is NOT advised (WSL disabled it after data-corruption reports, and a sparse VHDX cannot be compacted).
 - `disk.vhdxGrowth` warns when a file grows faster than `disk.vhdxGrowthWarnGibPerDay` (1–1024, 10) GiB a day. Growth is the
   difference of TWO measured sizes of the same file, so it is unknown after the first run, and two sizes less than
   `disk.growthMinHours` (1–48, 1) hours apart give "too close to the previous measurement" (1 GiB in 10 minutes would read as

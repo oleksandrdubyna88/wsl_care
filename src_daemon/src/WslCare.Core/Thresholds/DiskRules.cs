@@ -80,14 +80,26 @@ public static class DiskRules
 
     private static string Names(IReadOnlyList<VirtualDiskFacts> disks) => string.Join(", ", disks.Select(d => d.Name));
 
-    /// <summary>What to do about one disk's gap — TEXT: the sparse switch for a distro file that is not sparse, Docker's label for
-    /// Docker's data disk.</summary>
+    /// <summary>What to do about one disk's gap — TEXT only: for a distro file that is not sparse, compaction with WSL shut down
+    /// (PLAN_wsl_care_daemon.md 0.3) and NEVER the sparse switch — WSL disabled sparse VHD after data-corruption reports and a
+    /// sparse VHDX cannot be compacted (research/2026-10-02_competitor_survey.md; the never-list's <c>sparse-vhd</c> rule; the
+    /// E15.S2 advice that named <c>--set-sparse</c> was a defect, fixed 2026-10-11); Docker's label for Docker's data disk.</summary>
     private static string GapAdvice(VirtualDiskFacts disk) => disk switch
     {
         { MappedBy: MappedBy.DockerDf } => $"{disk.Name}: {VirtualDisks.DockerNote}",
-        { Sparse: Reading<bool>.Available { Value: false } } => $"{disk.Name} is not sparse: wsl --manage {disk.Name} --set-sparse true lets Windows reclaim the space freed inside it — wsl-care never runs it",
+        { Sparse: Reading<bool>.Available { Value: false } } => CompactionAdvice(disk),
         _ => $"{disk.Name}: freed blocks reach the file only through discard or fstrim (disk.discard)",
     };
+
+    /// <summary>The compaction advice for ONE file, usable as written (plan round, 2026-10-11): its own path, the prerequisite (WSL
+    /// stopped, an administrator), and both ways — <c>Optimize-VHD</c> (needs the Hyper-V module) or DiskPart's select, attach, compact
+    /// and detach. TEXT only: wsl-care never compacts and never elevates.</summary>
+    private static string CompactionAdvice(VirtualDiskFacts disk) =>
+        $"{disk.Name}: the space freed inside the file comes back to Windows only when the file is compacted with WSL stopped — run wsl --shutdown, then as an administrator either Optimize-VHD -Path {PowerShellLiteral(disk.Path)} -Mode Full (needs the Hyper-V module) or, in diskpart: select vdisk file=\"{disk.Path}\", attach vdisk readonly, compact vdisk, detach vdisk — wsl-care never compacts; sparse VHD is not advised: WSL disabled it after data-corruption reports, and a sparse VHDX cannot be compacted";
+
+    /// <summary>A PowerShell single-quoted literal: nothing inside it expands (no <c>$(…)</c>, no <c>$env:</c>), and an apostrophe is
+    /// doubled (code round, 2026-10-11 — the path comes from the user's registry and is pasted into an administrator's session).</summary>
+    private static string PowerShellLiteral(string text) => "'" + text.Replace("'", "''", StringComparison.Ordinal) + "'";
 
     private static string DockerLabel(IReadOnlyList<VirtualDiskFacts> mapped) =>
         mapped.Any(d => d.MappedBy == MappedBy.DockerDf) ? $" ({VirtualDisks.DockerNote})" : string.Empty;
