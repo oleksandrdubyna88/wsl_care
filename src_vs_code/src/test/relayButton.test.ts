@@ -257,3 +257,16 @@ test('Stop client-gone relays is a BARE message — any payload is dropped', () 
   assert.deepEqual(parsePageMessage({ type: 'stopRelays' }), { type: 'stopRelays' });
   assert.equal(parsePageMessage({ type: 'stopRelays', processes: ['12000:36500'] }), undefined);
 });
+
+test('an available preview WITHOUT a shown list is no empty selection — it is told as a preview that cannot be acted on (code round)', async () => {
+  const body = relayPreviewBody(relayKeys(1));
+  const actions = body.actions as Record<string, unknown>[];
+  const { shown: _dropped, ...withoutShown } = actions[0] ?? {};
+  const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify({ ...body, actions: [withoutShown] })) });
+  const { flow, recorded } = flowOver(c);
+  const outcome = await flow.relays();
+  assert.equal(outcome.kind, 'nothing');
+  assert.deepEqual(recorded.modals, []);
+  assert.match(recorded.notices.at(-1)?.sentence ?? '', /^The daemon's preview carried no relay list/);
+  assert.doesNotMatch(recorded.notices.at(-1)?.sentence ?? '', /No relay's client is shown gone/);
+});

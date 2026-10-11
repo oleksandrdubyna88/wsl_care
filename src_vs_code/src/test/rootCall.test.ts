@@ -150,3 +150,8 @@ test('S7b.2b: the process list is capped by the COMMAND LINE (MAX_PROCESS_ARGS),
   assert.ok(full.args.join(' ').length < 30_000, `${full.args.join(' ').length} characters would near Windows' 32 767`);
   assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21'], shown: undefined, processes: processes(MAX_PROCESS_ARGS + 1) }), undefined, 'past it nothing is built, whatever maxShownNames says');
 });
+
+test('S7b.2b (code round): A21 is confirmed ALONE — never beside another id, whatever list comes with it', () => {
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A5', 'A21'], shown: undefined, processes: processes(1) }), undefined);
+  assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21', 'A10'], shown: undefined, processes: processes(1) }), undefined);
+});

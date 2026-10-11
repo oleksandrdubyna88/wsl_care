@@ -363,9 +363,9 @@ function unreadRelays(action: PreviewedAction | undefined): string {
 }
 
 function emptyPreview(preview: HeldPreview, action: PreviewedAction): string {
-  return heldCount(preview) === 0 ? `No relay's client is shown gone, so nothing was stopped. The daemon says: ${safeText(action.basis ?? '', BASIS_MAX)}` : '';
-}
+  if (preview.processes === undefined) {
+    return "The daemon's preview carried no relay list, so nothing can be stopped from it — Refresh and try again.";
+  }
 
-function heldCount(preview: HeldPreview): number {
-  return preview.processes === undefined ? 0 : preview.processes.names.length;
+  return preview.processes.names.length === 0 ? `No relay's client is shown gone, so nothing was stopped. The daemon says: ${safeText(action.basis ?? '', BASIS_MAX)}` : '';
 }

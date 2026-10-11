@@ -117,9 +117,14 @@ function confirmTail(ids: ActionIds, shown: readonly VolumeName[] | undefined, p
   return ['act', ids.join(','), '--confirm', '--manual', '--detach', ...only, ...pairs, '--json'];
 }
 
-/** A4 with its shown list and only A4 with one; A21 with a NON-EMPTY process list and only A21 with one; never both lists. */
+/** A4 with its shown list and only A4 with one; A21 ALONE with a NON-EMPTY process list and only A21 with one; never both lists. */
 function listsMatch(ids: ActionIds, shown: readonly VolumeName[] | undefined, processes: readonly ShownProcess[] | undefined): boolean {
-  return ids.includes('A4') === (shown !== undefined) && ids.includes('A21') === (lengthOf(processes) > 0) && (shown === undefined || processes === undefined);
+  return ids.includes('A4') === (shown !== undefined) && relaysMatch(ids, processes) && (shown === undefined || processes === undefined);
+}
+
+/** The code round's finding 3: a process list goes with A21 alone — never a cleanup id beside it under the relay stop's modal. */
+function relaysMatch(ids: ActionIds, processes: readonly ShownProcess[] | undefined): boolean {
+  return ids.includes('A21') ? ids.length === 1 && lengthOf(processes) > 0 : processes === undefined;
 }
 
 function lengthOf(list: readonly unknown[] | undefined): number {
