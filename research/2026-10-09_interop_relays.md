@@ -127,5 +127,5 @@ The two open questions of § 6 stay open:
 - what the fd scan costs on this machine, which `processes.fdScanMilliseconds` (10000, provisional) waits for;
 - whether real relays sit on pipes or on sockets.
 
-The coordinator runs the preview again while relays exist. 0.4.0 is the version the owner's dryRun-off on 2026-10-12 morning
-runs, so A21 acts at the next watch after that.
+The coordinator runs the preview again while relays exist. 0.4.0 is the version installed for the owner's planned dryRun-off on
+2026-10-12 morning; once that is done, A21 acts at the next watch (not observed yet).

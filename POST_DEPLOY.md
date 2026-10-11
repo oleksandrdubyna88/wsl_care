@@ -12,7 +12,7 @@ first date, so it fails from 2026-11-01: rotate to an organization-scoped PAT, o
 (`VSCE_PAT expires: none — OIDC` / `none — manual upload`; docs/repo-settings.md, step 9).
 Last verified: 2026-10-11 · the owner's installation (WSL Ubuntu) · daemon 0.4.0
 — the release, then items 1, 2, 4, 5, 7, 8, 10 and 11, against the attested `daemon-v0.4.0` install of 2026-10-11, 09:59–10:00:16Z,
-from the tag's `install.sh`. This is the version the owner's dryRun-off on 2026-10-12 morning runs.
+from the tag's `install.sh`. 0.4.0 is the version installed for the owner's PLANNED dryRun-off on 2026-10-12 morning; that run is not observed here.
 - **The release:** #72 merged as `9cacb0bd`. The release-please run `38129751957` cut the tag and the draft. `release.yml`
   succeeded (guard, linux-x64, linux-arm64, win-x64, publish), and the release is published, not a draft.
 - **Item 8, the assets:** `verify-release-assets.sh 0.4.0` said "every RID … has its archive and a matching .sha256, nothing
