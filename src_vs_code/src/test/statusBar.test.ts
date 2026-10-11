@@ -57,6 +57,14 @@ test('swap running out (E14 S5: memory.swapFree) colours the bar; promised memor
   assert.doesNotMatch(promised.tooltip, /memory\.committed/);
 });
 
+test('the virtual-disk verdicts (E15.S2: disk.vhdxGap, disk.vhdxGrowth, disk.hostFree) do not colour the bar — the panel shows them', () => {
+  for (const id of ['disk.vhdxGap', 'disk.vhdxGrowth', 'disk.hostFree']) {
+    const view = barView(answered('status', verdict(headBody('status'), id, 'warn')));
+    assert.equal(view.level, 'none', id);
+    assert.ok(!view.tooltip.includes(id), id);
+  }
+});
+
 test('the tooltip names each relevant verdict that is not ok, with its figure', () => {
   const view = barView(answered('status', verdict(headBody('status'), 'memory.swap', 'warn')));
   assert.match(view.tooltip, /memory\.swap: warn — 0\.00 GiB/);

@@ -1926,7 +1926,7 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
 | Swap | Swap trend today | — | — | — | arrives in E6 — needs the logs / runs verbs |
 | Disk | The distribution's / file system | `vm.disk` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Disk | C: free | — | — | — | arrives in E7 — read by wsl-care.exe on the Windows side (E7.S3) |
-| Disk | .vhdx sizes | — | — | — | arrives in E11 — read by the Windows collectors (E11) |
+| Disk | Virtual disks: file − guest = gap (E15.S2) | `verdicts[id=disk.vhdxGap]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Folders | Big folders (the daily walk) | `folders` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Containers | Running now | `vm.containers` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Containers | Docker engine | `docker` | `preview --all --json` | panel open / Refresh | yes |
