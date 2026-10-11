@@ -1,6 +1,6 @@
 # PLAN — the Windows runner: two per-user scheduled tasks run the staged `wsl-care.exe` under one bounded supervisor
 
-> Status: **plan only, nothing implemented yet, 2026-10-11.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side). Nothing elevated, nothing as SYSTEM.
+> Status: **plan only, nothing implemented yet, 2026-10-11.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
 >
 > Related: [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b (A22 = S7b.3, the Windows stop; S7b.1 the ledger; S2b the watch), [PLAN_windows_care.md](PLAN_windows_care.md) §2 and W-A15 (E11), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) D9 (:3010–3017), [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md), [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a, §4 and its forward note), [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the task-registration precedent), [PLAN_pwsh_engine_windows_time.md](../research/PLAN_pwsh_engine_windows_time.md) (the engine rule, F1/F2), [2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md).
 >
@@ -115,6 +115,7 @@ Common: `<Principal><UserId>S-1-5-21-…</UserId><LogonType>InteractiveToken</Lo
 **Daemon keys (the Windows layers; `contracts/config-keys.json` regenerated):**
 - reused: `mcpWatchdog.periodMinutes` (5, 2–15, machine-only; the rule `< cpuIntervalMaxMinutes` at `NumberRules.cs:90–92` holds the cadence under the baseline's maximum), `mcpWatchdog.runLimitMinutes`, `timer.runLimitMinutes`, `timer.firstDryWindowDays`, `dryRun`, `archive.*`, `logging.retentionDays`, `runs.historyRetentionDays`, `records.maxStateFileBytes`;
 - new `windowsTasks.watchLogonDelaySeconds` (60, 0–3600, `SafeDirection.Higher`), `windowsTasks.archiveLogonDelayMinutes` (20, 0–720, Higher; E11's "logon + 20 min"), `windowsTasks.archiveEveryHours` (4, 1–24, Higher). None machine-only (an unelevated runner's user layer is the natural place; Q2).
+- new for the `%TEMP%` cleanup (§3.12): `temp.olderThanDays` (7, 1–365, Higher), `temp.allowGlobs` (a list, default `["coai-*", "wsl-care-test-*"]`; a glob may not contain a path separator and may not match `claude`), `temp.scanMaxNodes` (200000, 1000–10000000, Lower), `temp.scanMaxSeconds` (120, 10–3600, Lower), `temp.maxItemsPerRun` (5000, 1–1000000, Lower), `windowsTasks.cleanupLogonDelayMinutes` (30, 0–720, Higher), `windowsTasks.cleanupEveryHours` (24, 1–168, Higher).
 
 **Extension settings (`settings/numbers.ts`, held equal to `package.json`):** `wslCare.timeouts.windowsTasksSeconds` (60, 10–600: the unelevated install / remove / run-now PowerShell), `wslCare.timeouts.windowsTasksStageSeconds` (60, 10–600: `tasks stage` and `tasks render`), and the Task Scheduler read reuses `wslCare.timeouts.windowsTimeGuardQuerySeconds` because the read is ONE query (§3.8, Q3).
 
@@ -152,10 +153,11 @@ The `.vsix` carries no digest file. The expected digest is the SHA-256 of `<exte
 | `mcp-cpu.json` | ≤ `mcpServers.maxInstances` × 2 points, under `records.maxStateFileBytes` | the ledger's own rule | its temp files swept (`McpCpuLedger.cs:295–304`) |
 | `history.jsonl`, `runs/` | 0 until A22; then S7b item 7's ≤ 5 MB/day, ≤ 70 MB | `RunRetention.Sweep`, now invoked by the Windows watch | the engine's reconcile |
 | the archive's state and index | the archive plan's own (D11: kept forever by decision) | — | the archive's reconcile |
+| `temp-cursor.json` (§3.12) | ~200 B (the last decided name and the run id) | overwritten atomically at each cleanup run | a missing or unreadable cursor starts from the first candidate |
 
 ### 3.11 Not in scope
 
-Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out runs (an `S4U`/password principal); E12's `%TEMP%` cleanup and every other W-A action; A22's stop logic (S7b.3 — this plan gives it the verb and the cadence); the WSL→Windows `tar` hand-off; Authenticode signing; the Logs page's Windows side before A22.
+Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out runs (an `S4U`/password principal); E12's other `%TEMP%` items (stale `swap.vhdx`, which W-A2 also names — left to E12) and every other W-A action; A22's stop logic (S7b.3 — this plan gives it the verb and the cadence); the WSL→Windows `tar` hand-off; Authenticode signing; the Logs page's Windows side before A22.
 
 **Boundary table (to be written into PLAN_twenty_sessions_all_day.md S7b.3, PLAN_windows_care.md E11, PLAN_wsl_care_daemon.md D9 and PLAN_bundle_windows_binary.md §4 — "named on both sides"):**
 
@@ -166,6 +168,55 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 | the staged copy and its path | here | bundle plan §4: "never register its path" stays true of the EXTENSION folder |
 | `\wsl-care\collect` (4-hourly Windows collect), elevated tasks | — | E11 (PLAN_windows_care) |
 | W-A15's schedule | here (the `\wsl-care\archive` task) | the archive plan keeps the verbs; D9's "until E11" clause is closed by this plan |
+| W-A2, the `%TEMP%` cleanup (top-level scratch older than N days, allow-listed) | here (A23, WR-T1–T3, the `\wsl-care\cleanup` task) | PLAN_windows_care.md W-A2 points here; its stale-`swap.vhdx` item stays E12 |
+
+### 3.12 The Windows `%TEMP%` cleanup — W-A2 on the runner (the owner's decision, 2026-10-11)
+
+**Why.** Measured read-only on 2026-10-11 ([2026-10-11_windows_temp.md](../research/2026-10-11_windows_temp.md)): the user's
+`%TEMP%` holds 165 579 top-level entries (156 943 folders, 8 636 files); 138 790 folders and 256 files are older than 7 days. The
+bulk comes from many tools' scratch folders (`stage-<hex>` 12 148, `mindex-idx-<hex>` 5 328, `git-commit-<hex>` 993, …),
+not only coai's (`coai-*` ≈ 4 600, all from that day — coai's own pruner is a separate issue) — and this repository's own tests
+leave `wsl-care-test-*` folders behind (hundreds within 4 days; a test-hygiene defect fixed in its own PR, never hidden by
+this cleanup). W-A2 (PLAN_windows_care.md §4) owns the action; this plan builds it on the runner, so the W-A2 row points here.
+
+**One measured correction to W-A2's text** ("locked = in use = skipped"): a file held open with `FILE_SHARE_DELETE` is deleted
+with NO error on this machine (2026-10-11, a disposable file in the scratchpad), so a sharing violation does not prove "not in
+use". The guards below do not rely on it alone (coai consultation `f2317bca`).
+
+**The action — A23 `windowsTemp`, the engine's FIRST Windows-side action** (`ICleanupAction.Sides`,
+`Core/Actions/ICleanupAction.cs:231`; `act` refuses an action of the other side, `Cli/Commands/ActCommand.cs:116–122`). The
+story proves the engine's Windows path before relying on it: the run records under `%LOCALAPPDATA%\wsl-care` read by the
+existing readers, and the dry window of §3.5.
+
+- **Root:** the current user's `%TEMP%` from the shell-folder API (never the environment variable), its top-level entries
+  only as candidates.
+- **Never:** anything under `%TEMP%\claude\` (the owner's 2026-10-02 rule, a hard-coded guard checked BEFORE any traversal and
+  independent of every setting); an entry not owned by the current user's SID; an entry that is or contains a reparse point
+  (the walk never follows one, and a tree that holds one is retained as "unknown").
+- **Selection for deletion — an ALLOW-list:** `temp.allowGlobs` (default `["coai-*", "wsl-care-test-*"]`: scratch whose disposal
+  is known — coai's review rounds and tests, and this repo's own tests), each candidate's NEWEST descendant write time (files AND
+  folders) older than `temp.olderThanDays` (7). A tree not scanned to its end within the budget is "unknown — retained".
+  Files directly in `%TEMP%` follow the same rules with their own time.
+- **The preview shows MORE than it would delete:** the resolved root, the cutoff and the age rule; eligible / unknown / excluded
+  / deferred counts; "deleted logical bytes" estimated (never "disk freed"); groups by name pattern with exact paths on expand —
+  including the older-than groups that the allow-list does NOT cover ("would be eligible if allowed"), so the owner can widen
+  `temp.allowGlobs` (`wsl-care.exe config set …` — the extension never writes daemon config) from evidence, not guesses.
+- **Budgets on every run:** `temp.scanMaxNodes`, `temp.scanMaxSeconds`, `temp.maxItemsPerRun`; a cursor in
+  `%LOCALAPPDATA%\wsl-care\temp-cursor.json` resumes after the last decided candidate, so a 138 k backlog drains over runs.
+- **The delete:** each candidate is re-validated just before (owner, age, no reparse point, still allowed); a sharing violation
+  or a partial delete is kept and counted, never retried in the same run; the run detail records counts per outcome, per group,
+  and the deleted logical bytes.
+- **Dry first:** `dryRun` and `timer.firstDryWindowDays` on the Windows paths (§3.5) — while dry the run previews only.
+
+**On the runner:** a third task, `\wsl-care\cleanup` (`LogonTrigger` + `windowsTasks.cleanupLogonDelayMinutes` (30),
+repetition `PT<windowsTasks.cleanupEveryHours>H` (24), deadline `timer.runLimitMinutes`), runs `tasks run cleanup` under the
+same supervisor; the body is `act A23` with the timer trigger (the supervisor spells it, never the extension). Its own lock is
+the run lock, taken without waiting (a cleanup never runs beside a watch; a busy lock is "try at the next run").
+
+**In the panel:** *Preview the Windows TEMP cleanup* (read-only, through `WindowsCareClient` on the staged exe as `tasks preview
+cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout `wslCare.timeouts.windowsTempPreviewSeconds`),
+*Install the Windows cleanup task*, *Clean Windows TEMP now* (the task's own `Run`, as §3.8's run-now buttons), and the line
+"last cleanup: <t>, N deleted, M kept in use, <bytes> logical" from the run records.
 
 ## 4. Never
 
@@ -193,6 +244,9 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 | WR-E4 | run-now buttons through the task's own `Run`, "running" state | `tasksFlow.ts`, `tasksHost.ts`, `schedulerHost.ts` | flow + page | **yes** | E3 |
 | WR-E5 | the Archive page's Windows side | `src/archivePage/*`, `archive/archiveHost.ts`, `media/archive.js` | archivePage tests; scenarios | no | E1, D5 |
 | WR-E6 | the Logs page's Windows side (after A22) | `src/logsPage/*` | logsPage tests | no | E1, S7b.3 |
+| WR-T1 | A23 `windowsTemp`: the engine's first Windows action — selection (allow-list, newest-descendant age, owner, reparse, the `claude` guard), budgets + cursor, re-validated delete, run detail; the `temp.*` keys | `Core/Actions/WindowsTemp/` (new), `ActionId.cs`, `ActionRegistry.cs`, `ConfigKeys.Numbers.cs`, `default.json`, `contracts/*` | Core.Tests over a fake file system; a Windows Scenarios flow in a sandbox `%TEMP%` (never the real one) | **yes** (deletes) | D1, D4 |
+| WR-T2 | the cleanup task: `tasks render/run cleanup`, `tasks preview cleanup`, the `windowsTasks.cleanup*` keys | `TasksCommand.cs`, `WindowsTaskDefinitions.cs`, `Core/Scheduler/*` | goldens; supervisor flow | **yes** | T1, D3 |
+| WR-T3 | the panel: preview button, install, clean-now, the last-cleanup line, the preview timeout setting | `src/windowsTasks/*`, `panel/*`, `settings/numbers.ts`, `package.json` | flow + page tests; tripwire | **yes** | T2, E3, E4 |
 | WR-X1 | docs, POST_DEPLOY acceptance item, the boundary rows in four plans | `research/module_daemon.md`, `module_vs_code.md`, `module_archive.md`, `module_tests.md`, `architecture.md`, `POST_DEPLOY.md`, the four plans, `todo/README.md` | plan-lifecycle | no | lands with D1 and E3 |
 
 ## 6. Tests
@@ -208,8 +262,10 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 - E3: `the order is stage → render → show → modal → pending → one unelevated PowerShell → read`; `a digest mismatch stages nothing and registers nothing`; `a render that is not registrable registers nothing`; `a decline runs nothing`; `a pending run holds every button across a reload`; `the tripwire refuses Register-ScheduledTask and a task's Run(`; `the remove keeps the folder while the guard's task is in it`.
 - E4: `run-now starts the person's own task and nothing else`; `a running task reads running in every window`; `not installed → install first`.
 - E5/E6: `the Windows side's archive status and list render`; `the Logs page reads the Windows history`.
+- T1: `Nothing_under_temp_claude_is_ever_selected_whatever_the_allow_list`; `An_entry_of_another_owner_is_excluded`; `A_tree_holding_a_reparse_point_is_retained_and_never_followed`; `An_old_parent_with_a_fresh_nested_file_is_retained`; `A_tree_scanned_past_its_budget_is_unknown_and_retained`; `An_old_folder_outside_the_allow_list_is_previewed_as_would_be_eligible_and_never_deleted`; `A_sharing_violation_is_kept_and_counted`; `The_candidate_is_revalidated_just_before_the_delete`; `The_cursor_resumes_after_the_last_decided_candidate`; `While_dry_the_run_deletes_nothing`; `The_run_detail_counts_outcomes_and_logical_bytes`.
+- T2/T3: `the cleanup task renders with its own cadence`; `the preview button never spells act or --confirm`; `clean-now starts the person's own cleanup task`.
 
-**Break-it on PRODUCT code only (each red, then restored):** the job's kill-on-close flag off; the assign failure ignored (worker resumed anyway); the job handle made inheritable; the deadline on wall time; the registrable check removed from `render`; the digest compare removed from the stage; the run lock taken in the archive body; the dry decision ignored in the archive body; the ledger read before its lock; the sweep at `tasks run` start removed; `--timer` spelled in the extension; the summary compare dropping the principal; the pending record written after the launch; the remove deleting the folder with the guard's task in it; the query reading one task only.
+**Break-it on PRODUCT code only (each red, then restored):** the job's kill-on-close flag off; the assign failure ignored (worker resumed anyway); the job handle made inheritable; the deadline on wall time; the registrable check removed from `render`; the digest compare removed from the stage; the run lock taken in the archive body; the dry decision ignored in the archive body; the ledger read before its lock; the sweep at `tasks run` start removed; `--timer` spelled in the extension; the summary compare dropping the principal; the pending record written after the launch; the remove deleting the folder with the guard's task in it; the query reading one task only; the `claude` guard removed; the owner check removed; reparse points followed; the age read from the top-level folder only; the budget ignored (scan to the end); the re-validation before the delete removed.
 
 ## 7. Owner questions — answered 2026-10-11 (through the coordinator)
 
@@ -233,6 +289,7 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 5. WR-E3 (install/remove), WR-E4 (run now) — the first release with buttons; POST_DEPLOY item with E3.
 6. WR-E5 (Archive page's Windows side).
 7. S7b.3 (A22) plugs into D4's `--timer` branch; then WR-E6.
+7a. WR-T1 (A23) after D1 and D4; WR-T2 after T1 and D3; WR-T3 after T2, E3 and E4.
 8. Docs land in each PR; the boundary rows with D1 and E3; promote this plan when E5 ships (E6 stays an open tail named in the status line).
 
 ## 9. Definition of Done
@@ -241,6 +298,7 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 - [ ] The child + grandchild timeout test green on the Windows leg; no test registers, runs or deletes a real task or starts a real `wsl-care.exe`.
 - [ ] `contracts/config-keys.json`, `contracts/exit-codes.json`, the render golden regenerated; `plan-lifecycle`, lint, typecheck, the daemon's Windows suites and CI's two legs green.
 - [ ] The owner's acceptance (POST_DEPLOY): *Install the Windows watch task* registers `\wsl-care\watch` unelevated; Task Scheduler's first run exits 0 and the ledger advances; *Remove* leaves no task, no folder (when empty) and no staging folder; a blocked start, if any, is shown with Windows' own code.
+- [ ] The Windows `%TEMP%` cleanup: its preview read by the owner before the dry window ends (the not-allow-listed groups named), one real run recorded with counts and logical bytes; nothing under `%TEMP%\claude\` touched.
 - [ ] One dry week on Windows read through `tasks render`'s dry state and the run logs, recorded in `research/` before `dryRun` is turned off there.
 - [ ] Docs updated; the boundary table written into the four plans; the own Fable reviewer of D2, D3, D4, D5, E3 and E4 finds no way to end a process outside the job or move a file outside the archive's rules.
 
@@ -264,3 +322,12 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 - **The staging bound** (§3.10). "Current + one older" was wrong when upgrades come faster than a run ends. The bound is now time-
   based (an old folder outlives its switch by at most one job deadline), with a sweep at every `tasks run` start.
 - **`tasks stage --remove`** (§3.2, WR-D2) was used by the *Remove* flow but not defined; now defined, with two RED tests.
+
+## 12. Added 2026-10-11 — the Windows `%TEMP%` cleanup (the owner's decision)
+
+The owner asked for a `%TEMP%` cleanup run by this runner: unelevated, a preview and the dry window first, a panel button, the
+age as a setting, only the user's own entries older than the limit, never one in use, never through a reparse point, counts and
+bytes in the run detail, a Fable own reviewer. The default selection was decided with the coai consultant (`f2317bca`, closed
+solved): an ALLOW-list for real deletion (`coai-*`, `wsl-care-test-*`), the broad age view in the preview only, the newest
+descendant's time as the age, budgets with a cursor, and "unknown = retained". The consultant's claim that a held file can be
+deleted without a sharing violation was verified on this machine before it changed the design (§3.12). Stories WR-T1–T3.
