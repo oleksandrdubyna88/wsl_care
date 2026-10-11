@@ -255,6 +255,10 @@ flowchart LR
   CurrentBuild.UBR, InstallDate; MachineGuid; the account the script ran as (its SID — interop runs it as the Windows user who
   started the VM, whose hive `HKCU` is; the live contract asserts a user SID and that the running distro is in the Lxss map); each display adapter's problem code, PNP device id and name (for G2). The
   last line is `end=1`.
+- **The module path is pinned first** (2026-10-11, after the #104 Fable review): the disk script AND the clock probe both begin
+  with `HealthCommands.ModulePathPin` — `$env:PSModulePath = $PSHOME + '\Modules'`, the same statement as the extension's
+  `MODULES` (`src_vs_code/src/powershell/elevatedEngine.ts`, held equal by an architecture test) — so no cmdlet can autoload a
+  module from a user's `Documents` before it. Measured live under 5.1: both scripts answer in full with the pin.
 - **The script is one line of ASCII**, no double quote, no control character, none of the never-list's words; its only
   varying parts are the two event numbers, written as invariant integers clamped to their keys' ranges — never text from the
   configuration. Free-text fields (a distro's name, a label, a model, an adapter's name) come LAST on their line.
