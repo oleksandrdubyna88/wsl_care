@@ -1,5 +1,11 @@
 import type { Engine } from '../../powershell/elevatedEngine';
 import type { EngineRead, EngineSource } from '../../powershell/engineHost';
+import type { ProcessRequest } from '../../process/runner';
+
+/** The program a launcher request elevates — the `-ArgumentList` of its `ProcessStartInfo` ('' when none). */
+export function elevatedProgramOf(request: ProcessRequest | undefined): string {
+  return /ProcessStartInfo -ArgumentList '([^']+)'/.exec(request?.args[3] ?? '')?.[1] ?? '';
+}
 
 /** The engines the Windows Time flow tests elevate (PLAN_pwsh_engine_windows_time.md D3). */
 export const PS51 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';

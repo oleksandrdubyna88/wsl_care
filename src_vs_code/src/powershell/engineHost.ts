@@ -1,3 +1,4 @@
+import { notAnsweredWords, type NotAnswered } from '../process/notAnswered';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
@@ -30,12 +31,10 @@ export interface EngineRead {
   readonly failure: string;
 }
 
-const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {
-  timedOut: (r) => `the read did not answer within ${Math.round(r.timeoutMs / 1000)} s (wslCare.timeouts.engineProbeSeconds)`,
-  failedToStart: (r) => `the read could not start: ${r.reason}`,
-  signalled: (r) => `the read was stopped (${r.signal})`,
-  tooMuchOutput: () => 'the read printed more than the extension reads',
-};
+/** Why this query did not answer — the shared wording (`process/notAnswered.ts`). */
+function notAnswered(result: NotAnswered): string {
+  return notAnsweredWords(result, 'the read', 'wslCare.timeouts.engineProbeSeconds');
+}
 
 /** 5.1, labelled with why PowerShell 7 could not be checked (no label at all when not even Windows PowerShell can be named). */
 function failedRead(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, why: string): EngineRead {
@@ -65,7 +64,7 @@ function complete(facts: PwshFacts): boolean {
 /** The verdicts as the engine: none printed, part printed, or the whole answer. */
 function factsRead(facts: PwshFacts, env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf): EngineRead {
   if (unchecked(facts)) {
-    return failedRead(env, fileInfo, 'the read printed no answer');
+    return failedRead(env, fileInfo, 'the read printed no PowerShell 7 verdict');
   }
 
   return complete(facts) ? { engine: engineOf(env, fileInfo, facts), failure: '' } : failedRead(env, fileInfo, 'the read printed an incomplete answer');
@@ -83,7 +82,7 @@ function exitedRead(code: number, stdout: Buffer, env: Readonly<Record<string, s
 
 /** The read's process result as one engine — pure, so every answer is a unit test. */
 export function engineReadOf(result: ProcessResult, env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf): EngineRead {
-  return result.kind === 'exited' ? exitedRead(signed32(result.code), result.stdout, env, fileInfo) : failedRead(env, fileInfo, (NOT_ANSWERED[result.kind] as (r: ProcessResult) => string)(result));
+  return result.kind === 'exited' ? exitedRead(signed32(result.code), result.stdout, env, fileInfo) : failedRead(env, fileInfo, notAnswered(result));
 }
 
 /** Where an elevated flow gets its engine — the host, or a fixed one in a unit test. */
@@ -143,9 +142,14 @@ export class EngineHost {
     return this.latest;
   }
 
-  /** The last read's engine — reading first when there is none yet (§11 R3: the first press never refuses for want of a read). */
+  /**
+   * The last read's engine — reading first when there is none yet, or when the last one did not answer (§11 R3; own code
+   * review, note 8: a panel read that timed out once must not make every first press end in "the program changed").
+   */
   engine(): Promise<EngineRead> {
-    return this.latest === undefined ? this.refresh() : Promise.resolve(this.latest);
+    const latest = this.latest;
+
+    return latest === undefined || latest.failure !== '' ? this.refresh() : Promise.resolve(latest);
   }
 
   /** A read for the panel: the one in flight, or a new one. */
@@ -171,26 +175,40 @@ export class EngineHost {
       if (this.reading === read) {
         this.reading = undefined;
       }
-      this.listeners.forEach((listener) => listener());
+      this.tell();
     };
     void read.then(done, done);
     return read;
   }
 
+  /** Every listener hears the read ended; one that throws cannot stop the others nor reject into the host (note 10). */
+  private tell(): void {
+    this.listeners.forEach((listener) => {
+      try {
+        listener();
+      } catch {
+        // A listener's own fault is its own; the read stands.
+      }
+    });
+  }
+
   private async readOnce(): Promise<EngineRead> {
-    const { env, fileInfo } = this.deps;
-    const request = engineQueryRequest(env, this.deps.timeoutMs());
-    const read = typeof request === 'string' ? failedRead(env, fileInfo, request) : await this.answered(request);
+    const read = await this.answered();
     this.latest = read;
     return read;
   }
 
-  /** The runner's answer as a read — a runner that throws is a read that could not start, never an unhandled rejection. */
-  private async answered(request: ProcessRequest): Promise<EngineRead> {
+  /**
+   * One read as an answer — no request (no Windows PowerShell), a runner that throws, or a ceiling that cannot be read are
+   * reads that could not start, never an unhandled rejection (note 10: `timeoutMs()` is read inside the guard too).
+   */
+  private async answered(): Promise<EngineRead> {
+    const { env, fileInfo } = this.deps;
     try {
-      return engineReadOf(await this.deps.query(request), this.deps.env, this.deps.fileInfo);
+      const request = engineQueryRequest(env, this.deps.timeoutMs());
+      return typeof request === 'string' ? failedRead(env, fileInfo, request) : engineReadOf(await this.deps.query(request), env, fileInfo);
     } catch (e: unknown) {
-      return failedRead(this.deps.env, this.deps.fileInfo, `the read could not start: ${String(e)}`);
+      return failedRead(env, fileInfo, `the read could not start: ${String(e)}`);
     }
   }
 }

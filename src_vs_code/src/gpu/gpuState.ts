@@ -1,3 +1,4 @@
+import { notAnsweredWords, type NotAnswered } from '../process/notAnswered';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
@@ -94,22 +95,27 @@ function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: n
 
 /** The read's PowerShell 7 facts as the state's optional fields — each left out when the probe did not print it. */
 function factFields(facts: PwshFacts): { readonly pwsh?: PwshProbe; readonly msi?: PwshProbe; readonly programFiles?: string } {
-  const fields: [string, unknown][] = [['pwsh', facts.store], ['msi', facts.msi], ['programFiles', facts.programFiles]];
-
-  return Object.fromEntries(fields.filter(([, value]) => value !== undefined));
+  return { ...probeField('pwsh', facts.store), ...probeField('msi', facts.msi), ...programFilesField(facts.programFiles) };
 }
 
-const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {
-  timedOut: (r) => `the display-adapter query did not answer within ${Math.round(r.timeoutMs / 1000)} s (wslCare.timeouts.gpuQuerySeconds)`,
-  failedToStart: (r) => `the display-adapter query could not start: ${r.reason}`,
-  signalled: (r) => `the display-adapter query was stopped (${r.signal})`,
-  tooMuchOutput: () => 'the display-adapter query printed more than the extension reads',
-};
+/** One probe as a typed optional field — nothing when the probe did not print it (own code review, note 12: no `unknown`). */
+function probeField<K extends 'pwsh' | 'msi'>(key: K, probe: PwshProbe | undefined): Partial<Record<K, PwshProbe>> {
+  return probe === undefined ? {} : ({ [key]: probe } as Record<K, PwshProbe>);
+}
+
+function programFilesField(programFiles: string | undefined): { readonly programFiles?: string } {
+  return programFiles === undefined ? {} : { programFiles };
+}
+
+/** Why this query did not answer — the shared wording (`process/notAnswered.ts`). */
+function notAnswered(result: NotAnswered): string {
+  return notAnsweredWords(result, 'the display-adapter query', 'wslCare.timeouts.gpuQuerySeconds');
+}
 
 /** The query's process result as one state. */
 export function gpuStateOf(result: ProcessResult, atUtcMs: number): GpuState {
   if (result.kind !== 'exited') {
-    return { kind: 'unknown', reason: (NOT_ANSWERED[result.kind] as (r: ProcessResult) => string)(result) };
+    return { kind: 'unknown', reason: notAnswered(result) };
   }
   const code = signed32(result.code);
 

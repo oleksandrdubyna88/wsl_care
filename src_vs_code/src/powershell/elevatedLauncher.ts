@@ -76,3 +76,20 @@ export function elevatedRequest(env: Readonly<Record<string, string | undefined>
     : `the elevated PowerShell's path cannot be quoted safely: ${target}`;
 }
 
+
+/** A failing exit of an elevated run: its sentence, and whether the elevated program itself could not be started (13). */
+export interface FailedExit {
+  readonly kind: 'failed';
+  readonly sentence: string;
+  readonly launchFailed?: true;
+}
+
+/**
+ * A failing exit as ONE outcome, shared by every elevated flow (PLAN_pwsh_engine_windows_time.md, its own code review): the
+ * sentence from the caller's table, else "exited <code>"; `launchFailed` on 13 — the Store note's case.
+ */
+export function failedExit(failures: Readonly<Record<number, string>>, code: number): FailedExit {
+  const sentence = failures[code] ?? `the elevated PowerShell exited ${code}`;
+
+  return code === LAUNCH_EXIT.launchFailed ? { kind: 'failed', sentence, launchFailed: true } : { kind: 'failed', sentence };
+}

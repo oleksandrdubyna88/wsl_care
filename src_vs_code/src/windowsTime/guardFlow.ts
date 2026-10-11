@@ -2,8 +2,8 @@ import type { DurableStore } from '../cleanup/journal';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
-import { byEngine, elevatedArg, elevatedProgramLine, withStoreNote, type Engine } from '../powershell/elevatedEngine';
-import { elevatedRequest } from '../powershell/elevatedLauncher';
+import { byEngine, elevatedArg, elevatedProgramLine, NO_ENGINE, withStoreNote, type Engine } from '../powershell/elevatedEngine';
+import { elevatedRequest, failedExit, type FailedExit } from '../powershell/elevatedLauncher';
 import { engineProblem, type EngineSource } from '../powershell/engineHost';
 import { clearPending, readPending, writePending } from './guardPending';
 import { installScript, OP_EXIT, REMOVE_SCRIPT } from './guardScripts';
@@ -26,7 +26,7 @@ export type GuardOutcome =
   | { readonly kind: 'done' }
   | { readonly kind: 'declined' }
   | { readonly kind: 'busy' }
-  | { readonly kind: 'failed'; readonly sentence: string; readonly launchFailed?: true }
+  | FailedExit
   | { readonly kind: 'timedOut'; readonly timeoutMs: number }
   | { readonly kind: 'notStarted'; readonly reason: string }
   /** The read right before the launch disagreed with the modal (another program, or no answer): nothing ran. */
@@ -42,19 +42,12 @@ const OP_FAILURES: Readonly<Record<number, string>> = {
   [OP_EXIT.importFailed]: 'the elevated PowerShell could not load its ScheduledTasks module',
 };
 
-/** A failing exit: its sentence, and whether the elevated program itself could not be started (13 — the Store note's case). */
-function failedOutcome(code: number): GuardOutcome {
-  const sentence = OP_FAILURES[code] ?? `the elevated PowerShell exited ${code}`;
-
-  return code === EXIT.launchFailed ? { kind: 'failed', sentence, launchFailed: true } : { kind: 'failed', sentence };
-}
-
 function exitedOutcome(code: number): GuardOutcome {
   if (code === EXIT.done) {
     return { kind: 'done' };
   }
 
-  return code === EXIT.declined ? { kind: 'declined' } : failedOutcome(code);
+  return code === EXIT.declined ? { kind: 'declined' } : failedExit(OP_FAILURES, code);
 }
 
 const OF_RESULT: { readonly [K in ProcessResult['kind']]: (r: Extract<ProcessResult, { kind: K }>) => GuardOutcome } = {
@@ -186,9 +179,6 @@ async function confirmed(op: GuardOp, deps: GuardFlowDeps, options: GuardOptions
 
   return deps.confirm(op === 'install' ? installPrompt(options, engine) : removePrompt(engine));
 }
-
-/** No engine was read: a run refused before any read (another window's run stands) names none. */
-const NO_ENGINE: Engine = { file: '', label: '', kind: 'windows' };
 
 export async function runGuardOp(op: GuardOp, deps: GuardFlowDeps): Promise<GuardOutcome> {
   if (readPending(deps.durable, deps.nowUtcMs()) !== undefined) {

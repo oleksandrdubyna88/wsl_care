@@ -2,7 +2,7 @@ import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
 import { byEngine, elevatedArg, elevatedProgramLine, withStoreNote, type Engine } from '../powershell/elevatedEngine';
-import { elevatedRequest, LAUNCH_EXIT } from '../powershell/elevatedLauncher';
+import { elevatedRequest, failedExit, LAUNCH_EXIT, type FailedExit } from '../powershell/elevatedLauncher';
 import { engineProblem, type EngineSource } from '../powershell/engineHost';
 
 /**
@@ -55,7 +55,7 @@ export function fixRequest(env: Readonly<Record<string, string | undefined>>, se
 export type FixOutcome =
   | { readonly kind: 'done' }
   | { readonly kind: 'declined' }
-  | { readonly kind: 'failed'; readonly sentence: string; readonly launchFailed?: true }
+  | FailedExit
   | { readonly kind: 'timedOut'; readonly timeoutMs: number }
   | { readonly kind: 'notStarted'; readonly reason: string }
   /** The read right before the launch disagreed with the modal (another program, or no answer): nothing ran. */
@@ -82,19 +82,12 @@ export function outcomeOf(result: ProcessResult): FixOutcome {
   return (OF_RESULT[result.kind] as (r: ProcessResult) => FixOutcome)(result);
 }
 
-/** A failing exit: its sentence, and whether the elevated program itself could not be started (13 — the Store note's case). */
-function failedOutcome(code: number): FixOutcome {
-  const sentence = FAILURES[code] ?? `the elevated PowerShell exited ${code}`;
-
-  return code === EXIT.launchFailed ? { kind: 'failed', sentence, launchFailed: true } : { kind: 'failed', sentence };
-}
-
 function exitedOutcome(code: number): FixOutcome {
   if (code === EXIT.done) {
     return { kind: 'done' };
   }
 
-  return code === EXIT.declined ? { kind: 'declined' } : failedOutcome(code);
+  return code === EXIT.declined ? { kind: 'declined' } : failedExit(FAILURES, code);
 }
 
 export interface FixPrompt {

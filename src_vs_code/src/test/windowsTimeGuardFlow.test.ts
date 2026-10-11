@@ -13,7 +13,7 @@ import { guardScript, guardSummary, type GuardOptions } from '../windowsTime/gua
 import { newGuardRecorder, type GuardRecorder } from '../windowsTime/guardRecorder';
 import { EXIT } from '../windowsTime/windowsTimeFix';
 import { elevatedRequest } from '../powershell/elevatedLauncher';
-import { failedRead, fixedEngine, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
+import { elevatedProgramOf, failedRead, fixedEngine, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
 import { MapStore } from './support/memento';
 
 /**
@@ -280,10 +280,6 @@ function withEngine(h: Harness, source: GuardFlowDeps['engine']): GuardFlowDeps 
   return { ...h.deps, engine: source };
 }
 
-function elevatedProgramOf(request: ProcessRequest | undefined): string {
-  return /ProcessStartInfo -ArgumentList '([^']+)'/.exec(request?.args[3] ?? '')?.[1] ?? '';
-}
-
 test('pwsh D3: install with a verified Store PowerShell 7 — engine, script, modal naming it, a NEW read, then the pending run elevating that path', async () => {
   const h = harness(true, exited(0));
   assert.deepEqual(await runGuardOp('install', withEngine(h, fixedEngine(STORE_READ, STORE_READ, h.events))), { kind: 'done' });
@@ -353,3 +349,15 @@ function hostDepsWith(engine: GuardFlowDeps['engine']): ConstructorParameters<ty
     durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine,
   };
 }
+
+test('own code review, note 13: a timed-out guard run names the engine; exit 13 on the MSI engine carries no Store note', async () => {
+  const timedOut = harness(true, { kind: 'timedOut', timeoutMs: 180_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+  await runGuardOp('install', withEngine(timedOut, fixedEngine(STORE_READ)));
+  assert.match(timedOut.reports[0]?.message ?? '', /did not finish within 180 s .+ Elevated program: PowerShell 7 \(.+\)\.$/);
+  const msi = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  const msiRead = { engine: { file: msi, label: `PowerShell 7 (${msi})`, kind: 'msi' as const }, failure: '' };
+  const launch = harness(true, exited(EXIT.launchFailed));
+  await runGuardOp('remove', withEngine(launch, fixedEngine(msiRead)));
+  assert.match(launch.reports[0]?.message ?? '', /could not be started\. Elevated program: PowerShell 7/);
+  assert.doesNotMatch(launch.reports[0]?.message ?? '', /Store package/);
+});

@@ -225,7 +225,10 @@ export function elevatedPowerShellFor(env: Readonly<Record<string, string | unde
   return sevenOf(env, fileInfo, facts ?? NO_FACTS)?.file;
 }
 
-/** The engine the enable elevates, named: PowerShell 7 when one is chosen, else Windows PowerShell 5.1 (or '' with no PowerShell at all). */
+/** No engine can be named: no Windows PowerShell on this machine, or a run refused before any read. */
+export const NO_ENGINE: Engine = { file: '', label: '', kind: 'windows' };
+
+/** The engine an elevated run starts, named: PowerShell 7 when one is chosen, else Windows PowerShell 5.1 (or {@link NO_ENGINE}). */
 export function engineOf(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, facts: PwshFacts | undefined): Engine {
   const seven = sevenOf(env, fileInfo, facts ?? NO_FACTS);
   if (seven !== undefined) {
@@ -233,7 +236,7 @@ export function engineOf(env: Readonly<Record<string, string | undefined>>, file
   }
   const windows = powerShellOf(env);
 
-  return typeof windows === 'string' ? { file: windows, label: `Windows PowerShell 5.1 (${windows})`, kind: 'windows' } : { file: '', label: '', kind: 'windows' };
+  return typeof windows === 'string' ? { file: windows, label: `Windows PowerShell 5.1 (${windows})`, kind: 'windows' } : NO_ENGINE;
 }
 
 function isProbeKind(kind: string | undefined): kind is PwshProbe['kind'] {

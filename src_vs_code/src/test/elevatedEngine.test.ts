@@ -96,3 +96,9 @@ test('R1: the real package under the known-folder Program Files is elevated only
   assert.equal(engineOf(env, () => undefined, { store: { kind: 'signed', path: REAL_STORE }, msi: undefined, programFiles: PROGRAM_FILES }).file, REAL_STORE);
   assert.equal(engineOf(env, () => undefined, { store: { kind: 'signed', path: REAL_STORE }, msi: undefined }).kind, 'windows', 'a read without the known folder elevates no package');
 });
+
+test('R1 (own code review, finding 2): the REAL package under the known folder is not elevated while the environment names another Program Files', () => {
+  const env = { SystemRoot: 'C:\\Windows', ProgramFiles: 'D:\\Other' };
+  const facts: PwshFacts = { store: { kind: 'signed', path: REAL_STORE }, msi: undefined, programFiles: PROGRAM_FILES };
+  assert.equal(engineOf(env, () => undefined, facts).kind, 'windows', 'the environment must AGREE with the known folder, never only the path');
+});

@@ -14,7 +14,7 @@ import { encoded, outerScript } from '../powershell/elevatedLauncher';
 import { CONFIRM_LABEL, EXIT, fixPrompt, fixRequest, innerScript, outcomeOf, startWindowsTime, type FixDeps, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
 import type { EngineRead } from '../powershell/engineHost';
-import { failedRead, fixedEngine, PS51_ENGINE, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
+import { elevatedProgramOf, failedRead, fixedEngine, PS51_ENGINE, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
 import { ELEVATION_TRIPWIRE_MESSAGE, isElevatedPowerShell } from './support/noRealWsl';
 
 /**
@@ -204,10 +204,6 @@ test('the encoding is PowerShell\'s: UTF-16LE base64', () => {
 function engineDeps(answer: boolean, result: ProcessResult, before: EngineRead, after: EngineRead = before): ReturnType<typeof deps> {
   const d = deps(answer, result);
   return { ...d, deps: { ...d.deps, engine: fixedEngine(before, after, d.events) } };
-}
-
-function elevatedProgramOf(request: ProcessRequest | undefined): string {
-  return /ProcessStartInfo -ArgumentList '([^']+)'/.exec(request?.args[3] ?? '')?.[1] ?? '';
 }
 
 test('pwsh D3: a verified Store PowerShell 7 runs the fix elevated — read before the modal, which names it, and read AGAIN right before the launch', async () => {

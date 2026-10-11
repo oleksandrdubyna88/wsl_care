@@ -200,11 +200,6 @@ function guardOptions(): GuardOptions {
 }
 
 /**
- * The Windows Time guard (PLAN_windows_time_task.md): its host reads Task Scheduler through the REAL runner (never the fake
- * wsl.exe; a recorder in Test mode), and its install / remove run ONE elevated PowerShell each. A pending run past its
- * deadline is swept at activation, so nothing stays "waiting" after a crash.
- */
-/**
  * The engine read (PLAN_pwsh_engine_windows_time.md §11 R3): the REAL runner (never the fake wsl.exe; a recorder in Test mode),
  * shared by *Start Windows Time* and the guard's install / remove, and read again by the panel's refresh.
  */
@@ -212,6 +207,11 @@ function engineHostOf(testMode: boolean, recorder: EngineRecorder): EngineHost {
   return new EngineHost({ env: process.env, fileInfo: fileInfoOf, timeoutMs: () => numbers().engineProbeSeconds * 1000, query: engineQueryFor(testMode, recorder, runnerFor({ kind: 'real' })) });
 }
 
+/**
+ * The Windows Time guard (PLAN_windows_time_task.md): its host reads Task Scheduler through the REAL runner (never the fake
+ * wsl.exe; a recorder in Test mode), and its install / remove run ONE elevated PowerShell each — the engine `engine` chose.
+ * A pending run past its deadline is swept at activation, so nothing stays "waiting" after a crash.
+ */
 function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, recorder: GuardRecorder, engine: EngineHost): WindowsTimeGuardHost {
   void sweepPending(context.globalState, Date.now());
 

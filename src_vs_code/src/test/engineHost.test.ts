@@ -48,7 +48,7 @@ test('a read that did not answer, answered nothing, or answered a tag twice runs
     [{ kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, /did not answer within 20 s \(wslCare\.timeouts\.engineProbeSeconds\)/],
     [{ kind: 'failedToStart', reason: 'ENOENT' }, /could not start: ENOENT/],
     [exited('', 1), /exited 1/],
-    [exited(''), /printed no answer/],
+    [exited(''), /printed no PowerShell 7 verdict/],
     [exited(`${SIGNED_STORE}\npwsh.store=unsigned`), /a tag twice \(pwsh\.store\)/],
   ];
   for (const [result, why] of cases) {
@@ -157,4 +157,48 @@ test('coai code round: a PARTIAL probe answer (it faulted after its first verdic
     assert.match(read.failure, /printed an incomplete answer/, answer);
     assert.match(read.engine.label, /PowerShell 7 could not be checked: the read printed an incomplete answer/);
   }
+});
+
+// ---- the own code review of PLAN_pwsh_engine_windows_time.md: notes 8, 10, 13 ----
+
+test('note 8: engine() reads AGAIN when the last read did not answer — a timed-out panel read does not decide the next press', async () => {
+  const answers = [exited('', 1), exited(SIGNED_STORE)];
+  let asked = 0;
+  const host = new EngineHost({ env: ENV, fileInfo: NO_FILES, timeoutMs: () => 20_000, query: () => Promise.resolve(answers[asked++] ?? exited('', 1)) });
+  assert.notEqual((await host.refresh()).failure, '');
+  assert.equal((await host.engine()).engine.kind, 'store', 'the press reads again and finds the package');
+  assert.equal(asked, 2);
+  assert.equal((await host.engine()).engine.kind, 'store');
+  assert.equal(asked, 2, 'an answered read is used as it is');
+});
+
+test('note 13: engine() during the panel\'s read in flight shares it — one read, not two', async () => {
+  const g = gated();
+  const panel = g.host.refresh();
+  const press = g.host.engine();
+  await settle();
+  assert.equal(g.requests.length, 1);
+  g.release(SIGNED_STORE);
+  assert.equal((await press).engine.kind, 'store');
+  await panel;
+});
+
+test('note 10: a runner that throws, or a ceiling that cannot be read, is a read that could not start — never a rejection', async () => {
+  const throwing = new EngineHost({ env: ENV, fileInfo: NO_FILES, timeoutMs: () => 20_000, query: () => Promise.reject(new Error('spawn EPERM')) });
+  assert.match((await throwing.refresh()).failure, /could not start: Error: spawn EPERM/);
+  const noCeiling = new EngineHost({ env: ENV, fileInfo: NO_FILES, timeoutMs: () => { throw new Error('settings unreadable'); }, query: () => Promise.resolve(exited(SIGNED_STORE)) });
+  const read = await noCeiling.refresh();
+  assert.match(read.failure, /could not start: Error: settings unreadable/);
+  assert.equal(read.engine.kind, 'windows');
+});
+
+test('note 10: a listener that throws neither stops the others nor rejects the read', async () => {
+  const host = new EngineHost({ env: ENV, fileInfo: NO_FILES, timeoutMs: () => 20_000, query: () => Promise.resolve(exited(SIGNED_STORE)) });
+  let heard = 0;
+  host.onChange(() => { throw new Error('a broken listener'); });
+  host.onChange(() => { heard++; });
+  const read = await host.refresh();
+  await settle();
+  assert.equal(read.engine.kind, 'store');
+  assert.equal(heard, 1);
 });

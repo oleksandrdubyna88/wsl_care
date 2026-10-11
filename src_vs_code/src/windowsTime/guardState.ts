@@ -1,3 +1,4 @@
+import { notAnsweredWords, type NotAnswered } from '../process/notAnswered';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
@@ -88,17 +89,15 @@ export function parseGuardAnswer(stdout: string): GuardState {
   return read === undefined ? { kind: 'unknown', reason: 'the Task Scheduler query printed no answer' } : read(t, channelOf(t.tags.get('channel')));
 }
 
-const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {
-  timedOut: (r) => `the Task Scheduler query did not answer within ${Math.round(r.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeGuardQuerySeconds)`,
-  failedToStart: (r) => `the Task Scheduler query could not start: ${r.reason}`,
-  signalled: (r) => `the Task Scheduler query was stopped (${r.signal})`,
-  tooMuchOutput: () => 'the Task Scheduler query printed more than the extension reads',
-};
+/** Why this query did not answer — the shared wording (`process/notAnswered.ts`). */
+function notAnswered(result: NotAnswered): string {
+  return notAnsweredWords(result, 'the Task Scheduler query', 'wslCare.timeouts.windowsTimeGuardQuerySeconds');
+}
 
 /** The query's process result as one state. */
 export function guardStateOf(result: ProcessResult): GuardState {
   if (result.kind !== 'exited') {
-    return { kind: 'unknown', reason: (NOT_ANSWERED[result.kind] as (r: ProcessResult) => string)(result) };
+    return { kind: 'unknown', reason: notAnswered(result) };
   }
   const code = signed32(result.code);
 
