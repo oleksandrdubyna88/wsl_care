@@ -5094,12 +5094,12 @@ README if the Logs page is described, this section's *as built*).
   machine and sat where no key-based normaliser reaches); A20's child answer is the restore of exactly the shown entry (#2).
 - **The code round** (coai session 71d1ed42, `proceed`, 0 gating of 5, codex): #0 the words test walks the table; #1 the privacy
   scan reads any script; #2 the size heading — all accepted and fixed. **The own review (Opus)**: 8 findings (1 high, the
-  machine-dependent entry id) — all taken. Left for the owner: `RestoreAction` believes a restore answer that names an entry it
-  did not ask for (the own review's #2, a daemon check not built here).
+  machine-dependent entry id) — all taken. The own review's #2 (`RestoreAction` believed a restore answer naming an entry it
+  did not ask for) is fixed by the follow-up section below.
 
 ##### E10.S2c follow-up — A20 believes only the entries it asked for
 
-> Status: **built 2026-10-11 on `fix/wc-restore-answer-subset` — the code round and the own review next (see *As built* below).** Branch `fix/wc-restore-answer-subset`, from `main` befb57a (E10.S2c merged,
+> Status: **built 2026-10-11 on `fix/wc-restore-answer-subset` — the code round (proceed) and the own review on Fable done, every suite green; merge next (see *As built* below).** Branch `fix/wc-restore-answer-subset`, from `main` befb57a (E10.S2c merged,
 > #114). Root path (A20's run): the own review runs on Fable. Found by E10.S2c's own review (#2).
 
 **Symptom.** `RestoreAction.RunAsync` (`src_daemon/src/WslCare.Core/Archive/RestoreAction.cs:76`) hands the child the shown entry
@@ -5135,6 +5135,13 @@ replaces a file). #1 accepted — the keys are planted and asserted absent.
 **As built (2026-10-11).** As planned: `RestoreAction.Asked` / `AnswerProblem` before `Counted`; the check applies to a `done`
 answer (any other outcome already fails with "nothing was restored" and records no session). RED first ("Expected run.Succeeded to
 be False … but found True" for both); break-its B1 (the subset check) and B2 (the twice check) each turn their test red.
+
+**The code round** (coai session b4bc2767, `proceed`, one finding from the four codex reviewers, gating): #0 rejected with a reason — the id in the reason cannot
+carry a key or a control character: `ArchiveChildAnswers` refuses the whole answer first when a session's id is not 16 lowercase hex.
+**The own review on Fable** (5 findings, none high): #1 and #2 taken as tests with teeth (the asked list is the NARROWED one —
+break-it B3; an unasked entry is refused whatever its outcome — B4); #5 a direct theory of `AnswerProblem`; #4 a stale line
+corrected. #3 ("fewer" is out of the child's contract too — it answers every asked id) is kept as the coordinator set it: the rule
+is a SUBSET, and an asked entry the answer leaves out is simply not recorded as restored — nothing false is recorded.
 
 **Break-it:** the subset check removed → the extra-entry test red; the duplicate check removed → the twice test red.
 

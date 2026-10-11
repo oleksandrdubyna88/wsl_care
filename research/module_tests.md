@@ -3786,13 +3786,16 @@ then broken one product line at a time (L1–L6), each red.
 
 ### A20 believes only the entries it asked for (2026-10-11)
 
-E10.S2c's own review #2, fixed in the daemon. RED first; each check then broken in the product line it rests on (B1, B2).
+E10.S2c's own review #2, fixed in the daemon. RED first; each check then broken in the product line it rests on (B1–B4).
 
 | Guarantee | Held by | RED, and teeth |
 |---|---|---|
 | a restore answer naming an entry A20 did not ask for fails the run, names the entry id, says the outcome is not known from that answer, records nothing of it — and holds no key | `RestoreActionTests` (*did not ask for*) | red: `Expected run.Succeeded to be False … but found True`; teeth B1 → 1 red |
 | an answer naming one entry twice fails the same way | `RestoreActionTests` (*one entry twice*) | red: `found True`; teeth B2 → 1 red |
 | an answer naming exactly the asked entries, or fewer, is believed as before | `RestoreActionTests` (*exactly or fewer*) | — (the companion) |
+| the asked list is the one handed to the child — the shown entries NARROWED to those still restorable (own review on Fable #1) | `RestoreActionTests` (*the narrowing left out*) | teeth B3 (the shown list instead) → 1 red |
+| an unasked entry is refused whatever its outcome — a refused one never reaches the refused-sessions sentence (#2) | `RestoreActionTests` (*whatever its outcome*) | teeth B4 (only restored ones checked) → 1 red |
+| the rule itself: the first stranger, then the first duplicate; empty lists and any order clean (#5) | `RestoreActionTests` (*the answer rule*, 6 rows) | teeth B1 and B2 |
 
 
 Each break-it was one mutation of a product file, compiled, the named test files run (`--test-concurrency=8`), then the file
