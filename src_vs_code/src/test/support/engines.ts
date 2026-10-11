@@ -24,5 +24,6 @@ export function fixedEngine(before: EngineRead, after: EngineRead = before, even
   return {
     engine: () => { events?.push('engine'); return Promise.resolve(before); },
     reread: () => { events?.push('reread'); return Promise.resolve(after); },
+    last: () => after,
   };
 }

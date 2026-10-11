@@ -13,7 +13,7 @@ import { GPU_PENDING_KEY, readGpuPending, sweepGpuPending } from '../gpu/gpuPend
 import { DEVICE_PROBLEMS, FIX_WORDS, NEEDS_RESTART } from '../gpu/gpuProblems';
 import { DISABLED_CODE, ENABLE_EXIT, enableRequest, enableScript, INSTANCE_ID, QUERY_SCRIPT, queryRequest } from '../gpu/gpuScripts';
 import { elevatedPowerShellFor, engineOf, MODULES, msiPwsh, PWSH_PROBE, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshFacts, type PwshProbe } from '../powershell/elevatedEngine';
-import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, type Adapter, type GpuState } from '../gpu/gpuState';
+import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, withEngineLine, type Adapter, type GpuState } from '../gpu/gpuState';
 import { newGpuRecorder } from '../gpu/gpuRecorder';
 import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '../gpu/ollamaLog';
 import { parsePageMessage } from '../panel/messages';
@@ -722,4 +722,30 @@ test('own review 2 note 11: a query that THROWS is one unknown state with its re
   await host.refresh();
   assert.deepEqual(host.current(), { kind: 'unknown', reason: 'the display-adapter query failed: the runner broke' });
   assert.equal(host.view().alerts[0]?.level, 'unknown');
+});
+
+// ---- PLAN_pwsh_engine_windows_time.md D6: the panel names the engine Enable elevates, beside its button ----
+
+test('pwsh D6: an alert with Enable names the engine its read chose; the line comes from the host, once per read', async () => {
+  const deps = hostDeps();
+  deps.recorder.queryResult = exited(0, `${MEASURED}pwsh.programFiles=C:\\Program Files\r\npwsh.store=signed\r\npwsh.path=${STORE_PWSH}\r\n`);
+  const host = new GpuHost(deps);
+  await host.refresh();
+  const withButton = host.view().alerts.find((a) => a.button !== undefined);
+  assert.equal(withButton?.engine, `Enable runs elevated in: PowerShell 7 (${STORE_PWSH}).`);
+  const plain = hostDeps();
+  plain.recorder.queryResult = exited(0, MEASURED);
+  const windows = new GpuHost(plain);
+  await windows.refresh();
+  assert.equal(windows.view().alerts.find((a) => a.button !== undefined)?.engine, `Enable runs elevated in: ${PS51_LABEL}.`);
+});
+
+test('pwsh D6: withEngineLine is pure — only an alert that carries the button gets the line, and no label gives none', () => {
+  const button = { index: 0, label: 'Enable X', enabled: true, readAt: 1 };
+  const view = { alerts: [{ level: 'critical' as const, line: 'a', fix: 'f', consequence: '', button }, { level: 'critical' as const, line: 'b', fix: 'f', consequence: '', button: undefined }], line: '' };
+  const named = withEngineLine(view, 'PowerShell 7 (P)');
+  assert.equal(named.alerts[0]?.engine, 'Enable runs elevated in: PowerShell 7 (P).');
+  assert.equal(named.alerts[1]?.engine, undefined);
+  assert.equal(withEngineLine(view, '').alerts[0]?.engine, '');
+  assert.equal(view.alerts[0] && 'engine' in view.alerts[0], false, 'the input view is not changed');
 });

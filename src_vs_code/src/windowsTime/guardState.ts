@@ -152,6 +152,11 @@ export interface GuardView {
   readonly line: string;
   readonly level: GuardLevel;
   readonly buttons: readonly { readonly id: GuardAction; readonly label: string; readonly enabled: boolean }[];
+  /**
+   * Which PowerShell the Windows Time part's elevated runs use, and that the guard's task runs as SYSTEM in 5.1
+   * (PLAN_pwsh_engine_windows_time.md D6) — the host's words from the engine read; '' when none is given.
+   */
+  readonly engine: string;
 }
 
 /** An elevated install / remove this window persisted before it started (`guardPending.ts`), while it stands. */
@@ -213,7 +218,7 @@ function lastRun(state: Extract<GuardState, { kind: 'present' }>, formatInstant:
   return state.lastRunUtc === 'never' ? 'not run yet' : `last run ${formatInstant(state.lastRunUtc)}: ${lastResultText(state.lastResult)}`;
 }
 
-function presentView(state: Extract<GuardState, { kind: 'present' }>, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons'> & { readonly ids: readonly GuardAction[] } {
+function presentView(state: Extract<GuardState, { kind: 'present' }>, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons' | 'engine'> & { readonly ids: readonly GuardAction[] } {
   if (!state.enabled) {
     return { line: 'installed, but disabled in Task Scheduler — install it again to enable it', level: 'warn', ids: ['installWindowsTimeGuard', 'removeWindowsTimeGuard'] };
   }
@@ -231,7 +236,7 @@ function unknownLine(state: Extract<GuardState, { kind: 'unknown' }>): string {
   return state === NOT_ASKED ? 'checking…' : `unknown — ${state.reason}`;
 }
 
-function settledView(state: GuardState, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons'> & { readonly ids: readonly GuardAction[] } {
+function settledView(state: GuardState, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons' | 'engine'> & { readonly ids: readonly GuardAction[] } {
   switch (state.kind) {
     case 'unknown':
       return { line: unknownLine(state), level: 'unknown', ids: [] };
@@ -245,7 +250,7 @@ function settledView(state: GuardState, options: GuardOptions, formatInstant: (i
 }
 
 /** Not installed — and, when its rate-limit stamp outlived the task (a removal the Store engine may have virtualised, §11 R4), saying so and offering Remove again. */
-function absentView(state: Extract<GuardState, { kind: 'absent' }>): Omit<GuardView, 'buttons'> & { readonly ids: readonly GuardAction[] } {
+function absentView(state: Extract<GuardState, { kind: 'absent' }>): Omit<GuardView, 'buttons' | 'engine'> & { readonly ids: readonly GuardAction[] } {
   const line = `not installed — it would start the Windows Time service by itself whenever it stops${channelNote(state.channel)}`;
 
   return state.stampLeft === true
@@ -267,13 +272,13 @@ const WAITING: { readonly [K in PendingGuardOp['op']]: string } = {
  * The guard's line and buttons (D5, D8). While an elevated run this window persisted stands, the line says so and both
  * buttons are disabled; otherwise the state decides. `formatInstant` is the presentation edge's local-time formatter.
  */
-export function guardView(state: GuardState, options: GuardOptions, pending: PendingGuardOp | undefined, formatInstant: (iso: string) => string, checking = false): GuardView {
+export function guardView(state: GuardState, options: GuardOptions, pending: PendingGuardOp | undefined, formatInstant: (iso: string) => string, checking = false, engine = ''): GuardView {
   const settled = settledView(state, options, formatInstant);
   if (pending !== undefined) {
-    return { line: noticeText(PREFIX + WAITING[pending.op]), level: 'none', buttons: buttons(['installWindowsTimeGuard', 'removeWindowsTimeGuard'], false) };
+    return { line: noticeText(PREFIX + WAITING[pending.op]), level: 'none', buttons: buttons(['installWindowsTimeGuard', 'removeWindowsTimeGuard'], false), engine };
   }
 
-  return { line: noticeText(PREFIX + settled.line + checkingNote(state, checking)), level: settled.level, buttons: buttons(settled.ids, true) };
+  return { line: noticeText(PREFIX + settled.line + checkingNote(state, checking)), level: settled.level, buttons: buttons(settled.ids, true), engine };
 }
 
 /** While Task Scheduler is asked again, an answer already shown says so (codex: a stale line must not look current). */

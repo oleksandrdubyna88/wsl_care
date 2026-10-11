@@ -2,9 +2,9 @@ import type { DurableStore } from '../cleanup/journal';
 import { noticeText } from '../text/safeText';
 import { enableGpu, type EnableResult } from './gpuEnable';
 import { clearGpuPending, readGpuPending } from './gpuPending';
-import type { FileInfoOf } from '../powershell/elevatedEngine';
+import { engineOf, type FileInfoOf } from '../powershell/elevatedEngine';
 import { DISABLED_CODE, queryRequest } from './gpuScripts';
-import { gpuBarMark, gpuStateOf, gpuView, NOT_ASKED, pwshFactsOf, type GpuBarMark, type GpuState, type GpuView } from './gpuState';
+import { gpuBarMark, gpuStateOf, gpuView, NOT_ASKED, pwshFactsOf, withEngineLine, type GpuBarMark, type GpuState, type GpuView } from './gpuState';
 import type { GpuUi } from './gpuRecorder';
 import { ollamaLogPath, ollamaReadOf, readTail, type OllamaRead, type TailRead } from './ollamaLog';
 
@@ -51,6 +51,8 @@ function noLongerDisabled(state: GpuState, id: string): boolean {
 
 export class GpuHost {
   private state: GpuState = NOT_ASKED;
+  /** The engine *Enable* would elevate, named ONCE per read (PLAN_pwsh_engine_windows_time.md D6, §11 R11). */
+  private engineLabel = '';
   private ollama: OllamaRead | undefined;
   private querying: Promise<void> | undefined;
   private again = false;
@@ -113,7 +115,7 @@ export class GpuHost {
 
   /** The panel's part — while a query is in flight the last answer stays, and the working line says a check runs (code round 3). */
   view(): GpuView {
-    return this.active() ? gpuView(this.state, this.ollama, readGpuPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatTime, this.querying !== undefined) : { alerts: [], line: '' };
+    return this.active() ? withEngineLine(gpuView(this.state, this.ollama, readGpuPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatTime, this.querying !== undefined), this.engineLabel) : { alerts: [], line: '' };
   }
 
   barMark(): GpuBarMark {
@@ -215,6 +217,7 @@ export class GpuHost {
   private async query(): Promise<void> {
     const request = queryRequest(this.deps.env, this.deps.queryTimeoutMs());
     this.state = typeof request === 'string' ? { kind: 'unknown', reason: request } : gpuStateOf(await this.deps.ui.query(request), this.deps.nowUtcMs());
+    this.engineLabel = engineOf(this.deps.env, this.deps.fileInfo, pwshFactsOf(this.state)).label;
     this.ollama = this.readOllama();
     await this.settlePending();
     this.watchDeadline();

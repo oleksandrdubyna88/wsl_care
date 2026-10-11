@@ -228,6 +228,11 @@ function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, r
   });
 }
 
+/** Two subscriptions as one: the guard's part re-renders on Task Scheduler's answers AND on the engine read's (D6). */
+function bothChanges(first: () => void, second: () => void): () => void {
+  return () => { first(); second(); };
+}
+
 /** A guard flow from a button or the palette — its faults logged at the detached edge, never thrown into VS Code. */
 function guardFlow(parts: Parts, op: 'install' | 'remove'): () => void {
   return () => { void parts.guard.run(op).catch((e: unknown) => { parts.log.error(`Windows Time guard ${op} failed: ${String(e)}`); }); };
@@ -378,7 +383,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     onCleanupChange: (listener) => host.onChange(listener),
     openRunLogs: () => { void logs.show(lastCleanupPeriod(store.snapshot().status)); },
     guard: () => parts.guard.view(),
-    onGuardChange: (listener) => parts.guard.onChange(listener),
+    onGuardChange: (listener) => bothChanges(parts.guard.onChange(listener), parts.engine.onChange(listener)),
     installWindowsTimeGuard: installGuard,
     removeWindowsTimeGuard: removeGuard,
     ...extras,

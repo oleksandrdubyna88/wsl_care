@@ -151,6 +151,15 @@ export interface GpuAlert {
    * those two numbers and nothing else; the host holds the id, and refuses an index from an older read (code round 2).
    */
   readonly button: { readonly index: number; readonly label: string; readonly enabled: boolean; readonly readAt: number } | undefined;
+  /** "Enable runs elevated in: <engine>." beside the button (PLAN_pwsh_engine_windows_time.md D6) — absent or '' without one. */
+  readonly engine?: string;
+}
+
+/** The alerts' engine line, from the host's engine label — set only where an alert carries the button (D6, §11 R11: pure). */
+export function withEngineLine(view: GpuView, engineLabel: string): GpuView {
+  const line = engineLabel === '' ? '' : `Enable runs elevated in: ${engineLabel}.`;
+
+  return { ...view, alerts: view.alerts.map((alert) => (alert.button === undefined ? alert : { ...alert, engine: line })) };
 }
 
 export interface GpuView {

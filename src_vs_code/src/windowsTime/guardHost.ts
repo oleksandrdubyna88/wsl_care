@@ -1,6 +1,6 @@
 import type { DurableStore } from '../cleanup/journal';
 import type { Runner } from '../process/runner';
-import type { EngineSource } from '../powershell/engineHost';
+import { guardEngineLine, type EngineSource } from '../powershell/engineHost';
 import type { FixPrompt } from './windowsTimeFix';
 import { runGuardOp, type GuardOp, type GuardOutcome } from './guardFlow';
 import { clearPending, readPending } from './guardPending';
@@ -55,7 +55,7 @@ export class WindowsTimeGuardHost {
   }
 
   view(): GuardView {
-    return guardView(this.state, this.deps.options(), readPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatInstant, this.querying !== undefined);
+    return guardView(this.state, this.deps.options(), readPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatInstant, this.querying !== undefined, guardEngineLine(this.deps.engine.last()));
   }
 
   /** A setting changed: the comparison with what the current settings would install is re-derived at once (gemini). */

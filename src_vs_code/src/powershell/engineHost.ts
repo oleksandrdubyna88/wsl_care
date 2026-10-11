@@ -74,6 +74,15 @@ export interface EngineSource {
   readonly engine: () => Promise<EngineRead>;
   /** A NEW read — asked AFTER the modal, right before the launch. */
   readonly reread: () => Promise<EngineRead>;
+  /** The last read, or `undefined` before the first one answered — what the panel names. */
+  readonly last: () => EngineRead | undefined;
+}
+
+/** What the Windows Time part says of its engines (D6): the elevated runs' program, and the guard's task on 5.1 as SYSTEM. */
+export function guardEngineLine(read: EngineRead | undefined): string {
+  const program = read === undefined ? 'checking which PowerShell…' : `${read.engine.label}.`;
+
+  return `Elevated runs here (Start Windows Time, install / remove the guard): ${program} The guard's task runs as SYSTEM in Windows PowerShell 5.1.`;
 }
 
 /**

@@ -264,7 +264,7 @@ test('gemini: a changed guard setting re-derives the line at once — no query n
 
 test('the panel view carries the guard\'s line, and the page may ask for the two flows only as BARE messages', () => {
   const snapshot: Snapshot = { status: undefined, preview: undefined, doctor: undefined, checking: false };
-  const view = buildPanelView(snapshot, undefined, { line: 'Windows Time guard: not installed', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }] });
+  const view = buildPanelView(snapshot, undefined, { line: 'Windows Time guard: not installed', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }], engine: '' });
   assert.equal(view.windowsTimeGuard.line, 'Windows Time guard: not installed');
   assert.match(buildPanelView(snapshot).windowsTimeGuard.line, /checking…/);
   for (const type of ['installWindowsTimeGuard', 'removeWindowsTimeGuard']) {
@@ -315,6 +315,7 @@ test('pwsh §11 R5: a run another window confirmed DURING the re-read still make
   const source: GuardFlowDeps['engine'] = {
     engine: () => Promise.resolve(STORE_READ),
     reread: async () => { await h.store.update(PENDING_KEY, { op: 'remove', startedAtUtcMs: 999_000, deadlineUtcMs: 2_000_000 }); return STORE_READ; },
+    last: () => STORE_READ,
   };
   assert.deepEqual(await runGuardOp('install', withEngine(h, source)), { kind: 'busy' });
   assert.deepEqual(h.requests, []);
@@ -334,3 +335,21 @@ test('pwsh §11 R9: the largest install, elevating the LONGEST engine path, stay
   const request = elevatedRequest(ENV, installScript({ setAutomaticStart: true, everyHours: 168, minMinutesBetweenStarts: 1440, delaySeconds: 3600, timeLimitMinutes: 60 }), 180_000, STORE_PWSH) as ProcessRequest;
   assert.ok(commandLineLength(request) < ELEVATED_COMMAND_LINE_MAX, `${commandLineLength(request)} characters`);
 });
+
+// ---- PLAN_pwsh_engine_windows_time.md D6: the Windows Time part names its engines ----
+
+test('pwsh D6: the guard part names the elevated runs\' engine from the LAST engine read, and the task\'s SYSTEM 5.1 — "checking" before any read', () => {
+  const named = new WindowsTimeGuardHost({ ...hostDepsWith(fixedEngine(STORE_READ)) }).view();
+  assert.equal(named.engine, `Elevated runs here (Start Windows Time, install / remove the guard): PowerShell 7 (${STORE_PWSH}). The guard's task runs as SYSTEM in Windows PowerShell 5.1.`);
+  const none: GuardFlowDeps['engine'] = { engine: () => Promise.resolve(PS51_READ), reread: () => Promise.resolve(PS51_READ), last: () => undefined };
+  assert.match(new WindowsTimeGuardHost(hostDepsWith(none)).view().engine, /^Elevated runs here \(Start Windows Time, install \/ remove the guard\): checking which PowerShell… The guard's task runs as SYSTEM in Windows PowerShell 5\.1\.$/);
+});
+
+function hostDepsWith(engine: GuardFlowDeps['engine']): ConstructorParameters<typeof WindowsTimeGuardHost>[0] {
+  const recorder = newGuardRecorder();
+  return {
+    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(recorder.result), query: () => Promise.resolve(recorder.queryResult), report: () => undefined },
+    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine,
+  };
+}
