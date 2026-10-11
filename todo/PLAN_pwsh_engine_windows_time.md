@@ -1,9 +1,11 @@
 # PLAN — the Windows Time launcher elevates PowerShell 7 by the same resolver as *Enable <GPU>*, and the panel names each engine
 
-> Status: **plan only, nothing implemented yet (2026-10-11).** Scope: the VS Code extension (`src_vs_code/`) — the engine
-> resolver of story G1 moved out of `src/gpu/` into one shared module, the Windows Time launcher's three user-context elevated
-> runs (*Start Windows Time*, *Install the Windows Time guard*, *Remove the Windows Time guard*) moved onto it, and one line
-> per part in the panel that names the engine. The SYSTEM task stays on Windows PowerShell 5.1. The daemon is not changed.
+> Status: **in progress (2026-10-11): D1 (the move) built; D2/D4 built in their first form, D2 then revised by §11 (the
+> engine read moves out of the guard query); D3, D5, D6 and §11's R1–R12 not yet built.** Scope: the VS Code extension
+> (`src_vs_code/`) — the engine resolver of story G1 moved out of `src/gpu/` into one shared module, the Windows Time
+> launcher's three user-context elevated runs (*Start Windows Time*, *Install the Windows Time guard*, *Remove the Windows
+> Time guard*) moved onto it, and one line per part in the panel that names the engine. The SYSTEM task stays on Windows
+> PowerShell 5.1. The daemon is not changed. **§11 overrides the sections above it where they differ.**
 >
 > Related: [PLAN_gpu_health.md](../research/PLAN_gpu_health.md) (the resolver, §11 *The owner's decision … and the path*),
 > [PLAN_windows_time_guard.md](../research/PLAN_windows_time_guard.md) (the launcher, D7),
@@ -171,6 +173,11 @@ touched; the alias is never started; nothing from the page, the daemon or a sett
   is half-done (the register is the last step). A POST_DEPLOY item records it.
 - **The guard read costs about one more second** per read (D2). It does not poll; it runs on open, refresh and after a run.
 - **The launcher's own `SystemRoot` trust** is unchanged (a residual since the Windows Time story).
+- **Two probes per panel open** (the GPU query's and the engine read, §11 R3): about 1–2 s of one core each, no polling.
+- **G1's order after its modal** (busy check, then the re-read): a window of about one second; not changed here (§11 R5).
+- **PowerShell 7's startup update check** may make one outbound HTTP request from the elevated child; the child's fresh
+  environment cannot carry `POWERSHELL_UPDATECHECK=Off`.
+- **Registry virtualisation under the Store engine** (§11 R4) is unmeasured; the stamp line makes a virtualised removal visible.
 
 ## 10. Definition of Done
 
@@ -183,3 +190,69 @@ touched; the alias is never started; nothing from the page, the daemon or a sett
 - [ ] The SYSTEM task stays on 5.1; its ASCII test unchanged and green.
 - [ ] Tests: unit, page, scenario; break-its red then restored; lint, typecheck, `plan-lifecycle` clean.
 - [ ] Docs updated; the plan promoted to `research/` with its as-built record.
+- [ ] §11's R1–R12 built, each with its test (R1 RED on a spoofed `ProgramFiles`; R4 the stamp line).
+
+## 11. Revision 1 — the gates (2026-10-11)
+
+**The coai plan round** (session `0e5668f2`, 1 reviewer, `proceed`, 2 gating findings):
+
+| Finding | Decision |
+|---|---|
+| The guard install under elevated pwsh 7 is unverified until the owner's first press | accepted, narrowed: I cannot raise UAC (only the owner presses). The first Install and Remove under the Store engine are an explicit **acceptance gate** recorded as a POST_DEPLOY item; §2 F4 and §9 say what is and is not proven |
+| An unreadable probe selects 5.1 as if PowerShell 7 were absent | rejected — G1's shipped policy and the owner's rule fall back to 5.1 whenever PowerShell 7 is not VERIFIED ("nothing is refused"); one resolver means one policy; refusing would block *Start Windows Time*, the urgent fix for a slow clock, on a probe failure. Instead the label says so: "Windows PowerShell 5.1 (…) — PowerShell 7 could not be checked" |
+
+**My own review (Fable, read-only, after D1/D2/D4 landed)** — four Major, eight Minor, two notes. Each verified against the
+worktree; all accepted (R5 partly):
+
+- **R1 (Major, security) — the Store road was anchored on the ENVIRONMENT's `ProgramFiles`, and the GPU query has no module-path
+  cut.** `storeShape` is built from `env.ProgramFiles` (`elevatedEngine.ts`, `programFilesOf`/`storePwsh`), and
+  `gpuScripts.ts`'s `QUERY_SCRIPT` does not pin `$env:PSModulePath` (the guard query does). A same-user attacker could set a
+  user-level `ProgramFiles`, plant an `Appx` / `Microsoft.PowerShell.Security` module in Documents (autoloaded first), and
+  have a copied, genuinely signed `pwsh.exe` with planted DLLs elevated. **Fix (a deliberate behaviour change of shipped G1,
+  made here):** (a) every query that embeds the probe pins the module path FIRST (`MODULES`); (b) the probe prints a fifth tag,
+  `pwsh.programFiles` = `[Environment]::GetFolderPath('ProgramFiles')` (the known-folder API, the registry's), the Store shape
+  is built from THAT folder, and the environment's `ProgramFiles` must name the same folder (case-insensitive), as
+  `msiVerified` already requires — else 5.1 runs. RED first: a spoofed `ProgramFiles` with a matching fake package path.
+- **R2 (Major) — the import cycle.** `elevatedEngine.ts` value-imports `powerShellOf`/`quotablePath` from `windowsTimeFix.ts`,
+  and D3 needs `windowsTimeFix.ts` to import engine values. **Fix:** the launcher (`QUOTABLE_PATH`, `quotablePath`,
+  `encoded`, `outerScript`, `powerShellOf`, `NO_POWERSHELL`, `elevatedRequest`, and the launcher's own exits 0/13/1223 as
+  `LAUNCH_EXIT`) moves to `src/powershell/elevatedLauncher.ts`; the graph is launcher ← engine ← {gpu, windowsTime}.
+  `windowsTimeFix.ts` keeps its `EXIT` (spreading `LAUNCH_EXIT`, values unchanged).
+- **R3 (Major) — no read yet / a heavy re-read.** With D2 the first press before any guard read always refused ("the program
+  changed"), and the pre-launch re-read was a whole Task Scheduler query whose faults would block the fix. **Fix — D2 is
+  replaced:** a probe-only read in the shared module (`ENGINE_QUERY` = `MODULES` + progress off + `TAG_HELPER` + the probe +
+  `exit 0`, unelevated 5.1) behind a small **`EngineHost`** (`src/powershell/engineHost.ts`): `engine()` (the last read's —
+  reads first when there is none) and `reread()` (always a NEW read, R6), its timeout the new key
+  `wslCare.timeouts.engineProbeSeconds` (default 20, 5–120). The panel's refresh reads it; the Windows Time flows use it;
+  *Start Windows Time* no longer depends on the guard host. The guard query goes back to its pre-D2 form (no probe; `guardPwshOf`
+  removed). GPU keeps its embedded probe (its re-read also re-reads the adapters); two probes per panel open is accepted (§9).
+- **R4 (Major) — the Store package virtualises some registry writes.** Microsoft documents that the Store PowerShell runs in
+  an application sandbox whose changes to some registry and filesystem locations do not persist outside it; `REMOVE_SCRIPT`
+  deletes the stamp under `HKLM\SOFTWARE\wsl-care` — unmeasured under the Store engine, and the read-back checks only the task.
+  **Fix:** the unelevated guard query prints `stamp=present|absent` (5.1, the real registry); the panel line says when the
+  stamp is still there with the task gone, and offers *Remove* again. The first Remove under the Store engine is part of the
+  acceptance gate. Task Scheduler (CIM/COM) and the SCM (`Set-Service`/`Start-Service`) are APIs, not virtualised.
+- **R5 (Minor) — the order after the modal.** **Fix in the Windows Time flows:** modal → re-read → take the time → the busy
+  check → write the pending record → launch. G1's shipped order (busy check before its re-read, a window of about one second)
+  is recorded as a residual (§9), not changed here.
+- **R6 (Minor)** — `reread()` must never be answered by a read already in flight: it awaits that one, then starts its own.
+  Pinned by a test.
+- **R7 (Minor)** — a re-read that did not answer says "the read of the elevated program right before the launch did not answer
+  (<reason>)" — never "the program changed" — and nothing runs.
+- **R8 (Minor)** — the probe is wrapped in `try { … } catch { }` in the shared module, so a probe fault cannot blank the GPU
+  state; the engine read reads exit 0 only.
+- **R9 (Minor)** — tests: the Windows-leg command lists (done), the probe-only query really RUNS on the Windows leg and answers
+  `pwsh.store`/`pwsh.msi`/`pwsh.programFiles`; the test-only `installRequest`/`removeRequest` are deleted and the length bound
+  is checked through `elevatedRequest` with the longest (Store) engine path; the tests for R1 and R7.
+- **R10 (Minor)** — this status line and §3 were stale against what landed (`TAG_HELPER`, `engineChangedSentence` moved too).
+  Fixed here.
+- **R11 (Minor)** — the engine and its label are computed ONCE per read (in the host), never in a view; `fileInfo` is a host
+  dependency; views stay pure.
+- **R12 (Minor)** — `startWindowsTime` would exceed complexity 4: the confirmed half becomes `launchedFix()`, as G1's
+  `launched()`.
+- **Notes:** pwsh 7 checks for updates at startup (outbound HTTP; the elevated child gets a fresh environment, so
+  `POWERSHELL_UPDATECHECK` cannot be set from here) — named in §9; the install script gains `$ProgressPreference =
+  'SilentlyContinue'` after `MODULES` and the import.
+
+**Build order from here:** R2 (launcher move) → R1 → R8 → R3 (EngineHost, guard query back, stamp R4) → D3 with R5–R7 and
+R12 → D5 → D6 with R11 → docs.
