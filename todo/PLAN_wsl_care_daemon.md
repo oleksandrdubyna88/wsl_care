@@ -4270,7 +4270,7 @@ consult was owed.
 
 ### 15s. E10 split and design — the AI-session archive in the extension
 
-> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b merged (#92); E10.S2 split into S2a / S2b / S2c (*E10.S2 split into three epics*): S2a merged (#96), S2b merged (#105), S2c in progress on its branch.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b merged (#92); E10.S2 split into S2a / S2b / S2c (*E10.S2 split into three epics*): S2a merged (#96), S2b merged (#105), S2c merged (#114).** Scope: the extension's half of the archive (`src_vs_code/`) and two small
 > daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
 > ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
 > daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),
@@ -4672,7 +4672,7 @@ Tests and teeth: [module_tests.md](../research/module_tests.md), *What each E10.
 
 #### E10.S2 split into three epics (2026-10-10)
 
-> Status: **E10.S2a merged 2026-10-11 (#96, b69deaa); E10.S2b merged 2026-10-11 (#105, 28343e0); E10.S2c in progress on `feat/wc-e10s2c-logs-archive`.** E10.S2a's branch was
+> Status: **E10.S2a merged 2026-10-11 (#96, b69deaa); E10.S2b merged 2026-10-11 (#105, 28343e0); E10.S2c merged 2026-10-11 (#114).** E10.S2a's branch was
 > `feat/wc-e10s2a-archive-page`, from `main` d6f436c. The paths are `src_vs_code/`'s unless named otherwise.
 
 **Why three.** The coai plan round over the first draft (session af2da363, `proceed`, 2 gating of threshold 6, codex only — see
@@ -5009,7 +5009,7 @@ break-its on product code; an own review on Fable; the coai plan and code rounds
 
 ##### E10.S2c build notes — the Logs page names the archive runs
 
-> Status: **built 2026-10-11 on `feat/wc-e10s2c-logs-archive` — the code round and the own review next (see *As built* below).** Branch `feat/wc-e10s2c-logs-archive`, from `main` fa7c9a3 (E10.S2b merged
+> Status: **IMPLEMENTED, merged 2026-10-11 (#114) — see *As built* below.** Branch `feat/wc-e10s2c-logs-archive`, from `main` fa7c9a3 (E10.S2b merged
 > #105, the privacy fix #109). Not root: the own review runs on Opus. The paths are `src_vs_code/`'s unless named otherwise.
 
 **Goal (D8).** On the Logs page a run of A13 or A20 reads in the archive's words, not as bare ids:
