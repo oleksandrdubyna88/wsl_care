@@ -1190,8 +1190,10 @@ every full run, and the latency it measures is calibrated for 5.1.
 **3. The resolver and the closed set.**
 - `WindowsSystemDrive.Programs` gains ONE entry: `pwsh.exe` → `Program Files/PowerShell/7`. It is checked by the same
   `SystemDriveFiles.Problem` checks.
-- The never-list's closed set admits `pwsh.exe` ONLY with the Windows disk script's exact argv (and later E15.S10's). It never
-  admits pwsh with the clock probe, and never with a third script.
+- The never-list's closed set admits `pwsh.exe` ONLY with the Windows disk script's exact arguments — the same list as
+  `WindowsDiskCommands.WindowsDisk.Arguments` (`-NoProfile`, `-NonInteractive`, `-Command`, the script under the configuration
+  in force), built from that one source. It never admits pwsh with the clock probe, and never with a third script. E15.S10 adds
+  its own script when it is built; it is out of this story (plan round).
 - The disk script runs under the chosen engine. The clock probe always runs under 5.1.
 
 **Tests, RED first:**
@@ -1207,5 +1209,11 @@ every full run, and the latency it measures is calibrated for 5.1.
   the exact disk script.
 - The clock probe's latency lines come before the new tags.
 - The scenario's fake PowerShell answers both engines.
+
+- **The real script under the real MSI pwsh** (plan round): a Windows test runs the ACTUAL disk script with
+  `%ProgramFiles%PowerShellpwsh.exe` and parses it with `WindowsDiskParsers`. The answer must end with `end=1`, have no
+  malformed line, and read every section (a section that refers to WSL, such as the Lxss map, may say why on a machine without
+  WSL). It SKIPS when the MSI build is absent — as on the owner's machine — and it RUNS on the CI's `windows-latest`, which ships
+  PowerShell 7 at that path. This is the evidence that the selection is safe to ship.
 
 Break-its on the judgement and on the closed set. Docs: module_daemon (the engine), README, module_tests, the as-built section.
