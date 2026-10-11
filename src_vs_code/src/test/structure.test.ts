@@ -192,8 +192,8 @@ function importersOf(all: readonly Source[], module: string): string[] {
   return all.filter((s) => resolvedImports(s).includes(module)).map((s) => s.file).sort();
 }
 
-/** Modules whose code a webview runs or whose output it renders, plus the poller and the install flow: none may touch root/. */
-const FAR_FROM_ROOT = ['src/panel/', 'src/statusBar/', 'src/poll/', 'src/install/', 'src/state/', 'src/logsPage/'];
+/** Modules whose code a webview runs or whose output it renders, plus the poller and the install flow: none may touch root/ (E10.S2a: nor the Archive page). */
+const FAR_FROM_ROOT = ['src/panel/', 'src/statusBar/', 'src/poll/', 'src/install/', 'src/state/', 'src/logsPage/', 'src/archivePage/'];
 
 test('only rootCall.ts spells a root argv word — and it spells every one of them (the scan is alive)', () => {
   assert.deepEqual(spellers(sources(), ROOT_WORDS), { [ROOT_CALL]: [...ROOT_WORDS].sort() });
@@ -218,10 +218,11 @@ test('only the host-side cleanup controller imports rootCall.ts', () => {
   assert.deepEqual(importersOf(sources(), ROOT_CALL), [CLEANUP_CONTROLLER]);
 });
 
-test('no panel, status-bar, poller, install, store or Logs-page module imports anything under src/root/', () => {
+test('no panel, status-bar, poller, install, store, Logs-page or Archive-page module imports anything under src/root/', () => {
   const offenders = sources().filter((s) => FAR_FROM_ROOT.some((dir) => s.file.startsWith(dir)) && resolvedImports(s).some((m) => m.startsWith('src/root/')));
   assert.deepEqual(offenders.map((s) => s.file), []);
   assert.ok(sources().some((s) => s.file.startsWith('src/panel/')), 'the scan sees the panel modules');
+  assert.ok(sources().some((s) => s.file.startsWith('src/archivePage/')), 'the scan sees the Archive page modules (E10.S2a)');
 });
 
 test('rootCall.ts imports only the client\'s argv builder, the verbs, the runner\'s types and the typed ids — no process API', () => {
@@ -268,7 +269,7 @@ test('only the archive flow imports configCall.ts', () => {
   assert.deepEqual(importersOf(sources(), CONFIG_CALL), [ARCHIVE_FLOW]);
 });
 
-test('no panel, status-bar, poller, install, store or Logs-page module imports anything under src/config/', () => {
+test('no panel, status-bar, poller, install, store, Logs-page or Archive-page module imports anything under src/config/', () => {
   const offenders = sources().filter((s) => FAR_FROM_ROOT.some((dir) => s.file.startsWith(dir)) && resolvedImports(s).some((m) => m.startsWith('src/config/')));
   assert.deepEqual(offenders.map((s) => s.file), []);
 });

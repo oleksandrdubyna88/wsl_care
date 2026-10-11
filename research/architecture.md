@@ -126,6 +126,8 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   a stale page send the same bare request) and hands it to the cleanup host, which refuses its own (a run in flight, the journal
   full); the archive host reads the cleanup host's controls, re-renders on its changes and stops listening on `dispose`; and the
   button's capability requirement is the controller's own (`previewNeeds(['A13'])` ∪ `confirmNeeds(['A13'])`), never a second list.
+  Since E10.S2a `src/archivePage/` — the Archive page, browse only: one more unprivileged read, `archive list --json` (section *The
+  extension: the Archive page* of [architecture-extension-e6.md](architecture-extension-e6.md)).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,

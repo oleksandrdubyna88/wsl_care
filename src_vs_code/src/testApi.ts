@@ -9,6 +9,7 @@ import type { WindowsTimeGuardHost } from './windowsTime/guardHost';
 import type { GuardRecorder } from './windowsTime/guardUi';
 import type { WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import type { LogsPanel } from './logsPage/logsPanel';
+import type { ArchivePanel } from './archivePage/archivePanel';
 import type { ProcessRequest, Runner } from './process/runner';
 import type { RunnerChoice } from './process/runnerSelection';
 import type { CleanupController } from './root/cleanupController';
@@ -54,6 +55,8 @@ export interface WslCareTestApi {
   cleanRecorder(): CleanRecorder;
   /** E6.S4: the Logs page — its controller (period, rendered blocks) as the page's messages reach it. */
   logs(): LogsPanel;
+  /** E10.S2a: the Archive page — its controller (the list, the open months, rendered blocks) as the page's messages reach it. */
+  archivePage(): ArchivePanel;
   /** E10.S1: the archive's host — its reads, its view and its two flows — and its recorded dialog, modals and notifications. */
   archive(): ArchiveHost;
   archiveRecorder(): ArchiveRecorder;

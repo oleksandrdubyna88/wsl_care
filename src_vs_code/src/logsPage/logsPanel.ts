@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 
 import { newNonce, panelOptions, panelShell } from '../panel/panelHtml';
 import { LogsController, type LogsControllerOptions } from './logsController';
-import { PanelSlot } from './panelSlot';
+import { PanelSlot } from '../panel/panelSlot';
 import type { Period } from './period';
 
 /**
@@ -13,7 +13,7 @@ import type { Period } from './period';
  *   nonce-only CSP, scripts on, command URIs OFF, resources only from `media/` (§7.2's rules, one implementation) — and
  *   the panel's ONE stylesheet, `media/panel.css`;
  * - what the page sends goes to the controller's closed set; what the controller builds is posted back as `{type: 'view'}`;
- * - exactly ONE panel receives the views (`panelSlot.ts`, review K3): it is created or revealed synchronously, before any
+ * - exactly ONE panel receives the views (`panel/panelSlot.ts`, review K3; shared with the Archive page since E10.S2a): it is created or revealed synchronously, before any
  *   await, and a panel VS Code restores while one is open is disposed;
  * - a page open when the window reloads is restored by `registerWebviewPanelSerializer` (the manifest's
  *   `onWebviewPanel:wslCare.logs`): it reopens on the PERSISTED period — the controller's, not the webview's state;

@@ -180,6 +180,13 @@ const RUN_READS: { readonly [K in RunReadName]: { readonly request: RunRead; rea
     scenario: {},
     check: (body) => assert.equal(body.accepted, true),
   },
+  // E10.S2a: the Archive page's list, unprivileged.
+  archiveList: {
+    request: { read: 'archiveList' },
+    tail: ['archive', 'list', '--json'],
+    scenario: {},
+    check: (body) => { assert.ok(Array.isArray(body.entries)); assert.equal(body.restoreCeiling, 1000); },
+  },
 };
 
 for (const name of RUN_READ_NAMES) {

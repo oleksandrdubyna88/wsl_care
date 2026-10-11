@@ -2,6 +2,7 @@ CHANGELOG.md
 LICENSE
 README.md
 dist/extension.js
+media/archive.js
 media/icon.png
 media/logs.js
 media/panel.css

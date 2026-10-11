@@ -1,3 +1,4 @@
+import { ARCHIVE_LIST_CAPABILITY } from '../shared/archiveCapabilities';
 import type { ReadOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
 import { confirmNeeds, previewNeeds } from '../root/cleanupController';
@@ -14,12 +15,13 @@ import { safeText } from '../text/safeText';
  * days below the effective age) loses sessions the archive never sees — said on its line, exactly when that holds.</p>
  */
 
-export type ArchiveAction = 'chooseArchiveFolder' | 'stopArchiving' | 'archiveNow';
+export type ArchiveAction = 'chooseArchiveFolder' | 'stopArchiving' | 'archiveNow' | 'openArchive';
 
 export const ARCHIVE_LABELS: { readonly [K in ArchiveAction]: string } = {
   chooseArchiveFolder: 'Choose archive folder…',
   stopArchiving: 'Stop archiving',
   archiveNow: 'Archive now…',
+  openArchive: 'Open archive…',
 };
 
 export type ArchiveLevel = 'none' | 'ok' | 'warn' | 'critical' | 'unknown';
@@ -231,6 +233,8 @@ function buttons(state: ArchiveState): ArchiveControls['buttons'] {
     { id: 'chooseArchiveFolder', label: ARCHIVE_LABELS.chooseArchiveFolder, enabled: may },
     { id: 'stopArchiving', label: ARCHIVE_LABELS.stopArchiving, enabled: withBase },
     { id: 'archiveNow', label: ARCHIVE_LABELS.archiveNow, enabled: state.cleanupFree && archiveNowBlocker(state) === '' },
+    // E10.S2a: the Archive page lists what the archive holds — it needs a daemon that answers `archive list`.
+    { id: 'openArchive', label: ARCHIVE_LABELS.openArchive, enabled: state.capabilities?.includes(ARCHIVE_LIST_CAPABILITY) === true },
   ];
 }
 

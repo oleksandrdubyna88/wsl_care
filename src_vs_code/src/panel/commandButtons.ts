@@ -31,5 +31,6 @@ export const COMMAND_BUTTONS: Readonly<Record<string, CommandButton>> = {
   'wslCare.archiveNow': { where: 'page', action: 'archiveNow' },
   // PLAN_gpu_health.md D7: the alert's *Enable <GPU>* (the command picks the disabled adapter; the button names it).
   'wslCare.enableGpu': { where: 'page', action: 'enableGpu' },
+  'wslCare.openArchive': { where: 'page', action: 'openArchive' },
   'wslCare.openLogs': { where: 'title' },
 };

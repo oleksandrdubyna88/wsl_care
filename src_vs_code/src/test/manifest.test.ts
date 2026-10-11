@@ -101,7 +101,7 @@ test('it runs on the Windows side, in untrusted and virtual workspaces, activate
   assert.deepEqual(manifest.extensionKind, ['ui']);
   assert.equal(manifest.capabilities.untrustedWorkspaces.supported, true);
   assert.equal(manifest.capabilities.virtualWorkspaces, true);
-  assert.deepEqual(manifest.activationEvents, ['onStartupFinished', 'onWebviewPanel:wslCare.logs'], 'E6.S4: a Logs page open at a reload is restored by its serializer');
+  assert.deepEqual(manifest.activationEvents, ['onStartupFinished', 'onWebviewPanel:wslCare.logs', 'onWebviewPanel:wslCare.archive'], 'E6.S4 / E10.S2a: a Logs or Archive page open at a reload is restored by its serializer');
   assert.equal(manifest.main, './dist/extension.js');
 });
 
@@ -181,8 +181,8 @@ interface Contributions {
 
 const contributed = (manifest as unknown as { contributes: Contributions }).contributes;
 
-test('the contributed surface: the panel view and twelve argument-free commands (E5 + Logs of E6.S4 + Start Windows Time + the Windows Time guard + the archive folder of E10.S1 + Archive now of E10.S1b + Enable a disabled GPU), no URI handler', () => {
-  assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl', 'wslCare.installDaemon', 'wslCare.startWindowsTime', 'wslCare.installWindowsTimeGuard', 'wslCare.removeWindowsTimeGuard', 'wslCare.chooseArchiveFolder', 'wslCare.stopArchiving', 'wslCare.archiveNow', 'wslCare.enableGpu', 'wslCare.openLogs']);
+test('the contributed surface: the panel view and thirteen argument-free commands (E5 + Logs of E6.S4 + Start Windows Time + the Windows Time guard + the archive folder of E10.S1 + Archive now of E10.S1b + Enable a disabled GPU + Open archive of E10.S2a), no URI handler', () => {
+  assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl', 'wslCare.installDaemon', 'wslCare.startWindowsTime', 'wslCare.installWindowsTimeGuard', 'wslCare.removeWindowsTimeGuard', 'wslCare.chooseArchiveFolder', 'wslCare.stopArchiving', 'wslCare.archiveNow', 'wslCare.enableGpu', 'wslCare.openArchive', 'wslCare.openLogs']);
   assert.deepEqual(contributed.menus['view/title']?.map((m) => m.command), ['wslCare.refresh', 'wslCare.openLogs'], 'E6.S4: Logs in the panel title (§7.2)');
   assert.deepEqual(contributed.views.wslCare, [{ type: 'webview', id: 'wslCare.panel', name: 'AI OS Care' }]);
   assert.equal(contributed.viewsContainers.activitybar[0]?.id, 'wslCare');

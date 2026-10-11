@@ -11,7 +11,7 @@ import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutco
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { DaemonLimits } from '../shared/daemonLimits';
 import { ceilingMs } from './ceilings';
-import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type RunReadName, type Verb } from './verbs';
+import { PREVIEW_CONTAINER_ASSUMPTION, RUN_READ_CALLS, runReadTail, VERBS, type RunRead, type RunReadName, type Verb } from './verbs';
 
 /**
  * The extension's one client of the `wsl-care` daemon — and the ONLY module that builds `wsl.exe` argv
@@ -195,9 +195,9 @@ export class WslCareClient {
       return { ...target.failure, read: request.read };
     }
     const { wsl, distro } = target.value;
-    const timeoutMs = this.ceiling(request.read === 'archivePreview' ? 'archivePreview' : 'runRead');
+    const timeoutMs = this.ceiling(RUN_READ_CALLS[request.read]);
     const result = await this.options.runner({ file: wsl, args: daemonArgv(distro, runReadTail(request)), timeoutMs });
-    const read = readAnswerOf(result, distro, timeoutMs);
+    const read = readAnswerOf(result, distro, timeoutMs, answerExitsOf(request.read));
 
     return 'body' in read ? { kind: 'read', read: request.read, distro, body: read.body } : { ...read, read: request.read };
   }
@@ -407,6 +407,7 @@ const READ_REFUSALS: { readonly [K in RunReadName]: (request: Extract<RunRead, {
   archiveStatus: () => undefined,
   archivePreview: () => undefined,
   archiveCheckBase: (request) => basePathRefusal(request.path),
+  archiveList: () => undefined,
 };
 
 function instantsRefusal(from: string, to: string): string | undefined {
@@ -418,7 +419,7 @@ function instantsRefusal(from: string, to: string): string | undefined {
 }
 
 /** A run read's ending: the checked body — exit 0, or 4 with a readable answer (the history could not be read) — or why not. */
-function readAnswerOf(result: ProcessResult, distro: string, timeoutMs: number): { readonly body: JsonObject } | Failure {
+function readAnswerOf(result: ProcessResult, distro: string, timeoutMs: number, answers: ReadonlySet<number>): { readonly body: JsonObject } | Failure {
   if (result.kind === 'timedOut') {
     return { kind: 'timedOut', timeoutMs };
   }
@@ -426,14 +427,26 @@ function readAnswerOf(result: ProcessResult, distro: string, timeoutMs: number):
     return launchFailure(result, 'daemonCall');
   }
 
-  return exitedRead(result, distro);
+  return exitedRead(result, distro, answers);
 }
 
 /** The exits a run read answers with: 0, and 4 — the history unreadable, the answer read from the rest. */
 const READ_ANSWERS: ReadonlySet<number> = new Set([DAEMON_EXIT.ok, DAEMON_EXIT.recordsUnreadable]);
 
-function exitedRead(result: Extract<ProcessResult, { kind: 'exited' }>, distro: string): { readonly body: JsonObject } | Failure {
-  const checked = READ_ANSWERS.has(result.code) ? checkedBody(result.stdout.toString('utf8')) : undefined;
+/**
+ * rchive list (E10.S2a, own review #1) answers with 1 too: every outcome but done and 
+o-base exits 1 AFTER its JSON answer
+ * (ArchiveRunCommand.List) — an unreachable share is the likeliest failure of the page, and its 
+ote is the daemon's own reason.
+ */
+const LIST_ANSWERS: ReadonlySet<number> = new Set([DAEMON_EXIT.ok, DAEMON_EXIT.runFailed]);
+
+function answerExitsOf(read: RunReadName): ReadonlySet<number> {
+  return read === 'archiveList' ? LIST_ANSWERS : READ_ANSWERS;
+}
+
+function exitedRead(result: Extract<ProcessResult, { kind: 'exited' }>, distro: string, answers: ReadonlySet<number>): { readonly body: JsonObject } | Failure {
+  const checked = answers.has(result.code) ? checkedBody(result.stdout.toString('utf8')) : undefined;
   if (checked !== undefined && !('kind' in checked)) {
     return { body: checked.body };
   }

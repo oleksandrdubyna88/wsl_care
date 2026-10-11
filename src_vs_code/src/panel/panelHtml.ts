@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
  *
  * <p>The only values interpolated are this render's nonce (128 bits from `crypto.randomBytes`, checked to be hex), the
  * two `media/` URIs VS Code produced (checked to hold no quote or angle bracket) and — since E6.S4, when the shell is the
- * Logs page's — the root id and title of a closed table of this module's own constants (`PAGES`). The CSP allows nothing by
+ * Logs page's or (E10.S2a) the Archive page's — the root id and title of a closed table of this module's own constants (`PAGES`). The CSP allows nothing by
  * default and scripts / styles only by that nonce: no inline handler, no `eval`, no remote load.</p>
  */
 
@@ -16,16 +16,17 @@ export interface ShellParts {
   readonly nonce: string;
   readonly scriptUri: string;
   readonly styleUri: string;
-  /** Which page the shell is for (E6.S4): the side panel (the default) or the Logs page — its root element and title. */
+  /** Which page the shell is for (E6.S4; E10.S2a the Archive page): the side panel (the default), the Logs page or the Archive page. */
   readonly page?: Page;
 }
 
-export type Page = 'panel' | 'logs';
+export type Page = 'panel' | 'logs' | 'archive';
 
 /** Each page's root element id (what its script fills) and its title. */
 const PAGES: { readonly [P in Page]: { readonly root: string; readonly title: string } } = {
   panel: { root: 'panel', title: 'AI OS Care' },
   logs: { root: 'logs', title: 'AI OS Care — Logs' },
+  archive: { root: 'archive', title: 'AI OS Care — Archive' },
 };
 
 const NONCE = /^[0-9a-f]{32}$/;

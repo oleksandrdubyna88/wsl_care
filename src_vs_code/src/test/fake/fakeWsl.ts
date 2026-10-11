@@ -76,6 +76,10 @@ export interface FakeScenario {
   readonly logs?: string;
   /** E10.S1: the file (in `answers`) `archive check-base <path> --json` answers; `archive-check-base.json` by default. */
   readonly checkBase?: string;
+  /** E10.S2a: the file (in `answers`) `archive list --json` answers; `archive-list.json` by default. */
+  readonly archiveList?: string;
+  /** E10.S2a own review #1: the exit `archive list` answers with — the daemon exits 1 AFTER its answer for every outcome but done / no-base. */
+  readonly archiveListExit?: number;
   /** E10.S1: `config set archive.baseFolder <v>` exits with this code and stderr instead of writing. */
   readonly configExit?: { readonly code: number; readonly stderr: string };
 }
@@ -211,7 +215,8 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
   }
   const archive = archiveReadOf(tail);
   if (archive !== undefined) {
-    return distroReply(scenario, argv) ?? { code: 0, stdout: fs.readFileSync(path.join(scenario.answers, archive(scenario))), ...delay(scenario) };
+    const code = tail[1] === 'list' ? (scenario.archiveListExit ?? 0) : 0;
+    return distroReply(scenario, argv) ?? { code, stdout: fs.readFileSync(path.join(scenario.answers, archive(scenario))), ...delay(scenario) };
   }
   const runRead = runReadOf(tail);
   if (runRead !== undefined) {
@@ -239,6 +244,10 @@ function archiveReadOf(tail: readonly string[]): ((scenario: FakeScenario) => st
   }
   if (third === '--json' && fourth === undefined && (sub === 'status' || sub === 'preview')) {
     return () => `archive-${sub}.json`;
+  }
+  // E10.S2a: the Archive page's list — `archive list --json` exactly; no filter is ever sent.
+  if (sub === 'list' && third === '--json' && fourth === undefined) {
+    return (scenario) => scenario.archiveList ?? 'archive-list.json';
   }
 
   return sub === 'check-base' && isPathValue(third) && fourth === '--json' ? (scenario) => scenario.checkBase ?? 'archive-check-base.json' : undefined;

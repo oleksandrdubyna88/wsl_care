@@ -20,6 +20,12 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   cleanup, the runs that freed the most and the least, each figure's max and min, the MemAvailable and swap trend, and the
   run list — *Show objects* lists every object a run removed, and every command it ran with its exit. Shown exactly as the
   daemon answers; the chosen period survives a reload.
+- **The Archive page** (**Open archive…** in *AI agents*, or *AI OS Care: Open the AI-session archive*) — what this
+  distribution's archive holds: per agent, per month, each archived session with its files, size, status (still at its
+  source, removed there, partly back, restored …), whether it is verified, and when it was archived. A session's path is
+  shortened to its file name until you press **Show full session paths** — it holds a project's folder name. An unverified
+  session removed at its source says how to restore it in a terminal (`--accept-unverified`). Browsing changes nothing; restoring
+  from the page comes in a later version, and the Windows archive is shown by a later version too.
 
 - **A GPU that is not working** (since 2026-10-10) — Windows' display adapters are read on their own (unelevated, at start,
   on panel open and *Refresh*, and every `wslCare.gpu.checkMinutes`). Any adapter whose Device Manager code is not 0 is an
@@ -39,8 +45,8 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
 - **Reading** — it asks the daemon four questions: `status --json`, `preview --all --json`, `doctor --json` and
   `--version` — and, for the cleanups' results and the Logs page, three about runs: `runs show <run> --json`,
   `runs --from <instant> --to <instant> --json` and `logs --from <instant> --to <instant> --json` — and, for the archive,
-  `archive status --json`, `archive preview --json` and `archive check-base <folder> --json`. They run as your own user and
-  change nothing.
+  `archive status --json`, `archive preview --json` and `archive check-base <folder> --json`, and for the Archive page
+  `archive list --json`. They run as your own user and change nothing.
 - **One setting, and only when you choose it.** **Choose archive folder…** opens a folder dialog; the daemon checks the
   folder (as your user, the one that will write the archive) and says why when it cannot hold the archive — then nothing is
   written. An accepted folder is shown with the daemon's warnings, and only **Use this folder** writes it, as
@@ -108,7 +114,8 @@ ceiling can never be set at or below the daemon's own worst case for that call: 
 | `wslCare.timeouts.doctorSeconds` | 120 | 119–3600 | How long `doctor --json` may take, in seconds — at least its worst case: four `systemctl show`, `systemctl --version` and `docker version`, each to its ceiling. |
 | `wslCare.timeouts.previewSeconds` | 350 | 340–7200 | How long `preview --all --json` (one Docker snapshot, up to 100 containers) may take, in seconds. |
 | `wslCare.timeouts.previewPerDockerRowSeconds` | 350 | 340–7200 | A cleanup's preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9's snap listing and a margin. |
-| `wslCare.timeouts.runReadSeconds` | 20 | 10–600 | How long `runs show`, `runs` and `logs` may take, in seconds. |
+| `wslCare.timeouts.runReadSeconds` | 20 | 10–600 | How long `runs show`, `runs` and `logs` may take, in seconds — and the archive calls that start no child: `archive status`, `archive check-base` and the archive folder write (`config set archive.baseFolder`, which judges the folder again). Raise it when the archive folder is on a slow network share. |
+| `wslCare.timeouts.archivePreviewSeconds` | 630 | 610–7200 | How long `archive preview --json` (what the AI-session archive would move) and `archive list --json` (what it holds, the Archive page) may take, in seconds — above the daemon ceiling `archive.previewTimeoutSeconds` at its maximum (600). |
 | `wslCare.timeouts.detachSeconds` | 690 | 681–7200 | How long a cleanup's confirm or *Run full check now* may take to hand the run to its unit, in seconds — at least the daemon's worst case: the shown list, one `systemctl show` per queued request (up to 32), the start and one more `systemctl show`. A detach that outruns it is followed as "outcome unknown", never reported as failed. |
 | `wslCare.timeouts.wslListSeconds` | 15 | 5–300 | How long each of the three `wsl.exe --list` questions asked before a daemon call may take, in seconds (measured: about 50 ms each, warm). |
 | `wslCare.timeouts.stopSeconds` | 150 | 134–3600 | How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds. |

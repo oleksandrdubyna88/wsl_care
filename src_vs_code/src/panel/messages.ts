@@ -21,7 +21,8 @@ import { MAX_ADAPTERS } from '../gpu/gpuState';
  * bare: the task, its settings and its scripts are the host's constants — nothing from the page reaches them.</p>
  *
  * <p>E10.S1's `chooseArchiveFolder` and `stopArchiving` are bare: the folder is picked in the host's own dialog and judged by
- * the daemon — no path ever comes from the page. E10.S1b's `archiveNow` is bare too: the host previews A13 itself.</p>
+ * the daemon — no path ever comes from the page. E10.S1b's `archiveNow` is bare too: the host previews A13 itself. E10.S2a's `openArchive` is bare: the host opens
+ * the Archive page, which reads the list itself.</p>
  * <p>*Enable <GPU>*'s `enableGpu` (PLAN_gpu_health.md D6) carries an INDEX below `MAX_ADAPTERS` into the adapters the host
  * read from Windows itself, and `readAt`, the time stamp of the read the button was rendered from (the host compares it with
  * its current read and refuses an older one): the instance id the elevated script acts on is the host's reading, never the
@@ -41,6 +42,7 @@ export type PageMessage =
   | { readonly type: 'chooseArchiveFolder' }
   | { readonly type: 'stopArchiving' }
   | { readonly type: 'archiveNow' }
+  | { readonly type: 'openArchive' }
   | { readonly type: 'openRunLogs' }
   | { readonly type: 'clean'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
@@ -48,7 +50,7 @@ export type PageMessage =
   | { readonly type: 'stop'; readonly index: number }
   | { readonly type: 'enableGpu'; readonly index: number; readonly readAt: number };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow', 'openArchive']);
 
 /** The host holds at most this many stoppable runs plus one (the daemon has ONE running state; the list is a list for shape only). */
 export const MAX_STOP_INDEX = 3;

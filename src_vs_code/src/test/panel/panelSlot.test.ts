@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { PanelSlot, type SlotPanel } from '../../logsPage/panelSlot';
+import { PanelSlot, type SlotPanel } from '../../panel/panelSlot';
 
 /**
  * Review K3 (coai) and the security review's below-threshold note: exactly ONE Logs panel receives views. A second press
