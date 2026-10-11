@@ -21,6 +21,21 @@ export interface RunWords {
   readonly confirm: string;
   /** What a done run did, from its history line: the bytes the line answered (if any) and the count of objects. */
   readonly done: (bytes: number | undefined, count: number) => string;
+  /** E10.S2c (D8): what the Logs page calls the ACTION beside its id — "A13 skipped (0) — archive of AI sessions": a name, never a
+   *  result (the own review's #4: a skipped or failed A13 must not read "AI sessions archived"), shown wherever the action appears,
+   *  in a run of it alone or beside others in a timer run. */
+  readonly logs: string;
+  /** E10.S2c (D8): the run detail's *removed* table when it is not a list of removed objects — its title after the id, and its
+   *  headings over the daemon's name, size and note. Absent: the generic table. */
+  readonly removed?: RemovedTable;
+}
+
+/** A run detail's *removed* table, named for what its items are. */
+export interface RemovedTable {
+  readonly title: string;
+  readonly headers: readonly [string, string, string];
+  /** The daemon's item kind every row must have; an item of another kind falls back to the generic table (the own review's #6). */
+  readonly kind: string;
 }
 
 function plural(n: number, word: string): string {
@@ -36,6 +51,10 @@ const WORDS: { readonly [K in RunWords['id']]: RunWords } = {
     confirm: 'Archive',
     // A 200-byte backlog reads 200 B, never 0.0 GB (E10.S1b own review #3).
     done: (bytes, count) => `${bytes === undefined ? 'moved an unknown amount' : `moved ${sizeText(bytes)}`}, ${count} objects archived`,
+    logs: 'archive of AI sessions',
+    // The run's removed items are AGENTS (`ArchiveAction`: per agent the sessions copied and removed, and the bytes that LEFT the
+    // agent's folder once their copies were verified again — not the bytes copied: the code round's #2) — §15q R9.
+    removed: { title: 'AI sessions archived, per agent', headers: ['Agent', 'Removed from its folder', 'What the archive did'], kind: 'agent' },
   },
   A20: {
     id: 'A20',
@@ -45,6 +64,9 @@ const WORDS: { readonly [K in RunWords['id']]: RunWords } = {
     confirm: 'Restore',
     // A restore frees nothing (`RestoreAction`: "a restore frees nothing: it puts archived sessions back") — its figure is the count.
     done: (_bytes, count) => `${plural(count, 'archived session')} restored`,
+    logs: 'restore of archived sessions',
+    // The run's removed items are the sessions put back, by entry id (`RestoreAction`).
+    removed: { title: 'archived sessions restored', headers: ['Archived session', 'Size', 'Agent, month and outcome'], kind: 'archived session' },
   },
   A21: {
     id: 'A21',
@@ -54,6 +76,7 @@ const WORDS: { readonly [K in RunWords['id']]: RunWords } = {
     confirm: 'Stop relays',
     // A21 frees no disk (S7b.2b): its figure is the relays it ended; the relay stop's own sentence adds what follows from it.
     done: (_bytes, count) => `ended ${plural(count, 'relay')}`,
+    logs: 'stop of client-gone relays',
   },
 };
 

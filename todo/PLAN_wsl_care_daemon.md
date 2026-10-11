@@ -4270,7 +4270,7 @@ consult was owed.
 
 ### 15s. E10 split and design — the AI-session archive in the extension
 
-> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b merged (#92); E10.S2 split into S2a / S2b / S2c (*E10.S2 split into three epics*): S2a merged (#96), S2b in progress on its branch.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b merged (#92); E10.S2 split into S2a / S2b / S2c (*E10.S2 split into three epics*): S2a merged (#96), S2b merged (#105), S2c merged (#114).** Scope: the extension's half of the archive (`src_vs_code/`) and two small
 > daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
 > ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
 > daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),
@@ -4672,7 +4672,7 @@ Tests and teeth: [module_tests.md](../research/module_tests.md), *What each E10.
 
 #### E10.S2 split into three epics (2026-10-10)
 
-> Status: **E10.S2a merged 2026-10-11 (#96, b69deaa); E10.S2b in progress on `feat/wc-e10s2b-restore`; E10.S2c not started.** E10.S2a's branch was
+> Status: **E10.S2a merged 2026-10-11 (#96, b69deaa); E10.S2b merged 2026-10-11 (#105, 28343e0); E10.S2c merged 2026-10-11 (#114).** E10.S2a's branch was
 > `feat/wc-e10s2a-archive-page`, from `main` d6f436c. The paths are `src_vs_code/`'s unless named otherwise.
 
 **Why three.** The coai plan round over the first draft (session af2da363, `proceed`, 2 gating of threshold 6, codex only — see
@@ -4841,7 +4841,7 @@ As planned, with these specifics:
     shown today. Selection makes it matter: it is **E10.S2b's**, written into its story 3.
 ##### E10.S2b build notes — *Restore* through the root road
 
-> Status: **built 2026-10-11 on `feat/wc-e10s2b-restore` — the code round and the own review next (see *As built* below).** Branch `feat/wc-e10s2b-restore`, from `main` b69deaa (E10.S2a merged,
+> Status: **IMPLEMENTED, merged 2026-10-11 (#105, 28343e0) — see *As built* below.** Branch `feat/wc-e10s2b-restore`, from `main` b69deaa (E10.S2a merged,
 > #96). The paths are `src_vs_code/`'s unless named otherwise. Root-touching: the own review runs on Fable.
 
 **Goal.** On the Archive page a person selects verified entries removed at their source — one by one, or a whole month — and
@@ -5007,7 +5007,97 @@ break-its on product code; an own review on Fable; the coai plan and code rounds
   the modal; a restore ending during a read reads again after it; *Select* refused while a restore runs; ids handed once; two test
   titles corrected; two failure paths backfilled (the confirm's exit 2, A20 dropped before the confirm); a doc row.
 
-##### E10.S2b and E10.S2c — the outline their own plan rounds start from (S2b's is refined by its build notes above)
+##### E10.S2c build notes — the Logs page names the archive runs
+
+> Status: **IMPLEMENTED, merged 2026-10-11 (#114) — see *As built* below.** Branch `feat/wc-e10s2c-logs-archive`, from `main` fa7c9a3 (E10.S2b merged
+> #105, the privacy fix #109). Not root: the own review runs on Opus. The paths are `src_vs_code/`'s unless named otherwise.
+
+**Goal (D8).** On the Logs page a run of A13 or A20 reads in the archive's words, not as bare ids:
+- the run list's *Actions* cell names it — `A13 ran (3) — AI sessions archived`, `A20 ran (1) — archived sessions restored`;
+- the run detail's *removed* table of A13 is the per-agent table it is (the run's `removed` items are agents with counts and the
+  bytes moved), with its own title and headings; A20's lists the archived sessions put back, by entry id;
+- the shapes it is tested against are the daemon's OWN: A13 and A20 run goldens produced by daemon code.
+
+**What the code has today (verified on `main` fa7c9a3):**
+- `logsPage/runDetail.ts:20` `actionText` writes `<id> <status> (<count>)` for every action; `:46` `itemRows` and `:55`
+  `actionTables` give every action the same three tables, titled `<id> — removed` with the headings Type / Name / Size / Note.
+- An A13 run's `removed` items are `ActionItem("agent", <agent id>, <bytes removed>, "copied N session(s) (… files, … bytes), removed
+  M, gone at source …")` (`ArchiveAction.cs:162,169`); its count is copied + removed, its `freedBytes` the bytes moved, basis "moved
+  to the archive, not deleted". The detail names no session (§15q R9).
+- An A20 run's `removed` items are `ActionItem("archived session", <entry id>, <bytes>, "<agent> <month>: <outcome>, N file(s)")`
+  (`RestoreAction.cs:150`); `freedBytes` is absent ("a restore frees nothing").
+- `cleanup/runWords.ts` is the ONE table of single-action runs (A13, A20, A21), root-free.
+- The goldens have `runs-show-done.json` (an A10 run) and no archive run. The CLI cannot run A13 / A20 in a scenario (a test build
+  is not root's alone — `A13PreviewGolden`); the ENGINE can, and it writes the run's two records itself (`ActionEngine` →
+  `RunRecorder.Record`, `ActionEngine.cs:524`).
+
+**Story 1 — the run goldens, made by daemon code** (`src_daemon/tests/WslCare.Scenarios/`):
+- A producer (`ArchiveRunGoldens.cs`) in the archive scene of `GoldenContracts`: the daemon's `ActionEngine` over the scene's
+  `IHostPaths` and its real files, `ArchiveAction` and `RestoreAction` registered, a manual `act` request with `Execute: true`
+  (A20 with the shown entries), a fixed clock, the product binary as `Self`; its children answered by a recording runner with the
+  answers the REAL CLI gave in that same scene (`archive preview`, `archive reach`, `archive run`'s last line, `archive list
+  --restorable`, `archive restore`'s last line). The engine writes the detail and the history line; the CLI's `runs show <runId>
+  --json` reads them → `contracts/golden/head/runs-show-archive.json` and `runs-show-restore.json`, normalised as every golden.
+- A test holds the privacy rule of the run detail: the archive golden names no session key (`projects/p/s1.jsonl`), only agents.
+- Linux goldens written in WSL (`WSL_CARE_WRITE_GOLDENS=1`, a script file, no deletion); the Windows suites unchanged.
+
+**Story 2 — the words** (`cleanup/runWords.ts`, `logsPage/runDetail.ts`):
+- `RunWords` gains `logs` — A13 *AI sessions archived*, A20 *archived sessions restored*, A21 *client-gone relays stopped* — and an
+  optional `removed` table: A13 `{ title: 'AI sessions archived, per agent', headers: ['Agent', 'Removed from its folder', 'What the archive did'] }`,
+  A20 `{ title: 'archived sessions restored', headers: ['Archived session', 'Size', 'Agent, month and outcome'] }`; A21 keeps the
+  generic table (not in D8).
+- `runDetail.ts`: `actionText` adds ` — <logs>` for an action the table names (the count stays the daemon's, unreinterpreted);
+  `actionTables` titles the removed table `<id> — <title>` with its headings; *not removed* and *commands* unchanged. The *This run*
+  block's actions table names them the same way. `logsPage/` imports only the root-free `cleanup/runWords.ts` (it stays in
+  `FAR_FROM_ROOT`; `structure.test.ts` holds it).
+- Nothing else changes: the count, the bytes and the notes are the daemon's, through the one sanitiser.
+
+**Build order:** story 1 (goldens, WSL) → story 2 (words, tests over the new goldens) → docs.
+
+**RED first:**
+- the goldens do not exist (the golden test names them missing);
+- the run list cell of the archive golden's line reads `A13 ran (n)` without the words; A20's the same;
+- the A13 detail's removed table is titled `A13 — removed` with Type / Name / Size / Note;
+- the A20 detail's removed table the same — its title, headings and row mapping (entry id, size, the daemon's note) checked against the restore golden (the plan round's #1);
+- a scenario: the strict fake answers `runs show` with each new golden, the REAL Logs controller and page script render it — the names and both tables (the plan round's #0);
+- the archive golden carries no session key (green from the start: the daemon already holds that rule — a planted key turns it red).
+
+**Growth.** Two golden files (a few KB); no runtime state.
+
+**The plan round** (coai session 71d1ed42, `proceed`, 2 gating of threshold 6, codex): #0 accepted in part — a scenario renders each daemon-made golden through the fake `wsl.exe`, the real Logs controller and the page script; the goldens themselves are the built daemon's output (its engine writes the records, its CLI's `runs show` reads them) and CI's Linux legs regenerate and compare them, so a daemon that changes the shape fails CI; a run of the REAL daemon under `wsl -u root` is the owner's live gate (`POST_DEPLOY.md` item 3 already restores one session and reads it back). #1 accepted (A20's table is a RED check). #2 rejected — there is no older plan: the outline at the end of this same section assigns S2c, and these notes refine it.
+
+**Not in S2c:** the Windows archive (E13); `archive list --run <runId>` on the Logs page (the sessions of one run — a later story);
+per-action totals on the *Totals* block (generic ids stay).
+
+**DoD:** the two goldens produced by daemon code and equal in CI; the words from `runWords.ts` only; RED first; break-its on product
+code; an own review (Opus); the coai plan and code rounds; docs (`module_vs_code.md`, `module_tests.md`, `architecture-extension-e6.md`,
+README if the Logs page is described, this section's *as built*).
+
+**As built (2026-10-11).** Stories 1 and 2 as written. What the build found or decided:
+- The engine runs in a fresh home that claims root, with the test owner model of `LinuxSandbox` (`TrustedStateOwner`, `OwnersAreThisProcess`):
+  with the plain one the engine refused runuser's PAM stack ("owned by uid 1000, not uid 0") and started no child.
+- The two runs start an hour apart: with one clock and one pid they shared a run id and `runs show` read the second twice.
+- The CLI's `archive run` answer is the child's with two fields changed: its run id becomes the one root gives the child (A13
+  believes no answer naming another run), and the rate the machine measured is fixed at 0 (A13 writes it into its note, where the
+  goldens' key-based normaliser cannot reach).
+- The target user is `user`: the privacy rule of #109 found "as me:" in the first goldens.
+- The base folder is the scene home's own user layer (`IHostPaths.UserConfigFile`), which `ConfigLoader.Load` reads.
+- The rows of a named removed table drop the kind column (the title says what every row is) — and only when every item is of the
+  kind the table names; otherwise the generic table (the own review's #6).
+- **D8's words are names, not results** (the own review's #4): a skipped or failed A13 must not read "AI sessions archived", and
+  the words follow the ACTION wherever it appears (a timer run holds A13 beside other actions). So the run list reads "A13 ran (3) —
+  archive of AI sessions", "A20 … — restore of archived sessions", "A21 … — stop of client-gone relays"; the removed tables keep
+  "AI sessions archived, per agent" / "archived sessions restored" (they list only what was done). A13's size column is "Removed
+  from its folder" (the code round's #2: the bytes that left the folder, not the bytes copied), and the named tables' sizes read in
+  the unit they reach ("200 B", the own review's #5).
+- The restore golden's entry ids are synthetic (the own review's #1: a real id hashes the side's name, so it differed on every
+  machine and sat where no key-based normaliser reaches); A20's child answer is the restore of exactly the shown entry (#2).
+- **The code round** (coai session 71d1ed42, `proceed`, 0 gating of 5, codex): #0 the words test walks the table; #1 the privacy
+  scan reads any script; #2 the size heading — all accepted and fixed. **The own review (Opus)**: 8 findings (1 high, the
+  machine-dependent entry id) — all taken. Left for the owner: `RestoreAction` believes a restore answer that names an entry it
+  did not ask for (the own review's #2, a daemon check not built here).
+
+##### E10.S2b and E10.S2c — the outline their own plan rounds start from (each refined by its build notes above)
 
 **E10.S2b, *Restore*** (from S2a's merge; root; an own review on Fable). Its stories:
 1. **The root road**: a daemon A20 preview golden (`act-a20-preview-action.json`, the daemon's own `RestoreAction` over a child,

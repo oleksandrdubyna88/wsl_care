@@ -18,8 +18,10 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
 - **The Logs page** (*Logs* in the panel's title, or beside *Last cleanup*) — what the runs of a period did: This run,
   Today, Yesterday, a day or a range of your LOCAL days (the 90 the daemon keeps). Totals, runs with and without a
   cleanup, the runs that freed the most and the least, each figure's max and min, the MemAvailable and swap trend, and the
-  run list — *Show objects* lists every object a run removed, and every command it ran with its exit. Shown exactly as the
-  daemon answers; the chosen period survives a reload.
+  run list — *Show objects* lists every object a run removed, and every command it ran with its exit. The archive's actions are
+  named — "archive of AI sessions" (its detail per agent), "restore of archived sessions" (the sessions put back), "stop of
+  client-gone relays". Shown exactly
+  as the daemon answers; the chosen period survives a reload.
 - **The Archive page** (**Open archive…** in *AI agents*, or *AI OS Care: Open the AI-session archive*) — what this
   distribution's archive holds: per agent, per month, each archived session with its files, size, status (still at its
   source, removed there, partly back, restored …), whether it is verified, and when it was archived. A session's path is

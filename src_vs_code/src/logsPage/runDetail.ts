@@ -1,4 +1,6 @@
+import { runWordsOf, type RemovedTable } from '../cleanup/runWords';
 import { safeText } from '../panel/format';
+import { sizeText } from '../text/format';
 import { isJson, list, num, text, type Json } from '../panel/read';
 import { blockOf, bytesOf, timeOf } from './logsBlocks';
 import type { LogsBlock, LogsLine, LogsTable, ReadState } from './logsView';
@@ -17,8 +19,23 @@ function yesNo(value: unknown): string {
   return typeof value === 'boolean' ? (value ? 'yes' : 'no') : '—';
 }
 
+/** The words a single-action run is known by (`cleanup/runWords.ts`: A13, A20, A21) — or undefined for a cleanup action. */
+function wordsOf(id: string): string | undefined {
+  return runWordsOf([id])?.logs;
+}
+
+/** "A4 ran (2)" — and, for an action the words table names (E10.S2c, D8), "A13 ran (3) — archive of AI sessions": the count stays the daemon's. */
 function actionText(action: Json): string {
-  return `${text(action, 'id')} ${text(action, 'status')} (${text(action, 'count')})`;
+  const named = wordsOf(text(action, 'id'));
+
+  return `${text(action, 'id')} ${text(action, 'status')} (${text(action, 'count')})${named === undefined ? '' : ` — ${named}`}`;
+}
+
+/** "A13 — archive of AI sessions" in *This run*'s actions table; a cleanup action by its id. */
+function actionName(id: string): string {
+  const named = wordsOf(id);
+
+  return named === undefined ? id : `${id} — ${named}`;
 }
 
 /** Freed — and, for a dry run, what it would have freed. */
@@ -43,8 +60,37 @@ function line(id: string, label: string, value: string): LogsLine {
   return { id, label, value };
 }
 
+function sizeOf(item: Json): string {
+  return num(item, 'bytes') === undefined ? '—' : bytesOf(item, 'bytes');
+}
+
 function itemRows(items: readonly Json[]): string[][] {
-  return items.map((item) => [text(item, 'kind'), text(item, 'name'), num(item, 'bytes') === undefined ? '—' : bytesOf(item, 'bytes'), text(item, 'note', '')]);
+  return items.map((item) => [text(item, 'kind'), text(item, 'name'), sizeOf(item), text(item, 'note', '')]);
+}
+
+/** A session's or an agent's size in the unit it reaches — 200 B, never 0.0 GB (the own review's #5, as `runWords.ts`'s done words). */
+function smallSizeOf(item: Json): string {
+  const bytes = num(item, 'bytes');
+
+  return bytes === undefined ? '—' : sizeText(bytes);
+}
+
+/** The removed table of an action the words table names (E10.S2c, D8): its own title and headings over the daemon's name, size and note. */
+function namedRemovedTable(id: string, index: number, items: readonly Json[], named: RemovedTable): LogsTable {
+  return { id: `removed-${index}`, title: `${id} — ${named.title}`, headers: [...named.headers], rows: items.map((item) => [text(item, 'name'), smallSizeOf(item), text(item, 'note', '')]) };
+}
+
+/** The table's words when every item is of the kind they name — else none, so an unexpected item never sits under the wrong heading. */
+function namedFor(id: string, items: readonly Json[]): RemovedTable | undefined {
+  const named = runWordsOf([id])?.removed;
+
+  return named !== undefined && items.every((item) => text(item, 'kind') === named.kind) ? named : undefined;
+}
+
+function removedTable(id: string, index: number, items: readonly Json[]): LogsTable {
+  const named = namedFor(id, items);
+
+  return named === undefined ? { id: `removed-${index}`, title: `${id} — removed`, headers: ['Type', 'Name', 'Size', 'Note'], rows: itemRows(items) } : namedRemovedTable(id, index, items, named);
 }
 
 function commandRows(commands: readonly Json[]): string[][] {
@@ -57,7 +103,7 @@ function actionTables(action: Json, index: number): LogsTable[] {
   const id = text(action, 'id');
 
   return [
-    { id: `removed-${index}`, title: `${id} — removed`, headers: ['Type', 'Name', 'Size', 'Note'], rows: itemRows(list(run, 'removed')) },
+    removedTable(id, index, list(run, 'removed')),
     { id: `notRemoved-${index}`, title: `${id} — not removed`, headers: ['Type', 'Name', 'Size', 'Why'], rows: itemRows(list(run, 'notRemoved')) },
     { id: `commands-${index}`, title: `${id} — commands and exits`, headers: ['Command', 'Outcome', 'Exit', 'Detail'], rows: commandRows(list(run, 'commands')) },
   ];
@@ -107,7 +153,7 @@ function runOf(body: Json): Omit<LogsBlock, 'id' | 'title' | 'state'> {
       line('dryRun', 'Dry run', yesNo(run.dryRun)),
       line('freed', 'Freed', bytesOf(run, 'freedBytes')),
     ],
-    tables: [{ id: 'actions', title: 'Actions', headers: ['Action', 'Status', 'Objects', 'Freed'], rows: list(run, 'actions').map((a) => [text(a, 'id'), text(a, 'status'), text(a, 'count'), bytesOf(a, 'freedBytes')]) }],
+    tables: [{ id: 'actions', title: 'Actions', headers: ['Action', 'Status', 'Objects', 'Freed'], rows: list(run, 'actions').map((a) => [actionName(text(a, 'id')), text(a, 'status'), text(a, 'count'), bytesOf(a, 'freedBytes')]) }],
     notes: [],
   };
 }

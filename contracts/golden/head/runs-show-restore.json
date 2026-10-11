@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "runId": "20000101T000000Z-1",
+  "state": "done",
+  "run": {
+    "runId": "20000101T000000Z-1",
+    "trigger": "manual",
+    "startedAt": "2000-01-01T00:00:00+00:00",
+    "endedAt": "2000-01-01T00:00:00+00:00",
+    "outcome": "completed",
+    "dryRun": false,
+    "detail": "runs/2000-01-01/20000101T000000Z-1.json",
+    "detailState": "present",
+    "freedBytes": 0,
+    "cleanup": true,
+    "actions": [
+      {
+        "id": "A20",
+        "status": "ran",
+        "count": 1,
+        "freedBytes": 0
+      }
+    ],
+    "kind": "act"
+  },
+  "detailState": "present",
+  "detail": {
+    "kind": "act",
+    "dryRun": false,
+    "dryRunReason": "a button or the CLI never dry-runs: it previews, then runs on confirmation (plan §5)",
+    "targetUser": {
+      "found": true,
+      "name": "user",
+      "home": "/home/user",
+      "source": "single login account"
+    },
+    "actions": [
+      {
+        "id": "A20",
+        "summary": "restore archived AI-agent sessions into their agents' folders as the target user — the entries the modal showed, a button only",
+        "status": "ran",
+        "reason": "ran",
+        "preview": {
+          "what": "restore archived AI-agent sessions as user: 2 removed at their source and verified; of the 1 entries the panel showed, the 1 still restorable",
+          "available": true,
+          "count": 1,
+          "bytes": 200,
+          "basis": "the archive child's own list (archive list --json), run as the target user; entry ids only",
+          "facts": {
+            "unverified": 0,
+            "count": 1,
+            "bytes": 200
+          },
+          "refusal": "",
+          "items": [
+            {
+              "kind": "archived session",
+              "name": "fedcba9876543210",
+              "bytes": 200,
+              "note": "claude-code 2000/01, 2 file(s)"
+            }
+          ],
+          "skip": "",
+          "urgent": ""
+        },
+        "run": {
+          "count": 1,
+          "freedBasis": "a restore frees nothing: it puts archived sessions back",
+          "removed": [
+            {
+              "kind": "archived session",
+              "name": "fedcba9876543210",
+              "bytes": 200,
+              "note": "claude-code 2000/01: restored, 2 file(s)"
+            }
+          ],
+          "commands": [
+            {
+              "template": "archive-list-shown",
+              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive list --restorable --entry fedcba9876543210 --json",
+              "outcome": "exited",
+              "exit": 0,
+              "detail": ""
+            },
+            {
+              "template": "archive-restore",
+              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive restore --entry fedcba9876543210 --json",
+              "outcome": "exited",
+              "exit": 0,
+              "detail": ""
+            }
+          ],
+          "failure": "",
+          "succeeded": true,
+          "notRemoved": [],
+          "notes": [
+            "restored 1, already there 0, refused 0"
+          ]
+        }
+      }
+    ],
+    "notes": []
+  }
+}
