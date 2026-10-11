@@ -253,14 +253,23 @@
   // agent what is due and its own retention (with the badge when that retention deletes sooner than the archive takes), the
   // run lock and the last run; and the archive's buttons, each posting its bare id — no folder ever comes from the page. ----
 
+  // One line a reader reads as a sentence: "Claude Code — 3 sessions · … older than 14 d — its own cleanup deletes after 90 d" —
+  // each part keeps its own span (the badge its warn level as data), a part with no text is left out (the badge when there is
+  // none, a name the daemon did not give), and a " — " span stands between each two parts shown.
   function archiveAgent(agent) {
     const line = element('li', undefined, { 'archive-agent': '' });
-    line.appendChild(element('span', agent.name, { 'agent-name': '' }));
-    line.appendChild(element('span', agent.due, { 'agent-due': '' }));
-    line.appendChild(element('span', agent.retention, { 'agent-retention': '' }));
-    if (agent.badge !== '') {
-      line.appendChild(element('span', agent.badge, { 'retention-badge': '', level: 'warn' }));
-    }
+    const parts = [
+      [agent.name, { 'agent-name': '' }],
+      [agent.due, { 'agent-due': '' }],
+      [agent.retention, { 'agent-retention': '' }],
+      [agent.badge, { 'retention-badge': '', level: 'warn' }],
+    ].filter(function (part) { return part[0] !== ''; }).map(function (part) { return element('span', part[0], part[1]); });
+    parts.forEach(function (part, index) {
+      if (index > 0) {
+        line.appendChild(element('span', ' — ', { 'agent-separator': '' }));
+      }
+      line.appendChild(part);
+    });
     return line;
   }
 
