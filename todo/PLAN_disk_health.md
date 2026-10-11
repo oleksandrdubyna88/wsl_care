@@ -517,3 +517,131 @@ script's tags — a test holds every printed tag to `WindowsDiskParsers.KnownTag
 domain record — now `PhysicalDiskReport` (same JSON shape). RED first for the report fields and the wire record; break-its in
 [module_tests.md](../research/module_tests.md) *E15.S1*.
 
+
+## E15.S2 design (2026-10-11, branch `feat/wc-e15s2-virtual-disks`)
+
+**Goal.** From each full run's Windows disk sample (E15.S1), judge three things:
+- each virtual disk's GAP: the file size minus what the guest uses;
+- its GROWTH per day since the previous full run;
+- the hosting volume's FREE space against what its files can still grow.
+
+Show the figures and the verdicts in the run detail and in `status`, with their basis and age. Read-only: no new command
+runs, and the never-list is untouched.
+
+**What the code gives today** (mapped 2026-10-11):
+- `status` carries every `ThresholdRules.FromFullRun` verdict automatically (`Status/StatusVerdicts.cs:31-58`), with
+  `basis: fullRun`, the run id and the age.
+- The Windows disk sample is only in the run detail (`HealthReport.WindowsDisk`), not on the history line.
+- The distro's `status` has no `host` section: on Linux it is unavailable by design (`Collectors/LinuxProbe.cs:16-17`).
+- Docker's `docker system df` totals are in the full run's `PreviewResult.Snapshot.Totals`
+  (`Docker/DockerCollector.cs:14-20`), but not in `ThresholdInputs`.
+- The distro's own `/` is `ThresholdInputs.Root` (`Collectors/Samples.cs:9-21`, statvfs).
+
+**1. Which Lxss distro is this one? (measured 2026-10-11).**
+- `systemctl show-environment` has no `WSL_*` variable. The three `wsl-care` units have an empty `Environment=`.
+  `wslinfo` has no distro-name option. A shell started through `wsl.exe` has `WSL_DISTRO_NAME=Ubuntu`.
+- So `Health/DistroIdentity.cs` works like this:
+  - Any ROOT run whose environment carries `WSL_DISTRO_NAME` (install / update, a collect started by the panel through
+    `wsl.exe`) writes `{state}/distro-name.json` (`{name, recordedAt}`). It writes atomically, and only when the name
+    changed.
+  - The full run takes the environment first, then the file.
+  - If neither exists, the own distro's mapping is `none`, with the reason "this distro's name is not known yet — any
+    wsl-care command started through wsl.exe records it (the panel's *Run full check now* does)".
+  - A recorded name that is not in the Lxss map is also `none`, and the reason names it.
+
+**2. `Health/VirtualDisks.cs` (PURE).** It turns the sample, the root volume, Docker's totals, the distro name and the
+previous sizes into `DiskFacts`.
+- **Per virtual disk:**
+  - name, path, size, sparse;
+  - the hosting volume's letter (from the path);
+  - `guestUsedBytes`, `mappedBy`, `gapBytes`, `growthBytesPerDay`, and `possibleGrowthBytes`, each a `Reading`.
+- **`mappedBy`** is one of three values:
+  - `mount`: this distro's own `/`. Guest used = `Root.UsedBytes`. Possible growth = `Root.TotalBytes` − file size,
+    because the guest filesystem's size is the disk's virtual size.
+  - `dockerDf`: Docker's data disk. Guest used = the sum of `docker system df`'s sizes (images, containers, local volumes,
+    build cache). This is labelled "Docker's own totals — an estimate, not the filesystem". Possible growth is unknown.
+  - `none`: other distros, which are not mounted here. Gap and possible growth are unknown, and the reason says why.
+- **Per volume that hosts a virtual disk:** letter, size, free, the disks on it, their summed growth per day, and their
+  known possible growth together with the count of unknown ones.
+
+**3. Growth needs two measured sizes.**
+- `Records/SlowParts.cs` gains `VirtualDisks` (`{sampledAt, disks[{name, path, sizeBytes}]}`, about 600 B per line), and
+  `LastFullRun` gains it too (the `PreviousClock` pattern, `Collect/CollectRun.cs:402`, `:465`).
+- Growth per day = (size now − size then) ÷ elapsed days. It is computed only for the same path, and only when both runs
+  measured it.
+- Below `disk.growthMinHours` (1 h) the growth is unavailable, with the reason "too close to the previous measurement". A
+  10-minute pair would otherwise turn 1 GiB into 144 GiB a day.
+- A negative growth is a shrink, shown as it is.
+
+**4. Verdicts (`Thresholds/DiskRules.cs`, spread into `FromFullRun`; all carried by `status`):**
+- `disk.vhdxGap`: warn when a mapped gap is above `disk.vhdxGapWarnGib` (20). The value names the file and reads
+  "file − guest = gap".
+  - When the file is not sparse, the reason adds the sparse advice as TEXT: "`wsl --manage <distro> --set-sparse true`
+    lets Windows reclaim the space freed inside it — wsl-care never runs it".
+  - For `dockerDf`, the reason says it is Docker's estimate.
+  - When nothing is mapped, the verdict is unknown.
+- `disk.vhdxGrowth`: warn when a file grows faster than `disk.vhdxGrowthWarnGibPerDay` (10). It is unknown until two
+  measured sizes exist.
+- `disk.hostFree`: warn when a hosting volume's free space is below `disk.hostFreeWarnGib` (100), or below the KNOWN
+  possible growth of its files. The reason says how many files' possible growth is unknown.
+
+**5. Wire.**
+- The run detail gains a `disk` section (`Collect/DiskReport.cs`).
+- `status` gains a top-level additive `disk`: the newest full run's `DiskReport`, with
+  `basis {source: fullRun, runId, evaluatedAt, ageSeconds}`. It is read from the detail with a partial record, as
+  `Status/FullRunVerdicts.cs` reads the verdicts.
+- The Windows binary's `status` says `disk` is unavailable, because the distro's full run reads the virtual disks.
+- `host.vhdx` stays (no wire removal). Its reason is re-worded to point at the distro's `status.disk`.
+
+**6. Keys:**
+- `disk.vhdxGapWarnGib` (1–1024, default 20)
+- `disk.vhdxGrowthWarnGibPerDay` (1–1024, default 10)
+- `disk.hostFreeWarnGib` (1–10240, default 100)
+- `disk.growthMinHours` (1–48, default 1)
+
+All four are display keys. They are added to `contracts/config-keys.json`.
+
+**7. Extension.**
+- The panel's `disk.vhdx` row (`src_vs_code/src/panel/fieldMap.ts:141`, "arriving E11") becomes a read row on
+  `verdicts[id=disk.vhdxGap]`.
+- The status bar is unchanged: `disk.*` does not colour it.
+- The field-map document block in `architecture.md` is regenerated.
+
+**8. Goldens.**
+- The captured collect flow answers the Windows disk script with `WindowsDiskFixture` (as `WindowsDiskFlows.cs:36-37`
+  does), so the seven status goldens show real figures.
+- Volatile values get normalisation rules.
+
+**9. RED first:**
+- **Gap.** D2/D3's numbers (237.7 GiB file, 194.0 GiB used by `/`) give a gap of 43.7 GiB, which warns, with the sparse
+  advice for Ubuntu.
+- **Growth:**
+  - One measurement gives no growth.
+  - Two measurements give their difference per day.
+  - 10 minutes apart gives "too close".
+  - A different path gives no growth.
+- **Distro name:**
+  - It is read from the environment.
+  - Without the environment, it is read from the file.
+  - With neither, the mapping is `none` with the reason.
+  - A name that is not in the Lxss map is also `none`.
+- **Docker:** Docker's disk is mapped by df and labelled an estimate.
+- **Host free:**
+  - `disk.hostFree` warns below 100 GiB.
+  - It also warns below the known possible growth.
+  - It counts the files whose growth is unknown.
+- **`status`:**
+  - It carries `disk` with its age.
+  - With no full run, it says so.
+  - The Windows binary says the distro reads it.
+
+There will be break-its on the product lines.
+
+**10. Docs:** README (the keys), `module_daemon.md`, `module_tests.md`, `architecture.md` (the field map), this plan's
+as-built section.
+
+**Deviations from the story row, decided here:**
+- `mappedBy` is `mount | dockerDf | none`, not `mount | size | none`. Mapping a block device by size identifies it, but it
+  gives no guest usage, because those filesystems are not mounted here (D3).
+- The keys are in GiB (`…Gib`), not "Gb", because Windows reports the file sizes in binary units.
+- `host.vhdx` is re-worded, not removed.
