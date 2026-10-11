@@ -29,7 +29,7 @@ from the tag's `install.sh`. 0.4.0 is the version installed for the owner's PLAN
 - **Item 11:** no oom-kill, memory.max or snap-confine lines; 0 failed units.
 - **Item 4:** 27/27 passed (total 27, failed 0, skipped 0, 44.7 s; docker 29.6.1 with 8 containers running), built from the tag.
 - **New in 0.4.0, A21:** a root `act A21 --preview` at about 10:00Z answered available, with count 0 and basis "0 process(es),
-  0 fd link(s) in 0 ms … 0 relay(s) of jinx kept". No interop relay existed at that moment
+  0 fd link(s) in 0 ms … 0 relay(s) of user kept". No interop relay existed at that moment
   ([2026-10-09_interop_relays.md](research/2026-10-09_interop_relays.md) § 7).
 
 Items 3, 6 and 12 belong to the E5 live gate (the extension). The first daemon release and its live install were the **E4 live

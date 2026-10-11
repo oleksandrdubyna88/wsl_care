@@ -223,6 +223,46 @@ public sealed class FixturePrivacyTests
             .Should().ContainSingle().Which.Should().StartWith("planted.txt:2 holds ").And.Contain(rule);
     }
 
+    /// <summary>2026-10-11: a copied A21 basis carried the owner's login name into POST_DEPLOY.md and a research note, and the scan
+    /// saw it ONLY through the machine-name rule — on the owner's machine, never in CI (the runner's account is <c>runner</c>). The
+    /// daemon's own sentences that name a target user are a FIXED rule now, so the repository is clean whatever the machine running
+    /// the test is called.</summary>
+    [Fact]
+    public void No_tracked_text_file_carries_a_daemon_sentence_naming_a_real_user_whatever_the_machine_is_called()
+    {
+        var findings = FixturePrivacy.RepositoryFindings(ReleaseFiles.Root, []);
+
+        findings.Should().BeEmpty("the fixed rules alone must hold the repository clean, as CI runs them — {0} finding(s), by file and rule:\n{1}",
+            findings.Count, ByFileAndRule(findings));
+    }
+
+    // Each planted name is spelt in two parts, so this source file does not itself hold a daemon sentence for the repository scan to find.
+    [Theory]
+    [InlineData("its basis read \"0 process(es), 0 fd link(s) in 0 ms … 0 relay(s) of " + "quillonvex kept\"")]
+    [InlineData("2 AI-agent process(es) of " + "quillonvex kept: 12 (busy)")]
+    [InlineData("1 MCP server(s) of " + "quillonvex kept: 40 (busy)")]
+    [InlineData("wsl-care act --preview (nothing run, nothing written); target user: " + "quillonvex (SUDO_USER)")]
+    [InlineData("config set and config reset write the user layer of " + "quillonvex; run them as " + "quillonvex, not as root")]
+    [InlineData("npm is not in " + "quillonvex's bin folders: /usr/local/bin")]
+    public void A_daemon_sentence_naming_a_real_user_is_a_finding(string line)
+    {
+        FixturePrivacy.Findings("planted.txt", $"first line\n{line}\n", NoMachineNames)
+            .Should().ContainSingle().Which.Should().Be("planted.txt:2 holds a daemon sentence that names its target user, whose name is not 'user'");
+    }
+
+    [Theory]
+    [InlineData("0 relay(s) of user kept: none")]
+    [InlineData("1 relay(s) of me kept: 12 (its client is alive)")]
+    [InlineData("2 relay(s) of <user> kept")]
+    [InlineData("target user: user (SUDO_USER)")]
+    [InlineData("write the user layer of <user>; run them as user, not as root")]
+    [InlineData("npm is not in user's bin folders")]
+    [InlineData("the relay(s) of the run were kept as they were")]
+    public void A_daemon_sentence_with_the_placeholder_or_a_synthetic_name_is_not_a_finding(string line)
+    {
+        FixturePrivacy.Findings("clean.txt", line, NoMachineNames, FixturePrivacy.SyntheticNames).Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("/home/user/git/project-a")]
     [InlineData("/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code")]

@@ -11,6 +11,11 @@ namespace WslCare.Scenarios;
 ///   <item>a Windows profile path — <c>/mnt/&lt;d&gt;/Users/&lt;name&gt;</c> or <c>&lt;D&gt;:\Users\&lt;name&gt;</c> — whose name is not
 ///   <c>user</c> (Windows' own <c>Public</c> and <c>Default</c> profiles excepted);</item>
 ///   <item>an e-mail address (a systemd template instance such as <c>getty@tty1.service</c> is not one);</item>
+///   <item>a daemon sentence that names its target user — the shapes in which the daemon's own code writes a user's NAME in
+///   prose (the suspect previews' basis "… relay(s) of &lt;name&gt; kept", <c>act --preview</c>'s "target user: &lt;name&gt; (…)",
+///   config's "the user layer of &lt;name&gt;" / "run them as &lt;name&gt;, not as root", "… is not in &lt;name&gt;'s bin folders") — whose
+///   name is not <c>user</c> (2026-10-11: a copied A21 basis carried the owner's login name into POST_DEPLOY.md and a research
+///   note, and only the machine-name rule below could see it — never in CI, where the runner's account is <c>runner</c>);</item>
 ///   <item>the user name of the machine RUNNING the test — derived now from the environment and the home folder, as
 ///   <c>src_vs_code/scripts/check-vsix.mjs</c> derives it, and never written into the repository.</item>
 /// </list>
@@ -246,6 +251,11 @@ internal static partial class FixturePrivacy
             yield return "an e-mail address";
         }
 
+        if (DaemonUserSentence().Matches(line).Any(m => IsForeign(m, Users, syntheticNames)))
+        {
+            yield return "a daemon sentence that names its target user, whose name is not 'user'";
+        }
+
         for (var n = 0; n < machineNames.Count; n++)
         {
             if (Regex.IsMatch(line, $"(?<![A-Za-z0-9]){Regex.Escape(machineNames[n])}(?![A-Za-z0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
@@ -291,4 +301,14 @@ internal static partial class FixturePrivacy
 
     [GeneratedRegex(@"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?<tld>[A-Za-z]{2,})(?![A-Za-z0-9-])", RegexOptions.CultureInvariant)]
     private static partial Regex Email();
+
+    /// <summary>
+    /// The daemon's own sentences that carry a target user's name (each verified in <c>src_daemon/src</c>): the suspect
+    /// previews' basis — <c>{n} process(es) | MCP server(s) | relay(s) of {user.Name} kept</c> (AgentOrphans, McpServerStop,
+    /// InteropRelayStop) —, <c>target user: {name} ({source})</c> (ActCommand), <c>the user layer of {name}</c> and <c>run them as
+    /// {name}, not as root</c> (ConfigCommand), and <c>{exe} is not in {name}'s bin folders</c> (TargetUserCommands). A placeholder
+    /// in angle brackets (<c>&lt;user&gt;</c>) is no name: the class leaves out <c>&lt;</c>.
+    /// </summary>
+    [GeneratedRegex(@"(?:\((?:e?s)\) of (?<name>[A-Za-z0-9._-]+) kept|target user: (?<name>[A-Za-z0-9._-]+) \(|the user layer of (?<name>[A-Za-z0-9._-]+)|run them as (?<name>[A-Za-z0-9._-]+), not as root|is not in (?<name>[A-Za-z0-9._-]+)'s bin folders)", RegexOptions.CultureInvariant)]
+    private static partial Regex DaemonUserSentence();
 }

@@ -35,6 +35,13 @@ Claude scratchpad path. Since the code round:
   holds the two EQUAL), a synthetic name and a name shorter than 3 characters (check-vsix's floor), and matches the rest
   as a whole word: `runner` is an ordinary word here, and CI run 37202261532 reported 541 findings per Linux leg. The research notes,
   the cleanup scripts and two test sources were anonymised by it (2026-10-04).
+- **The daemon's own sentences** (2026-10-11) — a fifth FIXED rule finds a target user's name where the daemon writes it in
+  prose: the suspect previews' basis "… relay(s) / process(es) / MCP server(s) of <name> kept", `act --preview`'s "target user:
+  <name> (…)", config's "the user layer of <name>" / "run them as <name>, not as root", "… is not in <name>'s bin folders" —
+  unless the name is `user` or a synthetic one. A copied A21 basis had carried the owner's login name into `POST_DEPLOY.md` and a
+  research note, and only the machine-name rule saw it, on the owner's machine and never in CI (the runner's account is
+  `runner`); `FixturePrivacyTests.No_tracked_text_file_carries_a_daemon_sentence_naming_a_real_user_whatever_the_machine_is_called`
+  runs the fixed rules alone, as CI does. Older commits still hold the name; rewriting history is the owner's decision.
 - **Not undone by this**: the data before the code round remains in git history (main and the pull-request branches);
   removing it needs a history rewrite and a force-push — the owner's decision.
 
