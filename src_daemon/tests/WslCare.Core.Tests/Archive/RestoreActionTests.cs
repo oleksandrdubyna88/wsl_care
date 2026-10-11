@@ -280,4 +280,104 @@ public sealed class RestoreActionTests : IDisposable
     }
 
     private static string Restore(RestoredSession session) => RestoreJson(session);
+
+    // ---- E10.S2c follow-up: A20 believes only the entries it asked for ----------------------------------------------------
+
+    private static RestoredSession RestoredAs(string id, string key) =>
+        new(id, "claude-code", key, "2026/09", RestoreOutcomes.Restored, 2, 200, "2 file(s) created");
+
+    /// <summary>What a failed A20 must not leak: the planted keys of the answer, anywhere in the run root records.</summary>
+    private static void NoKeyIn(ActionRun run)
+    {
+        run.Failure.Should().NotContain("projects/p/");
+        JsonSerializer.Serialize(run, WslCareJsonContext.Default.ActionRun).Should().NotContain("projects/p/", "§15q R9: an entry id only, never a key");
+    }
+
+    [Fact]
+    public async Task A_restore_answer_naming_an_entry_the_run_did_not_ask_for_fails_and_records_nothing_of_it()
+    {
+        var answer = RestoreJson(RestoredAs(Removed1, "projects/p/asked.jsonl"), RestoredAs(Removed2, "projects/p/never-asked.jsonl"));
+
+        var (_, run, runner) = await PreviewAndRun(Context(ShownList.Of([Removed1])), Children(restore: answer));
+
+        runner.Requests.Single(r => r.Argv.Count > 6 && r.Argv[6] == "restore").Argv.Skip(5).Should().Equal("archive", "restore", "--entry", Removed1, "--json");
+        run.Succeeded.Should().BeFalse("an answer naming an entry root never asked for is not believed");
+        run.Failure.Should().Contain($"names an entry the run did not ask for ({Removed2})").And.Contain("not known").And.Contain("archive list");
+        run.Count.Should().Be(0);
+        run.Removed.Should().BeEmpty("nothing of an unbelieved answer is recorded as restored");
+        NoKeyIn(run);
+    }
+
+    [Fact]
+    public async Task A_restore_answer_naming_one_entry_twice_fails_and_records_nothing_of_it()
+    {
+        var answer = RestoreJson(RestoredAs(Removed1, "projects/p/once.jsonl"), RestoredAs(Removed1, "projects/p/twice.jsonl"));
+
+        var (_, run, _) = await PreviewAndRun(Context(ShownList.Of([Removed1, Removed2])), Children(restore: answer));
+
+        run.Succeeded.Should().BeFalse();
+        run.Failure.Should().Contain($"names an entry twice ({Removed1})");
+        run.Count.Should().Be(0);
+        run.Removed.Should().BeEmpty();
+        NoKeyIn(run);
+    }
+
+    [Fact]
+    public async Task A_restore_answer_naming_exactly_or_fewer_than_the_asked_entries_is_believed_as_before()
+    {
+        var exactly = RestoreJson(RestoredAs(Removed1, "projects/p/a.jsonl"), RestoredAs(Removed2, "projects/p/b.jsonl"));
+        var fewer = RestoreJson(RestoredAs(Removed2, "projects/p/b.jsonl"));
+
+        var (_, all, _) = await PreviewAndRun(Context(ShownList.Of([Removed1, Removed2])), Children(restore: exactly));
+        var (_, some, _) = await PreviewAndRun(Context(ShownList.Of([Removed1, Removed2])), Children(restore: fewer));
+
+        all.Succeeded.Should().BeTrue(all.Failure);
+        all.Count.Should().Be(2);
+        some.Succeeded.Should().BeTrue(some.Failure);
+        some.Removed.Should().ContainSingle().Which.Name.Should().Be(Removed2);
+    }
+    /// <summary>The own review on Fable, #1: the asked list is the one handed to the child — the shown entries NARROWED to those still
+    /// restorable, never the shown list itself. A shown entry still at its source is not asked, so an answer naming it is refused.</summary>
+    [Fact]
+    public async Task An_answer_naming_a_shown_entry_the_narrowing_left_out_is_refused()
+    {
+        var answer = RestoreJson(RestoredAs(Removed1, "projects/p/asked.jsonl"), RestoredAs(StillThere, "projects/p/shown-not-asked.jsonl"));
+
+        var (_, run, runner) = await PreviewAndRun(Context(ShownList.Of([Removed1, StillThere])), Children(restore: answer));
+
+        runner.Requests.Single(r => r.Argv.Count > 6 && r.Argv[6] == "restore").Argv.Skip(5).Should().Equal("archive", "restore", "--entry", Removed1, "--json");
+        run.Succeeded.Should().BeFalse();
+        run.Failure.Should().Contain($"did not ask for ({StillThere})");
+        run.Removed.Should().BeEmpty();
+        NoKeyIn(run);
+    }
+
+    /// <summary>The own review on Fable, #2: an unasked entry is refused whatever its outcome — a REFUSED one too, which would otherwise
+    /// reach the refused-sessions sentence of the run's failure.</summary>
+    [Fact]
+    public async Task An_unasked_entry_is_refused_whatever_its_outcome()
+    {
+        var answer = RestoreJson(RestoredAs(Removed1, "projects/p/asked.jsonl"), RestoredAs(Removed2, "projects/p/never-asked.jsonl") with { Outcome = RestoreOutcomes.Refused });
+
+        var (_, run, _) = await PreviewAndRun(Context(ShownList.Of([Removed1])), Children(restore: answer, restoreOutcome: RecordingCommandRunner.Exited(1)));
+
+        run.Succeeded.Should().BeFalse();
+        run.Failure.Should().Contain($"did not ask for ({Removed2})").And.NotContain("were refused", "nothing of the unbelieved answer is told as its result");
+        NoKeyIn(run);
+    }
+
+    /// <summary>The own review on Fable, #5: the rule itself — empty lists, a stranger before a duplicate, the asked list's own order.</summary>
+    [Theory]
+    [InlineData("", "", "")]
+    [InlineData("a", "a,b", "")]
+    [InlineData("b,a", "a,b", "")]
+    [InlineData("c", "a,b", "names an entry the run did not ask for (c)")]
+    [InlineData("a,a,c", "a,b", "names an entry the run did not ask for (c)")]
+    [InlineData("a,a", "a,b", "names an entry twice (a)")]
+    public void The_answer_rule_names_the_first_stranger_then_the_first_duplicate(string named, string asked, string problem)
+    {
+        static IReadOnlyList<string> Split(string text) => text.Length == 0 ? [] : text.Split(',');
+
+        RestoreAction.AnswerProblem(Split(named), Split(asked)).Should().Be(problem);
+    }
 }
