@@ -114,3 +114,18 @@ So, with `Relay(1402)` (pid 1401) in § 2, a `Relay(n)` is created for one comma
 pid equals its parent's `n` was born there (`wsl.exe`'s top-level command); the client-gone relay 12062 of § 5 was under
 `Relay(7411)`. S7b.2 keeps the born-there relay by this test and does not use the session id. It keeps a relay whose stdio is
 a socket until a peer can be shown gone.
+
+## 7. The first A21 preview on the owner's machine — daemon 0.4.0, 2026-10-11 ~10:00Z
+
+The coordinator ran it as root, right after the 0.4.0 install (POST_DEPLOY's 0.4.0 stamp):
+- `act A21 --preview --json` answered **available**, count **0**;
+- its basis read "0 process(es), 0 fd link(s) in 0 ms … 0 relay(s) of jinx kept".
+
+No interop relay existed at that moment, so the scan found no pipe to look for and read nothing.
+
+The two open questions of § 6 stay open:
+- what the fd scan costs on this machine, which `processes.fdScanMilliseconds` (10000, provisional) waits for;
+- whether real relays sit on pipes or on sockets.
+
+The coordinator runs the preview again while relays exist. 0.4.0 is the version installed for the owner's planned dryRun-off on
+2026-10-12 morning; once that is done, A21 acts at the next watch (not observed yet).
