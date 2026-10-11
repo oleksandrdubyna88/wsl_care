@@ -721,7 +721,8 @@ public sealed class ReleaseExtensionScriptFlows
         {
             var checkout = Make(root, actions: "0.2.0", ghAnswer: "false\tdaemon-v0.1.0");
             var gh = Path.Combine(root.Path, "bin", "gh");
-            File.WriteAllText(gh, "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\ncase \"$*\" in *daemon-v0.2.0*) printf 'false\\tdaemon-v0.2.0\\n' ;; *) printf 'false\\tdaemon-v0.1.0\\n' ;; esac\n");
+            // The bundled pin's query (E7.S5a) asks for the win-x64 zip too — answered with it, so the stamp is what refuses.
+            File.WriteAllText(gh, "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\ncase \"$*\" in *'any(.assets'*) printf 'false\\tdaemon-v0.2.0\\ttrue\\n' ;; *daemon-v0.2.0*) printf 'false\\tdaemon-v0.2.0\\n' ;; *) printf 'false\\tdaemon-v0.1.0\\n' ;; esac\n");
             var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
             result.Exit.Should().Be(1, result.Stdout);
             result.Stdout.Should().Contain("last verified daemon 0.1.0, older than the actions minimum 0.2.0");
