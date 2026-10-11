@@ -50,7 +50,7 @@ refuse() {
 }
 
 # native and python_cmd: one copy for every script that reads a zip.
-# shellcheck source=lib/windows-tools.sh
+# shellcheck source-path=SCRIPTDIR source=lib/windows-tools.sh
 . "$here/lib/windows-tools.sh"
 
 mkdir -p "$work/download"
