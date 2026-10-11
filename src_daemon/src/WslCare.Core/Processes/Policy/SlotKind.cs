@@ -175,6 +175,19 @@ public abstract record SlotKind
         public override string Describe => "<https-url>";
     }
 
+    /// <summary>
+    /// EXACTLY the Windows disk script (E15.S1) as the configuration in force builds it
+    /// (<see cref="Health.WindowsDiskCommands.Script"/>) — one value, never a family: it is a slot only because its two integers
+    /// (<c>disk.eventsSinceDays</c>, <c>disk.eventsMaxRead</c>) are configuration, and a literal would freeze the defaults when
+    /// the catalogue is first read (the clock reference's reason, <see cref="ReadCommandTemplates.ClockReference"/>).
+    /// </summary>
+    public sealed record WindowsDiskScript : SlotKind
+    {
+        public override bool Accepts(string value) => string.Equals(value, Health.WindowsDiskCommands.Script, StringComparison.Ordinal);
+
+        public override string Describe => "<the fixed Windows disk script>";
+    }
+
     /// <summary>One of a fixed set of values, compared exactly.</summary>
     public sealed record OneOf(IReadOnlyList<string> Values) : SlotKind
     {

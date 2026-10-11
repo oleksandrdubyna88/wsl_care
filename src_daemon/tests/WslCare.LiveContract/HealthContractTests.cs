@@ -121,6 +121,42 @@ public sealed class HealthContractTests
         }
     }
 
+    /// <summary>E15.S1: the second fixed script through WSL interop, exactly as the full run starts it (through the product's
+    /// policy, which admits it only as a member of the closed set), parsed by the product's parser: an end line, no malformed
+    /// line, the system drive among the volumes, a machine id, and the reliability counters read or refused — never both.</summary>
+    [Fact]
+    public async Task The_windows_disk_script_answers_every_section_the_parser_reads_from_inside_the_distro()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Live.Unavailable("the disk script is the distro's (WSL interop to powershell.exe); this binary runs on Windows");
+        }
+
+        var command = WindowsDiskCommands.WindowsDisk;
+        var outcome = await Live.RunAsync(command);
+        if (outcome is CommandOutcome.FailedToStart failed)
+        {
+            Live.Unavailable($"powershell.exe is not reachable (no WSL interop here): {failed.Reason}");
+        }
+
+        var facts = Available(ToolAnswers.Read(command, outcome).Bind(stdout => WindowsDiskParsers.Parse(stdout, WindowsDiskCommands.EventsMaxRead, WindowsDiskCommands.EventsSinceDays)));
+
+        facts.MalformedLines.Should().Be(0, "every line the script prints is one the parser reads");
+        Available(facts.Volumes).Should().Contain(v => v.Letter == "C", "the system drive is a lettered volume");
+        Available(facts.PhysicalDisks).Should().NotBeEmpty();
+        Available(facts.Events).Read.Should().BeLessThanOrEqualTo(WindowsDiskCommands.EventsMaxRead);
+        Available(facts.Identity.MachineGuid).Should().NotBeEmpty();
+        // E15.S1's plan round: interop runs the script as the Windows user who started the VM, so HKCU is THAT account's hive —
+        // the account is a user SID, and the distro this test runs in is among the Lxss map's distros.
+        Available(facts.Identity.Account).Should().StartWith("S-1-5-21-", "interop runs Windows programs as the signed-in user, not SYSTEM");
+        if (Environment.GetEnvironmentVariable("WSL_DISTRO_NAME") is { Length: > 0 } distro)
+        {
+            Available(facts.Distros).Should().Contain(d => d.Name == distro, "the Lxss map read is the account that runs this distro");
+        }
+        Available(facts.CommitLimitBytes).Should().BePositive();
+        (facts.Reliability.IsAvailable || facts.Reliability.ReasonOrEmpty.Contains("elevation", StringComparison.Ordinal)).Should().BeTrue(facts.Reliability.ReasonOrEmpty);
+    }
+
     [Fact]
     public async Task Timesyncd_status_answers_a_last_ntp_offset_the_parser_reads()
     {

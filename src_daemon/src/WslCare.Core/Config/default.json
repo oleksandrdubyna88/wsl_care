@@ -271,11 +271,17 @@
   },
   "health": {
     "windowsClockTimeoutSeconds": 20,
+    "windowsDiskTimeoutSeconds": 30,
     "snapTimeoutSeconds": 30,
     "outputCapBytes": 1048576,
     "kernelLinesKept": 5,
     "kernelLineChars": 200,
     "maxWslConfigBytes": 1048576
+  },
+  "disk": {
+    "eventsSinceDays": 60,
+    "eventsMaxRead": 5000,
+    "eventGroupsMax": 500
   },
   "commands": {
     "outputCapBytes": 1048576,

@@ -39,7 +39,7 @@ internal static partial class NeverOracle
         var line = " " + string.Join(' ', argv.Skip(1).Select(a => a.ToLowerInvariant())) + " ";
         return (Shells.Contains(exe) && Regex.IsMatch(line, @" -[a-z]*c[a-z]* ")) // sh -c, bash -ic, …
             || (exe == "cmd" && Regex.IsMatch(line, @" /[ck] "))
-            || (exe is "powershell" or "pwsh" && Regex.IsMatch(line, @" -(c|command|encodedcommand|ec|e|file|f) ") && !IsTheClockProbe(argv))
+            || (exe is "powershell" or "pwsh" && Regex.IsMatch(line, @" -(c|command|encodedcommand|ec|e|file|f) ") && !IsAFixedScript(argv))
             || (exe == "git" && Regex.IsMatch(line, @" worktree( \S+)* prune "))
             || (exe == "docker" && Regex.IsMatch(line, @" system( \S+)* prune( \S+)* (-a|--all|-[a-z]*a[a-z]*)(=\S*)? "))
             || (exe == "docker" && Regex.IsMatch(line, @" volume( \S+)* prune "))
@@ -51,8 +51,11 @@ internal static partial class NeverOracle
             || (line.Contains("automemoryreclaim", StringComparison.Ordinal) && line.Contains("gradual", StringComparison.Ordinal));
     }
 
-    private static bool IsTheClockProbe(IReadOnlyList<string> argv) =>
-        argv.Skip(1).SequenceEqual(Core.Health.HealthCommands.WindowsClock.Arguments, StringComparer.Ordinal);
+    /// <summary>The plan's two fixed scripts (the clock probe; since E15.S1 the Windows disk script, PLAN_disk_health.md §3.1) —
+    /// judged by their ARGUMENTS, as the plan states them; the product's never-list is stricter (the program too).</summary>
+    private static bool IsAFixedScript(IReadOnlyList<string> argv) =>
+        new[] { Core.Health.HealthCommands.WindowsClock, Core.Health.WindowsDiskCommands.WindowsDisk }
+            .Any(script => argv.Skip(1).SequenceEqual(script.Arguments, StringComparer.Ordinal));
 
     private static bool DropCachesNotOne(string line) =>
         line.Contains("/proc/sys/vm/drop_caches", StringComparison.Ordinal)

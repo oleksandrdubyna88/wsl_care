@@ -69,7 +69,13 @@ public sealed record HealthReport(
     TextFigure WindowsProfile,
     WslConfigReport WslConfig,
     ClockReferenceReport ClockReference,
-    CountFigure TimeJumpsBack);
+    CountFigure TimeJumpsBack)
+{
+    /// <summary>The Windows disk facts of the second fixed script (E15.S1) — recorded, judged by no verdict yet; absent on a detail
+    /// written before it (the source generator leaves a missing member null).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public WindowsDiskReport? WindowsDisk { get; init; }
+}
 
 /// <summary>The domain health sample turned into its wire shape — the one place it becomes available + value or reason.</summary>
 public static class HealthReports
@@ -79,8 +85,8 @@ public static class HealthReports
             h.Since,
             h.FailedUnits is Reading<IReadOnlyList<FailedUnit>>.Available { Value: var units } ? new(true, null, units.Count, units) : new(false, h.FailedUnits.ReasonOrEmpty, null, null),
             StatusReports.Bytes(h.JournalBytes),
-            h.JournalOldestEntry is Reading<DateTimeOffset>.Available { Value: var oldest } ? new(true, oldest, null) : new(false, null, h.JournalOldestEntry.ReasonOrEmpty),
-            h.ClockJumps is Reading<int>.Available { Value: var jumps } ? new(true, jumps, null) : new(false, null, h.ClockJumps.ReasonOrEmpty),
+            Instant(h.JournalOldestEntry),
+            Count(h.ClockJumps),
             h.Kernel is Reading<KernelSignals>.Available { Value: var k } ? new(true, null, k.AllocationFailures, k.OomKills, k.Lines) : new(false, h.Kernel.ReasonOrEmpty, null, null, null),
             h.TimeSync is Reading<TimeSync>.Available { Value: var t } ? new(true, null, t.Ntp, t.Synchronized) : new(false, h.TimeSync.ReasonOrEmpty, null, null),
             Unit(h.WslPro),
@@ -94,7 +100,10 @@ public static class HealthReports
             h.WindowsProfile is Reading<string>.Available { Value: var p } ? new(true, p, null) : new(false, null, h.WindowsProfile.ReasonOrEmpty),
             WslConfig(h.WslConfig),
             Reference(h),
-            h.TimeJumpsBack is Reading<int>.Available { Value: var back } ? new(true, back, null) : new(false, null, h.TimeJumpsBack.ReasonOrEmpty));
+            Count(h.TimeJumpsBack))
+        {
+            WindowsDisk = WindowsDiskReports.From(h.WindowsDisk),
+        };
 
     public static ClockReport Clock(WindowsClockSample c)
     {
@@ -118,8 +127,14 @@ public static class HealthReports
         _ => new(false, unit.ReasonOrEmpty, null, null, null, null),
     };
 
-    private static FlagFigure Flag(Reading<bool> flag) =>
+    internal static FlagFigure Flag(Reading<bool> flag) =>
         flag is Reading<bool>.Available { Value: var v } ? new(true, v, null) : new(false, null, flag.ReasonOrEmpty);
+
+    internal static CountFigure Count(Reading<int> count) =>
+        count is Reading<int>.Available { Value: var v } ? new(true, v, null) : new(false, null, count.ReasonOrEmpty);
+
+    internal static InstantFigure Instant(Reading<DateTimeOffset> instant) =>
+        instant is Reading<DateTimeOffset>.Available { Value: var v } ? new(true, v, null) : new(false, null, instant.ReasonOrEmpty);
 
     private static FreshnessReport Freshness(Reading<CollectorFreshness> f) =>
         f is Reading<CollectorFreshness>.Available { Value: var v } ? new(true, null, v.File, v.LastWrite) : new(false, f.ReasonOrEmpty, null, null);

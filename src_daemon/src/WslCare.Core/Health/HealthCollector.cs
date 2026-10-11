@@ -22,6 +22,26 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     public const string WindowsSide = "the WSL distro's health (systemd, the journal, the kernel's signals) is read by wsl-care inside the distro, not by wsl-care.exe";
     public const string WindowsIsTheReference = "this binary runs on Windows: its clock is the one the distro's is compared with";
 
+    /// <summary>Why the Windows binary has no Windows disk sample (E15.S1): the full run in the distro reads it.</summary>
+    public const string WindowsDiskIsTheDistros = "the Windows disk facts are read by wsl-care's full run inside the distro, through its second fixed script; wsl-care.exe does not run it";
+
+    /// <summary>
+    /// The Windows disk facts (E15.S1): the second fixed interop script, once, under its own ceiling — its tree killed past it by
+    /// the runner — parsed by tag. A script that could not start, timed out, exited non-zero, was refused or printed a cut
+    /// answer leaves the WHOLE sample unavailable with that reason; its run time is kept only for an answer that was read.
+    /// </summary>
+    public static async Task<WindowsDiskSample> MeasureWindowsDiskAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var command = WindowsDiskCommands.WindowsDisk;
+        var at = clock.GetUtcNow();
+        var outcome = await runner.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false);
+        var facts = ToolAnswers.Read(command, outcome).Bind(stdout => WindowsDiskParsers.Parse(stdout, WindowsDiskCommands.EventsMaxRead, WindowsDiskCommands.EventsSinceDays));
+        return new WindowsDiskSample(at, Elapsed(outcome, facts), facts);
+    }
+
+    private static Reading<TimeSpan> Elapsed(CommandOutcome outcome, Reading<WindowsDiskFacts> facts) =>
+        outcome is CommandOutcome.Exited exited && facts.IsAvailable ? Reading.Of(exited.Elapsed) : Reading.Missing<TimeSpan>(facts.ReasonOrEmpty);
+
     private const string ClockChange = "Clock change detected";
     /// <summary>The kernel's words for a failed allocation (plan §4.1) — also A2's event (E3.S3).</summary>
     public const string AllocationFailure = "page allocation failure";
@@ -35,12 +55,17 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         {
             var home = Reading.Of(paths.Home);
             var file = paths is WindowsHostPaths windows ? windows.WslConfigFile : paths.Rules.Join(paths.Home, ".wslconfig");
-            return HealthSample.Unavailable(since, WindowsSide, ClockUnavailable(WindowsIsTheReference), home, Reading.Of(AuditWslConfig(file)));
+            return HealthSample.Unavailable(since, WindowsSide, ClockUnavailable(WindowsIsTheReference), home, Reading.Of(AuditWslConfig(file))) with
+            {
+                WindowsDisk = WindowsDiskSample.Unavailable(clock.GetUtcNow(), WindowsDiskIsTheDistros),
+            };
         }
 
         var mark = ClockMark.Now(clock);
         var (clockSample, profile) = await WindowsClockAsync(linux, cancellationToken).ConfigureAwait(false);
         var reference = await ClockReferences.MeasureAsync(commands, clock, mark, cancellationToken).ConfigureAwait(false);
+        // E15.S1: after the clock probe and its reference, so its seconds never sit between the two clocks' readings.
+        var disk = await MeasureWindowsDiskAsync(commands, clock, cancellationToken).ConfigureAwait(false);
         var uptime = ProcText.Read(files, $"{linux.ProcRoot}/uptime").Bind(HealthParsers.Uptime);
         var jumpsBack = await TimeJumpsBackAsync(uptime, cancellationToken).ConfigureAwait(false);
         return new HealthSample(
@@ -65,6 +90,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             ClockReference = reference,
             ClockJudgement = ClockStandings.Judge(clockSample, reference, ClockReferences.ToleranceSeconds),
             TimeJumpsBack = jumpsBack,
+            WindowsDisk = disk,
         };
     }
 

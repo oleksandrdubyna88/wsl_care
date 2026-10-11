@@ -18,9 +18,12 @@ public sealed record NeverRule(string Id, string Description, Func<IReadOnlyList
 /// form; a command that runs another command (<c>sudo</c>, <c>env</c>, <c>xargs</c>, <c>nohup</c>, …) would hide its
 /// payload from these rules, so it is never run either, except <c>runuser</c> in its one fixed shape, whose payload is
 /// judged here too.</para>
-/// <para>PowerShell is the one interpreter the product starts: the Windows clock probe (E2.S3,
-/// <see cref="Health.HealthCommands.WindowsClock"/>) is a fixed script with no slot. Any OTHER PowerShell command string is
-/// never run.</para>
+/// <para>PowerShell is the one interpreter the product starts, and only as a CLOSED set
+/// (<see cref="Health.HealthCommands.FixedScripts"/>): the Windows clock probe (E2.S3) and the Windows disk script (E15.S1,
+/// PLAN_disk_health.md §3.1), each a fixed script with no slot. An argv naming PowerShell (<c>powershell</c> or <c>pwsh</c>,
+/// any path or extension) is refused unless it is EXACTLY one of them — the program as the product spells it AND every
+/// argument, under the configuration in force — so a third script, a variant of one of the two, <c>-File</c>,
+/// <c>-EncodedCommand</c>, a trailing argument, or the right arguments under another PowerShell program never run.</para>
 /// </remarks>
 public static class NeverList
 {
@@ -36,7 +39,7 @@ public static class NeverList
     [
         new("control-characters", "an argument holding a control character (a newline, a NUL, an escape)", argv => argv.Any(a => a.Any(char.IsControl))),
         new("shell", "a shell in any form - sh -c, bash -c, bash -ic, cmd /c, or a script (plan §15c #3: no shell anywhere)", IsShellCommandString),
-        new("powershell", "PowerShell with anything but the fixed Windows clock probe", IsForeignPowerShell),
+        new("powershell", "PowerShell with anything but an exact member of its closed set of fixed scripts - the Windows clock probe and the Windows disk script (no -File, no other script, no variant)", IsForeignPowerShell),
         new("inline-code", "an interpreter given inline code: python -c, perl -e, node -e, ruby -e, php -r, awk", IsInlineCode),
         new("git-worktree-prune", "git worktree prune - it unregisters every worktree created from Windows (plan §3, §5)", IsGitWorktreePrune),
         new("docker-system-prune", "docker system prune, in any form (plan §5: never -a; no action needs any form)", argv => IsDocker(argv, "system", "prune")),
@@ -75,10 +78,10 @@ public static class NeverList
     /// product never needs one (plan §15c #3: no shell anywhere).</summary>
     private static bool IsShellCommandString(IReadOnlyList<string> argv) => Exe(argv) is "cmd" || PosixShells.Contains(Exe(argv));
 
-    /// <summary>PowerShell with anything but the fixed clock probe's arguments.</summary>
+    /// <summary>PowerShell with anything but one of the closed set's argv, program and arguments alike.</summary>
     private static bool IsForeignPowerShell(IReadOnlyList<string> argv) =>
         Exe(argv) is "powershell" or "pwsh"
-        && !argv.Skip(1).SequenceEqual(Health.HealthCommands.WindowsClock.Arguments, StringComparer.Ordinal);
+        && !Health.HealthCommands.FixedScripts.Any(script => argv.SequenceEqual(script.Argv, StringComparer.Ordinal));
 
     private static bool IsInlineCode(IReadOnlyList<string> argv)
     {

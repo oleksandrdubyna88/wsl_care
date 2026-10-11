@@ -438,6 +438,10 @@ public static partial class ConfigKeys
         /// <summary>The Windows clock probe. Default 20.</summary>
         public static readonly ConfigKey.IntKey WindowsClockTimeoutSeconds = new("health.windowsClockTimeoutSeconds", 5, 20) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
+        /// <summary>E15.S1: the second fixed interop script, the Windows disk facts (only the full run starts it). Measured
+        /// 2026-10-10 from Windows PowerShell 5.1, unelevated: 2.4–4.4 s warm, 10.7 s cold. Default 30.</summary>
+        public static readonly ConfigKey.IntKey WindowsDiskTimeoutSeconds = new("health.windowsDiskTimeoutSeconds", 5, 120) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
         /// <summary>snap list --all. Default 30.</summary>
         public static readonly ConfigKey.IntKey SnapTimeoutSeconds = new("health.snapTimeoutSeconds", 5, 30) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
@@ -452,6 +456,22 @@ public static partial class ConfigKeys
 
         /// <summary>Bytes of .wslconfig read. Default 1048576.</summary>
         public static readonly ConfigKey.IntKey MaxWslConfigBytes = new("health.maxWslConfigBytes", 65536, 1048576) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+    }
+
+    public static partial class Disk
+    {
+        /// <summary>E15.S1: the Windows disk script reads the System log's storage events of this many days back — baked into the
+        /// fixed script as an integer, never as text. Default 60 (research/2026-10-10_disk.md D4).</summary>
+        public static readonly ConfigKey.IntKey EventsSinceDays = new("disk.eventsSinceDays", 1, 365) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S1: at most this many of those events are read (<c>Get-WinEvent -MaxEvents</c>, newest first) — it bounds
+        /// the work root's script does, so machine-only. Default 5000.</summary>
+        public static readonly ConfigKey.IntKey EventsMaxRead = new("disk.eventsMaxRead", 100, 100000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>E15.S1's code round: at most this many day / provider / id / disk groups of those events are PRINTED (newest
+        /// first), so the answer always fits the health output cap and reaches its end line; past it the answer says how many
+        /// groups there were. Its maximum keeps even the smallest <c>health.outputCapBytes</c> clear. Default 500.</summary>
+        public static readonly ConfigKey.IntKey EventGroupsMax = new("disk.eventGroupsMax", 10, 800) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     public static partial class Commands
@@ -838,6 +858,10 @@ public static partial class ConfigKeys
         Clock.StepTimeoutSeconds,
         Clock.ReferenceTimeoutSeconds,
         Health.WindowsClockTimeoutSeconds,
+        Health.WindowsDiskTimeoutSeconds,
+        Disk.EventsSinceDays,
+        Disk.EventsMaxRead,
+        Disk.EventGroupsMax,
         Health.SnapTimeoutSeconds,
         Health.OutputCapBytes,
         Health.KernelLinesKept,
