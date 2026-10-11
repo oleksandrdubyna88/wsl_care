@@ -8,6 +8,7 @@ import type { ArchivePageView } from '../../archivePage/archiveView';
 import { localMinuteOf, sizeText } from '../../text/format';
 import { bodyOf, type Body } from '../support/body';
 import { Element, runPageScript, type Page } from '../support/pageHarness';
+import { IDLE_RESTORE } from '../support/archiveRestore';
 import { EXTENSION_ROOT, goldenFile } from '../support/paths';
 import { withZone } from '../support/zone';
 
@@ -32,7 +33,7 @@ function listWith(edits: readonly Body[]): Body {
 }
 
 function state(body: Body, parts: Partial<ArchiveHostState> = {}): ArchiveHostState {
-  return { list: { kind: 'read', distro: 'Ubuntu', body }, expanded: new Set(), pathsShown: false, notice: '', noticeLevel: 'none', ...parts };
+  return { list: { kind: 'read', distro: 'Ubuntu', body }, generation: 1, selection: new Set(), ceiling: 1000, restore: IDLE_RESTORE, starting: false, expanded: new Set(), pathsShown: false, notice: '', noticeLevel: 'none', ...parts };
 }
 
 function viewOf(s: ArchiveHostState): ArchivePageView {
@@ -92,7 +93,7 @@ test('a month is expanded by its INDEX — the page posts the index the view gav
   const second = buttons[1];
   assert.ok(second !== undefined);
   page.click(second);
-  assert.deepEqual(page.posted.at(-1), { type: 'expandMonth', index: 1 });
+  assert.deepEqual(page.posted.at(-1), { type: 'expandMonth', index: 1, generation: 1 });
   assert.deepEqual(entryCells(root), [], 'a closed month shows no entries');
   const open = show(viewOf(state(body, { expanded: new Set([monthKey('claude-code', '2000/02')]) })));
   assert.equal(open.root.all('tr[data-entry]').length, 1);
@@ -100,7 +101,7 @@ test('a month is expanded by its INDEX — the page posts the index the view gav
   assert.ok(close !== undefined);
   assert.equal(close.attributes['aria-expanded'], 'true');
   open.page.click(close);
-  assert.deepEqual(open.page.posted.at(-1), { type: 'collapseMonth', index: 1 });
+  assert.deepEqual(open.page.posted.at(-1), { type: 'collapseMonth', index: 1, generation: 1 });
 });
 
 test('an UNVERIFIED entry removed at its source says how to restore it in a terminal; an unknown status reads "unknown (<value>)"', () => {
@@ -164,4 +165,61 @@ test('a failed read is said, with no agents; a daemon without archive.list says 
   assert.ok(!/Nothing is archived/.test(failed.root.textContent));
   const empty = show(viewOf(state(listWith([]))));
   assert.match(empty.root.textContent, /Nothing is archived here yet/);
+});
+
+// ---- E10.S2b: the selection and the Restore button, run in the strict harness ----
+
+const RESTORABLE_EDITS: readonly Body[] = [
+  { entryId: '00000000000000a1', key: 'projects/p/a1.jsonl', status: 'sourceRemoved', verified: true },
+  { entryId: '00000000000000a2', key: 'projects/p/a2.jsonl', status: 'sourceRemoved', verified: false },
+];
+
+test('a selectable entry has a Select toggle that posts ITS INDEX and the generation — an unverified one has none; no id is ever posted', () => {
+  const body = listWith(RESTORABLE_EDITS);
+  const open = new Set([monthKey('claude-code', '2000/01')]);
+  const { root, page } = show(viewOf(state(body, { expanded: open, generation: 4 })));
+  const toggles = root.all('button[data-select-entry]');
+  assert.deepEqual(toggles.map((t) => t.dataset.selectEntry), ['0'], 'only the verified entry removed at its source');
+  const toggle = toggles[0];
+  assert.ok(toggle !== undefined);
+  assert.equal(toggle.attributes['aria-pressed'], 'false');
+  assert.equal(toggle.textContent, 'Select');
+  page.click(toggle);
+  assert.deepEqual(page.posted.at(-1), { type: 'toggleEntry', index: 0, generation: 4 });
+  assert.ok(page.posted.every((m) => !JSON.stringify(m).includes('00000000000000a1')), 'the entry id never leaves the host');
+  const selected = show(viewOf(state(body, { expanded: open, selection: new Set(['00000000000000a1']) })));
+  const pressed = selected.root.one('button[data-select-entry]');
+  assert.equal(pressed.attributes['aria-pressed'], 'true');
+  assert.equal(pressed.textContent, 'Selected');
+});
+
+test('the selection bar: the host summary, Restore and Clear selection enabled exactly as the view says, the restore line; Select month posts the index and generation', () => {
+  const body = listWith(RESTORABLE_EDITS);
+  const none = show(viewOf(state(body, { generation: 2 })));
+  assert.equal(none.root.one('[data-selection-summary]').textContent, 'Select verified sessions removed at their source to restore them — one restore takes at most 1000.');
+  assert.equal(none.root.one('button[data-action="restore"]').disabled, true);
+  assert.equal(none.root.one('button[data-action="clearSelection"]').disabled, true);
+  const selectMonth = none.root.one('button[data-select-month]');
+  assert.equal(selectMonth.disabled, false);
+  none.page.click(selectMonth);
+  assert.deepEqual(none.page.posted.at(-1), { type: 'selectMonth', index: 0, generation: 2 });
+
+  const one = show(viewOf(state(body, { selection: new Set(['00000000000000a1']) })));
+  assert.equal(one.root.one('[data-selection-summary]').textContent, '1 selected — one restore takes at most 1000.');
+  const restore = one.root.one('button[data-action="restore"]');
+  assert.equal(restore.disabled, false);
+  one.page.click(restore);
+  assert.deepEqual(one.page.posted.at(-1), { type: 'restore' }, 'bare: the ids are the host selection');
+  one.page.click(one.root.one('button[data-action="clearSelection"]'));
+  assert.deepEqual(one.page.posted.at(-1), { type: 'clearSelection' });
+  assert.equal(one.root.one('button[data-select-month]').disabled, true, 'the month has nothing left to select');
+
+  const running = show(viewOf(state(body, { selection: new Set(['00000000000000a1']), restore: { inFlight: true, state: 'Restoring… archived sessions', blocker: 'a run is in flight' } })));
+  assert.equal(running.root.one('[data-restore-line]').textContent, 'Restoring… archived sessions');
+  assert.equal(running.root.one('button[data-action="restore"]').disabled, true);
+  const blocked = show(viewOf(state(body, { selection: new Set(['00000000000000a1']), restore: { inFlight: false, state: '', blocker: 'this daemon does not report A20 — update the daemon' } })));
+  assert.equal(blocked.root.one('[data-restore-line]').textContent, 'Restore is not available: this daemon does not report A20 — update the daemon.');
+  assert.equal(blocked.root.one('[data-restore-line]').dataset.level, 'warn');
+  const failed = show(viewOf({ ...state(body), list: { kind: 'failed', sentence: 'The call timed out after 630 s.' } }));
+  assert.equal(failed.root.all('[data-block="selection"]').length, 0, 'no list, no selection bar');
 });

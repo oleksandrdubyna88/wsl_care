@@ -622,3 +622,95 @@ test('root (S7b.2b): A21 confirms with canonical --process pairs, alone — anyt
     assert.equal(exitOf(await rootAsk(world, ['act', 'A21', '--preview', '--json'])).code, FAKE_EXIT.refused, 'no act.processList');
   });
 });
+// ---- E10.S2b: A20, the restore through the root road ----
+
+const RESTORE_PREVIEW = ['act', 'A20', '--preview', '--entry', '-', '--json'];
+const RESTORE_CONFIRM = ['act', 'A20', '--confirm', '--manual', '--detach', '--entry', '-', '--json'];
+const GOLDEN_ENTRY = '0123456789abcdef';
+
+/** An answers folder whose `archive list` holds `entries` (each the golden entry, edited) and `edit`'s other changes. */
+function restoreAnswers(world: FakeWorld, name: string, entries: readonly Record<string, unknown>[], edit: { status?: (s: Record<string, unknown>) => Record<string, unknown>; ceiling?: number } = {}): string {
+  const answers = path.join(world.folder, name);
+  fs.mkdirSync(answers);
+  for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
+    fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(answers, file));
+  }
+  const list = goldenFile('archive-list.json');
+  const golden = bodyOf((list.entries as unknown[])[0], 'archive-list.json entries[0]');
+  fs.writeFileSync(path.join(answers, 'archive-list.json'), JSON.stringify({ ...list, restoreCeiling: edit.ceiling ?? list.restoreCeiling, entries: entries.map((e) => ({ ...golden, ...e })) }));
+  if (edit.status !== undefined) {
+    fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify(edit.status(goldenFile('status.json'))));
+  }
+  return answers;
+}
+
+/** The entry `A20PreviewGolden` previews: verified, removed at its source, claude-code 1999/12, 2 files, 200 bytes. */
+const GOLDEN_RESTORABLE = { entryId: GOLDEN_ENTRY, agent: 'claude-code', month: '1999/12', key: 'projects/p/s1.jsonl', status: 'sourceRemoved', verified: true, files: 2, bytes: 200 };
+
+test('root A20: the fake preview over the entry the daemon golden previews is EQUAL to the daemon own A20 line', async () => {
+  await within({ ...UBUNTU_RUNNING, version: '0.1.0' }, async (world) => {
+    world.rewrite({ answers: restoreAnswers(world, 'answers-a20', [GOLDEN_RESTORABLE]) });
+    const preview = json(await rootAsk(world, RESTORE_PREVIEW, Buffer.from(`${GOLDEN_ENTRY}\n`)));
+    assert.deepEqual((preview.actions as unknown[])[0], goldenFile('act-a20-preview-action.json'));
+    assert.equal(json(await rootAsk(world, RESTORE_CONFIRM, Buffer.from(`${GOLDEN_ENTRY}\n`))).result, 'accepted');
+    assert.deepEqual(world.stdins(), [`${GOLDEN_ENTRY}\n`, `${GOLDEN_ENTRY}\n`], 'each stdin recorded, byte for byte');
+  });
+});
+
+test('root A20: the preview narrows to the piped ids still restorable — an unverified one, one still at its source, one not piped are left out', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const entries = [GOLDEN_RESTORABLE, { ...GOLDEN_RESTORABLE, entryId: '00000000000000a2', verified: false }, { ...GOLDEN_RESTORABLE, entryId: '00000000000000a3', status: 'archived' }, { ...GOLDEN_RESTORABLE, entryId: '00000000000000a4' }];
+    world.rewrite({ answers: restoreAnswers(world, 'answers-a20-narrow', entries) });
+    const preview = json(await rootAsk(world, RESTORE_PREVIEW, Buffer.from(`${GOLDEN_ENTRY}\n00000000000000a2\n00000000000000a3\n`)));
+    const line = bodyOf((preview.actions as unknown[])[0], 'the A20 line');
+    assert.deepEqual(line.shown, [GOLDEN_ENTRY]);
+    assert.equal(bodyOf(line.preview, 'preview').count, 1);
+  });
+});
+
+test('root A20: a stdin the daemon does not take is refused — empty, unended, not an id, an id twice, past restoreCeiling', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    world.rewrite({ answers: restoreAnswers(world, 'answers-a20-ceiling', [GOLDEN_RESTORABLE], { ceiling: 2 }) });
+    for (const tail of [RESTORE_PREVIEW, RESTORE_CONFIRM]) {
+      for (const bad of ['', GOLDEN_ENTRY, 'NOT-AN-ENTRY-ID!\n', `${GOLDEN_ENTRY}\n${GOLDEN_ENTRY}\n`, '00000000000000a1\n00000000000000a2\n00000000000000a3\n', `${GOLDEN_ENTRY}\n--timer\n`]) {
+        const { code } = exitOf(await rootAsk(world, tail, Buffer.from(bad)));
+        assert.equal(code, FAKE_EXIT.refused, `${tail[2] ?? ''} ${JSON.stringify(bad)}`);
+      }
+    }
+  });
+});
+
+test('root A20: only the two shapes of the shared request — beside another id, through a cleanup shape, with --entry <id> or a synchronous confirm, it is refused', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    world.rewrite({ answers: restoreAnswers(world, 'answers-a20-shapes', [GOLDEN_RESTORABLE]) });
+    const piped = Buffer.from(`${GOLDEN_ENTRY}\n`);
+    const shapes: readonly (readonly string[])[] = [
+      ['act', 'A20,A4', '--preview', '--entry', '-', '--json'],
+      ['act', 'A20', '--preview', '--json'],
+      ['act', 'A20', '--confirm', '--manual', '--detach', '--json'],
+      ['act', 'A20', '--preview', '--entry', GOLDEN_ENTRY, '--json'],
+      ['act', 'A20', '--confirm', '--manual', '--entry', '-', '--json'],
+      ['act', 'A20', '--confirm', '--manual', '--detach', '--only', '-', '--json'],
+      ['act', 'A4', '--preview', '--entry', '-', '--json'],
+    ];
+    for (const tail of shapes) {
+      assert.equal(exitOf(await rootAsk(world, tail, piped)).code, FAKE_EXIT.refused, tail.join(' '));
+    }
+  });
+});
+
+test('root A20: each shape needs its capabilities advertised and A20 reported — else refused', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const piped = Buffer.from(`${GOLDEN_ENTRY}\n`);
+    for (const missing of ['archive.restore', 'act.entryStdin']) {
+      world.rewrite({ answers: restoreAnswers(world, `answers-a20-no-${missing}`, [GOLDEN_RESTORABLE], { status: (s) => ({ ...s, capabilities: stringsAt(s, 'capabilities').filter((c) => c !== missing) }) }) });
+      for (const tail of [RESTORE_PREVIEW, RESTORE_CONFIRM]) {
+        const { code, stderr } = exitOf(await rootAsk(world, tail, piped));
+        assert.equal(code, FAKE_EXIT.refused, `${missing} ${tail.join(' ')}`);
+        assert.match(stderr, /does not advertise/, missing);
+      }
+    }
+    world.rewrite({ answers: restoreAnswers(world, 'answers-a20-unreported', [GOLDEN_RESTORABLE], { status: (s) => ({ ...s, actions: stringsAt(s, 'actions').filter((a) => a !== 'A20') }) }) });
+    assert.equal(exitOf(await rootAsk(world, RESTORE_PREVIEW, piped)).code, FAKE_EXIT.refused, 'A20 not in status.actions');
+  });
+});

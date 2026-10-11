@@ -1,14 +1,15 @@
 import { FULL_CHECK_ACTIONS, type CleanupController } from '../root/cleanupController';
 import { rootFailureText } from '../root/rootFailureText';
-import type { ActionId, ActionIds, RunId } from '../root/rootIds';
-import type { HandOffOutcome, HeldPreview, PreviewedAction, RootFailure } from '../root/rootOutcome';
+import type { ActionIds, RunId } from '../root/rootIds';
+import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, RootFailure } from '../root/rootOutcome';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { safeText } from '../text/safeText';
 import type { CleanupJournal, JournalEntry, NewEntry } from './journal';
-import { firstModal, isRelayOnly, missingFromPreview, secondModal, stopModal, type Modal } from './modalText';
+import { firstModal, missingFromPreview, secondModal, stopModal, type Modal } from './modalText';
 import { ARCHIVE_RUN, handOffNotice, RELAY_RUN, type NoticeLevel } from './resultText';
 import type { RowId } from './rowIds';
 import type { RunFollower } from './runFollower';
+import { runWordsOf } from './runWords';
 
 /**
  * The cleanup buttons' HOST transaction (E6.S3, plan §7.3, §15j M8, m8, m9; §15k #3, #12, #19). The page sends only a
@@ -38,7 +39,7 @@ export interface CleanUi {
 }
 
 export interface CleanFlowOptions {
-  readonly controller: Pick<CleanupController, 'preview' | 'confirm' | 'stop' | 'runFullCheck'>;
+  readonly controller: Pick<CleanupController, 'preview' | 'previewRestore' | 'confirm' | 'stop' | 'runFullCheck'>;
   readonly journal: CleanupJournal;
   readonly follower: Pick<RunFollower, 'started' | 'kick'>;
   readonly ui: CleanUi;
@@ -70,6 +71,12 @@ const RELAY_IDS: ActionIds = ['A21'];
 
 const BASIS_MAX = 400;
 
+/** The label *Restore* is told by (E10.S2b): its row of `runWords.ts`, never "Cleaning A20". */
+const RESTORE_RUN = runWordsOf(['A20'])?.label ?? 'the restore run';
+
+/** How one preview is taken: the ids of a cleanup, *Archive now* or the relay stop, or *Restore*'s entry ids — each through its own controller road. */
+type Take = () => Promise<PreviewOutcome>;
+
 /** A wedged run the daemon can stop, as the host read it from `status.running`. */
 export interface StopTarget {
   readonly runId: RunId;
@@ -89,7 +96,10 @@ export type FlowOutcome =
   | { readonly kind: 'journalFull' }
   /** The preview did not describe every id the confirm would act on (review A3): nothing was confirmed. */
   | { readonly kind: 'incomplete'; readonly missing: readonly string[] }
-  /** S7b.2b: A21's preview selected nothing (its basis told), or could not read the relays (its reason told) — no modal. */
+  /**
+   * A preview that leaves nothing to confirm — no modal: S7b.2b, A21's selected nothing (its basis told) or could not read the relays
+   * (its reason told); E10.S2b, A20's offers no entry still restorable.
+   */
   | { readonly kind: 'nothing'; readonly sentence: string };
 
 /** One pass of a flow, and whether the person asked to run it again. */
@@ -136,7 +146,7 @@ export class CleanFlow {
 
   /** A row's *Clean* (one id) or *Clean selected* (several) — ONE preview, ONE confirm either way. */
   async clean(rowIds: readonly RowId[], selected: boolean): Promise<FlowOutcome> {
-    const pass = await this.exclusive(() => this.cleanOnce(rowIds, selected));
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(rowIds), selected));
 
     return pass.retry ? this.clean(rowIds, selected) : pass.result;
   }
@@ -146,7 +156,7 @@ export class CleanFlow {
    * journal entry before the confirm, the follower — told as the archive run.
    */
   async archive(): Promise<FlowOutcome> {
-    const pass = await this.exclusive(() => this.cleanOnce(ARCHIVE_IDS, false, ARCHIVE_RUN));
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(ARCHIVE_IDS), false, ARCHIVE_RUN));
 
     return pass.retry ? this.archive() : pass.result;
   }
@@ -157,9 +167,20 @@ export class CleanFlow {
    * basis (every kept relay and why), one that could not read the relays with its reason; neither opens a modal.
    */
   async relays(): Promise<FlowOutcome> {
-    const pass = await this.exclusive(() => this.cleanOnce(RELAY_IDS, false, RELAY_RUN));
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(RELAY_IDS), false, RELAY_RUN));
 
     return pass.retry ? this.relays() : pass.result;
+  }
+
+  /**
+   * *Restore* (E10.S2b): A20 through the SAME transaction, told as the restore run. `texts` are the archive page's selected entry
+   * ids as the page sent them — the controller checks their shape (`entryIdsOf`) and refuses before any call; the confirm pipes
+   * the ids the HELD preview showed, never these. A preview that offers none still restorable is told and opens no modal.
+   */
+  async restore(texts: readonly string[]): Promise<FlowOutcome> {
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.previewRestore(texts), false, RESTORE_RUN));
+
+    return pass.retry ? this.restore(texts) : pass.result;
   }
 
   /** *Stop* — only ever for a wedged run the host read from `status.running` (`cleanupView.ts` decides which). */
@@ -185,8 +206,8 @@ export class CleanFlow {
     }
   }
 
-  private async cleanOnce(rowIds: readonly ActionId[], selected: boolean, label?: string): Promise<Pass> {
-    const held = await this.confirmedPreview(rowIds, selected);
+  private async cleanOnce(take: Take, selected: boolean, label?: string): Promise<Pass> {
+    const held = await this.confirmedPreview(take, selected);
     if ('kind' in held) {
       return { result: held, retry: false };
     }
@@ -194,22 +215,22 @@ export class CleanFlow {
   }
 
   /** Steps 2–4, at most `previewRounds` times: a preview confirmed in time, or why there is none. */
-  private async confirmedPreview(rowIds: readonly ActionId[], selected: boolean): Promise<HeldPreview | FlowOutcome> {
+  private async confirmedPreview(take: Take, selected: boolean): Promise<HeldPreview | FlowOutcome> {
     const rounds = this.numbers().previewRounds;
     for (let round = 0; round < rounds; round += 1) {
-      const step = await this.previewRound(rowIds, selected);
+      const step = await this.previewRound(take, selected);
       if (step !== 'expired') {
         return step;
       }
       this.tell('info', `The preview was older than ${this.numbers().previewExpiryMinutes} minutes when it was confirmed, so it was taken again — check the new numbers.`);
     }
-    this.tell('warn', 'The preview kept expiring before it was confirmed; nothing was cleaned.');
+    this.tell('warn', 'The preview kept expiring before it was confirmed; nothing was started.');
 
     return { kind: 'expired' };
   }
 
-  private async previewRound(rowIds: readonly ActionId[], selected: boolean): Promise<HeldPreview | FlowOutcome | 'expired'> {
-    const outcome = await this.options.controller.preview(rowIds);
+  private async previewRound(take: Take, selected: boolean): Promise<HeldPreview | FlowOutcome | 'expired'> {
+    const outcome = await take();
     if (outcome.kind !== 'previewed') {
       this.tell('error', rootFailureText(outcome).sentence);
       return { kind: 'refused', failure: outcome };
@@ -220,12 +241,12 @@ export class CleanFlow {
       return { kind: 'incomplete', missing };
     }
 
-    return this.nothingOutcome(rowIds, outcome.preview) ?? this.confirmedRound(outcome.preview, selected);
+    return this.nothingOutcome(outcome.preview) ?? this.confirmedRound(outcome.preview, selected);
   }
 
-  /** S7b.2b: a relay stop whose preview leaves nothing to confirm is told here and ends — no modal; otherwise `undefined`. */
-  private nothingOutcome(rowIds: readonly ActionId[], preview: HeldPreview): FlowOutcome | undefined {
-    const nothing = isRelayOnly(rowIds) ? nothingToStop(preview) : '';
+  /** A relay stop (S7b.2b) or a restore (E10.S2b) whose preview leaves nothing to confirm is told here and ends — no modal; otherwise `undefined`. */
+  private nothingOutcome(preview: HeldPreview): FlowOutcome | undefined {
+    const nothing = nothingOf(preview);
     if (nothing === '') {
       return undefined;
     }
@@ -353,6 +374,39 @@ export class CleanFlow {
   private since(): string {
     return new Date(this.options.wallNow()).toISOString();
   }
+}
+
+/** Why a single-action preview leaves nothing to confirm (`runWords.ts` names the run) — '' when it does. */
+function nothingOf(preview: HeldPreview): string {
+  const id = runWordsOf(preview.ids)?.id;
+  if (id === 'A21') {
+    return nothingToStop(preview);
+  }
+
+  return id === 'A20' ? nothingToRestore(preview) : '';
+}
+
+/**
+ * E10.S2b: a restore preview that leaves nothing to confirm — never an empty `--entry -` list, never a modal that cannot be confirmed:
+ * a list the daemon cut (own review #3), the daemon's own "no" in its words (past its ceiling — own review #1), or none still restorable.
+ */
+function nothingToRestore(preview: HeldPreview): string {
+  const held = preview.restore;
+  if (held === undefined) {
+    return '';
+  }
+
+  return held.truncated ? `The daemon showed only ${held.names.length} of the ${held.count} selected archived sessions; select fewer. Nothing was started.` : noneHeld(held.names.length, preview);
+}
+
+function noneHeld(count: number, preview: HeldPreview): string {
+  return count === 0 ? emptyRestore(preview.actions.find((a) => a.id === 'A20')) : '';
+}
+
+function emptyRestore(action: PreviewedAction | undefined): string {
+  const said = action === undefined ? '' : action.reason;
+
+  return said === '' ? 'None of the selected archived sessions can be restored now: the daemon offers none that is still removed at its source and verified. Nothing was started — the archive page shows each one\'s state.' : `The daemon restores none of the selected archived sessions: ${safeText(said, BASIS_MAX)}. Nothing was started.`;
 }
 
 /**

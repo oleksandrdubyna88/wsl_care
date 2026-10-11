@@ -4,7 +4,12 @@ import { test } from 'node:test';
 import { VERB_TIMEOUT_MS } from '../client/verbs';
 import { callRoot, DETACH_TIMEOUT_MS, ROOT_OPS, rootRequest, rootTimeoutMs, STOP_TIMEOUT_MS, type RootOp } from '../root/rootCall';
 import { DEFAULT_NUMBERS } from '../settings/numbers';
-import { MAX_PROCESS_ARGS, MAX_SHOWN_VOLUMES, runIdOf, shownCap, shownProcessOf, volumeNameOf, type RunId, type ShownProcess, type VolumeName } from '../root/rootIds';
+import { entryIdsOf, MAX_PROCESS_ARGS, MAX_SHOWN_VOLUMES, runIdOf, shownCap, shownProcessOf, volumeNameOf, type EntryIds, type RunId, type ShownProcess, type VolumeName } from '../root/rootIds';
+import { ceilingMs } from '../client/ceilings';
+import { bodyOf, stringsAt } from './support/body';
+import { REPOSITORY_ROOT } from './support/paths';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { FALLBACK_LIMITS } from '../shared/daemonLimits';
 import { exited, recordingRunner } from './support/recordingRunner';
 
@@ -27,6 +32,13 @@ function names(count: number): VolumeName[] {
   return Array.from({ length: count }, (_, i) => volumeNameOf(`${i.toString(16).padStart(8, '0')}${'cd'.repeat(28)}`) as VolumeName);
 }
 
+/** E10.S2b: entry ids, validated by the one road in. */
+function entries(...texts: string[]): EntryIds {
+  const ids = entryIdsOf(texts);
+  assert.ok(ids !== undefined, texts.join(','));
+  return ids;
+}
+
 const OPS: readonly { readonly op: RootOp; readonly tail: readonly string[] }[] = [
   { op: { op: 'preview', ids: ['A4'] }, tail: ['act', 'A4', '--preview', '--json'] },
   { op: { op: 'preview', ids: ['A5', 'A4', 'A10'] }, tail: ['act', 'A5,A4,A10', '--preview', '--json'] },
@@ -36,6 +48,8 @@ const OPS: readonly { readonly op: RootOp; readonly tail: readonly string[] }[] 
   { op: { op: 'stop', runId: RUN }, tail: ['act', '--stop', '20261004T101500Z-4242', '--json'] },
   { op: { op: 'fullCheck' }, tail: ['collect', '--detach', '--json'] },
   { op: { op: 'rootCheck' }, tail: ['--version'] },
+  { op: { op: 'restorePreview', entries: entries('0123456789abcdef') }, tail: ['act', 'A20', '--preview', '--entry', '-', '--json'] },
+  { op: { op: 'restoreConfirm', entries: entries('0123456789abcdef') }, tail: ['act', 'A20', '--confirm', '--manual', '--detach', '--entry', '-', '--json'] },
 ];
 
 for (const { op, tail } of OPS) {
@@ -49,7 +63,7 @@ for (const { op, tail } of OPS) {
 }
 
 test('every op of the closed union has its argv asserted above — an op added to ROOT_OPS without a row here fails', () => {
-  assert.deepEqual([...ROOT_OPS], ['preview', 'confirm', 'stop', 'fullCheck', 'rootCheck']);
+  assert.deepEqual([...ROOT_OPS], ['preview', 'confirm', 'stop', 'fullCheck', 'rootCheck', 'restorePreview', 'restoreConfirm']);
   assert.deepEqual([...new Set(OPS.map((o) => o.op.op))].sort(), [...ROOT_OPS].sort());
 });
 
@@ -65,7 +79,7 @@ test('A4\'s shown list travels on stdin as one name per line, ended — and ONLY
   const shown = names(3);
   const request = rootRequest(TARGET, { op: 'confirm', ids: ['A4'], shown });
   assert.equal(request?.stdin?.toString('utf8'), `${shown.join('\n')}\n`);
-  for (const { op } of OPS.filter((o) => !(o.op.op === 'confirm' && o.op.shown !== undefined))) {
+  for (const { op } of OPS.filter((o) => !(o.op.op === 'confirm' && o.op.shown !== undefined) && o.op.op !== 'restorePreview' && o.op.op !== 'restoreConfirm')) {
     assert.equal(rootRequest(TARGET, op)?.stdin, undefined, op.op);
   }
 });
@@ -154,4 +168,45 @@ test('S7b.2b: the process list is capped by the COMMAND LINE (MAX_PROCESS_ARGS),
 test('S7b.2b (code round): A21 is confirmed ALONE — never beside another id, whatever list comes with it', () => {
   assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A5', 'A21'], shown: undefined, processes: processes(1) }), undefined);
   assert.equal(rootRequest(TARGET, { op: 'confirm', ids: ['A21', 'A10'], shown: undefined, processes: processes(1) }), undefined);
+});
+// ---- E10.S2b: A20's two ops, against the ONE shared request (plan §15s D7) ----
+
+const FIXTURE = path.join(REPOSITORY_ROOT, 'contracts', 'requests', 'act-a20-entry-stdin.json');
+
+/** The shared request, read where it lives — never copied. */
+function fixture(): { readonly stdin: string; readonly preview: string[]; readonly confirm: string[] } {
+  const body = bodyOf(JSON.parse(fs.readFileSync(FIXTURE, 'utf8')), 'act-a20-entry-stdin.json');
+  const stdin = body.stdin;
+  assert.equal(typeof stdin, 'string');
+  return { stdin: String(stdin), preview: stringsAt(body, 'preview'), confirm: stringsAt(body, 'confirm') };
+}
+
+test('the shared request, both ops: the argv after the binary and the stdin bytes are EXACTLY the fixture\'s — what the daemon\'s ActEntryStdinTests parse', () => {
+  const shared = fixture();
+  const selection = entries(...shared.stdin.split('\n').filter((line) => line.length > 0));
+  const preview = rootRequest(TARGET, { op: 'restorePreview', entries: selection });
+  const confirm = rootRequest(TARGET, { op: 'restoreConfirm', entries: selection });
+  assert.deepEqual(preview?.args.slice(PREFIX.length), shared.preview);
+  assert.deepEqual(confirm?.args.slice(PREFIX.length), shared.confirm);
+  assert.equal(preview?.stdin?.toString('utf8'), shared.stdin);
+  assert.equal(confirm?.stdin?.toString('utf8'), shared.stdin);
+});
+
+test('no op carries --entry with anything but -, and only the two restore ops carry it at all', () => {
+  for (const { op } of OPS) {
+    const args = rootRequest(TARGET, op)?.args ?? [];
+    const at = args.indexOf('--entry');
+    const restore = op.op === 'restorePreview' || op.op === 'restoreConfirm';
+    assert.equal(at >= 0, restore, op.op);
+    if (restore) {
+      assert.equal(args[at + 1], '-', `${op.op}: --entry - (the ids on stdin, never argv)`);
+    }
+  }
+});
+
+test('the restore ceilings: the preview is a root preview of A20 (the archive preview\'s setting), the confirm a DETACH', () => {
+  const selection = entries('0123456789abcdef');
+  assert.equal(rootTimeoutMs({ op: 'restoreConfirm', entries: selection }), DETACH_TIMEOUT_MS);
+  assert.equal(rootTimeoutMs({ op: 'restorePreview', entries: selection }), ceilingMs(DEFAULT_NUMBERS, { call: 'rootPreview', ids: ['A20'] }));
+  assert.ok(rootTimeoutMs({ op: 'restorePreview', entries: selection }) > 600_000, 'above the daemon\'s archive.previewTimeoutSeconds at its maximum');
 });

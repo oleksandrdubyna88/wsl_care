@@ -56,6 +56,8 @@ test('every root kind has a label and a sentence; the client\'s kinds keep their
     distroChanged: { kind: 'distroChanged', previewed: 'Ubuntu', now: 'Debian' },
     shownListInvalid: { kind: 'shownListInvalid', reason: 'x' },
     shownListRefused: { kind: 'shownListRefused', messages: ['wsl-care: x'] },
+    entriesRefused: { kind: 'entriesRefused', reason: 'x' },
+    restoreListInvalid: { kind: 'restoreListInvalid', reason: 'x' },
   };
   for (const kind of ROOT_FAILURE_KINDS) {
     const failure = samples[kind] ?? ({ kind, messages: ['wsl-care: x'], running: undefined } as unknown as RootFailure);

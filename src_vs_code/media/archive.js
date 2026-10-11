@@ -5,8 +5,10 @@
 // page lives in this ONE file, so it can move into the shared webview kit (todo/PLAN_disk_health.md E18) as a whole.
 // src/test/archivePage/archivePage.test.ts runs this file in a strict DOM that throws on every HTML sink.
 //
-// It sends the host only its closed set (src/archivePage/archiveMessages.ts): ready, rendered, refresh, showPaths / hidePaths, and
-// expandMonth / collapseMonth with a month's INDEX — never a month name, an agent, a session path or an entry id.
+// It sends the host only its closed set (src/archivePage/archiveMessages.ts): ready, rendered, refresh, showPaths / hidePaths,
+// expandMonth / collapseMonth / selectMonth with a month's INDEX and toggleEntry with an entry's INDEX — each with the view's
+// generation (E10.S2b) — and the bare clearSelection and restore. Never a month name, an agent, a session path or an entry id: the
+// selection a restore takes is the HOST's.
 (function () {
   'use strict';
 
@@ -103,47 +105,85 @@
     return head;
   }
 
-  function entryRow(row) {
+  /** A selectable entry's toggle (E10.S2b): pressed while it is selected; a row that cannot be restored has none. */
+  function selectCell(row, generation) {
+    const cell = element('td', undefined, { select: '' });
+    if (row.selectable) {
+      const toggle = button(row.selected ? 'Selected' : 'Select', { 'select-entry': String(row.index) }, function () {
+        return { type: 'toggleEntry', index: row.index, generation: generation };
+      });
+      toggle.setAttribute('aria-pressed', row.selected ? 'true' : 'false');
+      cell.appendChild(toggle);
+    }
+    return cell;
+  }
+
+  function entryRow(row, generation) {
     const line = element('tr', undefined, { entry: '' });
     row.cells.forEach(function (value) { line.appendChild(element('td', value, { cell: '' })); });
+    line.appendChild(selectCell(row, generation));
     return line;
   }
 
-  function entriesTable(month, headers) {
+  function entriesTable(month, headers, generation) {
     const table = element('table', undefined, { entries: String(month.index) });
     table.appendChild(headerRow(headers));
     const body = element('tbody');
-    month.rows.forEach(function (row) { body.appendChild(entryRow(row)); });
+    month.rows.forEach(function (row) { body.appendChild(entryRow(row, generation)); });
     table.appendChild(body);
     return table;
   }
 
-  function monthButton(month) {
+  function monthButton(month, generation) {
     const node = button(month.expanded ? 'Hide entries' : 'Show entries', { month: String(month.index) }, function () {
-      return { type: month.expanded ? 'collapseMonth' : 'expandMonth', index: month.index };
+      return { type: month.expanded ? 'collapseMonth' : 'expandMonth', index: month.index, generation: generation };
     });
     node.setAttribute('aria-expanded', month.expanded ? 'true' : 'false');
     return node;
   }
 
-  function monthPart(month, headers) {
+  function selectMonthButton(month, generation) {
+    const node = button('Select month', { 'select-month': String(month.index) }, function () {
+      return { type: 'selectMonth', index: month.index, generation: generation };
+    });
+    node.disabled = !month.selectEnabled;
+    return node;
+  }
+
+  function monthPart(month, headers, generation) {
     const box = element('div', undefined, { 'month-of': String(month.index) });
     box.appendChild(element('h3', month.month, { title: '' }));
     box.appendChild(element('p', month.summary, { summary: '' }));
-    box.appendChild(monthButton(month));
+    box.appendChild(monthButton(month, generation));
+    box.appendChild(selectMonthButton(month, generation));
     if (month.expanded) {
-      box.appendChild(entriesTable(month, headers));
+      box.appendChild(entriesTable(month, headers, generation));
     }
     return box;
   }
 
-  function agentSection(agent, headers) {
+  function agentSection(agent, headers, generation) {
     const node = element('section', undefined, { agent: agent.agent });
     node.setAttribute('aria-label', agent.agent);
     node.appendChild(element('h2', agent.agent, { title: '' }));
     node.appendChild(element('p', agent.summary, { summary: '' }));
-    agent.months.forEach(function (month) { node.appendChild(monthPart(month, headers)); });
+    agent.months.forEach(function (month) { node.appendChild(monthPart(month, headers, generation)); });
     return node;
+  }
+
+  /** The selection bar (E10.S2b): what is selected, the ceiling, Restore, Clear selection, and the restore line — the host's words. */
+  function selectionBar(selection) {
+    const bar = element('section', undefined, { block: 'selection' });
+    bar.setAttribute('aria-label', 'Restore');
+    bar.appendChild(element('p', selection.summary, { 'selection-summary': '' }));
+    const restore = button('Restore', { action: 'restore' }, function () { return { type: 'restore' }; });
+    restore.disabled = !selection.restoreEnabled;
+    const clear = button('Clear selection', { action: 'clearSelection' }, function () { return { type: 'clearSelection' }; });
+    clear.disabled = !selection.clearEnabled;
+    bar.appendChild(restore);
+    bar.appendChild(clear);
+    bar.appendChild(element('p', selection.line, { 'restore-line': '', level: selection.lineLevel }));
+    return bar;
   }
 
   function isObject(value) {
@@ -155,13 +195,18 @@
     return isObject(data) && data.type === 'view' && isArchiveView(data.view);
   }
 
+  function hasLists(view) {
+    return Array.isArray(view.agents) && Array.isArray(view.lines) && Array.isArray(view.notes);
+  }
+
   function isArchiveView(view) {
-    return isObject(view) && Array.isArray(view.agents) && Array.isArray(view.lines) && Array.isArray(view.notes);
+    return isObject(view) && hasLists(view) && isObject(view.selection);
   }
 
   function render(view) {
-    const agents = view.agents.map(function (agent) { return agentSection(agent, view.headers); });
-    root.replaceChildren(header(view), summary(view), ...agents);
+    const agents = view.agents.map(function (agent) { return agentSection(agent, view.headers, view.generation); });
+    const bar = view.state === 'answered' ? [selectionBar(view.selection)] : [];
+    root.replaceChildren(header(view), summary(view), ...bar, ...agents);
     vscode.postMessage({ type: 'rendered', blocks: agents.length });
   }
 
