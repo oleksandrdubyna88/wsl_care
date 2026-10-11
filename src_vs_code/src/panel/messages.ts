@@ -46,6 +46,7 @@ export type PageMessage =
   | { readonly type: 'stopArchiving' }
   | { readonly type: 'archiveNow' }
   | { readonly type: 'openArchive' }
+  | { readonly type: 'stopRelays' }
   | { readonly type: 'openRunLogs' }
   | { readonly type: 'clean'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
