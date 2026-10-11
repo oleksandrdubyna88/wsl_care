@@ -798,3 +798,42 @@ Fixed: the advice is now compaction with WSL stopped (text only; wsl-care never 
 not advised. RED first: *Did not expect gap.Reason "… wsl --manage Ubuntu --set-sparse true …" to contain "--set-sparse true"*.
 A sparse file gets neither the switch nor the compaction advice. WSL 2.7.10's `wsl --help` still lists `--set-sparse`; listing
 it is not advice to use it.
+
+## E15.S2b design — install records the distro name (2026-10-11, branch `feat/wc-install-distro-name`)
+
+**Why.** E15.S2 finds this distro's own virtual disk by NAME. A systemd unit has no `WSL_DISTRO_NAME`, and `sudo`'s
+`env_reset` drops it from `install.sh`. So until someone presses *Run full check now*, no disk is mapped by mount, and the gap is
+`unknown`. **Decided (the coordinator, 2026-10-11):** install records the name through an explicit, validated argument. It does
+not preserve the environment through sudo.
+
+**What.**
+1. **The argument.** `install.sh` gains `--distro-name <name>`. The documented one-liner passes
+   `--distro-name "$WSL_DISTRO_NAME"`; the installing user's shell expands it BEFORE `sudo` runs.
+   - A NON-EMPTY name that fails the distro-name rule is refused by `usage_fail` before anything changes. The rule is a letter or
+     digit, then up to 63 letters, digits, `.`, `_` or `-` — the rule of `DistroIdentity.NamePatternText` and the extension's
+     `DISTRO_NAME`.
+   - An EMPTY value (the one-liner run outside WSL) is no name. Install says so and goes on.
+   - `--uninstall` refuses the argument.
+2. **One writer.** `install.sh` does not write the file itself. Its first full run already exists (`first_run`, `install.sh:1046`).
+   It runs root `collect`, and a root `collect` records `WSL_DISTRO_NAME` through `DistroIdentity.Record` (E15.S2). So
+   `first_run` passes the validated name as that variable: `env WSL_DISTRO_NAME=<name> … collect`.
+   - The file keeps ONE writer and ONE format.
+   - The daemon validates the name a second time.
+   - A later root collect through `wsl.exe` still refreshes it.
+   - `--dry-run` prints `would record the distro name <name> (through the first full run)`.
+3. **The extension's one-liner waits.** `INSTALL_COMMAND` (`src_vs_code/src/install/installCommand.ts:44`) pins the
+   `install.sh` of a released tag, and the released `install.sh` refuses an unknown argument. The extension adds
+   `--distro-name "$WSL_DISTRO_NAME"` only after a daemon release ships this change; that is a recorded follow-up. The README's
+   one-liner gains it now, for the installer at `main`.
+
+**Tests (Linux scenarios, in the `Install*Flows` style), RED first:**
+- `--distro-name Ubuntu` → after install, `DistroIdentity.Read` gives `Ubuntu`.
+- `--distro-name ''` → no file, and the output names the reason.
+- No argument → no file.
+- Each of `-x`, `a b`, `a/b`, `a;b`, a 65-character name and `$(x)` is refused with nothing changed. The same table is asserted
+  against `DistroIdentity`'s rule, so the shell and C# accept the same names.
+- `--uninstall --distro-name x` is refused.
+- `--dry-run` prints the line and writes nothing.
+
+Break-its on `install.sh`'s validation and on the `env` pass. Docs: README (the argument, the one-liner), module_daemon (who
+records the name), module_tests.
