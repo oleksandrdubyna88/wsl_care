@@ -23,6 +23,11 @@ set -euo pipefail
 [ "$#" -eq 2 ] || { echo "usage: fetch-windows-daemon.sh <version> <out-dir>" >&2; exit 2; }
 version="$1"
 out="$2"
+bin="$out/bin"
+exe="$bin/wsl-care.exe"
+# First of all, before even the version is judged: a refused run never leaves an older pair for a local package to take
+# (coai code round — a mistyped version used to exit here with the previous exe and its digest still in bin/).
+rm -f "$exe" "$exe.sha256"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "fetch-windows-daemon.sh: not an x.y.z daemon version: $version" >&2; exit 2; }
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -34,8 +39,6 @@ readonly REPO="oleksandrdubyna88/wsl_care"
 tag="daemon-v$version"
 zip="$(daemon_archive_name "$version" win-x64)"
 member="$(daemon_archive_folder "$version" win-x64)/wsl-care.exe"
-bin="$out/bin"
-exe="$bin/wsl-care.exe"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -50,7 +53,6 @@ refuse() {
 # shellcheck source=lib/windows-tools.sh
 . "$here/lib/windows-tools.sh"
 
-rm -f "$exe" "$exe.sha256"
 mkdir -p "$work/download"
 gh release download "$tag" --repo "$REPO" -p "$zip" -p "$zip.sha256" --dir "$(native "$work/download")" \
   || refuse "could not download $zip and its .sha256 from $tag (is daemon $version published with its win-x64 asset?)"
@@ -62,19 +64,18 @@ gh attestation verify "$(native "$work/download/$zip")" --repo "$REPO" \
   || refuse "$zip carries no attestation by release.yml at $tag"
 
 py="$(python_cmd)" || refuse "no python with zipfile here (python3 or python)"
-digest="$("$py" -I - "$(native "$work/download/$zip")" "$member" "$(native "$work/wsl-care.exe")" <<'PYTHON'
+digest="$("$py" -I -B - "$(native "$work/download/$zip")" "$member" "$(native "$work/wsl-care.exe")" "$(native "$here/lib")" <<'PYTHON'
 import hashlib, stat, sys, zipfile
 
 archive_path, member, target = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path.insert(0, sys.argv[4])
+from zip_entries import unsafe  # the ONE entry-name rule, shared with verify-bundled-exe.sh
+
 folder = member.split("/")[0] + "/"
 
 def refuse(why):
     print(why, file=sys.stderr)
     sys.exit(1)
-
-def unsafe(name):
-    parts = name.rstrip("/").split("/")
-    return name.startswith("/") or "\\" in name or ":" in name or any(part in ("", ".", "..") for part in parts)
 
 try:
     archive = zipfile.ZipFile(archive_path)

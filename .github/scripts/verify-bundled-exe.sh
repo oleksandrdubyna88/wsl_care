@@ -44,10 +44,13 @@ refuse() {
 bash "$here/fetch-windows-daemon.sh" "$version" "$work/attested" \
   || refuse "the attested daemon-v$version member could not be fetched and verified — nothing is signed"
 py="$(python_cmd)" || refuse "no python with zipfile here (python3 or python)"
-"$py" -I - "$(native "$vsix")" "$(native "$work/attested/bin/wsl-care.exe")" <<'PYTHON' || refuse "$vsix does not carry exactly the attested daemon-v$version member — nothing is signed"
+"$py" -I -B - "$(native "$vsix")" "$(native "$work/attested/bin/wsl-care.exe")" "$(native "$here/lib")" <<'PYTHON' || refuse "$vsix does not carry exactly the attested daemon-v$version member — nothing is signed"
 import hashlib, posixpath, stat, sys, zipfile
 
 package, attested_path = sys.argv[1], sys.argv[2]
+sys.path.insert(0, sys.argv[3])
+from zip_entries import unsafe  # the ONE entry-name rule, shared with fetch-windows-daemon.sh
+
 ENTRY = "extension/bin/wsl-care.exe"
 BIN = "extension/bin/"
 
@@ -57,12 +60,7 @@ except Exception as error:
     print(f"not a readable package: {error}", file=sys.stderr)
     sys.exit(1)
 
-def unsafe(name):
-    parts = name.rstrip("/").split("/")
-    return name.startswith("/") or "\\" in name or ":" in name or any(part in ("", ".", "..") for part in parts)
-
 def refusal(info, seen):
-    # The name AS STORED: zipfile turns a backslash into "/" when it reads on Windows.
     name = info.orig_filename
     if unsafe(name) or stat.S_ISLNK(info.external_attr >> 16):
         return f"an unsafe entry: {name!r}"

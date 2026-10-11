@@ -364,3 +364,18 @@ value, and the package's own claim must not replace it.
   explicit `src_vs_code/bin/` ignore line; 14 `verify-bundled-exe.sh` says it trusts what the tag serves at its run time;
   15 the `.mjs` header says a developer's `node_modules/.bin` comes first on PATH. 13 was the uncommitted promotion, now
   committed.
+
+## 12. The coai code round (session `a938a988`, 2026-10-11)
+
+The operator's cadence first asked for a consultation of this one-epic group (`a8a5731c`, closed solved): it showed that the
+attest job proves the exe's bytes but not the build's JavaScript, and the guarantee was narrowed to that (§11, scope). The
+round then said **proceed** with four findings, all accepted:
+
+- **The entry-name rule was written twice** (the fetch and the attest job). It is now ONE python function,
+  `.github/scripts/lib/zip_entries.py` `unsafe`, imported by both (python `-I -B`, the folder put on `sys.path` by the
+  caller, no bytecode written into the checkout). A new refusal shape, a path traversal (`extension/../../evil.js`), is the
+  one only this rule catches; with the rule turned off it goes red.
+- **`module_tests.md` named the old `test -f "ai-os-care-$VERSION.vsix"`** — now `test -f "$VSIX"` from `vsix_name`.
+- **`docs/repo-settings.md` step 2 named the universal package** for the manual upload — now the targeted name.
+- **A mistyped version exited before the stale pair was removed.** The fetch removes `bin/wsl-care.exe` and its digest
+  before it judges anything; the usage test now also asserts an empty `bin/` and was red first.

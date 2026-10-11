@@ -271,6 +271,8 @@ public sealed class FetchWindowsDaemonFlows
         var result = await ReleaseScripts.RunAsync("fetch-windows-daemon.sh", [version, world.Out.Replace('\\', '/')], root.Path, world.Env);
 
         result.Exit.Should().Be(exit, result.Stdout + result.Stderr);
+        // coai code round: a mistyped version must not leave the previous pair for a local package to pick up.
+        NothingIn(world);
     }
 
     // ---- §3.5, the plan of record's S5 test: the attest job re-derives the bytes before it signs (verify-bundled-exe.sh) ----
@@ -314,7 +316,7 @@ public sealed class FetchWindowsDaemonFlows
     /// folder (own Fable review of the code, finding 1). The build's allowlist refuses them too, but the build is the untrusted domain.
     /// </summary>
     public static TheoryData<string> RefusedPackages =>
-        ["different", "missing", "twice", "case-twin", "folder-twin", "dot-twin", "slash-twin", "backslash-twin", "bin-dll", "manifest-twin", "other-pe"];
+        ["different", "missing", "twice", "case-twin", "folder-twin", "dot-twin", "slash-twin", "backslash-twin", "bin-dll", "manifest-twin", "traversal", "other-pe"];
 
     [Theory]
     [MemberData(nameof(RefusedPackages))]
@@ -336,6 +338,7 @@ public sealed class FetchWindowsDaemonFlows
             "backslash-twin" => [("extension/bin/wsl-care.exe", Exe), (@"extension\bin\wsl-care.exe", Twin)],
             "bin-dll" => [("extension/bin/wsl-care.exe", Exe), ("extension/bin/version.dll", Twin)],
             "manifest-twin" => [("extension/bin/wsl-care.exe", Exe), ("extension/PACKAGE.JSON", Twin)],
+            "traversal" => [("extension/bin/wsl-care.exe", Exe), ("extension/../../evil.js", Twin)],
             _ => [("extension/bin/wsl-care.exe", Exe), ("extension/dist/helper.exe", Twin)],
         };
 
