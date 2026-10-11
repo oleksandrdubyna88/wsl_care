@@ -2260,7 +2260,7 @@
       "level": "unknown",
       "value": "",
       "limit": "warn > 10 GiB/day between two measured sizes (disk.vhdxGrowthWarnGibPerDay)",
-      "reason": "Ubuntu, docker-desktop, Ubuntu-26.04, docker-data: one measurement so far: growth needs two measured sizes (no recorded full run has sampled the virtual disks yet)",
+      "reason": "Ubuntu, docker-desktop, Ubuntu-26.04, docker-data: one measurement so far: growth needs two measured sizes (no earlier full run measured this file)",
       "basis": {
         "source": "fullRun",
         "runId": "20000101T000000Z-1",
@@ -2585,7 +2585,7 @@
         },
         "growthBytesPerDay": {
           "available": false,
-          "reason": "one measurement so far: growth needs two measured sizes (no recorded full run has sampled the virtual disks yet)"
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
         },
         "possibleGrowth": {
           "available": false,
@@ -2619,7 +2619,7 @@
         },
         "growthBytesPerDay": {
           "available": false,
-          "reason": "one measurement so far: growth needs two measured sizes (no recorded full run has sampled the virtual disks yet)"
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
         },
         "possibleGrowth": {
           "available": false,
@@ -2653,7 +2653,7 @@
         },
         "growthBytesPerDay": {
           "available": false,
-          "reason": "one measurement so far: growth needs two measured sizes (no recorded full run has sampled the virtual disks yet)"
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
         },
         "possibleGrowth": {
           "available": false,
@@ -2687,7 +2687,7 @@
         },
         "growthBytesPerDay": {
           "available": false,
-          "reason": "one measurement so far: growth needs two measured sizes (no recorded full run has sampled the virtual disks yet)"
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
         },
         "possibleGrowth": {
           "available": false,

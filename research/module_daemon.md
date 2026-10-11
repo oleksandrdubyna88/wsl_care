@@ -306,7 +306,7 @@ flowchart LR
     root["ThresholdInputs.Root<br/>statvfs /"] --> vd
     df["docker system df<br/>(PreviewRun, no second walk)"] --> vd
     name["DistroIdentity.Resolve<br/>env, then distro-name.json"] --> vd
-    prev["LastFullRun.VirtualDisksBefore<br/>(history, ≥ growthMinHours older)"] --> vd
+    prev["LastFullRun.VirtualDiskHistory<br/>(newest first, lazy)"] --> vd
     vd --> facts["DiskFacts<br/>(judged once)"]
     facts --> rules["DiskRules<br/>disk.vhdxGap · disk.vhdxGrowth · disk.hostFree"]
     facts --> report["RunDetail.disk<br/>(DiskReport)"]
@@ -330,9 +330,10 @@ flowchart LR
   the growth per day and the possible growth — each a `Reading`. Per hosting volume: size, free, the disks on it, their summed
   growth (only when every one has one), their known possible growth and the disks whose possible growth is unknown.
 - **Growth needs two measured sizes**: `SlowParts.VirtualDisks` (`{sampledAt, disks[{name, path, sizeBytes}]}`) is on every
-  history line whose script answered; the baseline is `LastFullRun.VirtualDisksBefore` — the newest sizes at least
-  `disk.growthMinHours` (1) older than this sample, so a manual run soon after a timer run still measures against the run before
-  (own review); with only closer sizes it reads "too close to the previous measurement". Growth = (size now − size then) ÷ days,
+  history line whose script answered; the baseline is chosen PER FILE from `LastFullRun.VirtualDiskHistory` (newest first,
+  walked lazily): the newest earlier VALID measurement of that path at least `disk.growthMinHours` (1) older than this sample — so
+  neither a manual run soon after a timer run, nor a run that missed the file, nor a partial entry hides an older measurement (own
+  review, final code round); with only closer sizes it reads "too close to the previous measurement". Growth = (size now − size then) ÷ days,
   only for the same path (case-insensitive), only from a real measurement (a partial history line — no size or no time — is
   "not a measurement") and only forward in time ("the clock moved back"). A negative growth is a shrink.
 - **The verdicts** (`Thresholds/DiskRules.cs`, spread into `ThresholdRules.FromFullRun` after `disk.discard`, so `status`

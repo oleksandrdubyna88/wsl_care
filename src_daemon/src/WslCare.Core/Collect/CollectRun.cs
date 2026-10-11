@@ -463,7 +463,7 @@ public static class CollectRun
             sample.Vm.Bind(vm => vm.RootVolume),
             docker.Snapshot.Totals,
             DistroIdentity.Resolve(c.DistroVariable, DistroIdentity.Read(c.Paths, c.Files)),
-            LastFullRun.VirtualDisksBefore(newestFirst, health.WindowsDisk.SampledAt, growthMin),
+            LastFullRun.VirtualDiskHistory(newestFirst),
             growthMin);
     }
 

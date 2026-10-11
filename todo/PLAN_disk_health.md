@@ -756,3 +756,19 @@ The goldens were re-checked on Linux. They are unchanged, because the capture's 
 
 The Linux `FixturePrivacyTests` failure on the owner's machine (POST_DEPLOY.md names the local user) comes from before
 this story, from main.
+
+**The final code round** (coai, 2026-10-11, `again`, `proceed`, 4 of 4 reviewers — codex): six findings, two accepted, four
+rejected with reasons. Accepted:
+- The growth baseline is now chosen PER FILE: the newest earlier VALID measurement of that path, at least
+  `disk.growthMinHours` old. A newer run that missed the file, or a partial entry, no longer hides an older measurement.
+- The history is walked lazily instead of being copied into a list.
+
+Rejected:
+- **The scenario harness's `Extra` dictionary:** it is the harness's own API, used by every flow.
+- **"JavaScript `$` matches before a final newline":** verified false; `/…$/.test('Ubuntu\n')` is `false`, the same as the
+  daemon's `\z`.
+- **The cloned distro:** no unelevated, non-raw fact ties a filesystem to one VHDX. The case heals on the clone's first
+  `wsl.exe` root collect. It is a known limit in module_daemon.
+- **Indexing the previous disks by path:** tens of disks at most.
+
+The goldens were regenerated on Linux: the growth reason now reads "no earlier full run measured this file".

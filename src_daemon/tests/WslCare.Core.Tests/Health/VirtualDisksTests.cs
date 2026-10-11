@@ -51,13 +51,16 @@ public sealed class VirtualDisksTests
 
     private static DockerTotal Total(string type, long bytes) => new(type, Reading.Of(1), Reading.Of(1), Reading.Of(bytes), Reading.Of(0L));
 
-    private static DiskFacts Facts(Reading<string>? distro = null, Reading<VirtualDiskSizes>? previous = null, Reading<IReadOnlyList<DockerTotal>>? docker = null) =>
-        Value(VirtualDisks.From(Captured(), Root(), docker ?? DockerTotals(), distro ?? Reading.Of("Ubuntu"), previous ?? Reading.Missing<VirtualDiskSizes>("no recorded full run has sampled the virtual disks yet"), GrowthMin));
+    private static DiskFacts Facts(Reading<string>? distro = null, IReadOnlyList<VirtualDiskSizes>? previous = null, Reading<IReadOnlyList<DockerTotal>>? docker = null) =>
+        Value(VirtualDisks.From(Captured(), Root(), docker ?? DockerTotals(), distro ?? Reading.Of("Ubuntu"), previous ?? [], GrowthMin));
 
     private static VirtualDiskFacts Disk(DiskFacts facts, string name) => facts.Disks.Single(d => d.Name == name);
 
-    private static Reading<VirtualDiskSizes> Previous(TimeSpan before, params VirtualDiskSize[] sizes) =>
-        Reading.Of(new VirtualDiskSizes(WindowsDiskFixture.CapturedAt - before, sizes));
+    private static IReadOnlyList<VirtualDiskSizes> Previous(TimeSpan before, params VirtualDiskSize[] sizes) =>
+        [Sizes(before, sizes)];
+
+    private static VirtualDiskSizes Sizes(TimeSpan before, params VirtualDiskSize[] sizes) =>
+        new(WindowsDiskFixture.CapturedAt - before, sizes);
 
     private static string UbuntuPath => Disk(Facts(), "Ubuntu").Path;
 
@@ -179,12 +182,12 @@ public sealed class VirtualDisksTests
     public void A_history_line_without_a_size_or_a_time_is_not_a_measurement(long sizeThen, bool hasTime)
     {
         var at = hasTime ? WindowsDiskFixture.CapturedAt - TimeSpan.FromHours(12) : default;
-        var previous = Reading.Of(new VirtualDiskSizes(at, [new VirtualDiskSize("Ubuntu", UbuntuPath, sizeThen)]));
+        IReadOnlyList<VirtualDiskSizes> previous = [new VirtualDiskSizes(at, [new VirtualDiskSize("Ubuntu", UbuntuPath, sizeThen)])];
 
         var growth = Disk(Facts(previous: previous), "Ubuntu").GrowthBytesPerDay;
 
         growth.IsAvailable.Should().BeFalse("a partial history line deserialises to 0 bytes or 0001-01-01, which is no measurement (own review)");
-        growth.ReasonOrEmpty.Should().Contain("not a measurement");
+        growth.ReasonOrEmpty.Should().Contain("two measured sizes", "a line that is no measurement is skipped, as if absent");
     }
 
     [Fact]
@@ -193,7 +196,7 @@ public sealed class VirtualDisksTests
         var sample = Captured();
         var noLxss = sample with { Facts = sample.Facts.Map(f => f with { Distros = Reading.Missing<IReadOnlyList<WindowsVirtualDisk>>("the Lxss map could not be read: SecurityException") }) };
 
-        var facts = VirtualDisks.From(noLxss, Root(), DockerTotals(), Reading.Of("Ubuntu"), Reading.Missing<VirtualDiskSizes>("none"), GrowthMin);
+        var facts = VirtualDisks.From(noLxss, Root(), DockerTotals(), Reading.Of("Ubuntu"), [], GrowthMin);
 
         facts.IsAvailable.Should().BeFalse();
         facts.ReasonOrEmpty.Should().Contain("SecurityException");
@@ -202,23 +205,51 @@ public sealed class VirtualDisksTests
     [Fact]
     public void Growth_is_measured_against_the_newest_run_at_least_the_minimum_older_so_a_manual_run_soon_after_a_timer_run_still_has_one()
     {
-        var now = WindowsDiskFixture.CapturedAt;
-        var timer = Run(now.AddHours(-4), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - Gib));
-        var manual = Run(now.AddMinutes(-10), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - 100));
+        var manual = Sizes(TimeSpan.FromMinutes(10), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - 100));
+        var timer = Sizes(TimeSpan.FromHours(4), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - Gib));
 
-        var baseline = LastFullRun.VirtualDisksBefore([manual, timer], now, GrowthMin);
+        var growth = Disk(Facts(previous: [manual, timer]), "Ubuntu").GrowthBytesPerDay;
 
-        Value(baseline).SampledAt.Should().Be(now.AddHours(-4), "the run 10 minutes ago is too close; the one 4 h ago is the newest far enough back (own review)");
+        Value(growth).Should().BeApproximately(6.0 * Gib, 1, "1 GiB in 4 h: the run 10 minutes ago is too close, the one 4 h ago is the newest far enough back (own review)");
     }
 
     [Fact]
-    public void With_only_a_run_too_close_the_baseline_is_that_run_so_the_growth_says_too_close()
+    public void A_newer_run_that_did_not_measure_a_disk_never_hides_an_older_measurement_of_it()
+    {
+        var missedUbuntu = Sizes(TimeSpan.FromHours(2), new VirtualDiskSize("docker-desktop", @"C:\elsewhere\ext4.vhdx", 1));
+        var older = Sizes(TimeSpan.FromHours(6), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - Gib));
+
+        Value(Disk(Facts(previous: [missedUbuntu, older]), "Ubuntu").GrowthBytesPerDay)
+            .Should().BeApproximately(4.0 * Gib, 1, "the baseline is chosen per disk: the newest VALID measurement of this path (final code round)");
+    }
+
+    [Fact]
+    public void A_newer_partial_entry_never_hides_an_older_measurement()
+    {
+        var partial = Sizes(TimeSpan.FromHours(2), new VirtualDiskSize("Ubuntu", UbuntuPath, 0));
+        var older = Sizes(TimeSpan.FromHours(6), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - Gib));
+
+        Value(Disk(Facts(previous: [partial, older]), "Ubuntu").GrowthBytesPerDay).Should().BeApproximately(4.0 * Gib, 1);
+    }
+
+    [Fact]
+    public void With_only_a_measurement_too_close_the_growth_says_too_close_and_with_none_it_needs_two()
+    {
+        var manual = Sizes(TimeSpan.FromMinutes(10), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - 100));
+
+        Disk(Facts(previous: [manual]), "Ubuntu").GrowthBytesPerDay.ReasonOrEmpty.Should().Contain("too close to the previous measurement");
+        Disk(Facts(previous: []), "Ubuntu").GrowthBytesPerDay.ReasonOrEmpty.Should().Contain("two measured sizes");
+    }
+
+    [Fact]
+    public void The_history_is_every_recorded_sample_newest_first()
     {
         var now = WindowsDiskFixture.CapturedAt;
-        var manual = Run(now.AddMinutes(-10), new VirtualDiskSize("Ubuntu", UbuntuPath, UbuntuSize - 100));
+        var newest = Run(now.AddMinutes(-10), new VirtualDiskSize("Ubuntu", UbuntuPath, 2));
+        var without = new RunRecord(SchemaVersion.Current, RunId.New(now.AddHours(-1), 9), RunTrigger.Timer, now.AddHours(-1), now.AddHours(-1), RunOutcome.Completed, [], RunKind.Collect) { Slow = new SlowParts() };
+        var older = Run(now.AddHours(-4), new VirtualDiskSize("Ubuntu", UbuntuPath, 1));
 
-        Value(LastFullRun.VirtualDisksBefore([manual], now, GrowthMin)).SampledAt.Should().Be(now.AddMinutes(-10));
-        LastFullRun.VirtualDisksBefore([], now, GrowthMin).ReasonOrEmpty.Should().Contain("no recorded full run has sampled the virtual disks yet");
+        LastFullRun.VirtualDiskHistory([newest, without, older]).Select(s => s.SampledAt).Should().Equal(now.AddMinutes(-10), now.AddHours(-4));
     }
 
     private static RunRecord Run(DateTimeOffset sampledAt, params VirtualDiskSize[] sizes) =>
@@ -253,7 +284,7 @@ public sealed class VirtualDisksTests
     {
         var unread = WindowsDiskSample.Unavailable(WindowsDiskFixture.CapturedAt, "the Windows disk script did not answer within 30 s");
 
-        VirtualDisks.From(unread, Root(), DockerTotals(), Reading.Of("Ubuntu"), Reading.Missing<VirtualDiskSizes>("none"), GrowthMin)
+        VirtualDisks.From(unread, Root(), DockerTotals(), Reading.Of("Ubuntu"), [], GrowthMin)
             .ReasonOrEmpty.Should().Contain("did not answer within 30 s");
     }
 
