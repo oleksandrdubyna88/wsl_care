@@ -4809,11 +4809,11 @@ line; #3 accepted — the badge joins the panel's existing warn rule (one select
 out of the rule) → 1 red, C2 now splits the badge into a rule of its own with another token; #4 (the cleanup row's tick, button and
 note run together in `textContent`) noted for the shared kit, not this change. #1 rejected for this PR: "them" in "before the archive
 takes them at 14 d" has no noun of its own — the coordinator set this exact text; a wording with the noun ("sessions go before the
-archive takes them at 14 d") is left to the owner.
+archive takes them at 14 d") is left to the owner — decided by the coordinator in *follow-up 3* below.
 
 ##### E10.S1 follow-up 3 — the badge says what is at risk
 
-> Status: **built 2026-10-11 on `fix/wc-badge-says-sessions` — the code round and the own review next (see *As built* below).** Branch `fix/wc-badge-says-sessions`, from `main` 1a9d8f6 (#121 merged).
+> Status: **built 2026-10-11 on `fix/wc-badge-says-sessions` — the code round (proceed) and the own review on Opus done, every suite green; merge next (see *As built* below).** Branch `fix/wc-badge-says-sessions`, from `main` 1a9d8f6 (#121 merged).
 > Extension only (`src/archive/archiveView.ts`, `src/test/archiveView.test.ts`); not a root path, so the own review runs on Opus.
 
 **The symptom.** Since follow-up 2 the badge reads "before the archive takes them at 14 d". "Them" has no noun of its own: the
@@ -4840,6 +4840,10 @@ the badge's follow-up-2 text.
 **As built (2026-10-11).** As planned. RED first (3 tests, the texts above); break-it D1 (the follow-up-2 text back) → 3 red, restored
 by its sha256. The whole extension suite (1248 tests, 0 failed), lint, package and check:vsix (with the attested Windows daemon
 fetched) green.
+
+**The code round** (coai session 41a4fc73, `proceed`, no findings). **The own review on Opus** (3 findings, all low, docs): the
+`module_tests.md` row names its three tests; the follow-up-2 row points at the new text; follow-up 2's "left to the owner" points
+here.
 
 ##### E10.S2a build notes — the Archive page, browse only
 
