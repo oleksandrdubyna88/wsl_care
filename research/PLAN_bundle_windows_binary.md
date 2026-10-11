@@ -360,7 +360,7 @@ value, and the package's own claim must not replace it.
 - **8 — the host tier never showed the Windows row's happy path.** A host scenario now sets `bundledExe` to the exact path
   under the extension folder and asserts the row; the Test-mode API gained `bundled()`. It runs on CI's legs (the host tier
   downloads VS Code, which is not done on this machine).
-- **Notes:** 9 the guard reads `(.assets // [])`, so a release without assets gets the right refusal; 10 the reason bound
+- **Notes:** 9 the guard reads `.assets[]?`, so a release without assets gets the right refusal; 10 the reason bound
   is a named `MAX_REASON` (display bounds are named constants, as `TEXT_MAX` is beside them, not config keys); 11 the
   extension folder must start with a drive letter — a share and a root without a drive start nothing (red first); 12 an
   explicit `src_vs_code/bin/` ignore line; 14 `verify-bundled-exe.sh` says it trusts what the tag serves at its run time;

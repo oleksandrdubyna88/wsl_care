@@ -182,7 +182,7 @@ bundled="$(minimum_of bundledDaemon)"
 require_windows_build() {
   local daemon_tag="daemon-v$1" zip answer
   zip="$(daemon_archive_name "$1" win-x64)"
-  answer="$(gh api "repos/${GH_REPO:?GH_REPO is required}/releases/tags/$daemon_tag" --jq "[(.draft | tostring), .tag_name, (any((.assets // [])[]; .name == \"$zip\") | tostring)] | @tsv" 2> /dev/null)" \
+  answer="$(gh api "repos/${GH_REPO:?GH_REPO is required}/releases/tags/$daemon_tag" --jq "[(.draft | tostring), .tag_name, (any(.assets[]?; .name == \"$zip\") | tostring)] | @tsv" 2> /dev/null)" \
     || refuse "the bundled daemon $daemon_tag is not a published release of $GH_REPO — the .vsix carries its Windows build, so it must be out first"
   [ "$answer" = "false	$daemon_tag	true" ] || refuse "the bundled daemon $daemon_tag is not a published, non-draft release carrying $zip (GitHub answered '$answer')"
 }
