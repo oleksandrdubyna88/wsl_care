@@ -28,6 +28,11 @@ public sealed class CollectFlows
     internal static ScenarioHome Captured(string purpose, Action<ScenarioHome>? first = null)
     {
         var home = new ScenarioHome(purpose);
+        // E15.S2: WSL sets WSL_DISTRO_NAME for every process started through wsl.exe — a test run from a WSL shell inherits it — and
+        // the full run takes this distro's name from it. Removed for the captured collect, so its flows (and the goldens) are the
+        // systemd unit's case, which has none; a flow that is the panel's root call through wsl.exe sets it again. Only here: the
+        // archive's side folder reads the same variable in the test process AND in the CLI, so a scrub for every scenario split them.
+        home.Extra[DistroIdentity.Variable] = null;
         first?.Invoke(home);
         foreach (var (command, file) in DockerFixture.Answers)
         {
@@ -41,6 +46,9 @@ public sealed class CollectFlows
             home.Script(Tool(argv[0]), argv.Skip(1).ToList(), 0, $"health/{HealthFixture.Name}/{file}");
         }
 
+        // E15.S2: the Windows disk script answers with the 2026-10-10 capture, so the full run judges real virtual disks (and the
+        // status goldens show them).
+        home.Script("powershell", WindowsDiskCommands.WindowsDisk.Arguments, 0, $"health/{WindowsDiskFixture.Name}/{WindowsDiskFixture.AnswerFile}");
         // The journal searches carry an instant: matched by prefix.
         home.Answer(new FakeAnswer(SystemdCommands.Journalctl, ["--since"], 0, ScenarioHome.Fixture($"health/{HealthFixture.Name}/journalctl-search-clock.out"), string.Empty) { Prefix = true });
         return home;

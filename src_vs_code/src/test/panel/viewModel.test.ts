@@ -58,7 +58,7 @@ test('the rows the E5 verbs cannot fill say "arrives in E#" with why — never b
     assert.equal(shown.state, 'arrives');
     assert.equal(shown.value, `arrives in ${row.arrives} — ${row.why}`);
   }
-  assert.deepEqual(FIELD_MAP.filter(isArriving).map((r) => r.arrives).sort(), ['E11', 'E6', 'E6', 'E6', 'E7', 'E7', 'E7', 'E7'], 'E6.S3 filled Last cleanup; the logs rows are E6.S4');
+  assert.deepEqual(FIELD_MAP.filter(isArriving).map((r) => r.arrives).sort(), ['E6', 'E6', 'E6', 'E7', 'E7', 'E7', 'E7'], 'E6.S3 filled Last cleanup; the logs rows are E6.S4; E15.S2 filled the virtual disks');
 });
 
 test('the head goldens\' own available:false figures read "unavailable — <reason>": the npm folder, A8\'s cleanup row', () => {

@@ -1,7 +1,8 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built* at the end); the owner's answers to Q1–Q6
-> recorded (§9); E15.S2 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 built on its branch
+> `feat/wc-e15s2-virtual-disks` (*E15.S2 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
+> not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -285,7 +286,7 @@ The template for a threshold key is commit `95448096` (E14 S5).
 | **E15.S7** the redaction rule widened (#87 item 2, daemon half) | `Collectors/Procfs/ProcessFiles.cs:96-148` → also `NAME=value` with a secret word anywhere, high-entropy positional tokens (≥ `processes.secretMinChars` 20), creds-shaped keys; `program` and `argumentsShown` (≤ `processes.shownSafeArgs` 2 safe arguments) on the wire. RED: a creds config key in a positional argument is redacted. | low |
 | **E15.S8** GPU G2 — the daemon's verdict and ONE code table | S1's adapter lines (distro, 4-hourly) and a `cfgmgr32` reader in the Windows binary (`CM_Get_DevNode_Status`; unelevated, AOT-clean) → `gpu.adapters` (critical: any code ≠ 0), `status.gpu`, a doctor check; `Health/DeviceProblemCodes.cs` is the ONE writer of `contracts/device-problem-codes.json`; the extension's G1 table is held equal to it by a test (the only extension change). | low |
 | **E15.S9** self-cost and the budget verdict | `Systemd/SystemdParsers.cs:8-26` widened to `CPUUsageNSec`, `MemoryPeak`, `IOReadBytes`, `IOWriteBytes` per unit; `IOAccounting=yes` in the shipped units (D8: today "not set"); `MeasureTree` for state and logs; the unprivileged run logs counted per hour = the extension's calls → `selfCost.cpu` (> `selfCost.cpuSecondsPerDayWarn` 600), `selfCost.memory` (> 90 % of `units.memoryMaxMb`), `selfCost.disk` (> `selfCost.stateWarnMb` 500), `selfCost.extensionCalls` (> `selfCost.extensionCallsPerHourWarn` 120): "AI OS Care itself costs more than its budget: …". RED: the measured 831 MB peak warns at 90 % of 1 GiB. | low |
-| **E15.S10** Defender's CPU, recorded every full run (the owner, 2026-10-10) | S1's script gains ONE line in its CIM work: `defender=` from `Win32_PerfRawData_PerfProc_Process` where `Name='MsMpEng'` — `PercentProcessorTime` (cumulative, 100 ns), `Timestamp_Sys100NS`, `IDProcess` — readable unelevated ([2026-10-10_defender.md](../research/2026-10-10_defender.md) F3); the two-point ledger shape of `Mcp/McpCpuLedger.cs:115` → `Health/DefenderCpu.cs` (PURE: core-seconds between two reads of the SAME pid; a new pid is a new baseline, never a difference; the hours covered), `{state}/defender-cpu.jsonl` (`defender.localRetentionDays` 400, until E17.S1 takes it as a statistics record), `status.defender {coresAverage, coreHoursPerWeek, coveredHours, basis: fullRun, age}`, `host.defenderCpu` (warn when the average since the previous run is above `thresholds.defenderCoresWarn`, 1.0 core). Measured FIRST: the line's cost inside the script, cold and warm (F3: a cold CIM read alone took 7.3 s; if the script's cold run cannot stay under its 30 s ceiling, the line moves to its own fixed script). RED: two reads of one pid 10 s apart that added 10.3 core-seconds give 1.03 cores; a pid change gives no difference and says "Defender restarted — a new baseline"; a missing line is unavailable, never 0; the never-list's closed set admits exactly the new script and still refuses a one-word variant. | medium — the cold CIM cost |
+| **E15.S10** Defender's CPU, recorded every full run (the owner, 2026-10-10) | A THIRD fixed interop script (`Health/DefenderCpuCommands.cs`, a member of the never-list's closed set) with ITS OWN ceiling `health.defenderCpuTimeoutSeconds` (15), run after the disk script — so a slow Defender read never costs the disk facts (the whole disk script is one sample, `Health/HealthCollector.cs:38`; risk consultation for epic 1, 2026-10-11). It prints `defender=` from `Win32_PerfRawData_PerfProc_Process` where `Name='MsMpEng'` — `PercentProcessorTime` (cumulative, 100 ns), `Timestamp_Sys100NS`, `IDProcess` and the raw `ElapsedTime` (a START marker, not elapsed seconds) — readable unelevated ([2026-10-10_defender.md](../research/2026-10-10_defender.md) F3); the two-point ledger shape of `Mcp/McpCpuLedger.cs:115` → `Health/DefenderCpu.cs` (PURE: core-seconds between two reads of the SAME process — the same boot id AND pid AND start marker, as `Mcp/McpCpuLedger.cs:228` keys its entries, because Windows reuses pids and an engine update restarts MsMpEng without a reboot; anything else is a new baseline, never a difference; a decreasing counter, a non-positive timestamp interval or missing data invent no usage; restart gaps add no covered hours; a weekly figure says it is extrapolated from the covered hours), `{state}/defender-cpu.jsonl` (`defender.localRetentionDays` 400, until E17.S1 takes it as a statistics record), `status.defender {coresAverage, coreHoursPerWeek, coveredHours, basis: fullRun, age}`, `host.defenderCpu` (warn when the average since the previous run is above `thresholds.defenderCoresWarn`, 1.0 core). Measured FIRST, under Windows PowerShell 5.1 (F3 used pwsh 7): the script cold and warm, at a low and a high process count, filtered and unfiltered (does `-Filter "Name='MsMpEng'"` still enumerate every process?), so the ceiling and `RunBudget` growth are set from numbers. RED: two reads of one process 10 s apart that added 10.3 core-seconds give 1.03 cores; a pid change, the same pid with a different start marker (and a LARGER counter), a changed boot, a decreasing counter and a non-positive interval each give no difference ("Defender restarted — a new baseline"); a stalled Defender script past its ceiling leaves the disk facts available, reports its own timeout, and its child is killed; a missing line is unavailable, never 0; the never-list's closed set admits exactly the new script and still refuses a one-word variant. | medium — the cold CIM cost (own ceiling) |
 
 ### E16 — the PROBE, the FORECAST and the remedy LADDER
 
@@ -517,3 +518,257 @@ script's tags — a test holds every printed tag to `WindowsDiskParsers.KnownTag
 domain record — now `PhysicalDiskReport` (same JSON shape). RED first for the report fields and the wire record; break-its in
 [module_tests.md](../research/module_tests.md) *E15.S1*.
 
+
+## E15.S2 design (2026-10-11, branch `feat/wc-e15s2-virtual-disks`)
+
+**Goal.** From each full run's Windows disk sample (E15.S1), judge three things:
+- each virtual disk's GAP: the file size minus what the guest uses;
+- its GROWTH per day since the previous full run;
+- the hosting volume's FREE space against what its files can still grow.
+
+Show the figures and the verdicts in the run detail and in `status`, with their basis and age. Read-only: no new command
+runs, and the never-list is untouched.
+
+**What the code gives today** (mapped 2026-10-11):
+- `status` carries every `ThresholdRules.FromFullRun` verdict automatically (`Status/StatusVerdicts.cs:31-58`), with
+  `basis: fullRun`, the run id and the age.
+- The Windows disk sample is only in the run detail (`HealthReport.WindowsDisk`), not on the history line.
+- The distro's `status` has no `host` section: on Linux it is unavailable by design (`Collectors/LinuxProbe.cs:16-17`).
+- Docker's `docker system df` totals are in the full run's `PreviewResult.Snapshot.Totals`
+  (`Docker/DockerCollector.cs:14-20`), but not in `ThresholdInputs`.
+- The distro's own `/` is `ThresholdInputs.Root` (`Collectors/Samples.cs:9-21`, statvfs).
+
+**1. Which Lxss distro is this one? (measured 2026-10-11).**
+- `systemctl show-environment` has no `WSL_*` variable. The three `wsl-care` units have an empty `Environment=`.
+  `wslinfo` has no distro-name option. A shell started through `wsl.exe` has `WSL_DISTRO_NAME=Ubuntu`.
+- So `Health/DistroIdentity.cs` works like this:
+  - Any ROOT run whose environment carries `WSL_DISTRO_NAME` (install / update, a collect started by the panel through
+    `wsl.exe`) writes `{state}/distro-name.json` (`{name, recordedAt}`). It writes atomically, and only when the name
+    changed.
+  - The full run takes the environment first, then the file.
+  - If neither exists, the own distro's mapping is `none`, with the reason "this distro's name is not known yet — any
+    wsl-care command started through wsl.exe records it (the panel's *Run full check now* does)".
+  - A recorded name that is not in the Lxss map is also `none`, and the reason names it.
+
+**2. `Health/VirtualDisks.cs` (PURE).** It turns the sample, the root volume, Docker's totals, the distro name and the
+previous sizes into `DiskFacts`.
+- **Per virtual disk:**
+  - name, path, size, sparse;
+  - the hosting volume's letter (from the path);
+  - `guestUsedBytes`, `mappedBy`, `gapBytes`, `growthBytesPerDay`, and `possibleGrowthBytes`, each a `Reading`.
+- **`mappedBy`** is one of three values:
+  - `mount`: this distro's own `/`. Guest used = `Root.UsedBytes`. Possible growth = `Root.TotalBytes` − file size,
+    because the guest filesystem's size is the disk's virtual size.
+  - `dockerDf`: Docker's data disk. Guest used = the sum of `docker system df`'s sizes (images, containers, local volumes,
+    build cache). This is labelled "Docker's own totals — an estimate, not the filesystem". Possible growth is unknown.
+  - `none`: other distros, which are not mounted here. Gap and possible growth are unknown, and the reason says why.
+- **Per volume that hosts a virtual disk:** letter, size, free, the disks on it, their summed growth per day, and their
+  known possible growth together with the count of unknown ones.
+
+**3. Growth needs two measured sizes.**
+- `Records/SlowParts.cs` gains `VirtualDisks` (`{sampledAt, disks[{name, path, sizeBytes}]}`, about 600 B per line), and
+  `LastFullRun` gains it too (the `PreviousClock` pattern, `Collect/CollectRun.cs:402`, `:465`).
+- Growth per day = (size now − size then) ÷ elapsed days. It is computed only for the same path, and only when both runs
+  measured it.
+- Below `disk.growthMinHours` (1 h) the growth is unavailable, with the reason "too close to the previous measurement". A
+  10-minute pair would otherwise turn 1 GiB into 144 GiB a day.
+- A negative growth is a shrink, shown as it is.
+
+**4. Verdicts (`Thresholds/DiskRules.cs`, spread into `FromFullRun`; all carried by `status`):**
+- `disk.vhdxGap`: warn when a mapped gap is above `disk.vhdxGapWarnGib` (20). The value names the file and reads
+  "file − guest = gap".
+  - When the file is not sparse, the reason adds the sparse advice as TEXT: "`wsl --manage <distro> --set-sparse true`
+    lets Windows reclaim the space freed inside it — wsl-care never runs it".
+  - For `dockerDf`, the reason says it is Docker's estimate.
+  - When nothing is mapped, the verdict is unknown.
+- `disk.vhdxGrowth`: warn when a file grows faster than `disk.vhdxGrowthWarnGibPerDay` (10). It is unknown until two
+  measured sizes exist.
+- `disk.hostFree`: warn when a hosting volume's free space is below `disk.hostFreeWarnGib` (100), or below the KNOWN
+  possible growth of its files. Otherwise it is `ok` ONLY when every file on that volume has a known possible growth. When
+  any file's possible growth is unknown, the level is `unknown`, never `ok`. The value still shows the free space, and the
+  reason says "the possible growth of N files is not known (…); free X GiB is above the floor and the known growth Y GiB"
+  (plan round, 2026-10-11).
+
+**5. Wire.**
+- The run detail gains a `disk` section (`Collect/DiskReport.cs`).
+- `status` gains a top-level additive `disk`: the newest full run's `DiskReport`, with
+  `basis {source: fullRun, runId, evaluatedAt, ageSeconds}`. It is read from the detail with a partial record, as
+  `Status/FullRunVerdicts.cs` reads the verdicts.
+- The Windows binary's `status` says `disk` is unavailable, because the distro's full run reads the virtual disks.
+- `host.vhdx` stays (no wire removal). Its reason is re-worded to point at the distro's `status.disk`.
+
+**6. Keys:**
+- `disk.vhdxGapWarnGib` (1–1024, default 20)
+- `disk.vhdxGrowthWarnGibPerDay` (1–1024, default 10)
+- `disk.hostFreeWarnGib` (1–10240, default 100)
+- `disk.growthMinHours` (1–48, default 1)
+
+All four are display keys. They are added to `contracts/config-keys.json`.
+
+**Where the defaults come from** (plan round, 2026-10-11). They are STARTING VALUES, and only one is backed by a
+measurement. The README and the key descriptions say so:
+- 20 GiB gap: under half of the 43.7 GiB gap measured on Ubuntu's VHDX (D2/D3), so that measured case warns.
+- 100 GiB free: about 4 % of the 2.4 TiB system volume (D1). Not measured as a need; it is a floor.
+- 10 GiB/day growth: not measured. D3 has only write volume (15.5 GB written in 6.8 h), and writes are not growth.
+  The first weeks of `growthBytesPerDay` records will calibrate it.
+- 1 h minimum: it keeps the extrapolation factor at 24 or below. Not measured.
+
+**7. Extension.**
+- The panel's `disk.vhdx` row (`src_vs_code/src/panel/fieldMap.ts:141`, "arriving E11") becomes a read row on
+  `verdicts[id=disk.vhdxGap]`.
+- The status bar is unchanged: `disk.*` does not colour it.
+- The field-map document block in `architecture.md` is regenerated.
+
+**8. Goldens.**
+- The captured collect flow answers the Windows disk script with `WindowsDiskFixture` (as `WindowsDiskFlows.cs:36-37`
+  does), so the seven status goldens show real figures.
+- Volatile values get normalisation rules.
+
+**9. RED first:**
+- **Gap.** D2/D3's numbers (237.7 GiB file, 194.0 GiB used by `/`) give a gap of 43.7 GiB, which warns, with the sparse
+  advice for Ubuntu.
+- **Growth:**
+  - One measurement gives no growth.
+  - Two measurements give their difference per day.
+  - 10 minutes apart gives "too close".
+  - A different path gives no growth.
+- **Distro name:**
+  - It is read from the environment.
+  - Without the environment, it is read from the file.
+  - With neither, the mapping is `none` with the reason.
+  - A name that is not in the Lxss map is also `none`.
+- **Docker:** Docker's disk is mapped by df and labelled an estimate.
+- **Host free:**
+  - `disk.hostFree` warns below 100 GiB.
+  - It also warns below the known possible growth.
+  - It counts the files whose growth is unknown.
+  - 150 GiB free with 20 GiB of known growth and one unknown file reads `unknown`, never `ok`.
+- **`status`:**
+  - It carries `disk` with its age.
+  - With no full run, it says so.
+  - The Windows binary says the distro reads it.
+
+There will be break-its on the product lines.
+
+**10. Docs:** README (the keys), `module_daemon.md`, `module_tests.md`, `architecture.md` (the field map), this plan's
+as-built section.
+
+**Deviations from the story row, decided here:**
+- `mappedBy` is `mount | dockerDf | none`, not `mount | size | none`. Mapping a block device by size identifies it, but it
+  gives no guest usage, because those filesystems are not mounted here (D3).
+- The keys are in GiB (`…Gib`), not "Gb", because Windows reports the file sizes in binary units.
+- `host.vhdx` is re-worded, not removed.
+
+## E15.S2 as built (2026-10-11, branch `feat/wc-e15s2-virtual-disks`)
+
+**What shipped.** `Health/DistroIdentity.cs` (`WSL_DISTRO_NAME` first, then `{state}/distro-name.json`, written by a ROOT `collect`
+that carries the variable — atomically, only when the name changed; a name is believed only when it passes WSL's rule, the
+extension's `DISTRO_NAME` pattern); `Health/VirtualDisks.cs` (PURE) → `Health/VirtualDiskFacts.cs` (`DiskFacts`: per disk the
+volume letter, `mappedBy` `mount | dockerDf | none`, guest used, gap, growth per day, possible growth, each a `Reading`; per hosting
+volume size, free, the disks, summed growth, known possible growth and the disks whose growth is unknown); `Thresholds/DiskRules.cs`
+(`disk.vhdxGap`, `disk.vhdxGrowth`, `disk.hostFree`, spread into `ThresholdRules.FromFullRun` after `disk.discard`, so `status`
+carries them with the run and their age); `SlowParts.VirtualDisks` + `LastFullRun.VirtualDisks` (the sizes on the history line,
+the previous run's for growth); `Collect/DiskReport.cs` (the run detail's `disk`) and `Status/StatusDisk.cs` (`status.disk` with
+`basis {source: fullRun, runId, evaluatedAt, ageSeconds}`, read from the same detail file as the verdicts through
+`RunDetailVerdicts.Disk`); the Windows binary answers `disk` unavailable and `host.vhdx` points at it. Keys `disk.vhdxGapWarnGib`
+(1–1024, 20), `disk.vhdxGrowthWarnGibPerDay` (1–1024, 10), `disk.hostFreeWarnGib` (1–10240, 100), `disk.growthMinHours` (1–48, 1),
+display keys, their descriptions and the README naming them STARTING VALUES with their provenance; `contracts/config-keys.json`
+regenerated. The panel's `disk.vhdx` row reads `verdicts[id=disk.vhdxGap]`; the status bar is unchanged (a test holds that the
+three `disk.*` verdicts do not colour it); the field-map block in `architecture.md` regenerated. The scenarios' captured collect
+answers the disk script with the 2026-10-10 capture, so the seven status goldens carry the three verdicts and `status.json` the
+`disk` section (regenerated on Linux, WSL `Ubuntu`, from a copy under `/tmp`).
+
+**Deviations.**
+
+1. **Who records the name.** `collect` run as root (synchronously, or as `collect --detach` — the panel's *Run full check now* is
+   `wsl.exe -u root … collect --detach`, so the detaching process carries the variable and the systemd unit that does the run
+   reads the file). Not `install.sh` / update: it runs under `sudo`, whose default `env_reset` drops the variable (sudo's
+   documented default, not measured here); not `act`. The design said "any root run"; one verb is the smallest sound place.
+2. **The environment is an argument**: `CollectContext.DistroVariable`, set by the CLI from the process — so no test reads the
+   test process's own environment; the scenarios' captured collect REMOVES `WSL_DISTRO_NAME` (a test run from a WSL shell inherits
+   it), so the goldens are the systemd unit's case. (A first version removed it for EVERY scenario; on Linux in WSL that split the
+   archive's side folder — `ArchiveNames` reads the same variable in the test process and in the CLI — and two `ArchiveRunFlows`
+   went red, so the scrub is now only in `CollectFlows.Captured`.) In the goldens no distro is mapped, Docker's data disk is (by
+   `docker system df`), and `disk.hostFree` is `unknown`. The `mount` mapping is proved by the unit tests and by `VirtualDiskFlows` on Linux.
+3. **The gap test reads 43.6 GiB, not 43.7**: the exact bytes (255 195 086 848 − 208 337 252 352 = 46 857 834 496) are 43.6 GiB;
+   D3's 43.7 rounded both sides first. It still warns at 20.
+4. **No `hostGrowth` field** (the story row's `status.disk {vhdx[], volumes[], hostGrowth}`): each volume carries
+   `growthBytesPerDay`, `knownPossibleGrowthBytes` and `unknownGrowth` (design §2's shape).
+5. **An unreadable Lxss map leaves the whole disk section unavailable** with its reason (Docker's disk alone is not judged): this
+   distro's mapping needs the map. Docker's data disk that is absent or unread is simply not listed.
+6. **`host.vhdx`'s reason is `StatusDisk.ReadByTheDistro`** — one sentence for both, and `VhdxNotCollected` is gone.
+
+**RED first** (against stubs answering "not built yet" and a `DiskRules` returning no verdict): 45 of 227 red, each for the
+missing behaviour — *Expected type to be …Reading`1+Available[[…DiskFacts…]] because not built yet, but found …Unavailable…*
+(the facts); *Expected DistroIdentity.NotKnownYet "not built yet" to contain "wsl.exe"*; *Expected Record(name, Now) "not built
+yet" to contain "is not a distribution name"*; *Expected Record(string.Empty, Now) to be empty, but found "not built yet"*;
+*Expected verdicts.Select(v => v.Id) to be equal to {"disk.vhdxGap", "disk.vhdxGrowth", "disk.hostFree"}, but found empty
+collection*; *Expected ids {… "disk.discard", "docker.A4", …} to contain items {"disk.discard", "disk.vhdxGap", …} in order*; the
+verdict tests *Sequence contains no matching element*; *Expected disk.Available to be True because not built yet, but found
+False*; *Expected StatusDisk.OnWindows.Reason "not built yet" to contain "the distro's full run"*; *Expected type to be
+…Available[[…DiskReport…]] because not read, but found …Unavailable…*. The `host.vhdx` re-wording: `ProbeTests` red first
+(*… to be the same string, but they differ at index 4*). Then green: 227 of 227.
+
+**Break-its** (product code, each restored, each named test red alone): gap = file (not file − guest) → *Expected
+Value(ubuntu.GapBytes) to be 46857834496L … but found 255195086848L*; every distro mapped by mount → *Expected other.MappedBy to be
+MappedBy.None … but found MappedBy.Mount*; the `disk.growthMinHours` arm removed → the 10-minute pair reads a growth; the
+same-path check removed → *Expected …GrowthBytesPerDay.IsAvailable to be False … but found True*; the unknown-growth arm of
+`disk.hostFree` removed → *Expected free.Level to be Level.Unknown … but found Level.Ok* (the 150 / 20 / 1 case); the known-growth
+arm removed → *Expected free.Level to be Level.Warn … but found Level.Ok*; the sparse arm removed → the reason lacks
+`wsl --manage Ubuntu --set-sparse true`; the file before the environment → *The_environment_names_the_distro_first* red; the
+"unchanged" arm removed → the file is rewritten (*differ on line 4*); `status.disk` without its basis → *Expected disk.Basis to
+be …VerdictBasis*; the detail's disk not read → *…Available[[…DiskReport…]] … but found …Unavailable*; `DiskRules` not spread into
+the full-run list → the order test red; the panel's row back to `arriving` → 2 red (`fieldMap.test`, `viewModel.test`); and on
+Linux the root `collect`'s `RecordDistro` call commented out → `VirtualDiskFlows` red (no `distro-name.json`).
+
+**The story's code round** (coai, 2026-10-11, `proceed`, 4 of 4 reviewers — codex): four findings. Three were accepted:
+- `disk.vhdxGap` and `disk.vhdxGrowth` judged only the disks with a figure, so they could read `ok` while a disk was
+  unknown. This finding came from two reviewers. A known breach still warns; otherwise the verdict is now `unknown`. For the
+  gap that means a disk mapped to its guest whose gap could not be read; for growth, any file with no growth yet.
+- The daemon's distro-name rule could drift from the extension's `DISTRO_NAME`. An architecture test now holds them equal.
+
+One was rejected: "nullable lists in `DiskReport` should default to `[]`". Doctrine §7 is about immutability, and that
+holds. The null is this repo's JSON-edge contract ("available": false, a reason, no value), so an unavailable section never
+reads as "measured, none".
+
+**Own review** (Opus), all fixed:
+- Without this distro's name, Docker's estimate alone made the gap `ok`. Now it is `unknown`, or `warn` when Docker's
+  gap breaches the limit (as it does in the capture, about 34 GiB).
+- `HostWithFree` was at complexity 5. It is now a tuple switch.
+- No test proved that only root records the name. A scenario on Linux now proves it.
+- The growth baseline is the newest sizes at least `disk.growthMinHours` older, so a manual run soon after a timer run
+  still has a growth.
+- A clock that moved back says so.
+- A partial history line is not a measurement.
+- A disk section that does not parse costs only `disk`, not the carried verdicts.
+- The `disk.*` keys moved to `Config/ConfigKeys.Disk.cs`. `ConfigKeys.Numbers.cs` was 945 lines on main and is now
+  933; it is over 800 lines from before this story, and that is left for the owner.
+
+Not taken:
+- A cloned distro (`wsl --export` / `--import`) carries the old `distro-name.json`. That is a known limit, written in
+  module_daemon.
+- The `--set-sparse` caveat: WSL 2.7.10's `wsl --help` lists `--set-sparse <true|false>` with no unsafe flag, so the
+  text stays as it is.
+
+RED messages and break-its are in [module_tests.md](../research/module_tests.md) *E15.S2*.
+
+The goldens were re-checked on Linux. They are unchanged, because the capture's gap already warned.
+
+The Linux `FixturePrivacyTests` failure on the owner's machine (POST_DEPLOY.md names the local user) comes from before
+this story, from main.
+
+**The final code round** (coai, 2026-10-11, `again`, `proceed`, 4 of 4 reviewers — codex): six findings, two accepted, four
+rejected with reasons. Accepted:
+- The growth baseline is now chosen PER FILE: the newest earlier VALID measurement of that path, at least
+  `disk.growthMinHours` old. A newer run that missed the file, or a partial entry, no longer hides an older measurement.
+- The history is walked lazily instead of being copied into a list.
+
+Rejected:
+- **The scenario harness's `Extra` dictionary:** it is the harness's own API, used by every flow.
+- **"JavaScript `$` matches before a final newline":** verified false; `/…$/.test('Ubuntu\n')` is `false`, the same as the
+  daemon's `\z`.
+- **The cloned distro:** no unelevated, non-raw fact ties a filesystem to one VHDX. The case heals on the clone's first
+  `wsl.exe` root collect. It is a known limit in module_daemon.
+- **Indexing the previous disks by path:** tens of disks at most.
+
+The goldens were regenerated on Linux: the growth reason now reads "no earlier full run measured this file".

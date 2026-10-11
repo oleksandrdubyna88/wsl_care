@@ -22,7 +22,12 @@ public sealed record ThresholdInputs(
     Reading<WindowsClockSample> PreviousClock,
     IReadOnlyList<CleanupRow> Rows,
     Reading<long> BuildCacheBytes,
-    Reading<long> NpmCacheBytes);
+    Reading<long> NpmCacheBytes)
+{
+    /// <summary>E15.S2: the virtual disks and their hosting volumes, judged ONCE per run (<see cref="VirtualDisks"/>) — the run detail
+    /// and the verdicts project the same facts; unavailable when the run did not read them.</summary>
+    public Reading<DiskFacts> Disk { get; init; } = Reading.Missing<DiskFacts>("not read");
+}
 
 /// <summary>
 /// The thresholds of plan §4 evaluated over one full run — PURE, so every threshold is a unit test at its edge.
@@ -141,6 +146,7 @@ public static class ThresholdRules
         Collector("collectors.sysstat", inputs.Health.Sysstat, inputs.Health.Since),
         Collector("collectors.atop", inputs.Health.Atop, inputs.Health.Since),
         Discard(inputs.Health),
+        .. DiskRules.Evaluate(inputs.Disk, config),
         DockerVolumes(inputs.Rows, config),
         Above("docker.A6Unused", RowBytes(inputs.Rows, "A6Unused"), config.Int(ConfigKeys.Images.UnusedMaxGb) * Gb, Gb, "GB", "unused tagged images reclaimable (images.unusedMaxGb)"),
         Above("docker.buildCache", inputs.BuildCacheBytes, config.Int(ConfigKeys.BuildCache.MaxGb) * Gb, Gb, "GB", "build cache (buildCache.maxGb, A7's cap)"),

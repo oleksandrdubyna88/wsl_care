@@ -11,7 +11,10 @@ namespace WslCare.Core.Status;
 
 /// <summary>The part of a run detail <c>status</c> reads back: its head and the thresholds the run evaluated. Every other
 /// member of the detail is skipped by the reader, so its cost is one file read, not the whole detail's types.</summary>
-public sealed record RunDetailVerdicts(int SchemaVersion, RunId RunId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, IReadOnlyList<Verdict>? Thresholds);
+/// <param name="Disk">E15.S2: the run's disk section, kept as raw JSON and parsed on its own — so a disk section that does not parse
+/// costs only <c>disk</c>, never the verdicts carried with it (own review, 2026-10-11); absent (<c>null</c>) in a detail written before
+/// E15.S2.</param>
+public sealed record RunDetailVerdicts(int SchemaVersion, RunId RunId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, IReadOnlyList<Verdict>? Thresholds, JsonElement? Disk);
 
 /// <summary>
 /// The verdicts of the newest FULL run, read back from its detail (plan §15g B1). A full run is a <c>collect</c> line — the
@@ -51,12 +54,32 @@ public static class FullRunVerdicts
         try
         {
             return JsonSerializer.Deserialize(json, WslCareJsonContext.Default.RunDetailVerdicts) is { RunId: not null } detail
-                ? Reading.Of(new RecordedVerdicts(detail.RunId, detail.EndedAt, [.. (detail.Thresholds ?? []).SelectMany(Normalised)]))
+                ? Reading.Of(new RecordedVerdicts(detail.RunId, detail.EndedAt, [.. (detail.Thresholds ?? []).SelectMany(Normalised)]) { Disk = Disk(detail) })
                 : Reading.Missing<RecordedVerdicts>($"the detail of the newest full run ({relative}) does not parse: it names no run");
         }
         catch (JsonException e)
         {
             return Reading.Missing<RecordedVerdicts>($"the detail of the newest full run ({relative}) does not parse: {e.Message}");
+        }
+    }
+
+    /// <summary>E15.S2: the detail's disk section, or why it has none (written before E15.S2).</summary>
+    private static Reading<Collect.DiskReport> Disk(RunDetailVerdicts detail) =>
+        detail.Disk is { ValueKind: not JsonValueKind.Null } disk
+            ? ParsedDisk(disk, detail.RunId)
+            : Reading.Missing<Collect.DiskReport>($"the newest full run ({detail.RunId}) recorded no disk section (its detail was written before E15.S2)");
+
+    private static Reading<Collect.DiskReport> ParsedDisk(JsonElement disk, RunId runId)
+    {
+        try
+        {
+            return disk.Deserialize(WslCareJsonContext.Default.DiskReport) is { } report
+                ? Reading.Of(report)
+                : Reading.Missing<Collect.DiskReport>($"the disk section of the newest full run ({runId}) is empty");
+        }
+        catch (JsonException e)
+        {
+            return Reading.Missing<Collect.DiskReport>($"the disk section of the newest full run ({runId}) does not parse: {e.Message}");
         }
     }
 

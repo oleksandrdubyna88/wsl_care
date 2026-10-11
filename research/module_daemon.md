@@ -294,3 +294,67 @@ flowchart LR
   (PLAN_disk_health.md, *E15.S1 as built*). The clock probe's program is unchanged.
 - **What the detail holds** is the machine's own facts (profile paths, the machine id). The detail stays on this machine;
   the redacted statistics export is E17.S3's.
+
+## The virtual disks and the hosting volume (E15.S2, 2026-10-11) — a report
+
+The full run turns E15.S1's Windows disk sample into the virtual disks' facts and three verdicts. Read-only: no new command
+runs, the never-list is untouched, and `status` reads what the run recorded.
+
+```mermaid
+flowchart LR
+    sample["HealthSample.WindowsDisk<br/>(E15.S1 script)"] --> vd["VirtualDisks.From<br/>(PURE)"]
+    root["ThresholdInputs.Root<br/>statvfs /"] --> vd
+    df["docker system df<br/>(PreviewRun, no second walk)"] --> vd
+    name["DistroIdentity.Resolve<br/>env, then distro-name.json"] --> vd
+    prev["LastFullRun.VirtualDiskHistory<br/>(newest first, lazy)"] --> vd
+    vd --> facts["DiskFacts<br/>(judged once)"]
+    facts --> rules["DiskRules<br/>disk.vhdxGap · disk.vhdxGrowth · disk.hostFree"]
+    facts --> report["RunDetail.disk<br/>(DiskReport)"]
+    facts --> slow["SlowParts.VirtualDisks<br/>(sizes, ~600 B)"]
+    report --> status["status --json: disk<br/>(basis fullRun, run, age)"]
+    rules --> verdicts["status verdicts<br/>(carried)"]
+```
+
+- **Which distro is this one** (`Health/DistroIdentity.cs`, measured 2026-10-11): a systemd unit has no `WSL_DISTRO_NAME`
+  (`systemctl show-environment` shows none, the units set none, `wslinfo` has no name option); a process started through
+  `wsl.exe` has it. So `collect` run as ROOT that carries it — the panel's *Run full check now* is `wsl.exe -u root … collect
+  --detach` — records it in `{state}/distro-name.json` (`{schemaVersion, name, recordedAt}`), atomically and only when the name
+  changed; the run itself (the detached unit, the timer) takes the environment first (`CollectContext.DistroVariable`), then the
+  file (read as root's state: owned by root, no link, capped). A name is believed only when it passes WSL's rule (the extension's
+  `DISTRO_NAME`: a letter or digit, then up to 63 letters, digits, `.`, `_`, `-`). With neither, no distro is mapped and the
+  reason says how the name becomes known; a recorded name the Lxss map does not list maps nothing and is named.
+- **The facts** (`Health/VirtualDisks.cs`, PURE → `Health/VirtualDiskFacts.cs`): per disk the name, path, size, sparse bit, the
+  hosting volume's letter (from the path), `mappedBy` (`mount` = this distro's own `/`: guest used = `UsedBytes`, possible growth
+  = the filesystem's size − the file; `dockerDf` = Docker's data disk: guest used = the sum of `docker system df`'s sizes, "an
+  estimate, not the filesystem", possible growth unknown; `none` = another distro, not mounted here), the gap (file − guest),
+  the growth per day and the possible growth — each a `Reading`. Per hosting volume: size, free, the disks on it, their summed
+  growth (only when every one has one), their known possible growth and the disks whose possible growth is unknown.
+- **Growth needs two measured sizes**: `SlowParts.VirtualDisks` (`{sampledAt, disks[{name, path, sizeBytes}]}`) is on every
+  history line whose script answered; the baseline is chosen PER FILE from `LastFullRun.VirtualDiskHistory` (newest first,
+  walked lazily): the newest earlier VALID measurement of that path at least `disk.growthMinHours` (1) older than this sample — so
+  neither a manual run soon after a timer run, nor a run that missed the file, nor a partial entry hides an older measurement (own
+  review, final code round); with only closer sizes it reads "too close to the previous measurement". Growth = (size now − size then) ÷ days,
+  only for the same path (case-insensitive), only from a real measurement (a partial history line — no size or no time — is
+  "not a measurement") and only forward in time ("the clock moved back"). A negative growth is a shrink.
+- **The verdicts** (`Thresholds/DiskRules.cs`, spread into `ThresholdRules.FromFullRun` after `disk.discard`, so `status`
+  carries them with the run and their age): `disk.vhdxGap` (warn above `disk.vhdxGapWarnGib`, 20; "file − guest = gap"; the
+  sparse advice `wsl --manage <distro> --set-sparse true` as TEXT for a distro file that is not sparse — never run; Docker's gap
+  labelled its estimate; a known breach warns, otherwise it is `unknown` — never `ok` — while a mapped disk's gap could not be
+  read or THIS distro's own disk is not mapped (its name not known, or matching no file: Docker's estimate alone never reads ok);
+  another distro, `none` by design, is outside it), `disk.vhdxGrowth` (warn above `disk.vhdxGrowthWarnGibPerDay`, 10; a known
+  breach warns, otherwise `unknown` while any file has no growth yet), `disk.hostFree` (warn below `disk.hostFreeWarnGib`, 100, or
+  below the KNOWN possible growth; `unknown` — never `ok` — while any file's possible growth is unknown, the free space still in
+  the value; one verdict over every volume, the worst level). The defaults are STARTING VALUES (README, key descriptions).
+- **The wire** (`Collect/DiskReport.cs`, its own records): the run detail's `disk` and `status.disk` = `{available, reason,
+  sampledAt, distroName, vhdx[{name, path, size, sparse, volume, mappedBy, note, guestUsed, gap, growthBytesPerDay,
+  possibleGrowth}], volumes[{letter, size, free, disks, growthBytesPerDay, knownPossibleGrowthBytes, unknownGrowth}]}`; in
+  `status` with `basis {source: fullRun, runId, evaluatedAt, ageSeconds}`. `status` reads it from the newest full run's detail
+  with its verdicts (`RunDetailVerdicts.Disk`, one file read) but PARSED ON ITS OWN, so a disk section that does not parse costs
+  only `disk`, never the carried verdicts; a detail written before E15.S2 says so. The distro-name rule is held equal to the
+  extension's `DISTRO_NAME` by `ArchitectureTests.The_daemon_and_the_extension_share_one_distro_name_rule`; the `disk.*` keys live
+  in `Config/ConfigKeys.Disk.cs`. The Windows binary's
+  `status` answers `disk` unavailable ("the distro's full run reads the virtual disks") and its `host.vhdx` points there.
+- **Not built here**: no button (the sparse switch is advice), no Windows-side reading; the defaults await calibration.
+- **Known limit**: a distro cloned with `wsl --export` / `wsl --import` carries the old `{state}/distro-name.json`; until a root
+  collect through `wsl.exe` records the new name, the clone's timer runs map the ORIGINAL distro's disk by mount (own review,
+  2026-10-11 — not fixed: no unelevated fact ties a VHDX to the running filesystem).

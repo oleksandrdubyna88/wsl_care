@@ -70,6 +70,11 @@ public sealed record RunDetail(
     /// <summary>User values this run did not take (plan §15q); absent when none.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Config.ConfigNoticeReport>? ConfigNotices { get; init; }
+
+    /// <summary>E15.S2: the virtual disks and their hosting volumes this run judged (<see cref="DiskReport"/>); absent on every detail
+    /// written before it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DiskReport? Disk { get; init; }
 }
 
 /// <summary>What became of the run's records: written, not written because this process may not (read-only), a

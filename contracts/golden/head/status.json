@@ -2243,6 +2243,45 @@
       }
     },
     {
+      "id": "disk.vhdxGap",
+      "level": "warn",
+      "value": "docker-data: 123.3 − 60.3 = 63.0 GiB",
+      "limit": "warn > 20 GiB of a virtual disk file its guest does not use (disk.vhdxGapWarnGib)",
+      "reason": "docker-data: the file holds more than its guest uses — docker-data: Docker's own totals (docker system df: images, containers, local volumes, build cache) — an estimate, not the filesystem",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "disk.vhdxGrowth",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 10 GiB/day between two measured sizes (disk.vhdxGrowthWarnGibPerDay)",
+      "reason": "Ubuntu, docker-desktop, Ubuntu-26.04, docker-data: one measurement so far: growth needs two measured sizes (no earlier full run measured this file)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "disk.hostFree",
+      "level": "unknown",
+      "value": "C: 1010.3 GiB free",
+      "limit": "warn when a volume holding virtual disks has less than 100 GiB free (disk.hostFreeWarnGib) or less than its files can still grow; unknown while any file's possible growth is unknown",
+      "reason": "C: the possible growth of 4 files is not known (Ubuntu, docker-desktop, Ubuntu-26.04: this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does); docker-data: Docker's totals say nothing about the size its data disk may reach); 1010.3 GiB free is above the floor of 100 GiB and the known growth of 0.0 GiB",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "docker.A4",
       "level": "ok",
       "value": "3 volumes, 0.64 GB",
@@ -2510,5 +2549,187 @@
     "reparented": 0,
     "autoStop": true,
     "command": "wsl-care config set auto.A21 false"
+  },
+  "disk": {
+    "available": true,
+    "sampledAt": "2000-01-01T00:00:00+00:00",
+    "distroName": {
+      "available": false,
+      "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+    },
+    "vhdx": [
+      {
+        "name": "Ubuntu",
+        "path": "C:\\Users\\user\\AppData\\Local\\Packages\\CanonicalGroupLimited.Ubuntu_79rhkp1fndgsc\\LocalState\\ext4.vhdx",
+        "size": {
+          "available": true,
+          "bytes": 255195086848
+        },
+        "sparse": {
+          "available": true,
+          "value": false
+        },
+        "volume": {
+          "available": true,
+          "value": "C"
+        },
+        "mappedBy": "none",
+        "note": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)",
+        "guestUsed": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        },
+        "gap": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        },
+        "growthBytesPerDay": {
+          "available": false,
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
+        },
+        "possibleGrowth": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        }
+      },
+      {
+        "name": "docker-desktop",
+        "path": "C:\\Users\\user\\AppData\\Local\\Docker\\wsl\\main\\ext4.vhdx",
+        "size": {
+          "available": true,
+          "bytes": 100663296
+        },
+        "sparse": {
+          "available": true,
+          "value": false
+        },
+        "volume": {
+          "available": true,
+          "value": "C"
+        },
+        "mappedBy": "none",
+        "note": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)",
+        "guestUsed": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        },
+        "gap": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        },
+        "growthBytesPerDay": {
+          "available": false,
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
+        },
+        "possibleGrowth": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        }
+      },
+      {
+        "name": "Ubuntu-26.04",
+        "path": "C:\\Users\\user\\AppData\\Local\\wsl\\{00000000-0000-4000-8000-000000000001}\\ext4.vhdx",
+        "size": {
+          "available": true,
+          "bytes": 75806801920
+        },
+        "sparse": {
+          "available": true,
+          "value": false
+        },
+        "volume": {
+          "available": true,
+          "value": "C"
+        },
+        "mappedBy": "none",
+        "note": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)",
+        "guestUsed": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        },
+        "gap": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        },
+        "growthBytesPerDay": {
+          "available": false,
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
+        },
+        "possibleGrowth": {
+          "available": false,
+          "reason": "this distro's name is not known yet — a full check started through wsl.exe records it (the panel's Run full check now does)"
+        }
+      },
+      {
+        "name": "docker-data",
+        "path": "C:\\Users\\user\\AppData\\Local\\Docker\\wsl\\disk\\docker_data.vhdx",
+        "size": {
+          "available": true,
+          "bytes": 132338679808
+        },
+        "sparse": {
+          "available": true,
+          "value": false
+        },
+        "volume": {
+          "available": true,
+          "value": "C"
+        },
+        "mappedBy": "dockerDf",
+        "note": "Docker's own totals (docker system df: images, containers, local volumes, build cache) — an estimate, not the filesystem",
+        "guestUsed": {
+          "available": true,
+          "bytes": 64730000000
+        },
+        "gap": {
+          "available": true,
+          "bytes": 67608679808
+        },
+        "growthBytesPerDay": {
+          "available": false,
+          "reason": "one measurement so far: growth needs two measured sizes (no earlier full run measured this file)"
+        },
+        "possibleGrowth": {
+          "available": false,
+          "reason": "Docker's totals say nothing about the size its data disk may reach"
+        }
+      }
+    ],
+    "volumes": [
+      {
+        "letter": "C",
+        "size": {
+          "available": true,
+          "bytes": 2632775102464
+        },
+        "free": {
+          "available": true,
+          "bytes": 1084754046976
+        },
+        "disks": [
+          "Ubuntu",
+          "docker-desktop",
+          "Ubuntu-26.04",
+          "docker-data"
+        ],
+        "growthBytesPerDay": {
+          "available": false,
+          "reason": "the growth of Ubuntu, docker-desktop, Ubuntu-26.04, docker-data is not known yet"
+        },
+        "knownPossibleGrowthBytes": 0,
+        "unknownGrowth": [
+          "Ubuntu",
+          "docker-desktop",
+          "Ubuntu-26.04",
+          "docker-data"
+        ]
+      }
+    ],
+    "basis": {
+      "source": "fullRun",
+      "runId": "20000101T000000Z-1",
+      "evaluatedAt": "2000-01-01T00:00:00+00:00",
+      "ageSeconds": 0
+    }
   }
 }

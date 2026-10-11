@@ -147,6 +147,8 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Watch/WatchRun.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Archive/ArchiveChildren.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Archive/RunuserPam.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
+        // E15.S2: {state}/distro-name.json — root's record of this distro's Lxss name, which the full run believes.
+        ["WslCare.Core/Health/DistroIdentity.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Collectors/LinuxProbe.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
         // E14 S6: /proc/pressure/{memory,io,cpu} — moved out of the memory collector so `wsl-care busy` reads it alone.
