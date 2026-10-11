@@ -254,6 +254,15 @@ test('the daemon to install (installDaemon, #37) is compared in the same four pl
   assert.match(minDaemonFindings({ ...INSTALL_AGREED, released: '0.1.0' }, 'installDaemon')[0] ?? '', /the release guard verified the daemon to install 0\.1\.0, but this \.vsix installs 0\.1\.2/);
 });
 
+const BUNDLED_AGREED = { constant: '0.4.0', emitted: { bundledDaemon: '0.4.0' }, checkedIn: { bundledDaemon: '0.4.0' }, released: '0.4.0' };
+
+test('E7.S5a: the bundled daemon (bundledDaemon) is compared in the same four places, a pin of its own', () => {
+  assert.deepEqual(minDaemonFindings(BUNDLED_AGREED, 'bundledDaemon'), []);
+  assert.match(minDaemonFindings({ ...BUNDLED_AGREED, emitted: {} }, 'bundledDaemon')[0] ?? '', /dist\/min-daemon\.json says nothing readable for bundledDaemon/);
+  assert.match(minDaemonFindings({ ...BUNDLED_AGREED, checkedIn: { bundledDaemon: '0.3.0' } }, 'bundledDaemon')[0] ?? '', /says 0\.3\.0 for bundledDaemon, handshake\.ts says 0\.4\.0/);
+  assert.match(minDaemonFindings({ ...BUNDLED_AGREED, released: '0.3.0' }, 'bundledDaemon')[0] ?? '', /the release guard verified the bundled daemon 0\.3\.0, but this \.vsix carries the Windows build of 0\.4\.0/);
+});
+
 // ---- E6.S2 (plan §15j B3, §15k #7): a release the tags do not allow a root path must not carry the root module ----
 
 const ROOT_MARKER_LINE = '// src/root/rootCall.ts';

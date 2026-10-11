@@ -243,8 +243,11 @@ export interface MinDaemonInputs {
   readonly released?: string | undefined;
 }
 
-/** The two minima `min-daemon.json` holds: the daemon this build renders, and the one it acts with (E6.S2, §15j M5). */
-export type MinDaemonKey = 'minDaemonForRender' | 'minDaemonForActions' | 'installDaemon';
+/**
+ * The four pins `min-daemon.json` holds: the daemon this build renders, the one it acts with (E6.S2, §15j M5), the release
+ * *Install daemon* types (#37) and the release whose Windows build the `.vsix` carries (E7.S5a).
+ */
+export type MinDaemonKey = 'minDaemonForRender' | 'minDaemonForActions' | 'installDaemon' | 'bundledDaemon';
 
 function minDaemonOf(json: unknown, key: MinDaemonKey): string | undefined {
   const value = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>)[key] : undefined;
@@ -264,6 +267,7 @@ export function minDaemonFindings(inputs: MinDaemonInputs, key: MinDaemonKey = '
     minDaemonForRender: `the minimum daemon ${released ?? ''}, but this .vsix renders ${constant}`,
     minDaemonForActions: `the actions minimum ${released ?? ''}, but this .vsix acts with ${constant}`,
     installDaemon: `the daemon to install ${released ?? ''}, but this .vsix installs ${constant}`,
+    bundledDaemon: `the bundled daemon ${released ?? ''}, but this .vsix carries the Windows build of ${constant}`,
   }[key];
 
   return [

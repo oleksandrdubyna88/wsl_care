@@ -12,12 +12,13 @@
  *      out/client/handshake.js, the dist/min-daemon.json the bundle step emitted, the checked-in min-daemon.json the
  *      release guard reads at the tag, and — with --min-daemon <x.y.z>, the guard's own output — the minimum the guard
  *      found published and verified; the same for MIN_DAEMON_FOR_ACTIONS (E6.S2, plan §15j M5) and --min-daemon-actions,
- *      and for INSTALL_DAEMON (the release Install daemon types, #37) and --install-daemon;
+ *      for INSTALL_DAEMON (the release Install daemon types, #37) and --install-daemon, and for BUNDLED_DAEMON (the release
+ *      whose Windows build the .vsix carries, E7.S5a) and --bundled-daemon;
  *   5. with --root-allowed false (the guard's root_allowed, plan §15j B3 / §15k #7), a bundle that carries the root module
  *      is refused: the first public extension stays root-free.
  *
  *     node scripts/check-vsix.mjs [<file.vsix>] [--release] [--min-daemon <x.y.z>] [--min-daemon-actions <x.y.z>]
- *                                  [--root-allowed true|false]
+ *                                  [--install-daemon <x.y.z>] [--bundled-daemon <x.y.z>] [--root-allowed true|false]
  *                                  (default: <name>-<version>.vsix, both from package.json; reads out/ and dist/ — compile and bundle first)
  *
  * Exit 0 clean, 1 findings (each printed), 2 usage / missing inputs. The findings name the entry and the kind of leak;
@@ -43,12 +44,12 @@ if (!existsSync(join(SUPPORT, 'vsixCheck.js'))) {
   fail('out/test/support/vsixCheck.js is missing — run `npm run compile` (or npm test) first', 2);
 }
 const { listLines, machineUserNameSplit, minDaemonFindings, vsixFindings } = require(join(SUPPORT, 'vsixCheck.js'));
-const { INSTALL_DAEMON, MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER } = require(join(ROOT, 'out', 'client', 'handshake.js'));
+const { BUNDLED_DAEMON, INSTALL_DAEMON, MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER } = require(join(ROOT, 'out', 'client', 'handshake.js'));
 const { readZip } = require(join(SUPPORT, 'zipFile.js'));
 
 const args = process.argv.slice(2);
 const release = args.includes('--release');
-const VALUED = ['--min-daemon', '--min-daemon-actions', '--install-daemon', '--root-allowed'];
+const VALUED = ['--min-daemon', '--min-daemon-actions', '--install-daemon', '--bundled-daemon', '--root-allowed'];
 
 /** The value after a valued option, checked against its pattern — or undefined when the option is absent. */
 function valueOf(option, pattern, what) {
@@ -63,6 +64,7 @@ function valueOf(option, pattern, what) {
 const released = valueOf('--min-daemon', /^\d+\.\d+\.\d+$/, "the release guard's x.y.z");
 const releasedActions = valueOf('--min-daemon-actions', /^\d+\.\d+\.\d+$/, "the release guard's x.y.z");
 const releasedInstall = valueOf('--install-daemon', /^\d+\.\d+\.\d+$/, "the release guard's x.y.z");
+const releasedBundled = valueOf('--bundled-daemon', /^\d+\.\d+\.\d+$/, "the release guard's x.y.z");
 const rootAllowedText = valueOf('--root-allowed', /^(true|false)$/, 'true or false (the release guard\'s root_allowed)');
 const rootAllowed = rootAllowedText === undefined ? undefined : rootAllowedText === 'true';
 const positional = args.filter((a, i) => a !== '--release' && !VALUED.includes(a) && !VALUED.includes(args[i - 1]));
@@ -105,6 +107,7 @@ const minDaemon = [
   ...minDaemonFindings({ constant: MIN_DAEMON_FOR_RENDER, emitted, checkedIn, released }, 'minDaemonForRender'),
   ...minDaemonFindings({ constant: MIN_DAEMON_FOR_ACTIONS, emitted, checkedIn, released: releasedActions }, 'minDaemonForActions'),
   ...minDaemonFindings({ constant: INSTALL_DAEMON, emitted, checkedIn, released: releasedInstall }, 'installDaemon'),
+  ...minDaemonFindings({ constant: BUNDLED_DAEMON, emitted, checkedIn, released: releasedBundled }, 'bundledDaemon'),
 ];
 const findings = [
   ...lsFindings,
@@ -119,4 +122,4 @@ if (findings.length > 0) {
   }
   process.exit(1);
 }
-console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}, minimum daemon ${MIN_DAEMON_FOR_RENDER} (actions ${MIN_DAEMON_FOR_ACTIONS}), installs ${INSTALL_DAEMON}${released === undefined ? '' : ' (the guard verified them)'}${rootAllowed === undefined ? '' : `, root module ${rootAllowed ? 'allowed' : 'refused'} by the tags`}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked${serviceAccounts.length === 0 ? '' : ` (left out as service account(s), no person: ${serviceAccounts.join(', ')})`}`);
+console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}, minimum daemon ${MIN_DAEMON_FOR_RENDER} (actions ${MIN_DAEMON_FOR_ACTIONS}), installs ${INSTALL_DAEMON}, carries the Windows build of ${BUNDLED_DAEMON}${released === undefined ? '' : ' (the guard verified them)'}${rootAllowed === undefined ? '' : `, root module ${rootAllowed ? 'allowed' : 'refused'} by the tags`}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked${serviceAccounts.length === 0 ? '' : ` (left out as service account(s), no person: ${serviceAccounts.join(', ')})`}`);

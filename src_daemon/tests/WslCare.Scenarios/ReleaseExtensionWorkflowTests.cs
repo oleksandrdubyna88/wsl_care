@@ -237,12 +237,14 @@ public sealed partial class ReleaseExtensionWorkflowTests
             .And.Contain("--min-daemon \"$MIN_DAEMON\"", "the built minimum is the one the guard found published and verified")
             .And.Contain("--min-daemon-actions \"$MIN_DAEMON_ACTIONS\"", "the actions minimum too (E6.S2, plan §15j M5)")
             .And.Contain("--install-daemon \"$INSTALL_DAEMON\"", "the release the .vsix installs is the one the guard found published and verified (#37)")
+            .And.Contain("--bundled-daemon \"$BUNDLED_DAEMON\"", "the release whose Windows build the .vsix carries is the one the guard found published with its win-x64 zip (E7.S5a)")
             .And.Contain("--root-allowed \"$ROOT_ALLOWED\"", "the guard's tag answer reaches the artefact check (plan §15j B3, §15k #7)");
         steps[order[4]]["with"].Map["path"].Text.Should().Be("release-extension/", "the .vsix and its .sha256 travel together");
         build["env"].Map["VERSION"].Text.Should().Be("${{ needs.guard.outputs.version }}", "the build packs the version the guard approved");
         build["env"].Map["MIN_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.min_daemon }}");
         build["env"].Map["MIN_DAEMON_ACTIONS"].Text.Should().Be("${{ needs.guard.outputs.min_daemon_actions }}");
         build["env"].Map["INSTALL_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.install_daemon }}");
+        build["env"].Map["BUNDLED_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.bundled_daemon }}");
         build["env"].Map["ROOT_ALLOWED"].Text.Should().Be("${{ needs.guard.outputs.root_allowed }}");
         File.ReadAllText(ReleaseFiles.Workflow("ci-extension.yml")).Should().Contain("npm run package").And.Contain("npm run check:vsix", "every pull request packages and checks the same way (plan §15g M8)");
     }
@@ -300,11 +302,11 @@ public sealed partial class ReleaseExtensionWorkflowTests
     /// them by the extension's tests and by check-vsix. Its shape is held here, on every OS, rather than discovered on a
     /// release day.</summary>
     [Fact]
-    public void The_daemon_versions_artefact_the_guard_reads_is_three_json_members_each_an_x_y_z()
+    public void The_daemon_versions_artefact_the_guard_reads_is_four_json_members_each_an_x_y_z()
     {
         using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(ReleaseFiles.Root, MinDaemonFile)));
 
-        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender", "minDaemonForActions", "installDaemon"]);
+        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender", "minDaemonForActions", "installDaemon", "bundledDaemon"], "E7.S5a: the fourth pin, the release whose Windows build the .vsix carries");
         foreach (var member in json.RootElement.EnumerateObject())
         {
             member.Value.GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$", $"{member.Name} is what the guard compares and asks GitHub about");

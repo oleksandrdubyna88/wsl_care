@@ -97,6 +97,9 @@ jobs:
       # The daemon release Install daemon types (#37: a value of its own, at or above both minima), found published and
       # verified — the build checks its .vsix installs exactly that one.
       install_daemon: ${{ steps.guard.outputs.install_daemon }}
+      # The daemon release whose Windows build the .vsix carries (E7.S5a), found published with its win-x64 zip — the build
+      # fetches exactly that one and the attest job re-derives the bytes from it.
+      bundled_daemon: ${{ steps.guard.outputs.bundled_daemon }}
       # Whether the tags allow a root-capable extension (plan §15j B3, §15k #7) — check-vsix refuses the root module otherwise.
       root_allowed: ${{ steps.guard.outputs.root_allowed }}
     steps:
@@ -134,6 +137,7 @@ jobs:
       MIN_DAEMON: ${{ needs.guard.outputs.min_daemon }}
       MIN_DAEMON_ACTIONS: ${{ needs.guard.outputs.min_daemon_actions }}
       INSTALL_DAEMON: ${{ needs.guard.outputs.install_daemon }}
+      BUNDLED_DAEMON: ${{ needs.guard.outputs.bundled_daemon }}
       ROOT_ALLOWED: ${{ needs.guard.outputs.root_allowed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -178,7 +182,7 @@ jobs:
       # renders and acts with equal to the ones the guard found published and verified, and (--root-allowed) no root module
       # in a bundle the tags keep root-free.
       - name: Leak checks on the .vsix
-        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --min-daemon-actions "$MIN_DAEMON_ACTIONS" --install-daemon "$INSTALL_DAEMON" --root-allowed "$ROOT_ALLOWED"
+        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --min-daemon-actions "$MIN_DAEMON_ACTIONS" --install-daemon "$INSTALL_DAEMON" --bundled-daemon "$BUNDLED_DAEMON" --root-allowed "$ROOT_ALLOWED"
 
       - name: The asset set
         run: bash ../.github/scripts/verify-extension-assets.sh "$VERSION" ../release-extension

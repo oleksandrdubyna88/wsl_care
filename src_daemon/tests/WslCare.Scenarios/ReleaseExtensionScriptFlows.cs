@@ -34,7 +34,7 @@ public sealed class ReleaseExtensionScriptFlows
         var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, new Dictionary<string, string?>(checkout.Env) { ["GITHUB_OUTPUT"] = output });
 
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
-        File.ReadAllText(output).Should().Be("version=0.1.0\npublisher=wsl-care-dev\nmin_daemon=0.1.0\nmin_daemon_actions=0.1.0\ninstall_daemon=0.1.0\nroot_allowed=false\n");
+        File.ReadAllText(output).Should().Be("version=0.1.0\npublisher=wsl-care-dev\nmin_daemon=0.1.0\nmin_daemon_actions=0.1.0\ninstall_daemon=0.1.0\nbundled_daemon=0.1.0\nroot_allowed=false\n");
         File.ReadAllText(checkout.GhLog).Should().Contain("api repos/oleksandrdubyna88/wsl_care/releases/tags/daemon-v0.1.0", "it asked GitHub for the minimum daemon's release");
     }
 

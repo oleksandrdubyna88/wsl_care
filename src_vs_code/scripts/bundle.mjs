@@ -11,8 +11,9 @@
  *   - no source map and no sourcesContent — nothing of the sources or this machine's paths ships;
  *   - not minified — the bundle scan reads it, and a reader of the .vsix can too.
  *
- * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>" }`, the minimum
- * daemon this build renders, the one it acts with, and the release its *Install daemon* installs (E5 code round #2/#5, E6.S2 / plan §15j M5, #37). The values
+ * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>",
+ * "bundledDaemon": "<x.y.z>" }`, the minimum daemon this build renders, the one it acts with, the release its *Install daemon* installs
+ * (E5 code round #2/#5, E6.S2 / plan §15j M5, #37) and the release whose Windows build it carries (E7.S5a). The values
  * are read by RUNNING src/client/handshake.ts (esbuild's transform, then a
  * bounded node:vm with an empty context — the module imports types only), never with a pattern over its text.
  * scripts/check-vsix.mjs compares it with the compiled constant and with the checked-in src_vs_code/min-daemon.json —
@@ -49,7 +50,7 @@ function minDaemons() {
     return value;
   };
 
-  return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), minDaemonForActions: read('MIN_DAEMON_FOR_ACTIONS'), installDaemon: read('INSTALL_DAEMON') };
+  return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), minDaemonForActions: read('MIN_DAEMON_FOR_ACTIONS'), installDaemon: read('INSTALL_DAEMON'), bundledDaemon: read('BUNDLED_DAEMON') };
 }
 
 buildSync({
@@ -70,4 +71,4 @@ buildSync({
 const minima = minDaemons();
 mkdirSync(join(ROOT, 'dist'), { recursive: true });
 writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify(minima, null, 2)}\n`);
-console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${minima.minDaemonForRender}, actions ${minima.minDaemonForActions}, install ${minima.installDaemon}`);
+console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${minima.minDaemonForRender}, actions ${minima.minDaemonForActions}, install ${minima.installDaemon}, bundled ${minima.bundledDaemon}`);
