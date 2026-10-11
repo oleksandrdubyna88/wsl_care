@@ -399,3 +399,17 @@ test('the own review\'s #7: a relay stop (A21) is named in the run list too, and
   const { root } = show(viewOf({ runs: answered({ ...golden('runs-local-day.json'), count: 1, runs: [line] }) }));
   assert.equal(block(root, 'runList').all('tr[data-run]')[0]?.all('[data-cell]')[3]?.textContent, 'A21 ran (2) — stop of client-gone relays');
 });
+
+// ---- the owner's follow-up to #120: a label and its value read as one text ----
+
+test('a line reads "label: value" as ONE text — what textContent and copy-paste give; the value span stays the value alone', () => {
+  const logs = golden('logs-local-day.json');
+  const { root } = show(viewOf());
+  const freed = block(root, 'totals').one('[data-line="freed"]');
+  assert.equal(freed.textContent, `Freed in total: ${gbOf(logs.freedBytes)}`, 'it read "Freed in total0.3 GB" before');
+  assert.equal(lineValue(block(root, 'totals'), 'freed'), gbOf(logs.freedBytes));
+  assert.equal(freed.one('span[data-label]').textContent, 'Freed in total: ', 'the separator is INSIDE the label — the line stays two flex items, the gap and the value column unchanged');
+  const lines = root.all('div[data-line]');
+  assert.ok(lines.length > 5, 'the page has its lines');
+  lines.forEach((line) => assert.equal(line.textContent, `${line.one('[data-label]').text}: ${line.one('[data-value]').textContent}`, 'every line: its label (its own text), ": ", its value'));
+});

@@ -3700,6 +3700,19 @@ broken one line at a time (R1–R4: `media/panel.js` mutated, `archiveView.test.
 | a row with the retention badge sets the badge apart with " — " too, and the badge keeps its own span and `warn` level (the plan round's #0) | `archiveView.test.ts` (*sets the badge apart too*) | red: as above; teeth R1, R2, R3 (the badge left out of the parts) |
 | a part with no text is left out with its separator — an agent with neither name nor id reads "1 session · … — its own cleanup …", never " — 1 session …" (the own review on Opus, #1) | `archiveView.test.ts` (*own review #1: a part with no text*) | red: `' — 1 session · …'`; teeth R1, R2, R4 |
 
+### The badge said once and coloured, a label and its value set apart (2026-10-11)
+
+The three items #120's own review found outside its change. RED first (5 tests: "actual: 'Archive folder/golden-root/mnt/v/ai-archive'",
+the badge's old text, the CSS rule "actual: []", "actual: 'Freed in total0.3 GB'"), then green; then one product line broken at a
+time (C1–C6 and C2b, `badge-breakit`: the file mutated, a `.ts` recompiled, the three test files run, the file restored by its sha256).
+
+| Guarantee | Held by | RED, and teeth |
+|---|---|---|
+| the badge reads "before the archive takes them at <N> d" — the retention is said once, in the WHOLE badge row too | `archiveView.test.ts` (*shows EXACTLY*, *sets the badge apart too*) | red: the old badge text; teeth C1 → 3 red |
+| the badge's warn level has `color: var(--vscode-editorWarning-foreground)` (a rule of `media/panel.css` read from the file), and the rendered badge is that rule's SPAN with `data-retention-badge` and `data-level="warn"` and keeps its words (the plan round's #0) | `archiveView.test.ts` (*the editor's warning colour*) | red: `[]`; teeth C2 (a rule of its own with another token), C2b (the badge left out of the warn rule) → 1 red each |
+| an Archive page line reads "label: value" whole — "Archive folder: /golden-root/mnt/v/ai-archive" — every line so, the value span alone, the separator INSIDE the label span | `archivePage.test.ts` (*label: value*) | red: the run-together text; teeth C3 (no separator), C5 (a sibling span after the label) |
+| a Logs page line the same — "Freed in total: 0.3 GB", every line of the page | `logsPage.test.ts` (*label: value*) | red: the run-together text; teeth C4, C6 |
+
 ### What each E10.S2a guarantee rests on (2026-10-10)
 
 The Archive page, browse only (plan §15s *E10.S2 split into three epics*, *E10.S2a build notes*). RED first, then green; every

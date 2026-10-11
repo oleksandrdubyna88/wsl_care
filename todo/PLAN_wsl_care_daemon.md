@@ -4698,7 +4698,7 @@ Sorting and search arrive with the kit's `DataTable` (E18.K1, E18.W1), not here.
 
 ##### E10.S1 follow-up — an agent row reads as one line
 
-> Status: **built 2026-10-11 on `fix/wc-agent-row-separators` — the code round (proceed) and the own review on Opus done, every suite green; merge next (see *As built* below).** Branch `fix/wc-agent-row-separators`, from `main` 1f3a0c6. Extension only
+> Status: **merged 2026-10-11, #120 (squash 73e99f0) — the code round (proceed) and the own review on Opus done, every suite green (see *As built* below).** Branch `fix/wc-agent-row-separators`, from `main` 1f3a0c6. Extension only
 > (`media/panel.js`, `src/test/archiveView.test.ts`); not a root path, so the own review runs on Opus.
 
 **The symptom (the owner's panel, extension 0.5.0, *AI agents*).** Each per-agent line of the archive runs its parts together:
@@ -4744,7 +4744,72 @@ the separator) no change: a hidden separator would make a screen reader run the 
 the owner: #2 the badge row repeats the retention ("… — its own cleanup deletes after 7 d — its own cleanup deletes sessions
 after 7 d — before …") and its own " — " blurs the parts; #4 no CSS reads the badge's `warn` level, so it looks like plain
 text; #5 `media/archive.js:75-80` and `media/logs.js:143-148` (`linePart`) put a label and a value in two spans with no
-separator — spaced on screen by a flex gap, but run together in `textContent` and copy-paste.
+separator — spaced on screen by a flex gap, but run together in `textContent` and copy-paste. All three are fixed by *follow-up 2*
+below.
+
+##### E10.S1 follow-up 2 — the badge said once and coloured, a label and its value set apart
+
+> Status: **built 2026-10-11 on `fix/wc-badge-and-line-separators` — the code round (proceed) and the own review on Opus done, every suite green; merge next (see *As built* below).** Branch `fix/wc-badge-and-line-separators`, from `main` 73e99f0 (#120
+> merged). Extension only (`src/archive/archiveView.ts`, `media/panel.css`, `media/archive.js`, `media/logs.js`, their tests); not a
+> root path, so the own review runs on Opus. The three items #120's own review found outside its change.
+
+**The symptoms.**
+1. The badge row says the retention twice: "Claude Code — … — its own cleanup deletes after 7 d — its own cleanup deletes sessions
+   after 7 d — before the archive takes them at 14 d". `retentionBadge` (`src/archive/archiveView.ts:184-189`) repeats the
+   retention part that the row already shows, and its own " — " blurs where one part ends.
+2. The badge's `warn` level is only data: no rule in `media/panel.css` reads `span[data-level]` (only `tr[data-level] td[data-value]`
+   and `p[data-level]`, `panel.css:64-72`), so the badge looks like plain text.
+3. `media/archive.js:75-80` and `media/logs.js:143-148` (`linePart`) put a label and a value in two spans with nothing between
+   them. A flex gap spaces them on screen (`panel.css:154-163`), but `textContent` and copy-paste read "Archive folder/golden-root/…"
+   and "Freed in total0.3 GB".
+
+**The fix.**
+1. `retentionBadge` answers "before the archive takes them at <N> d" (N = the effective age). The row then reads "… — its own cleanup
+   deletes after 7 d — before the archive takes them at 14 d". The rule of WHEN it shows does not change.
+2. One CSS rule: `span[data-retention-badge][data-level="warn"] { color: var(--vscode-editorWarning-foreground); }`, the token the
+   panel's other warn texts use. The colour is never the only signal: the badge's words stay.
+3. Both `linePart`s put a separator span `data-label-separator` with the text ": " INSIDE the label span, after the label's text.
+   The label span then reads "Archive folder: ", and the line's `textContent` "Archive folder: /golden-root/mnt/v/ai-archive". On
+   screen the line stays two flex items (a space at the end of a line is not drawn), so the 12 px gap stays. The label column is
+   `min-width: 40%`: a label shorter than that keeps the value where it was; a longer one grows by the colon's width (the plan
+   round's #1 — no layout harness here, so the claim is narrowed, not measured). The value span stays the value alone, so the tests that read `[data-value]`
+   do not change. Text only (`createElement` / `textContent`). The two pages stay separate files (the shared kit, E18, takes them
+   later), so the two-line change is made in each.
+
+**Tests (RED first, whole texts).** `archiveView.test.ts`: the badge text, the WHOLE badge row's `textContent`, and a CSS test that
+reads `media/panel.css` and finds exactly `color: var(--vscode-editorWarning-foreground)` for the badge's selector, with the badge's
+words still in the row. `archivePage.test.ts`: the base line's whole `textContent` "Archive folder: /golden-root/mnt/v/ai-archive",
+every line `label: value`, the value span alone. `logsPage.test.ts`: "Freed in total: 0.3 GB" whole, and every line of the page
+`label: value`. RED on `main` (5 tests): "actual: 'Archive folder/golden-root/mnt/v/ai-archive'", "actual: 'its own cleanup deletes
+sessions after 7 d — before the archive takes them at 14 d'", the CSS rule "actual: []", "actual: 'Freed in total0.3 GB'".
+Break-its on product files only: the badge's old text; the CSS rule's token; the separator left out of each page's `linePart`; the
+separator put as a sibling span AFTER the label (a third flex item).
+
+**Build order:** the RED tests → the badge text → the CSS rule → the two `linePart`s → the whole extension suite, lint, package,
+check:vsix → `research/module_vs_code.md`, `research/module_tests.md` → the code round and the own review → merge. The previous
+follow-up's status line reads merged (#120).
+
+**DoD:** every new test green and red under its break-it; every extension suite and check green; the docs say the badge's text, its
+colour and the line's shape.
+
+**The plan round** (coai session 973f8195, `proceed`, codex, 2 findings): #0 (gating) accepted — the CSS test also checks that the
+RENDERED badge is the rule's SPAN with `data-retention-badge` and `data-level="warn"` (the harness matches one attribute at a time,
+so part by part); #1 accepted — the layout claim narrowed to what holds (above).
+
+**As built (2026-10-11).** As planned. RED first (5 tests, the texts above). Break-its C1 (the badge's old text) → 3 red, C2 (another
+colour token) → 1 red, C3 / C4 (no separator in archive.js / logs.js) → 1 red each, C5 / C6 (the separator a sibling span after the
+label, a third flex item) → 1 red each, every file restored by its sha256. The whole extension suite (1248 tests, 0 failed; a first full run under load had 3
+unrelated timing failures in the scenario files, each green alone and in the clean second run), lint, package and check:vsix (with
+the attested Windows daemon fetched) green.
+
+**The code round** (coai session 973f8195, `proceed`, codex, one gating finding): #0 accepted — the test fixtures read the golden
+preview's agents through `bodyOf` (`goldenAgents()`), no `as` cast; all five uses in `archiveView.test.ts` (three were #120's,
+written the same way). **The own review on Opus** (4 findings): #2 accepted — the `logs.js` comment's example is the Logs page's own
+line; #3 accepted — the badge joins the panel's existing warn rule (one selector list, one declaration), break-it C2b (the badge left
+out of the rule) → 1 red, C2 now splits the badge into a rule of its own with another token; #4 (the cleanup row's tick, button and
+note run together in `textContent`) noted for the shared kit, not this change. #1 rejected for this PR: "them" in "before the archive
+takes them at 14 d" has no noun of its own — the coordinator set this exact text; a wording with the noun ("sessions go before the
+archive takes them at 14 d") is left to the owner.
 
 ##### E10.S2a build notes — the Archive page, browse only
 

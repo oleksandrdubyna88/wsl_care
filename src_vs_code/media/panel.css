@@ -61,8 +61,10 @@ tr[data-state="blocked"] td {
   color: var(--vscode-descriptionForeground);
 }
 
+/* The archive row's retention badge (the span) takes the warning colour beside its words, never instead of them. */
 tr[data-level="warn"] td[data-value],
-p[data-level="warn"] {
+p[data-level="warn"],
+span[data-retention-badge][data-level="warn"] {
   color: var(--vscode-editorWarning-foreground);
 }
 
