@@ -23,6 +23,16 @@ public sealed class InteropModulePathTests
         script.Should().StartWith(HealthCommands.ModulePathPin + "; ", "no cmdlet may run, and so autoload a module, before the module path is pinned");
     }
 
+    [Theory]
+    [MemberData(nameof(Scripts))]
+    public void Every_fixed_interop_script_starts_without_a_profile_so_nothing_runs_before_the_pin(string name)
+    {
+        var argv = HealthCommands.FixedScripts.Single(c => c.Name == name).Argv;
+
+        argv.Should().Contain("-NoProfile", "a profile could import a user module or define a shadow function BEFORE the pin, and a later pin unloads neither (plan round, 2026-10-11)");
+        argv.ToList().IndexOf("-NoProfile").Should().BeLessThan(argv.ToList().IndexOf("-Command"));
+    }
+
     [Fact]
     public void The_pin_assigns_the_administrator_only_module_folder_and_nothing_else()
     {
