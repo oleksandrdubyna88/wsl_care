@@ -583,7 +583,10 @@ previous sizes into `DiskFacts`.
 - `disk.vhdxGrowth`: warn when a file grows faster than `disk.vhdxGrowthWarnGibPerDay` (10). It is unknown until two
   measured sizes exist.
 - `disk.hostFree`: warn when a hosting volume's free space is below `disk.hostFreeWarnGib` (100), or below the KNOWN
-  possible growth of its files. The reason says how many files' possible growth is unknown.
+  possible growth of its files. Otherwise it is `ok` ONLY when every file on that volume has a known possible growth. When
+  any file's possible growth is unknown, the level is `unknown`, never `ok`. The value still shows the free space, and the
+  reason says "the possible growth of N files is not known (…); free X GiB is above the floor and the known growth Y GiB"
+  (plan round, 2026-10-11).
 
 **5. Wire.**
 - The run detail gains a `disk` section (`Collect/DiskReport.cs`).
@@ -600,6 +603,14 @@ previous sizes into `DiskFacts`.
 - `disk.growthMinHours` (1–48, default 1)
 
 All four are display keys. They are added to `contracts/config-keys.json`.
+
+**Where the defaults come from** (plan round, 2026-10-11). They are STARTING VALUES, and only one is backed by a
+measurement. The README and the key descriptions say so:
+- 20 GiB gap: under half of the 43.7 GiB gap measured on Ubuntu's VHDX (D2/D3), so that measured case warns.
+- 100 GiB free: about 4 % of the 2.4 TiB system volume (D1). Not measured as a need; it is a floor.
+- 10 GiB/day growth: not measured. D3 has only write volume (15.5 GB written in 6.8 h), and writes are not growth.
+  The first weeks of `growthBytesPerDay` records will calibrate it.
+- 1 h minimum: it keeps the extrapolation factor at 24 or below. Not measured.
 
 **7. Extension.**
 - The panel's `disk.vhdx` row (`src_vs_code/src/panel/fieldMap.ts:141`, "arriving E11") becomes a read row on
@@ -630,6 +641,7 @@ All four are display keys. They are added to `contracts/config-keys.json`.
   - `disk.hostFree` warns below 100 GiB.
   - It also warns below the known possible growth.
   - It counts the files whose growth is unknown.
+  - 150 GiB free with 20 GiB of known growth and one unknown file reads `unknown`, never `ok`.
 - **`status`:**
   - It carries `disk` with its age.
   - With no full run, it says so.
