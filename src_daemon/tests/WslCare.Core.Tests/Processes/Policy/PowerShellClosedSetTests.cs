@@ -94,7 +94,7 @@ public sealed class PowerShellClosedSetTests
     [Fact]
     public void The_disk_script_built_under_another_configuration_is_refused_and_its_own_scope_admits_it()
     {
-        var other = WindowsDiskCommands.ScriptFor(7, 250);
+        var other = WindowsDiskCommands.ScriptFor(7, 250, 500);
         other.Should().NotBe(WindowsDiskCommands.Script, "the defaults are 60 days and 5000 events");
 
         Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", other]).Should().Be("powershell", "the closed set is the configuration in force");

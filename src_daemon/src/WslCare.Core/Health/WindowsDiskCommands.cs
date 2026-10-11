@@ -41,6 +41,14 @@ public static class WindowsDiskCommands
     public const string ReliabilityReadTag = "reliability.read=";
     public const string ReliabilityRefusedTag = "reliability.refused=";
     public const string EventsReadTag = "events.read=";
+    public const string EventGroupsTag = "events.groups=";
+
+    /// <summary>The size field of a file the script did NOT open because it is not on a local fixed drive (code round: a UNC or
+    /// mapped path named by the registry would make Windows send the user's credentials to that host).</summary>
+    public const string NotLocalMark = "remote";
+
+    /// <summary>The prefix of a volume's disk-number field when <c>Get-Partition</c> failed — the exception's type follows.</summary>
+    public const string FailedMark = "!";
     public const string EventsErrorTag = "events.error=";
     public const string EventTag = "event=";
     public const string CommitTag = "commit=";
@@ -76,13 +84,16 @@ public static class WindowsDiskCommands
     /// <summary>At most this many events are read, from the configuration in force, clamped to the key's range.</summary>
     public static int EventsMaxRead => Clamped(ConfigKeys.Disk.EventsMaxRead);
 
+    /// <summary>At most this many event groups are printed, from the configuration in force, clamped to the key's range.</summary>
+    public static int EventGroupsMax => Clamped(ConfigKeys.Disk.EventGroupsMax);
+
     public static TimeSpan Ceiling => Tuning.Current.Seconds(ConfigKeys.Health.WindowsDiskTimeoutSeconds);
 
     private static int Cap => Tuning.Current.Int(ConfigKeys.Health.OutputCapBytes);
 
     /// <summary>The script as the configuration in force builds it — what <see cref="WindowsDisk"/> runs, what the never-list's
     /// closed set and the command template compare an argv with.</summary>
-    public static string Script => ScriptFor(EventsSinceDays, EventsMaxRead);
+    public static string Script => ScriptFor(EventsSinceDays, EventsMaxRead, EventGroupsMax);
 
     /// <summary>The one command: <c>powershell.exe -NoProfile -NonInteractive -Command &lt;script&gt;</c>.</summary>
     public static ToolCommand WindowsDisk =>
@@ -93,11 +104,12 @@ public static class WindowsDiskCommands
 
     /// <summary>The script for <paramref name="sinceDays"/> and <paramref name="maxRead"/>, each clamped to its key's range and
     /// written as an invariant integer — the only values that vary.</summary>
-    public static string ScriptFor(int sinceDays, int maxRead)
+    public static string ScriptFor(int sinceDays, int maxRead, int groupsMax)
     {
+        var groups = Math.Clamp(groupsMax, ConfigKeys.Disk.EventGroupsMax.Min, ConfigKeys.Disk.EventGroupsMax.Max).ToString(CultureInfo.InvariantCulture);
         var days = Math.Clamp(sinceDays, ConfigKeys.Disk.EventsSinceDays.Min, ConfigKeys.Disk.EventsSinceDays.Max).ToString(CultureInfo.InvariantCulture);
         var max = Math.Clamp(maxRead, ConfigKeys.Disk.EventsMaxRead.Min, ConfigKeys.Disk.EventsMaxRead.Max).ToString(CultureInfo.InvariantCulture);
-        return string.Join("; ", [Prelude, Distros, Docker, Volumes, Disks, Reliability, .. Events(days, max), Commit, Compression, Identity, Machine, Adapters, Print]);
+        return string.Join("; ", [Prelude, Distros, Docker, Volumes, Disks, Reliability, .. Events(days, max, groups), Commit, Compression, Identity, Machine, Adapters, Print]);
     }
 
     private static int Clamped(ConfigKey.IntKey key) => (int)Math.Clamp(Tuning.Current.Int(key), key.Min, key.Max);
@@ -109,21 +121,21 @@ public static class WindowsDiskCommands
     /// <summary>No progress bar, every error terminating inside its try, the output list, and the file helper: size, sparse bit,
     /// last write (UTC), path — or three empty fields and the path when the file is not there.</summary>
     private static readonly string Prelude =
-        $$"""$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; $o=New-Object System.Collections.Generic.List[string]; function V([string]$f){ $i=Get-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; if($i){ [string]$i.Length+'|'+[string][int](($i.Attributes -band {{SparseAttribute}}) -ne 0)+'|'+$i.LastWriteTimeUtc.ToString('o')+'|'+$f } else { '|||'+$f } }""";
+        $$"""$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; $o=New-Object System.Collections.Generic.List[string]; function V([string]$f){ $t=''; if($f -match '^[A-Za-z]:\\'){ $t=[string]([IO.DriveInfo]::new($f.Substring(0,1))).DriveType }; if($t -ne 'Fixed'){ return '{{NotLocalMark}}|||'+$f }; $i=Get-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; if($i){ [string]$i.Length+'|'+[string][int](($i.Attributes -band {{SparseAttribute}}) -ne 0)+'|'+$i.LastWriteTimeUtc.ToString('o')+'|'+$f } else { '|||'+$f } }""";
 
     /// <summary>Every registered distro from <c>HKCU\…\Lxss</c>: its virtual disk's file (<c>BasePath</c> without the <c>\\?\</c>
     /// prefix, <c>VhdFileName</c> or <c>ext4.vhdx</c>) and its name, LAST (a free-text field takes the rest of the line).</summary>
     private static readonly string Distros =
-        $$"""try { foreach($k in @(Get-ChildItem -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss')){ $p=Get-ItemProperty -LiteralPath $k.PSPath; $b=([string]$p.BasePath) -replace '^\\\\\?\\',''; $n=[string]$p.VhdFileName; if($n -eq ''){ $n='ext4.vhdx' }; $o.Add('{{DistroTag}}'+(V (Join-Path $b $n))+'|'+$p.DistributionName) } } catch { $o.Add('{{DistrosErrorTag}}'+$_.Exception.GetType().Name) }""";
+        $$"""try { foreach($k in @(Get-ChildItem -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss')){ $p=Get-ItemProperty -LiteralPath $k.PSPath; $b=([string]$p.BasePath) -replace '^\\\\\?\\',''; $n=[string]$p.VhdFileName; if($n -eq ''){ $n='ext4.vhdx' }; $o.Add('{{DistroTag}}'+(V ([IO.Path]::Combine($b,$n)))+'|'+$p.DistributionName) } } catch { $o.Add('{{DistrosErrorTag}}'+$_.Exception.GetType().Name) }""";
 
     /// <summary>Docker Desktop's data disk at its default path — it is no registered distro, so Lxss does not list it (D10).</summary>
     private static readonly string Docker =
-        $$"""try { $o.Add('{{DockerTag}}'+(V (Join-Path $env:LOCALAPPDATA 'Docker\wsl\disk\docker_data.vhdx'))) } catch { $o.Add('{{DockerErrorTag}}'+$_.Exception.GetType().Name) }""";
+        $$"""try { $o.Add('{{DockerTag}}'+(V ([IO.Path]::Combine([string]$env:LOCALAPPDATA,'Docker\wsl\disk\docker_data.vhdx')))) } catch { $o.Add('{{DockerErrorTag}}'+$_.Exception.GetType().Name) }""";
 
     /// <summary>Each lettered volume: letter, disk number (<c>Get-Partition</c>; empty when it has none), filesystem, size, free,
     /// label LAST.</summary>
     private static readonly string Volumes =
-        $$"""try { foreach($v in @(Get-Volume | Where-Object { $_.DriveLetter })){ $d=''; try { $d=[string](Get-Partition -DriveLetter $v.DriveLetter).DiskNumber } catch {}; $o.Add('{{VolumeTag}}'+$v.DriveLetter+'|'+$d+'|'+$v.FileSystem+'|'+$v.Size+'|'+$v.SizeRemaining+'|'+$v.FileSystemLabel) } } catch { $o.Add('{{VolumesErrorTag}}'+$_.Exception.GetType().Name) }""";
+        $$"""try { foreach($v in @(Get-Volume | Where-Object { $_.DriveLetter })){ $d=''; try { $d=[string](Get-Partition -DriveLetter $v.DriveLetter).DiskNumber } catch { $d='{{FailedMark}}'+$_.Exception.GetType().Name }; $o.Add('{{VolumeTag}}'+$v.DriveLetter+'|'+$d+'|'+$v.FileSystem+'|'+$v.Size+'|'+$v.SizeRemaining+'|'+$v.FileSystemLabel) } } catch { $o.Add('{{VolumesErrorTag}}'+$_.Exception.GetType().Name) }""";
 
     /// <summary>Each physical disk: number, bus, health, operational status, firmware, model LAST.</summary>
     private static readonly string Disks =
@@ -136,10 +148,10 @@ public static class WindowsDiskCommands
     /// <summary>The storage events, newest first and at most <paramref name="max"/>, AGGREGATED inside the script per UTC day,
     /// provider, id and <c>HarddiskN</c> (from the event's data, else its message) — one line per event was 64 of 75 lines (D10).
     /// "No events" is a count of 0, never an error.</summary>
-    private static IEnumerable<string> Events(string days, string max) =>
+    private static IEnumerable<string> Events(string days, string max, string groups) =>
     [
         $$"""$e=$null; try { $e=@(Get-WinEvent -MaxEvents {{max}} -FilterHashtable @{ LogName='System'; ProviderName={{Quoted(EventProviders)}}; Id={{Numbers(EventIds)}}; StartTime=(Get-Date).AddDays(-{{days}}) }) } catch { if($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*'){ $e=@() } else { $o.Add('{{EventsErrorTag}}'+$_.Exception.GetType().Name) } }""",
-        $$"""if($null -ne $e){ $o.Add('{{EventsReadTag}}'+$e.Count); foreach($g in @($e | Group-Object { $t=(@($_.Properties | ForEach-Object { [string]$_.Value }) -join ' '); $h=[regex]::Match($t,'Harddisk\d+').Value; if($h -eq ''){ $h=[regex]::Match([string]$_.Message,'Harddisk\d+').Value }; $_.TimeCreated.ToUniversalTime().ToString('yyyy-MM-dd')+'|'+$_.ProviderName+'|'+$_.Id+'|'+$h })){ $o.Add('{{EventTag}}'+$g.Name+'|'+$g.Count) } }""",
+        $$"""if($null -ne $e){ $o.Add('{{EventsReadTag}}'+$e.Count); $gs=@($e | Group-Object { $t=(@($_.Properties | ForEach-Object { [string]$_.Value }) -join ' '); $h=[regex]::Match($t,'Harddisk\d+').Value; if($h -eq ''){ $h=[regex]::Match([string]$_.Message,'Harddisk\d+').Value }; $_.TimeCreated.ToUniversalTime().ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)+'|'+$_.ProviderName+'|'+$_.Id+'|'+$h } | Sort-Object Name -Descending); $o.Add('{{EventGroupsTag}}'+$gs.Count); foreach($g in @($gs | Select-Object -First {{groups}})){ $o.Add('{{EventTag}}'+$g.Name+'|'+$g.Count) } }""",
     ];
 
     /// <summary>Commit charge and commit limit, in bytes (the raw counters, not the formatted ones).</summary>
@@ -163,7 +175,9 @@ public static class WindowsDiskCommands
     private static readonly string Adapters =
         $$"""try { foreach($a in @(Get-CimInstance -ClassName Win32_VideoController)){ $o.Add('{{AdapterTag}}'+$a.ConfigManagerErrorCode+'|'+$a.PNPDeviceID+'|'+$a.Name) } } catch { $o.Add('{{AdaptersErrorTag}}'+$_.Exception.GetType().Name) }""";
 
-    /// <summary>The end line, then everything in ONE write, LF-separated.</summary>
+    /// <summary>The end line, then everything in ONE write, LF-separated, as UTF-8 bytes on the raw stdout stream: Windows
+    /// PowerShell 5.1 writes <c>Console.Out</c> in the OEM code page, so a Cyrillic volume label or user name would reach the
+    /// daemon's UTF-8 reader as U+FFFD (own review). <c>OutputEncoding</c> is not set — it can throw with no console attached.</summary>
     private static readonly string Print =
-        $$"""$o.Add('{{EndLine}}'); [Console]::Out.Write(($o -join [char]10)+[char]10)""";
+        $$"""$o.Add('{{EndLine}}'); $u=[Text.Encoding]::UTF8.GetBytes(($o -join [char]10)+[char]10); $s=[Console]::OpenStandardOutput(); $s.Write($u,0,$u.Length); $s.Flush()""";
 }

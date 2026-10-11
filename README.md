@@ -343,7 +343,8 @@ Since E15.S1 the full run also starts a second fixed Windows PowerShell script (
 watch) and records in the run detail's `health.windowsDisk` what it read: each distro's virtual disk and Docker's data disk
 (size, sparse bit, last write), the lettered volumes with the disk each is on, the physical disks and their health, the
 reliability counters' refusal (they need elevation, which wsl-care never asks for), the System log's storage events of the last
-`disk.eventsSinceDays` (60) days counted per day, provider, id and disk (at most `disk.eventsMaxRead`, 5000, read), commit and
+`disk.eventsSinceDays` (60) days counted per day, provider, id and disk (at most `disk.eventsMaxRead`, 5000, read, and at most
+`disk.eventGroupsMax`, 500, groups printed — the report says when it cut them), commit and
 Memory Compression, Windows' edition, build and install date, the machine id and the display adapters' problem codes. Its
 ceiling is `health.windowsDiskTimeoutSeconds` (30). No verdict judges these facts yet; the later disk stories do.
 

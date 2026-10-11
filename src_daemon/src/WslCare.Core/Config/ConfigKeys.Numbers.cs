@@ -467,6 +467,11 @@ public static partial class ConfigKeys
         /// <summary>E15.S1: at most this many of those events are read (<c>Get-WinEvent -MaxEvents</c>, newest first) — it bounds
         /// the work root's script does, so machine-only. Default 5000.</summary>
         public static readonly ConfigKey.IntKey EventsMaxRead = new("disk.eventsMaxRead", 100, 100000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>E15.S1's code round: at most this many day / provider / id / disk groups of those events are PRINTED (newest
+        /// first), so the answer always fits the health output cap and reaches its end line; past it the answer says how many
+        /// groups there were. Its maximum keeps even the smallest <c>health.outputCapBytes</c> clear. Default 500.</summary>
+        public static readonly ConfigKey.IntKey EventGroupsMax = new("disk.eventGroupsMax", 10, 800) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     public static partial class Commands
@@ -856,6 +861,7 @@ public static partial class ConfigKeys
         Health.WindowsDiskTimeoutSeconds,
         Disk.EventsSinceDays,
         Disk.EventsMaxRead,
+        Disk.EventGroupsMax,
         Health.SnapTimeoutSeconds,
         Health.OutputCapBytes,
         Health.KernelLinesKept,

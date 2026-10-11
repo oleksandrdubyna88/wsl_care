@@ -34,6 +34,12 @@ public sealed record StorageEvents(int Read, int MaxRead, int SinceDays, IReadOn
 {
     /// <summary>The cap was reached: the counts are a lower bound over the newest events.</summary>
     public bool Capped => Read >= MaxRead;
+
+    /// <summary>How many groups the script counted — more than it printed when its cap (<c>disk.eventGroupsMax</c>) was reached.</summary>
+    public int GroupsTotal { get; init; } = Groups.Count;
+
+    /// <summary>Fewer groups were printed than counted: the oldest groups are not in <see cref="Groups"/>.</summary>
+    public bool GroupsCut => GroupsTotal > Groups.Count;
 }
 
 /// <summary>A display adapter and its Device Manager problem code (0 = working) — the GPU story's input (G2).</summary>

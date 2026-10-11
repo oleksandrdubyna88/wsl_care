@@ -280,7 +280,8 @@
   },
   "disk": {
     "eventsSinceDays": 60,
-    "eventsMaxRead": 5000
+    "eventsMaxRead": 5000,
+    "eventGroupsMax": 500
   },
   "commands": {
     "outputCapBytes": 1048576,

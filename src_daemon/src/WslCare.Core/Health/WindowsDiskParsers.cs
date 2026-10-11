@@ -25,7 +25,7 @@ public static class WindowsDiskParsers
     private static readonly HashSet<string> Known = new(StringComparer.Ordinal)
     {
         C.DistroTag, C.DistrosErrorTag, C.DockerTag, C.DockerErrorTag, C.VolumeTag, C.VolumesErrorTag, C.DiskTag, C.DisksErrorTag,
-        C.ReliabilityTag, C.ReliabilityReadTag, C.ReliabilityRefusedTag, C.EventsReadTag, C.EventsErrorTag, C.EventTag,
+        C.ReliabilityTag, C.ReliabilityReadTag, C.ReliabilityRefusedTag, C.EventsReadTag, C.EventGroupsTag, C.EventsErrorTag, C.EventTag,
         C.CommitTag, C.CommitErrorTag, C.CompressionTag, C.CompressionErrorTag, C.EditionTag, C.VersionTag, C.BuildTag,
         C.InstallDateTag, C.AccountTag, C.WindowsErrorTag, C.MachineGuidTag, C.MachineErrorTag, C.AdapterTag, C.AdaptersErrorTag,
     };
@@ -84,14 +84,18 @@ public static class WindowsDiskParsers
     private static Reading<WindowsVirtualDisk> Distro(string value) =>
         Fields(value, 5) is { } f ? File(f[4], f[3], f[0], f[1], f[2]) : Malformed<WindowsVirtualDisk>(value);
 
-    /// <summary>The file fields: all three empty — the file is not there; all three readable — the file; else malformed.</summary>
-    private static Reading<WindowsVirtualDisk> File(string name, string path, string size, string sparse, string lastWrite)
+    /// <summary>The file fields: all three empty — the file is not there; the not-local mark — the script did not open it (code
+    /// round: a UNC or mapped path would send the user's credentials to that host); all three readable — the file; else malformed.</summary>
+    private static Reading<WindowsVirtualDisk> File(string name, string path, string size, string sparse, string lastWrite) => (size, sparse, lastWrite) switch
     {
-        var absent = $"{path} is not there";
-        return (size, sparse, lastWrite) is ("", "", "")
-            ? Reading.Of(new WindowsVirtualDisk(name, path, Reading.Missing<long>(absent), Reading.Missing<bool>(absent), Reading.Missing<DateTimeOffset>(absent)))
-            : Present(name, path, Long(size, path), Flag(sparse, path), Instant(lastWrite, path));
-    }
+        ("", "", "") => Unopened(name, path, $"{path} is not there"),
+        (C.NotLocalMark, "", "") => Unopened(name, path, $"{path} is not on a local fixed drive, so it was not opened (a remote path would send the user's credentials to that host)"),
+        _ => Present(name, path, Long(size, path), Flag(sparse, path), Instant(lastWrite, path)),
+    };
+
+    /// <summary>A file the script reported but did not read — every figure unavailable with the one reason.</summary>
+    private static Reading<WindowsVirtualDisk> Unopened(string name, string path, string reason) =>
+        Reading.Of(new WindowsVirtualDisk(name, path, Reading.Missing<long>(reason), Reading.Missing<bool>(reason), Reading.Missing<DateTimeOffset>(reason)));
 
     private static Reading<WindowsVirtualDisk> Present(string name, string path, Reading<long> size, Reading<bool> sparse, Reading<DateTimeOffset> lastWrite) =>
         size.IsAvailable && sparse.IsAvailable && lastWrite.IsAvailable && path.Length > 0
@@ -112,10 +116,14 @@ public static class WindowsDiskParsers
             ? Reading.Of(new WindowsVolume(f[0], DiskOf(f[0], f[1]), f[2], Long(f[3], $"{f[0]}:'s size"), Long(f[4], $"{f[0]}:'s free space"), f[5]))
             : Malformed<WindowsVolume>(value);
 
-    private static bool IsVolume(string[] f) => f[0].Length == 1 && char.IsAsciiLetter(f[0][0]) && IntOrEmpty(f[1]) && Numbers(f[3], f[4]);
+    private static bool IsVolume(string[] f) => f[0].Length == 1 && char.IsAsciiLetter(f[0][0]) && (IntOrEmpty(f[1]) || f[1].StartsWith(C.FailedMark, StringComparison.Ordinal)) && Numbers(f[3], f[4]);
 
-    private static Reading<int> DiskOf(string letter, string disk) =>
-        disk.Length == 0 ? Reading.Missing<int>($"{letter}: is on no partition Get-Partition could name") : Int(disk, $"{letter}:'s disk number");
+    private static Reading<int> DiskOf(string letter, string disk) => disk switch
+    {
+        "" => Reading.Missing<int>($"{letter}: is on no partition Get-Partition could name"),
+        _ when disk.StartsWith(C.FailedMark, StringComparison.Ordinal) => Reading.Missing<int>($"Get-Partition failed for {letter}: ({disk[C.FailedMark.Length..]})"),
+        _ => Int(disk, $"{letter}:'s disk number"),
+    };
 
     /// <summary><c>number|bus|health|operational|firmware|model</c> — the model last, free text.</summary>
     private static Reading<WindowsPhysicalDisk> PhysicalDisk(string value) =>
@@ -153,8 +161,9 @@ public static class WindowsDiskParsers
     {
         var groups = Listed(a, C.EventTag, C.EventsErrorTag, "the System log's storage events", Group);
         var read = Single(a, C.EventsReadTag, C.EventsErrorTag, "the System log's storage events").Bind(v => Int(v, "the number of events read"));
-        var events = Reading.Combine(read, groups.Items, (total, list) => new StorageEvents(total, maxRead, sinceDays, list));
-        return (events, groups.Bad + Bad(read, a, C.EventsReadTag));
+        var counted = a.Has(C.EventGroupsTag) ? Int(a.Last(C.EventGroupsTag), "the number of event groups") : Reading.Missing<int>("no group count printed");
+        var events = Reading.Combine(read, groups.Items, (total, list) => new StorageEvents(total, maxRead, sinceDays, list) { GroupsTotal = counted is Reading<int>.Available { Value: var n } ? n : list.Count });
+        return (events, groups.Bad + Bad(read, a, C.EventsReadTag) + Bad(counted, a, C.EventGroupsTag));
     }
 
     /// <summary><c>yyyy-MM-dd|provider|id|HarddiskN|count</c> — the day is a CALENDAR day, stamped UTC, never converted.</summary>

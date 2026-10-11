@@ -138,7 +138,9 @@ public sealed class HealthTests : IDisposable
         Value(facts.Events).Read.Should().Be(63);
         health.WindowsDisk.SampledAt.Should().Be(WindowsDiskFixture.CapturedAt);
         var argv = runner.Requests.Select(r => r.Argv).ToList();
-        argv.FindIndex(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().BeGreaterThan(argv.FindIndex(a => a.SequenceEqual(HealthCommands.WindowsClock.Argv)), "the disk script runs after the clock probe");
+        var clockAt = argv.FindIndex(a => a.SequenceEqual(HealthCommands.WindowsClock.Argv));
+        clockAt.Should().BeGreaterThanOrEqualTo(0, "the clock probe ran, so the order below compares two real positions");
+        argv.FindIndex(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().BeGreaterThan(clockAt, "the disk script runs after the clock probe");
         argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "once per full run");
         runner.Requests.Single(r => r.Argv.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Timeout.Should().Be(TimeSpan.FromSeconds(30), "its own ceiling, health.windowsDiskTimeoutSeconds");
     }

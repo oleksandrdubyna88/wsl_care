@@ -461,3 +461,22 @@ sample and the report (`capped`), tested by the captured answer (`!e.Capped`). T
 gpt-6-astra, two turns, closed `solved`) changed §3.2 (the share's fenced isolated worker; local pruning off by default) and
 §3.3 (a descriptive sentence by default, a Kaplan–Meier K, shadow predictions behind a calibration gate, freshness gates).
 
+**The story's code round** (coai, 2026-10-11, `proceed`, 4 of 4 reviewers — codex): four findings, three accepted, one
+rejected. Rejected: (0) "the output list is mutated" — the `List[string]` is the script's own local buffer, written once at
+the end; nothing else holds it. Accepted: (1) a failed `Get-Partition` was swallowed into "on no partition" — it now prints
+`!<exception type>` and reads "Get-Partition failed for X: (type)"; (2) a registry-named path could be UNC or mapped, and
+`Get-Item` on it would send the user's NTLM credentials to that host — the script now opens a file only on a local FIXED
+drive and otherwise reads "is not on a local fixed drive, so it was not opened"; (3) the event groups were unbounded — they
+are cut at the new key `disk.eventGroupsMax` (10–800, 500, machine-only; 800 × a 64-byte line + 8 KB of other sections stays
+under `health.outputCapBytes`' 64 KiB floor) and the script prints the total, so `StorageEvents.GroupsCut` says when the list
+is short. **Own review** (Opus) found three more, all fixed: `Join-Path` resolves the drive and threw on an unmounted letter,
+ending the whole distro section (now `[IO.Path]::Combine`); the event day was formatted in the user's calendar (a Thai or
+Persian year parsed as a valid date; now invariant); and Windows PowerShell 5.1 wrote the answer in the OEM code page, so a
+Cyrillic label or user name reached the UTF-8 reader as U+FFFD (now UTF-8 bytes on the raw stdout stream). RED first, each:
+*the test named the reason / the `DriveType` check / `GroupsCut` / `[IO.Path]::Combine` / the invariant format / the UTF-8
+write, and the script lacked it*. **Break-its** (product code, each restored): the partition reason arm removed → 1 red; the
+drive check removed from the script → 1 red; `GroupsCut` forced false → 1 red. Re-measured: 6.1–6.2 s warm, 21.9 s cold under
+load (research D10). Left open for the owner and later stories (own review, below 80 % confidence): a timed-out script's
+Windows process may survive the WSL tree kill; the `Message` fallback per event is not measured against the ceiling at the
+100 000 maximum; a machine with no `stornvme` provider may answer `events.error`; access denied reads as "not there".
+

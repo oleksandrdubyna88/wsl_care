@@ -2342,6 +2342,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "disk.eventGroupsMax",
+      "shape": "int",
+      "min": 10,
+      "max": 800,
+      "default": 500,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "health.snapTimeoutSeconds",
       "shape": "int",
       "min": 5,

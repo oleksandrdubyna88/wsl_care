@@ -262,12 +262,21 @@ flowchart LR
   non-zero exit, a timeout (the runner kills the tree at `health.windowsDiskTimeoutSeconds`, 30), a refusal or a failed start
   is the same, with `ToolAnswers`' sentence. A line it cannot read is counted (`malformedLines`) and skipped. An empty field is
   an answer — a file "is not there", a volume "is on no partition" — never a 0. A calendar day is stamped UTC, never converted.
+- **Hardening from the story's code round and own review** (2026-10-11): a registry-named file is opened only on a local
+  FIXED drive (`[IO.DriveInfo]` before `Get-Item`) — a UNC or mapped path would send the user's credentials to that host, so
+  it reads "is not on a local fixed drive, so it was not opened"; paths are joined with `[IO.Path]::Combine` (no drive
+  lookup, so one distro on an unplugged disk cannot end the distro section); a failed `Get-Partition` gives its reason
+  ("Get-Partition failed for X: (type)"), not "on no partition"; the event groups are cut at `disk.eventGroupsMax` (10–800,
+  500, machine-only) with the total printed (`events.groups=`), so `StorageEvents.GroupsCut` says when the list is short and
+  the answer stays under `health.outputCapBytes`' floor; the event day is written in the invariant calendar; and the answer
+  leaves as UTF-8 bytes on the raw stdout stream (Windows PowerShell 5.1 writes `Console.Out` in the OEM code page).
 - **Where it runs.** Only `collect`, after the clock probe and its reference (so its seconds never sit between the two
   clocks' readings), once, under its own ceiling; never `status` (a scenario holds it), never the watch. The Windows binary
   does not run it: its detail says the distro reads these facts. The full run's worst case (`RunBudget`) grew by the
   ceiling and two drains: 260 min with the defaults, under `timer.runLimitMinutes` (276).
 - **Measured** (research/2026-10-10_disk.md D10, and 2026-10-10 18:29Z for the product's own text): Windows PowerShell
-  5.1, unelevated, 2.4–3.3 s warm, 10.7 s cold; 26 lines on the owner's machine. The captured answer, anonymised, is the
+  5.1, unelevated, 2.4–3.3 s warm, 10.7 s cold; 26 lines on the owner's machine. After the code round (2026-10-11): 6.1–6.2 s
+  warm, 21.9 s cold under load (73 % of the ceiling), 29 lines. The captured answer, anonymised, is the
   fixture `tests/fixtures/health/windows-disk-2026-10-10`.
 - **The closed set.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell (`powershell` or `pwsh`, any path)
   that is not EXACTLY one of `HealthCommands.FixedScripts` — the clock probe and the disk script, program AND arguments,

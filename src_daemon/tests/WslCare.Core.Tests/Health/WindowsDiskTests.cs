@@ -158,6 +158,77 @@ public sealed class WindowsDiskTests
         Value(facts.Volumes).Single(v => v.Letter == "Z").DiskNumber.ReasonOrEmpty.Should().Contain("Z:").And.Contain("partition");
     }
 
+    // ---- the story's code round (coai, 2026-10-10) ----
+
+    [Fact]
+    public void A_partition_lookup_that_failed_says_why_and_is_no_malformed_line()
+    {
+        var facts = Parse(With("volume=G|!CimJobException|NTFS|100|50|Removable"));
+
+        var g = Value(facts.Volumes).Single(v => v.Letter == "G");
+        g.DiskNumber.ReasonOrEmpty.Should().Contain("Get-Partition failed").And.Contain("CimJobException");
+        facts.MalformedLines.Should().Be(0, "a failed lookup is an answer about the volume, not a malformed line");
+    }
+
+    [Fact]
+    public void A_virtual_disk_that_is_not_on_a_local_fixed_drive_is_not_opened_and_says_why()
+    {
+        var facts = Parse(With(@"distro=remote|||\hostshareext4.vhdx|Planted"));
+
+        var planted = Value(facts.Distros).Single(d => d.Name == "Planted");
+        planted.SizeBytes.ReasonOrEmpty.Should().Contain("not on a local fixed drive").And.Contain("not opened");
+        facts.MalformedLines.Should().Be(0);
+    }
+
+    [Fact]
+    public void The_script_opens_a_registry_named_file_only_on_a_local_fixed_drive()
+    {
+        var script = WindowsDiskCommands.Script;
+
+        script.Should().Contain("DriveType").And.Contain("'Fixed'", "a UNC or mapped path would send the user's credentials to that host (code round)");
+        script.IndexOf("DriveType", StringComparison.Ordinal).Should().BeLessThan(script.IndexOf("Get-Item -LiteralPath", StringComparison.Ordinal), "the drive is judged BEFORE the file is opened");
+    }
+
+    [Fact]
+    public void A_distro_on_a_drive_that_is_not_mounted_cannot_end_the_distro_section()
+    {
+        var script = WindowsDiskCommands.Script;
+
+        script.Should().NotContain("Join-Path", "Join-Path resolves the drive and throws on an unmounted letter, which empties the whole distro list (own review)");
+        script.Should().Contain("[IO.Path]::Combine(", "a pure string join that does not touch the drive");
+    }
+
+    [Fact]
+    public void The_event_day_is_written_in_the_invariant_calendar()
+    {
+        WindowsDiskCommands.Script.Should().Contain("ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)",
+            "a Thai, Persian or Hijri culture would print a different year that still parses as a valid date (own review)");
+    }
+
+    [Fact]
+    public void The_answer_goes_out_as_UTF8_bytes_not_in_the_console_code_page()
+    {
+        var script = WindowsDiskCommands.Script;
+
+        script.Should().Contain("[Text.Encoding]::UTF8.GetBytes(").And.Contain("[Console]::OpenStandardOutput()",
+            "Windows PowerShell 5.1 writes Console.Out in the OEM code page, and a Cyrillic label or user name would arrive as U+FFFD (own review)");
+        script.Should().NotContain("[Console]::Out.Write(");
+        script.Should().NotContain("OutputEncoding", "setting it can throw when no console is attached");
+    }
+
+    [Fact]
+    public void Event_groups_past_their_cap_are_flagged_and_the_cap_keeps_the_answer_under_the_output_bound()
+    {
+        var facts = Parse(With("events.groups=5000"));
+
+        var events = Value(facts.Events);
+        events.GroupsCut.Should().BeTrue("the script printed fewer groups than it counted");
+        WindowsDiskCommands.Script.Should().Contain("Select-Object -First " + WindowsDiskCommands.EventGroupsMax.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        const int longestGroupLine = 64;
+        const int otherSections = 8192;
+        (ConfigKeys.Disk.EventGroupsMax.Max * longestGroupLine + otherSections).Should().BeLessThan((int)ConfigKeys.Health.OutputCapBytes.Min, "even the largest group cap under the smallest output cap cannot cut the answer before end=1");
+    }
+
     [Fact]
     public void An_event_that_names_no_disk_keeps_its_count_and_says_why_the_disk_is_unknown()
     {
@@ -239,7 +310,7 @@ public sealed class WindowsDiskTests
 
         script.Should().NotContain("\"", "WSL interop and PowerShell quote double quotes their own way; the script needs none");
         script.Should().Match(s => s.All(c => c >= ' ' && c <= '~'), "ASCII only, and the never-list refuses a control character");
-        script.Should().EndWith("[Console]::Out.Write(($o -join [char]10)+[char]10)");
+        script.Should().EndWith("$s.Write($u,0,$u.Length); $s.Flush()");
         script.IndexOf("$o.Add('" + WindowsDiskCommands.EndLine + "')", StringComparison.Ordinal).Should().BeGreaterThan(script.LastIndexOf("$o.Add('adapter", StringComparison.Ordinal), "end=1 is added last");
         script.Should().Contain("$ProgressPreference='SilentlyContinue'");
     }
@@ -261,7 +332,7 @@ public sealed class WindowsDiskTests
     [InlineData(1000, 10_000_000, "365", "100000")]
     public void The_two_numbers_are_baked_in_as_integers_clamped_to_their_keys(int days, int max, string expectedDays, string expectedMax)
     {
-        var script = WindowsDiskCommands.ScriptFor(days, max);
+        var script = WindowsDiskCommands.ScriptFor(days, max, 500);
 
         script.Should().Contain($"-MaxEvents {expectedMax} ").And.Contain($"AddDays(-{expectedDays})");
     }
