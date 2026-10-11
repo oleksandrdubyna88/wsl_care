@@ -12,7 +12,7 @@
 EXTENSION_NAME='ai-os-care'
 
 # The one platform the package targets (owner decision A1; Q-B1, 2026-10-10: no universal package — Linux, macOS and Windows
-# on Arm keep the last universal 0.3.1 on the Marketplace).
+# on Arm keep the last universal release on the Marketplace (0.5.0 or earlier)).
 EXTENSION_TARGET='win32-x64'
 
 # vsix_name <version>: the package file of that release, `ai-os-care-win32-x64-<version>.vsix`.

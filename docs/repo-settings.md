@@ -191,11 +191,11 @@ organisation-scoped PATs for the Marketplace are an open request (microsoft/vsma
      release BEFORE `publish-marketplace` starts, so it is there while that job waits for your approval. A draft is
      visible only to people with write access, so download it as the owner:
      `gh release download extension-v<x.y.z> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' --pattern '*.sha256'`,
-     (the package is `ai-os-care-<x.y.z>.vsix` up to 0.4.x (universal) and `ai-os-care-win32-x64-<x.y.z>.vsix` from the first `win32-x64` release on (E7.S5a)), then `sha256sum -c ai-os-care-<x.y.z>.vsix.sha256` and `gh attestation verify ai-os-care-<x.y.z>.vsix --repo
+     (the package is `ai-os-care-<x.y.z>.vsix` up to 0.5.0 (universal) and `ai-os-care-win32-x64-<x.y.z>.vsix` from the first `win32-x64` release on (E7.S5a)), then `sha256sum -c ai-os-care-<x.y.z>.vsix.sha256` and `gh attestation verify ai-os-care-<x.y.z>.vsix --repo
      oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<x.y.z>" --deny-self-hosted-runners`.
   2. **Upload THAT file by hand**: <https://marketplace.visualstudio.com/manage> → publisher `remsoftdev` → *AI OS Care*
      (the first time: *New extension → Visual Studio Code*) → upload `ai-os-care-win32-x64-<x.y.z>.vsix` (`ai-os-care-<x.y.z>.vsix`
-     up to 0.4.x; the name is `vsix_name` of `.github/scripts/lib/extension-package.sh`). Never a local build: only
+     up to 0.5.0; the name is `vsix_name` of `.github/scripts/lib/extension-package.sh`). Never a local build: only
      the attested file may be served, and `github-public` compares the draft with it.
   3. **Wait until the Marketplace serves it** — it validates a new version first, and what `vsce show` reads can lag more than
      20 minutes behind the publish (extension 0.2.0, 2026-10-09; the job now waits up to 45 minutes, logging every attempt):
@@ -356,5 +356,5 @@ next patch through release-please. **Never move or delete an `extension-v*` tag*
 **Rollback** never builds: install a previous version's `.vsix` from its GitHub release, its attestation verified first —
 `gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix'`, then
 `gh attestation verify ai-os-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<previous>" --deny-self-hosted-runners` (it must say the bytes were built by `release-extension.yml` AT that tag on a GitHub-hosted runner — the exact identity, as POST_DEPLOY item 6 pins it; never `--signer-workflow`, which gh matches as a prefix, so a run from any branch would pass), then
-`code --install-extension ai-os-care-<previous>.vsix` (the package is `ai-os-care-<x.y.z>.vsix` up to 0.4.x (universal) and `ai-os-care-win32-x64-<x.y.z>.vsix` from the first `win32-x64` release on (E7.S5a)) — or ship the next patch. Every release keeps its `.vsix` (a release
+`code --install-extension ai-os-care-<previous>.vsix` (the package is `ai-os-care-<x.y.z>.vsix` up to 0.5.0 (universal) and `ai-os-care-win32-x64-<x.y.z>.vsix` from the first `win32-x64` release on (E7.S5a)) — or ship the next patch. Every release keeps its `.vsix` (a release
 asset does not expire, unlike a workflow artifact).

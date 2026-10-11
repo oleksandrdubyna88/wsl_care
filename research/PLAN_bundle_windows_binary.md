@@ -308,6 +308,8 @@ The seven steps of §7 shipped in that order, steps 4 and 5 in one commit. What 
 - **The Test-mode fake** has two scenario fields, `bundledExe` and `bundledVersion`, and records the exact path it was asked for.
 - **`ReleaseExtensionScriptFlows`' actions-minimum flow** has its own fake `gh`; it needed the asset column for the bundled
   pin's one query. The Linux leg found it.
+- **The last universal version is not 0.3.1.** §3 was written when 0.3.1 was the newest release; 0.4.0 and 0.5.0 (built
+  from main before this PR) are universal too, so the docs say "up to 0.5.0" and "the last universal release".
 - **POST_DEPLOY item 6** sources `lib/extension-package.sh`, keeps the `win32-x64` entry, runs `verify-bundled-exe.sh` and reads
   the installed exe's `--version`. It fails by design until the first `win32-x64` release exists.
 - **The coai round of this branch** (session `a938a988`) said proceed with one finding: kill the whole process tree on a

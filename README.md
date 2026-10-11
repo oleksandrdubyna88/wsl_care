@@ -820,8 +820,8 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   minimum the extension renders (`MIN_DAEMON_FOR_RENDER`) nor the one it acts with (`MIN_DAEMON_FOR_ACTIONS`, since
   E6.S2; both 0.1.0), never `--skip-attestation`.
 - **The package** is ONE `win32-x64` `.vsix` (`npm run package` is `vsce package --target win32-x64`, named
-  `ai-os-care-win32-x64-<version>.vsix`; E7.S5a — Linux, macOS and Windows on Arm keep the last universal 0.3.1 on the
-  Marketplace) holding exactly `vsix-files.txt` (`.vscodeignore` is an allowlist), the bundled Windows daemon
+  `ai-os-care-win32-x64-<version>.vsix`; E7.S5a — Linux, macOS and Windows on Arm keep the last universal release on
+  the Marketplace, 0.5.0 or earlier) holding exactly `vsix-files.txt` (`.vscodeignore` is an allowlist), the bundled Windows daemon
   `bin/wsl-care.exe` among them: the attested member of `daemon-v<bundledDaemon>` (`src_vs_code/min-daemon.json`),
   fetched and verified by `npm run fetch:windows-daemon` (`.github/scripts/fetch-windows-daemon.sh`: the release's asset
   set, the exact attestation, the one zip member) and git-ignored. `npm run check:vsix` opens the package and refuses
@@ -1062,7 +1062,7 @@ first — that `release-extension.yml`, run for THAT tag on a GitHub-hosted runn
 identity: `--signer-workflow` would be a prefix match, which a run from any branch passes):
 
 ```bash
-# the package is ai-os-care-<previous>.vsix up to 0.4.x and ai-os-care-win32-x64-<previous>.vsix from the first win32-x64 release on (E7.S5a)
+# the package is ai-os-care-<previous>.vsix up to 0.5.0 and ai-os-care-win32-x64-<previous>.vsix from the first win32-x64 release on (E7.S5a)
 gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && gh attestation verify ai-os-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<previous>" --deny-self-hosted-runners && code --install-extension ai-os-care-<previous>.vsix
 ```
 

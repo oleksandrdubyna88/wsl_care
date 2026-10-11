@@ -2132,7 +2132,7 @@ sequenceDiagram
 
 ### The package and its leak checks (plan §15g M8, §15f #6 / #13)
 
-- **One `.vsix`** — universal up to 0.4.x; since E7.S5a ONE `win32-x64` package carrying the attested Windows daemon
+- **One `.vsix`** — universal up to 0.5.0; since E7.S5a ONE `win32-x64` package carrying the attested Windows daemon
   ([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)): `bin/wsl-care.exe` is the member of `daemon-v<bundledDaemon>`
   (a fourth pin in `min-daemon.json`), fetched by THE fetch (`fetch-windows-daemon.sh`: asset set, exact attestation, one zip
   member), exempt from the text scan by its exact path and digest only, RE-DERIVED by the attest job before it signs
