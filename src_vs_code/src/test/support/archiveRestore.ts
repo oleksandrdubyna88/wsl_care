@@ -8,6 +8,7 @@ export const IDLE_RESTORE: RestoreFacts = { inFlight: false, state: '', blocker:
 export interface RecordingRestore extends ArchiveRestore {
   readonly started: (readonly string[])[];
   facts: () => RestoreFacts;
+  start: (entryIds: readonly string[]) => Promise<unknown>;
 }
 
 export function recordingRestore(facts: RestoreFacts = IDLE_RESTORE): RecordingRestore {

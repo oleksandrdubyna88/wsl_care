@@ -403,3 +403,79 @@ test('when the restore stops being in flight the list is read again and the sele
   assert.equal(last(h).selection.count, 0);
   assert.equal(last(h).notice, '', 'a cleared selection drops nothing to report');
 });
+
+// ---- E10.S2b code round ----
+
+test('code round #0: a cleanup-host change that leaves the selection bar as it is builds no archive view — 200 of them over 60 000 entries stay well under a second', async () => {
+  const h = harness();
+  const entries = Array.from({ length: 60_000 }, (_, i) => restorable(i.toString(16).padStart(16, '0')));
+  h.script.answer = () => Promise.resolve(read(listWith(entries)));
+  await h.controller.receive({ type: 'ready' });
+  await h.controller.receive({ type: 'expandMonth', index: 0, generation: last(h).generation });
+  const posts = h.views.length;
+  const started = performance.now();
+  for (let i = 0; i < 200; i += 1) {
+    await h.controller.restoreChanged();
+  }
+  const took = performance.now() - started;
+  assert.equal(h.views.length, posts, 'nothing changed: nothing posted');
+  assert.ok(took < 1000, `200 unchanged host changes took ${Math.round(took)} ms`);
+});
+
+test('code round #1: while Restore waits for the daemon preview the page says so and greys Restore — then the line clears', async () => {
+  const h = harness();
+  h.script.answer = () => Promise.resolve(read(listWith([restorable(R1)])));
+  await h.controller.receive({ type: 'ready' });
+  await h.controller.receive({ type: 'toggleEntry', index: 0, generation: last(h).generation });
+  let release: () => void = () => undefined;
+  h.restore.start = () => new Promise<void>((resolve) => { release = resolve; });
+  const pressed = h.controller.receive({ type: 'restore' });
+  assert.equal(last(h).selection.line, 'Previewing the restore… the modal opens when the daemon answers.');
+  assert.equal(last(h).selection.restoreEnabled, false);
+  await h.controller.receive({ type: 'restore' });
+  assert.match(last(h).notice, /already being previewed/);
+  release();
+  await pressed;
+  assert.equal(last(h).selection.line, '');
+  assert.equal(last(h).selection.restoreEnabled, true);
+});
+
+// ---- the own review on Fable ----
+
+test('own review #4: a restore that ends while a list read is in flight reads AGAIN after it — never only the older answer', async () => {
+  const h = harness();
+  h.script.answer = () => Promise.resolve(read(listWith([restorable(R1)])));
+  await h.controller.receive({ type: 'ready' });
+  h.restore.facts = () => ({ inFlight: true, state: 'Restoring… archived sessions', blocker: 'a run is in flight' });
+  await h.controller.restoreChanged();
+  let release: (value: ReadOutcome) => void = () => undefined;
+  h.script.answer = () => new Promise((resolve) => { release = resolve; });
+  const older = h.controller.receive({ type: 'refresh' });
+  h.restore.facts = () => ({ inFlight: false, state: '', blocker: '' });
+  h.script.answer = () => Promise.resolve(read(listWith([{ ...restorable(R1), status: 'restored' }])));
+  const ended = h.controller.restoreChanged();
+  release(read(listWith([restorable(R1)])));
+  await Promise.all([older, ended]);
+  assert.equal(h.asked.length, 3, 'the first ready, the read in flight, and one more after it');
+  await openAll(h);
+  assert.equal(last(h).agents[0]?.months[0]?.rows[0]?.cells[3], 'restored');
+});
+
+test('own review #5: Select is refused while a restore runs — its end would clear the selection silently', async () => {
+  const h = harness();
+  h.script.answer = () => Promise.resolve(read(listWith([restorable(R1)])));
+  await h.controller.receive({ type: 'ready' });
+  h.restore.facts = () => ({ inFlight: true, state: 'Restoring… archived sessions', blocker: 'a run is in flight' });
+  await h.controller.receive({ type: 'toggleEntry', index: 0, generation: last(h).generation });
+  assert.equal(last(h).selection.count, 0);
+  assert.match(last(h).notice, /A restore is running/);
+});
+
+test('own review #6: a list naming one session twice hands its id ONCE — never a duplicate the controller refuses whole', async () => {
+  const h = harness();
+  h.script.answer = () => Promise.resolve(read(listWith([restorable(R1), restorable(R1)])));
+  await h.controller.receive({ type: 'ready' });
+  await h.controller.receive({ type: 'toggleEntry', index: 0, generation: last(h).generation });
+  await h.controller.receive({ type: 'restore' });
+  assert.deepEqual(h.restore.started, [[R1]]);
+});

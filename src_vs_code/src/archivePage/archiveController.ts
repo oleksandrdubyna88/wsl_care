@@ -4,9 +4,9 @@ import { failureText } from '../failureText';
 import type { ViewLevel } from '../panel/view';
 import { ARCHIVE_LIST_CAPABILITY } from '../shared/archiveCapabilities';
 import { parseArchiveMessage, type ArchiveMessage, type IndexedMessage } from './archiveMessages';
-import { keptIn, listEntries, monthPick, restoreCeiling, selectableId } from './archiveSelection';
+import { keptIn, listEntries, monthPick, restoreCeiling, selectableId, selectableIds } from './archiveSelection';
 import type { ArchivePageView } from './archiveView';
-import { buildArchiveView, monthKey, monthsOf, type ArchiveHostState, type ListState, type MonthGroup, type RestoreFacts } from './archiveViewModel';
+import { buildArchiveView, buildSelectionView, monthKey, monthsOf, type ArchiveHostState, type ListState, type MonthGroup, type RestoreFacts } from './archiveViewModel';
 
 /**
  * The Archive page's host side (plan §15s D6, D9, E10.S2a; E10.S2b) — vscode-free, so every decision is tested without a window
@@ -111,6 +111,8 @@ export class ArchiveController {
   private restoring = false;
   /** The selection bar last posted — a restore fact that changes nothing on the page posts nothing. */
   private postedSelection = '';
+  /** *Restore* was pressed and the daemon's preview is not back yet (the code round's #1): page-local, optimistic only. */
+  private starting = false;
 
   constructor(private readonly options: ArchiveControllerOptions) {}
 
@@ -160,13 +162,21 @@ export class ArchiveController {
   restoreChanged(): Promise<void> {
     if (this.restoreEnded()) {
       this.selection = new Set<string>();
-      return this.refresh();
+      return this.readAfterRestore();
     }
-    if (this.list.kind !== 'idle' && JSON.stringify(this.view().selection) !== this.postedSelection) {
+    if (this.list.kind !== 'idle' && JSON.stringify(buildSelectionView(this.state())) !== this.postedSelection) {
       this.post();
     }
 
     return Promise.resolve();
+  }
+
+  /**
+   * The list read after a restore ended — AFTER a read already in flight, never sharing it (own review #4): that read may have been
+   * answered before the index recorded the restore.
+   */
+  private readAfterRestore(): Promise<void> {
+    return this.reading === undefined ? this.refresh() : this.reading.then(() => this.refresh());
   }
 
   /** A restore was in flight at the last look and is no longer, on a page that holds a list — the remembered state moved on. */
@@ -314,6 +324,10 @@ export class ArchiveController {
       return NO_CEILING;
     }
 
+    if (this.options.restore.facts().inFlight) {
+      return 'A restore is running — select again when it ends.';
+    }
+
     return this.selection.size >= ceiling ? `One restore takes at most ${ceiling} — restore or clear the ones selected first.` : '';
   }
 
@@ -346,8 +360,14 @@ export class ArchiveController {
     if (why !== '') {
       return this.refused(why);
     }
-    const ids = this.list.kind === 'read' ? listEntries(this.list.body).flatMap((e) => { const id = selectableId(e); return id !== undefined && this.selection.has(id) ? [id] : []; }) : [];
-    await this.options.restore.start(ids);
+    const ids = this.list.kind === 'read' ? selectableIds(listEntries(this.list.body)).filter((id) => this.selection.has(id)) : [];
+    this.starting = true;
+    this.post();
+    try {
+      await this.options.restore.start(ids);
+    } finally {
+      this.starting = false;
+    }
 
     return this.restoreChanged();
   }
@@ -361,6 +381,7 @@ export class ArchiveController {
       [ceiling === undefined, NO_CEILING],
       [this.selection.size === 0, 'Select at least one session to restore.'],
       [over !== '', over],
+      [this.starting, 'A restore is already being previewed — its modal opens when the daemon answers.'],
       [facts.inFlight, 'A restore is already running.'],
       [facts.blocker !== '', `Restore is not available: ${facts.blocker}.`],
     ];
@@ -401,7 +422,7 @@ export class ArchiveController {
 
   private state(): ArchiveHostState {
     return {
-      list: this.list, generation: this.generation, expanded: this.expanded, selection: this.selection, ceiling: this.ceiling(), restore: this.options.restore.facts(),
+      list: this.list, generation: this.generation, expanded: this.expanded, selection: this.selection, ceiling: this.ceiling(), restore: this.options.restore.facts(), starting: this.starting,
       pathsShown: this.pathsShown, notice: this.notice, noticeLevel: this.noticeLevel,
     };
   }

@@ -51,6 +51,8 @@ export interface ArchiveHostState {
   /** How many entries ONE restore takes now, or `undefined` when the list does not say. */
   readonly ceiling: number | undefined;
   readonly restore: RestoreFacts;
+  /** *Restore* was pressed here and the daemon's preview is not back yet (the code round's #1) — page-local, never durable. */
+  readonly starting: boolean;
   /** The open months, by `monthKey(agent, month)` — so a refreshed list keeps what was open. */
   readonly expanded: ReadonlySet<string>;
   readonly pathsShown: boolean;
@@ -257,7 +259,12 @@ function selectionSummary(count: number, ceiling: number | undefined): string {
   return `${count} selected — one restore takes at most ${ceiling}${count > ceiling ? '; select fewer' : ''}.`;
 }
 
-function restoreLine(restore: RestoreFacts): Pick<ArchiveSelectionView, 'line' | 'lineLevel'> {
+const PREVIEWING = 'Previewing the restore… the modal opens when the daemon answers.';
+
+function restoreLine(restore: RestoreFacts, starting: boolean): Pick<ArchiveSelectionView, 'line' | 'lineLevel'> {
+  if (starting) {
+    return { line: PREVIEWING, lineLevel: 'none' };
+  }
   if (restore.inFlight) {
     return { line: safeText(restore.state, TEXT_MAX), lineLevel: 'none' };
   }
@@ -269,14 +276,22 @@ function fits(count: number, ceiling: number | undefined): boolean {
   return ceiling !== undefined && count >= 1 && count <= ceiling;
 }
 
-function selectionOf(state: ArchiveHostState): ArchiveSelectionView {
+/** Nothing stops a restore from here now: none is being previewed, none runs, the cleanup host names no blocker. */
+function restoreFree(state: ArchiveHostState): boolean {
+  return !state.starting && !state.restore.inFlight && state.restore.blocker === '';
+}
+
+/**
+ * The selection bar alone — what the host compares after a cleanup-host change, so an unchanged bar costs no archive view (the
+ * code round's #0: building the whole tree for every status or run update scaled with the archive).
+ */
+export function buildSelectionView(state: ArchiveHostState): ArchiveSelectionView {
   if (state.list.kind !== 'read') {
     return NO_SELECTION;
   }
   const count = state.selection.size;
-  const free = !state.restore.inFlight && state.restore.blocker === '';
 
-  return { count, summary: selectionSummary(count, state.ceiling), restoreEnabled: free && fits(count, state.ceiling), clearEnabled: count > 0, ...restoreLine(state.restore) };
+  return { count, summary: selectionSummary(count, state.ceiling), restoreEnabled: restoreFree(state) && fits(count, state.ceiling), clearEnabled: count > 0, ...restoreLine(state.restore, state.starting) };
 }
 // ---- the head ----
 
@@ -350,6 +365,6 @@ export function buildArchiveView(state: ArchiveHostState): ArchivePageView {
     pathsLabel: 'Show full session paths',
     refreshEnabled: state.list.kind !== 'reading',
     headers: HEADERS,
-    selection: selectionOf(state),
+    selection: buildSelectionView(state),
   };
 }

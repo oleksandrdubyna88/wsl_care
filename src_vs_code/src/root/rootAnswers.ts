@@ -200,6 +200,8 @@ export interface PreviewContext {
   readonly takenAtMs: number;
   /** The daemon's published `maxShownNames` in the status the preview was gated on (`MAX_SHOWN_VOLUMES` when absent). */
   readonly maxShownNames?: number;
+  /** E10.S2b: the entry ids a restore preview piped — its shown list may name none other (own review #2). */
+  readonly asked?: readonly string[];
 }
 
 /**
@@ -226,16 +228,35 @@ function invalidRestore(reason: string): RootFailure {
 
 /** A20's selection when the preview asked for A20 (the restore preview), else nothing — read by `selectedOf`, as A4's and A21's are. */
 function restoreOf(body: JsonObject, context: PreviewContext): RestoreSelection | undefined | RootFailure {
-  return context.ids.includes('A20') ? asRestore(selectedOf(body, context, 'A20', ENTRIES)) : undefined;
+  if (!context.ids.includes('A20')) {
+    return undefined;
+  }
+  const held = asRestore(selectedOf(body, context, 'A20', ENTRIES), actionEntry(body.actions, 'A20'));
+
+  return 'kind' in held ? held : onlyAsked(held, context.asked ?? []);
 }
 
-/** An A20 preview always carries its shown list (none is no restore at all), and a list it cannot hold is told as the restore's. */
-function asRestore(read: RestoreSelection | undefined | RootFailure): RestoreSelection | RootFailure {
+/**
+ * An A20 preview always carries its shown list — none is no restore at all, and an UNAVAILABLE line (its archive child failed) is
+ * told in the daemon's own words (own review #1) — and a list it cannot hold is told as the restore's.
+ */
+function asRestore(read: RestoreSelection | undefined | RootFailure, line: JsonObject | undefined): RestoreSelection | RootFailure {
   if (read === undefined) {
-    return invalidRestore('its preview carried no shown list');
+    return invalidRestore(noListReason(line));
   }
 
   return 'kind' in read && read.kind === 'shownListInvalid' ? invalidRestore(read.reason) : read;
+}
+
+function noListReason(line: JsonObject | undefined): string {
+  const said = line === undefined ? '' : reasonOf(line, previewOf(line));
+
+  return said === '' ? 'its preview carried no shown list' : `the daemon could not preview it: ${said}`;
+}
+
+/** Own review #2: the daemon narrows to the ids it was handed (`RestoreAction.Bound`) — a shown id it was not handed is refused. */
+function onlyAsked(held: RestoreSelection, asked: readonly string[]): RestoreSelection | RootFailure {
+  return held.names.every((id) => asked.includes(id)) ? held : invalidRestore('its shown list names an entry the panel did not ask for');
 }
 
 /** `act <ids> --preview --json` (exit 0), held — or why it cannot be: A4's volumes, (S7b.2b) A21's processes and (E10.S2b) A20's entries each held. */

@@ -138,7 +138,7 @@ test('the RESTORE scenario: select on the page, Restore — preview, modal, deta
     world.rewrite({ answers: answers(world, 'running', { 'status.json': restoring('live') }) });
     const second = openWindow(world, durable);
     await second.host.follower.tick();
-    assert.equal(second.host.controls().state, 'Restoring… archived sessions', 'from the daemon running block, in a window that started nothing');
+    assert.equal(second.host.controls().state, 'Restoring… archived sessions', 'from the daemon running block, after a reload');
     await second.page.receive({ type: 'ready' });
     assert.equal(last(second).selection.line, 'Restoring… archived sessions');
     assert.equal(last(second).selection.restoreEnabled, false);
@@ -151,6 +151,7 @@ test('the RESTORE scenario: select on the page, Restore — preview, modal, deta
     assert.match(second.host.controls().results[0]?.sentence ?? '', /^Run 20000101T000000Z-1 \(the restore run\) is done: \d+ archived sessions? restored\.$/);
     assert.deepEqual(second.host.journal.entries(), []);
     await second.page.restoreChanged();
+    await second.settled();
     assert.equal(listReads(world), reads + 1, 'the page read its list again when the restore ended');
     assert.equal(last(second).selection.count, 0);
     assert.equal(last(second).agents[0]?.months[0]?.selectEnabled, false, 'the restored entry is no longer selectable');

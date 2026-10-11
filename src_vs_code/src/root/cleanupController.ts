@@ -316,7 +316,7 @@ export class CleanupController {
       return typeof answer === 'string' ? NOT_BUILT : answer;
     }
 
-    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now(), maxShownNames: call.limits.maxShownNames } satisfies PreviewContext));
+    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now(), maxShownNames: call.limits.maxShownNames, asked: askedOf(call.op) } satisfies PreviewContext));
   }
 
   private registered(preview: HeldPreview | RootFailure): PreviewOutcome {
@@ -504,6 +504,11 @@ function previewIds(op: RootOp): ActionIds | undefined {
   }
 
   return op.op === 'preview' ? op.ids : undefined;
+}
+
+/** The entry ids a restore preview piped — what its shown list may name (own review #2); none for every other op. */
+function askedOf(op: RootOp): readonly string[] {
+  return op.op === 'restorePreview' ? op.entries : [];
 }
 
 /** The ids a restore preview is held under (E10.S2b): A20 alone. */

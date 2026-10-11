@@ -386,9 +386,27 @@ function nothingOf(preview: HeldPreview): string {
   return id === 'A20' ? nothingToRestore(preview) : '';
 }
 
-/** E10.S2b: a restore preview that offers no entry still restorable — never an empty `--entry -` list. */
+/**
+ * E10.S2b: a restore preview that leaves nothing to confirm — never an empty `--entry -` list, never a modal that cannot be confirmed:
+ * a list the daemon cut (own review #3), the daemon's own "no" in its words (past its ceiling — own review #1), or none still restorable.
+ */
 function nothingToRestore(preview: HeldPreview): string {
-  return preview.restore?.names.length === 0 ? 'None of the selected archived sessions can be restored now: the daemon offers none that is still removed at its source and verified. Nothing was started — the archive page shows each one\'s state.' : '';
+  const held = preview.restore;
+  if (held === undefined) {
+    return '';
+  }
+
+  return held.truncated ? `The daemon showed only ${held.names.length} of the ${held.count} selected archived sessions; select fewer. Nothing was started.` : noneHeld(held.names.length, preview);
+}
+
+function noneHeld(count: number, preview: HeldPreview): string {
+  return count === 0 ? emptyRestore(preview.actions.find((a) => a.id === 'A20')) : '';
+}
+
+function emptyRestore(action: PreviewedAction | undefined): string {
+  const said = action === undefined ? '' : action.reason;
+
+  return said === '' ? 'None of the selected archived sessions can be restored now: the daemon offers none that is still removed at its source and verified. Nothing was started — the archive page shows each one\'s state.' : `The daemon restores none of the selected archived sessions: ${safeText(said, BASIS_MAX)}. Nothing was started.`;
 }
 
 /**

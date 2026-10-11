@@ -4998,6 +4998,14 @@ break-its on product code; an own review on Fable; the coai plan and code rounds
   by its generic `selectedOf` (an A20 preview without its list is refused); the held lists freeze through one `frozenSelection`;
   the cleanup host reads the status body through its `state/statusBody.ts`. A21 left `BUTTON_ONLY_IDS` there, so the gate's
   `reported` (A20 only) and A21's `allowed` coexist; the bundle scan's root set holds both `--process`/`A21` and `--entry`/`A20`.
+- **The code round** (coai session 1ba3484c, `proceed`, 1 gating of threshold 5, codex): #0 accepted — a cleanup-host change compared
+  the selection bar by building the whole archive view (113 s for 200 changes over 60 000 entries, RED); now only the bar is built
+  (`buildSelectionView`). #1 accepted — while the preview runs the page says "Previewing the restore…" and greys *Restore*
+  (page-local, optimistic; the durable state starts with the journal entry).
+- **The own review on Fable** (8 findings, none high): all taken — the daemon's own "no" told in its words (an unavailable A20 line;
+  an empty list past its ceiling); a shown id the panel did not ask for refused (`PreviewContext.asked`); a cut list refused before
+  the modal; a restore ending during a read reads again after it; *Select* refused while a restore runs; ids handed once; two test
+  titles corrected; two failure paths backfilled (the confirm's exit 2, A20 dropped before the confirm); a doc row.
 
 ##### E10.S2b and E10.S2c — the outline their own plan rounds start from (S2b's is refined by its build notes above)
 

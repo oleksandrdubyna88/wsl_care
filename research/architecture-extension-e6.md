@@ -426,7 +426,7 @@ sequenceDiagram
   an index from an older view (every index message carries the view's `generation`), and reaches the cleanup host only through
   `ArchiveRestore` (`facts`, `start`), which `extension.ts` wires to `CleanupHost.restoreInFlight` / `controls().state` /
   `restoreBlocker` / `restore`; `ArchivePanel.restoreChanged` follows the host's changes.
-- **`cleanup/runWords.ts`** — ONE table of single-action runs (A13 *the archive run*, A20 *the restore run*): the modal's
+- **`cleanup/runWords.ts`** — ONE table of single-action runs (A13 *the archive run*, A20 *the restore run*, A21 *the relay stop*): the modal's
   confirm, the hand-off and terminal notices, the in-flight state. **`cleanFlow.ts`** `restore(texts)` — the transaction over
   A20 (a preview offering none still restorable opens no modal). **`cleanupHost.ts`** — `restore`, `restoreBlocker`,
   `restoreInFlight`.

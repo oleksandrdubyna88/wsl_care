@@ -132,7 +132,7 @@ test('the held restore selection is frozen with the preview — the ids a confir
   assert.ok(Object.isFrozen(preview.restore?.names), 'its ids');
 });
 
-test('a restore detach answered without a run id never ADOPTS the timer\'s full check (["collect"]) — it stays unknown, the other run named', async () => {
+test('a restore detach answered without a run id never ADOPTS a manual full check (["collect"]) — it stays unknown, the other run named', async () => {
   const unknownNoId = JSON.stringify({ schemaVersion: 1, result: 'unknown', kind: 'act', productVersion: '0.1.0' });
   const fullCheck = { ...headBody('status'), running: { state: 'live', runId: '20000101T000000Z-7', trigger: 'manual', actions: ['collect'], reason: '', current: '' } };
   let statuses = 0;
@@ -153,4 +153,43 @@ test('the restore\'s root requests: the preview a root preview of A20, the confi
   assert.ok(preview !== undefined);
   assert.ok(preview.timeoutMs > 600_000, 'above archive.previewTimeoutSeconds at its maximum');
   assert.deepEqual(preview.withoutEnv, ['WSLENV']);
+});
+
+// ---- the own review on Fable ----
+
+test('own review #1: an UNAVAILABLE A20 line (its archive child failed, no shown list) is refused in the daemon\'s OWN words', async () => {
+  const unread = previewText((line) => {
+    const { shown: _shown, ...rest } = line;
+    return { ...rest, preview: { ...bodyOf(line.preview, 'preview'), available: false, reason: 'the archive list child timed out after 600 s', count: 0, bytes: 0, items: [] } };
+  });
+  const c = controller({ [PREVIEW_A20]: exited(0, unread) });
+  const outcome = await c.controller.previewRestore([ENTRY]);
+  assert.ok(outcome.kind === 'restoreListInvalid', JSON.stringify(outcome).slice(0, 300));
+  assert.match(outcome.reason, /the archive list child timed out after 600 s/);
+});
+
+test('own review #2: a shown entry the panel did NOT ask for refuses the preview — the confirm can only pipe ids the page handed', async () => {
+  const c = controller({ [PREVIEW_A20]: exited(0, previewText((line) => ({ ...line, shown: [OTHER] }))) });
+  const outcome = await c.controller.previewRestore([ENTRY]);
+  assert.ok(outcome.kind === 'restoreListInvalid', JSON.stringify(outcome).slice(0, 300));
+  assert.match(outcome.reason, /did not ask for/);
+});
+
+test('own review #7: the restore confirm\'s exit 2 is a refusal of the piped list — shownListRefused, the retry road', async () => {
+  const c = controller({ [PREVIEW_A20]: exited(0, previewText()), [CONFIRM_A20]: exited(2, '', 'wsl-care: act: the entry list on stdin had no end within 10 s; nothing was done\n') });
+  const outcome = await c.controller.previewRestore([ENTRY]);
+  assert.ok(outcome.kind === 'previewed');
+  const confirm = await c.controller.confirm(outcome.preview);
+  assert.equal(confirm.kind, 'shownListRefused');
+});
+
+test('own review #7: A20 dropped from status.actions between the preview and the confirm refuses the confirm — nothing piped', async () => {
+  let reported = true;
+  const status = headBody('status');
+  const c = controller({ [PREVIEW_A20]: exited(0, previewText()), [CONFIRM_A20]: exited(0, handOff()) }, () => (reported ? status : { ...status, actions: stringsAt(status, 'actions').filter((a) => a !== 'A20') }));
+  const outcome = await c.controller.previewRestore([ENTRY]);
+  assert.ok(outcome.kind === 'previewed');
+  reported = false;
+  assert.equal((await c.controller.confirm(outcome.preview)).kind, 'idsRefused');
+  assert.ok(c.runner.argvs().every((a) => a !== CONFIRM_A20));
 });

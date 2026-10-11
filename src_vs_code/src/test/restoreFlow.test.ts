@@ -53,9 +53,9 @@ function restoreEntry(): Extract<JournalEntry, { kind: 'run' }> {
   return { id: 'e1', kind: 'run', op: 'clean', distro: 'Ubuntu', actions: ['A20'], since: '2026-10-11T12:00:00.000Z', runId: runId(RUN) };
 }
 
-function controller(script: Readonly<Record<string, Scripted>>): { controller: CleanupController; runner: ReturnType<typeof recordingRunner> } {
+function controller(script: Readonly<Record<string, Scripted>>, status: () => Body = () => headBody('status')): { controller: CleanupController; runner: ReturnType<typeof recordingRunner> } {
   const runner = recordingRunner({ [ROOT_CHECK]: exited(0, '0.1.0\n'), ...script });
-  const client: CleanupClient = { rootTarget: () => Promise.resolve({ wsl: 'C:\\Windows\\System32\\wsl.exe', distro: 'Ubuntu' }), run: () => Promise.resolve(answered('status', headBody('status'))) };
+  const client: CleanupClient = { rootTarget: () => Promise.resolve({ wsl: 'C:\\Windows\\System32\\wsl.exe', distro: 'Ubuntu' }), run: () => Promise.resolve(answered('status', status())) };
   let now = 1_000_000;
 
   return { controller: new CleanupController({ client, runner: runner.runner, now: () => now, sleep: (ms) => { now += ms; return Promise.resolve(); } }), runner };
@@ -76,10 +76,10 @@ interface FlowWorld {
   readonly seenBefore: string[];
 }
 
-function flowWorld(script: (store: MapStore, seen: string[]) => Readonly<Record<string, Scripted>>, answer = true): FlowWorld {
+function flowWorld(script: (store: MapStore, seen: string[]) => Readonly<Record<string, Scripted>>, answer = true, status?: () => Body): FlowWorld {
   const store = new MapStore();
   const seenBefore: string[] = [];
-  const c = controller(script(store, seenBefore));
+  const c = controller(script(store, seenBefore), status);
   const modals: Modal[] = [];
   const notices: { level: NoticeLevel; sentence: string }[] = [];
   const ui: CleanUi = { confirm: (m) => { modals.push(m); return Promise.resolve(answer); }, notify: (level, sentence) => { notices.push({ level, sentence }); return Promise.resolve(undefined); } };
@@ -263,4 +263,25 @@ test('Restore is greyed by the HOST when the daemon does not offer it — a capa
   }
   const unreported = await hostWith({ ...head, actions: stringsAt(head, 'actions').filter((a) => a !== 'A20') });
   assert.match(unreported.host.restoreBlocker(), /does not report A20/);
+});
+
+// ---- the own review on Fable ----
+
+test('own review #1: the daemon\'s own "no" (more entries than one restore takes) is told in its words — never "none still restorable"', async () => {
+  const past = previewText((line) => ({ ...line, shown: [], preview: { ...bodyOf(line.preview, 'preview'), count: 0, bytes: 0, items: [], reason: '3 entries are more than one restore takes (archive.maxRestoreEntries: 2)' } }));
+  const w = flowWorld(() => ({ [PREVIEW_A20]: exited(0, past) }));
+  assert.equal((await w.flow.restore([ENTRY])).kind, 'nothing');
+  assert.deepEqual(w.modals, []);
+  assert.match(w.notices.at(-1)?.sentence ?? '', /3 entries are more than one restore takes \(archive\.maxRestoreEntries: 2\)/);
+  assert.doesNotMatch(w.notices.at(-1)?.sentence ?? '', /removed at its source and verified/);
+});
+
+test('own review #3: a list the daemon CUT opens no modal — refused before it, never a modal that cannot be confirmed', async () => {
+  const cut = previewText((line) => ({ ...line, shownTruncated: true, preview: { ...bodyOf(line.preview, 'preview'), count: 3 } }));
+  const status = headBody('status');
+  const w = flowWorld(() => ({ [PREVIEW_A20]: exited(0, cut) }), true, () => ({ ...status, limits: { ...bodyOf(status.limits, 'limits'), maxShownNames: 1 } }));
+  assert.equal((await w.flow.restore([ENTRY])).kind, 'nothing');
+  assert.deepEqual(w.modals, []);
+  assert.deepEqual(w.journal.entries(), []);
+  assert.match(w.notices.at(-1)?.sentence ?? '', /showed only 1 of the 3/);
 });

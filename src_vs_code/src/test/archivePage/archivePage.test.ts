@@ -33,7 +33,7 @@ function listWith(edits: readonly Body[]): Body {
 }
 
 function state(body: Body, parts: Partial<ArchiveHostState> = {}): ArchiveHostState {
-  return { list: { kind: 'read', distro: 'Ubuntu', body }, generation: 1, selection: new Set(), ceiling: 1000, restore: IDLE_RESTORE, expanded: new Set(), pathsShown: false, notice: '', noticeLevel: 'none', ...parts };
+  return { list: { kind: 'read', distro: 'Ubuntu', body }, generation: 1, selection: new Set(), ceiling: 1000, restore: IDLE_RESTORE, starting: false, expanded: new Set(), pathsShown: false, notice: '', noticeLevel: 'none', ...parts };
 }
 
 function viewOf(s: ArchiveHostState): ArchivePageView {

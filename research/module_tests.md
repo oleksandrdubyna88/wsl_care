@@ -3732,6 +3732,13 @@ touched.
 | the strict fake's A20: exactly the shared request's two shapes, a strict stdin, the capabilities and A20 reported — and its preview over the golden's entry EQUAL to the daemon-made line | `fakeWsl.test.ts` (*root A20*) | — (the fake's own tests) |
 | the page and its flows are catalogued | `catalogue.test.ts` | red: `archive selectMonth`, `archive toggleEntry`, `archive clearSelection`, `archive restore`, `root restorePreview`, `root restoreConfirm` missing |
 | the real daemon restores on a real archive | — | the owner's live gate: `POST_DEPLOY.md` item 3 (the plan round's #1) |
+| the code round's #0: a cleanup-host change that leaves the selection bar as it is builds no archive view (only the bar is compared) | `archiveController.test.ts` (*code round #0*) | red: `200 unchanged host changes took 113279 ms` over 60 000 entries; teeth C16 → 1 red (65 437 ms) |
+| the code round's #1: while *Restore* waits for the daemon's preview the page says "Previewing the restore…", greys *Restore* and refuses a second press | `archiveController.test.ts` (*code round #1*) | red: the line was empty; teeth C17 → 1 red |
+| own review #1: the daemon's own "no" is told in its words — an UNAVAILABLE A20 line (no shown list) refuses the preview with its reason; an empty list with a reason (past `archive.maxRestoreEntries`) is never "none still restorable" | `restoreRoot.test.ts`, `restoreFlow.test.ts` (*own review #1*) | red: "its preview carried no shown list"; the false "none still removed at its source" sentence |
+| own review #2: a shown entry the panel did not ask for refuses the preview (`PreviewContext.asked`) | `restoreRoot.test.ts` (*own review #2*) | red: the preview was held |
+| own review #3: a list the daemon cut opens no modal (refused before it, no journal entry) | `restoreFlow.test.ts` (*own review #3*) | red: the modal opened |
+| own review #4–#6: a restore that ends during a read reads AGAIN after it; *Select* is refused while a restore runs; a list naming one id twice hands it once | `archiveController.test.ts` (*own review #4*, *#5*, *#6*) | red: 2 reads not 3; the toggle selected; `[[id, id]]` |
+| own review #7: the restore confirm's exit 2 is `shownListRefused` (the retry road); A20 dropped from `status.actions` between the preview and the confirm refuses the confirm | `restoreRoot.test.ts` (*own review #7*) | backfill — green at once (the code already held) |
 
 Each break-it was one mutation of a product file, compiled, the named test files run (`--test-concurrency=8`), then the file
 restored and recompiled; the mutations are listed by their B-number in the plan's *As built — E10.S2a*.
