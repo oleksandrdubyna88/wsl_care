@@ -26,5 +26,7 @@ logs/
 node_modules/
 src_vs_code/out/
 src_vs_code/dist/
+# the bundled Windows daemon, fetched and verified by npm run fetch:windows-daemon (E7.S5a) — never committed
+src_vs_code/bin/
 *.vsix
 .vscode-test/

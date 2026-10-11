@@ -266,7 +266,8 @@ Steps 4 and 5 land in ONE PR. The extension release that carries it is the first
       attest job's compare green, published through the Environment's approval.
 - [ ] POST_DEPLOY item 6 green against the real install folder, the exe compared and its version read.
 - [ ] The panel's Windows row shows the bundled version on the owner's machine.
-- [ ] Docs updated; the own Fable review of the code finds no way to ship another exe.
+- [x] Docs updated; the own Fable review of the code finds no way to ship another exe (its one way, a twin entry or a DLL
+      beside the exe, is closed — §11).
 
 ## 9. Plan round (coai session `52122128`, 2026-10-10) and the own Fable review
 
@@ -319,3 +320,39 @@ The seven steps of §7 shipped in that order, steps 4 and 5 in one commit. What 
 - the first `win32-x64` extension release through the Environment's approval (§8 item 2);
 - POST_DEPLOY item 6 green against the real install folder, which also answers Q-B2 (§8 item 3);
 - the panel's Windows row on the owner's machine (§8 item 4).
+
+## 11. The own Fable review of the code (supply chain, 2026-10-11)
+
+One major finding, seven minor, seven notes. Each was checked against the code; none was rejected.
+
+- **1 (major) — the attest job looked at one entry only.** VS Code's installer writes `<ext>/<name>` on case-insensitive NTFS
+  and the last of two colliding entries wins, so a package with the attested `extension/bin/wsl-care.exe` AND a twin
+  (`WSL-CARE.EXE`, `BIN/…`, `bin/./…`, `bin//…`, a backslash) passed `verify-bundled-exe.sh` and installed the twin; a DLL
+  beside the exe was not refused either. The build's allowlist catches both, but the build is the untrusted domain. Fixed:
+  the attest job now refuses an unsafe or symlink name, two names that are one file case-insensitively, anything but the
+  exe under `extension/bin/`, and any other `.exe` or `.dll`. Eight new refusal shapes, seven red before the fix (exit 0);
+  break-its (the code-beside rule off, the case fold off) red. The whole allowlist was NOT copied into the attest job: its
+  names pass through vsce's renames table in `vsixCheck.ts`, and a second copy of that table is the drift reuse-first forbids.
+- **2 — python without `-I`.** Every python of the fetch, the re-derivation and `compare-installed-extension.sh` now runs
+  isolated.
+- **3 — `native` and `python_cmd` copied into two scripts.** Moved to `.github/scripts/lib/windows-tools.sh`. A third
+  `cygpath` spelling in `package-daemon.sh` is not this story's code and is left as it is.
+- **4 — `ci-extension.yml` still said "universal".** Fixed.
+- **5 — POST_DEPLOY item 6** read the CHECKOUT's pin and matched `--version` with a regex built from it. It now reads
+  `min-daemon.json` at the released tag (`gh api …/contents/…?ref=$t`) and compares the part before `+` exactly; the workflow
+  test was red first.
+- **6 — the release target was a substring of the whole vsixmanifest.** It is now the `TargetPlatform` attribute of the one
+  `<Metadata><Identity>`, read with the strict `xmlTree` reader (a comment fails loudly); checked against a real targeted
+  package. Red first with the text in a description, in another element and in a comment.
+- **7 — the fetch's last moves were outside `refuse`.** The digest is written in the work folder first and both moves into
+  `bin/` are under `refuse`. No test: a failed write after a verified fetch (a full disk) is not reachable through the flows'
+  seams.
+- **8 — the host tier never showed the Windows row's happy path.** A host scenario now sets `bundledExe` to the exact path
+  under the extension folder and asserts the row; the Test-mode API gained `bundled()`. It runs on CI's legs (the host tier
+  downloads VS Code, which is not done on this machine).
+- **Notes:** 9 the guard reads `(.assets // [])`, so a release without assets gets the right refusal; 10 the reason bound
+  is a named `MAX_REASON` (display bounds are named constants, as `TEXT_MAX` is beside them, not config keys); 11 the
+  extension folder must start with a drive letter — a share and a root without a drive start nothing (red first); 12 an
+  explicit `src_vs_code/bin/` ignore line; 14 `verify-bundled-exe.sh` says it trusts what the tag serves at its run time;
+  15 the `.mjs` header says a developer's `node_modules/.bin` comes first on PATH. 13 was the uncommitted promotion, now
+  committed.

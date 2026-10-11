@@ -19,7 +19,7 @@ set -euo pipefail
 [ -f "$1" ] || { echo "compare-installed-extension: $1 is not a file" >&2; exit 2; }
 [ -d "$2" ] || { echo "compare-installed-extension: $2 is not a folder" >&2; exit 2; }
 
-exec python3 -c '
+exec python3 -I -c '
 import json, os, sys, zipfile
 
 vsix, folder = sys.argv[1], sys.argv[2]

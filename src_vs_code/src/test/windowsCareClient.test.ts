@@ -34,7 +34,10 @@ test('it starts exactly <extension>\\bin\\wsl-care.exe, by absolute path, with -
 });
 
 test('off Windows, or for an extension not on a local disk, nothing is started', async () => {
-  for (const [platform, extension] of [['linux', EXTENSION], ['darwin', EXTENSION], ['win32', { scheme: 'vscode-remote', fsPath: '/home/u/.vscode-server/extensions/x' }], ['win32', { scheme: 'file', fsPath: 'relative\\folder' }]] as const) {
+  for (const [platform, extension] of [['linux', EXTENSION], ['darwin', EXTENSION], ['win32', { scheme: 'vscode-remote', fsPath: '/home/u/.vscode-server/extensions/x' }], ['win32', { scheme: 'file', fsPath: 'relative\\folder' }],
+    // Own Fable review of the code, note 11: a share (UNC) and a root without a drive are not the extension's local disk.
+    ['win32', { scheme: 'file', fsPath: '\\\\server\\share\\extensions\\pub.ai-os-care-0.5.0-win32-x64' }],
+    ['win32', { scheme: 'file', fsPath: '\\Users\\u\\.vscode\\extensions\\pub.ai-os-care-0.5.0-win32-x64' }]] as const) {
     const r = recording(exited(0, '0.4.0'));
     const read = await client(r.runner, platform, extension).version();
     assert.equal(read.kind, 'unavailable', `${platform} ${extension.scheme}`);

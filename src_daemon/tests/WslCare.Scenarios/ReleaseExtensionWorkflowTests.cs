@@ -359,8 +359,14 @@ public sealed partial class ReleaseExtensionWorkflowTests
         // install folder, the bundled exe re-derived from the attested daemon member, and its --version the pin.
         row.Should().Contain(". .github/scripts/lib/extension-package.sh").And.Contain("vsix_name \"$v\"")
             .And.Contain("x.targetPlatform === \"win32-x64\"").And.Contain("$p.$n-$v-$EXTENSION_TARGET")
-            .And.Contain("bash .github/scripts/verify-bundled-exe.sh \"$b\" \"$f\"").And.Contain("require('./src_vs_code/min-daemon.json').bundledDaemon")
+            .And.Contain("bash .github/scripts/verify-bundled-exe.sh \"$b\" \"$f\"")
             .And.Contain("\"$i/bin/wsl-care.exe\" --version");
+        // Own Fable review of the code, finding 5: the pin is the RELEASED tag's, never the checkout's (main may have moved it
+        // past the release), and the installed --version is compared exactly — a version's dots are regex metacharacters.
+        row.Should().Contain("contents/src_vs_code/min-daemon.json?ref=$t", "the bundled pin is read at the released tag")
+            .And.NotContain("require('./src_vs_code/min-daemon.json').bundledDaemon", "the checkout's pin may be newer than the release")
+            .And.Contain("cut -d+ -f1)\" = \"$b\" ]", "the version before the build stamp equals the pin exactly")
+            .And.NotContain("grep -q \"^$b+\"", "a regex built from a version matches 0x4y0 for 0.4.0");
         guard.Should().Contain("lib/versions.sh").And.Contain("version_at_least", "the guard and the item share one comparison");
         guard.Should().NotContain("sort -t.", "no second spelling of the comparison");
     }

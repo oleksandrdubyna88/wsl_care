@@ -9,8 +9,15 @@
 #
 #   1. fetch-windows-daemon.sh <version> into a fresh folder — the release download, verify-release-assets.sh, the EXACT
 #      attestation of release.yml@refs/tags/daemon-v<version>, the one zip member read by its exact name;
-#   2. python's zipfile reads `extension/bin/wsl-care.exe` from the package — exactly one entry by that name;
+#   2. python's zipfile reads EVERY entry name of the package (own Fable review of the code, finding 1): VS Code's installer
+#      writes `<ext>/<name>` on case-insensitive NTFS and the last of two colliding entries wins, and the exe loads DLLs from
+#      its own folder first — so the package is refused when any name is unsafe (`.`/`..`/empty segments, `\`, `:`, a leading
+#      `/`) or a symlink, when two names are one file case-insensitively, when anything but the exe is under `extension/bin/`,
+#      or when any other entry is an `.exe` or a `.dll`; then `extension/bin/wsl-care.exe` must be there exactly once;
 #   3. the two are compared byte for byte.
+#
+# It trusts what `daemon-v<version>` serves AT ITS RUN TIME, attested: replacing a published asset needs `contents: write`
+# and is refused by the tag ruleset and the never-replace rule of the release (finding 14).
 #
 # Exit 0 and one line naming both digests when they are the same; 1 on any difference, a missing member or a refused fetch;
 # 2 on usage. Nothing is extracted by an archive-supplied path.
@@ -30,35 +37,49 @@ refuse() {
   exit 1
 }
 
-native() {
-  if command -v cygpath > /dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
-}
-
-python_cmd() {
-  local candidate
-  for candidate in python3 python; do
-    if "$candidate" -c 'import zipfile' > /dev/null 2>&1; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
+# native and python_cmd: one copy for every script that reads a zip.
+# shellcheck source=lib/windows-tools.sh
+. "$here/lib/windows-tools.sh"
 
 bash "$here/fetch-windows-daemon.sh" "$version" "$work/attested" \
   || refuse "the attested daemon-v$version member could not be fetched and verified — nothing is signed"
 py="$(python_cmd)" || refuse "no python with zipfile here (python3 or python)"
-"$py" - "$(native "$vsix")" "$(native "$work/attested/bin/wsl-care.exe")" <<'PYTHON' || refuse "$vsix does not carry exactly the attested daemon-v$version member — nothing is signed"
-import hashlib, sys, zipfile
+"$py" -I - "$(native "$vsix")" "$(native "$work/attested/bin/wsl-care.exe")" <<'PYTHON' || refuse "$vsix does not carry exactly the attested daemon-v$version member — nothing is signed"
+import hashlib, posixpath, stat, sys, zipfile
 
 package, attested_path = sys.argv[1], sys.argv[2]
 ENTRY = "extension/bin/wsl-care.exe"
+BIN = "extension/bin/"
 
 try:
     archive = zipfile.ZipFile(package)
 except Exception as error:
     print(f"not a readable package: {error}", file=sys.stderr)
     sys.exit(1)
+
+def unsafe(name):
+    parts = name.rstrip("/").split("/")
+    return name.startswith("/") or "\\" in name or ":" in name or any(part in ("", ".", "..") for part in parts)
+
+def refusal(info, seen):
+    # The name AS STORED: zipfile turns a backslash into "/" when it reads on Windows.
+    name = info.orig_filename
+    if unsafe(name) or stat.S_ISLNK(info.external_attr >> 16):
+        return f"an unsafe entry: {name!r}"
+    folded = posixpath.normpath(name).casefold()
+    if folded in seen and name != ENTRY:
+        return f"{name!r} is the same file as another entry on a case-insensitive disk"
+    seen.add(folded)
+    if name != ENTRY and (folded.startswith(BIN) or folded.endswith((".exe", ".dll"))):
+        return f"{name!r} is code beside the attested exe — only {ENTRY} may be"
+    return ""
+
+seen = set()
+for info in archive.infolist():
+    why = refusal(info, seen)
+    if why:
+        print(why, file=sys.stderr)
+        sys.exit(1)
 
 named = [info for info in archive.infolist() if info.orig_filename == ENTRY]
 if len(named) != 1:

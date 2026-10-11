@@ -10,6 +10,10 @@
  * The script runs under bash: `bash` off Windows; on Windows the `bin\bash.exe` of the Git for Windows installation the `git`
  * on PATH belongs to — never a bare `bash`, which there may be `System32\bash.exe`, the WSL launcher.
  *
+ * On a developer machine npm puts node_modules/.bin first on PATH, so a dependency shipping a `gh` or `python3` would be
+ * the one the fetch starts. CI fetches BEFORE npm ci and the attest job runs no npm, so neither is exposed; locally, fetch
+ * from a checkout whose dependencies you trust (own Fable review of the code, note 15).
+ *
  * Exit: the fetch script's own (0 fetched, 1 refused, 2 usage); 2 here when min-daemon.json or a bash cannot be read.
  */
 import { spawnSync } from 'node:child_process';

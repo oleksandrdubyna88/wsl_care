@@ -477,6 +477,7 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     guardRecorder: () => parts.guardRecorder,
     gpu: () => parts.gpu.host,
     gpuRecorder: () => parts.gpu.recorder,
+    bundled: () => parts.bundled,
     cleanup: () => parts.cleanup,
     cleanupHost: () => parts.host,
     cleanRecorder: () => parts.cleanRecorder,

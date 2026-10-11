@@ -46,23 +46,9 @@ refuse() {
   exit 1
 }
 
-# A path as a Windows program reads it: unchanged off Windows, `cygpath -m` under Git for Windows' bash.
-native() {
-  if command -v cygpath > /dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
-}
-
-# The first python that can read a zip: python3, else python (a Windows runner may name it so; the Store's python3 alias
-# exits non-zero without Python, and is skipped).
-python_cmd() {
-  local candidate
-  for candidate in python3 python; do
-    if "$candidate" -c 'import zipfile' > /dev/null 2>&1; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
+# native and python_cmd: one copy for every script that reads a zip.
+# shellcheck source=lib/windows-tools.sh
+. "$here/lib/windows-tools.sh"
 
 rm -f "$exe" "$exe.sha256"
 mkdir -p "$work/download"
@@ -76,7 +62,7 @@ gh attestation verify "$(native "$work/download/$zip")" --repo "$REPO" \
   || refuse "$zip carries no attestation by release.yml at $tag"
 
 py="$(python_cmd)" || refuse "no python with zipfile here (python3 or python)"
-digest="$("$py" - "$(native "$work/download/$zip")" "$member" "$(native "$work/wsl-care.exe")" <<'PYTHON'
+digest="$("$py" -I - "$(native "$work/download/$zip")" "$member" "$(native "$work/wsl-care.exe")" <<'PYTHON'
 import hashlib, stat, sys, zipfile
 
 archive_path, member, target = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -119,7 +105,7 @@ print(hashlib.sha256(data).hexdigest())
 PYTHON
 )" || refuse "$zip is not exactly one $member"
 
-mkdir -p "$bin"
-mv "$work/wsl-care.exe" "$exe"
-printf '%s  wsl-care.exe\n' "$digest" > "$exe.sha256"
+printf '%s  wsl-care.exe\n' "$digest" > "$work/wsl-care.exe.sha256" || refuse "could not write the digest of $member"
+{ mkdir -p "$bin" && mv "$work/wsl-care.exe" "$exe" && mv "$work/wsl-care.exe.sha256" "$exe.sha256"; } \
+  || refuse "could not place $member and its digest in $bin"
 echo "fetch-windows-daemon: $member of the attested $tag, sha256 $digest"

@@ -24,6 +24,13 @@ import { VERBS } from './verbs';
 /** `bin/wsl-care.exe` under the extension's folder — the one place the exe is named. */
 const BUNDLED_EXE: readonly [string, string] = ['bin', 'wsl-care.exe'];
 
+/**
+ * A local disk's absolute path: a drive letter, a colon, a separator. `path.win32.isAbsolute` also says yes to a share
+ * (`\\server\share\…`) and to a root without a drive (`\Users\…`) — neither is the user's own local extension folder (own
+ * Fable review of the code, note 11).
+ */
+const DRIVE_ROOT = /^[A-Za-z]:[\\/]/;
+
 /** Where the extension is installed — `vscode.ExtensionContext.extensionUri`, as plain data so the client stays vscode-free. */
 export interface ExtensionLocation {
   readonly scheme: string;
@@ -82,7 +89,7 @@ export class WindowsCareClient {
     }
     const file = path.win32.join(extension.fsPath, ...BUNDLED_EXE);
 
-    return extension.scheme === 'file' && path.win32.isAbsolute(file) ? file : { reason: `the extension is not on a local disk (${extension.scheme}:${extension.fsPath})` };
+    return extension.scheme === 'file' && DRIVE_ROOT.test(file) ? file : { reason: `the extension is not on a local disk (${extension.scheme}:${extension.fsPath})` };
   }
 
   /** `--version` of the bundled exe, through the given seam — nothing started when {@link exe} says why not. */

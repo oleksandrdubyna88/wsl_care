@@ -21,6 +21,9 @@ const PREFIX = 'Windows daemon (bundled): ';
 /** A version text the exe printed — untrusted output, so bounded and made safe before it is shown. */
 const MAX_VERSION = 120;
 
+/** Why it could not run — Node's or the exe's own words, bounded like the neighbours' `TEXT_MAX` display bounds. */
+const MAX_REASON = 300;
+
 function versionView(text: string, pin: string): WindowsDaemonView {
   const parsed = parseDaemonVersion(text);
   const shown = safeText(text, MAX_VERSION);
@@ -33,7 +36,7 @@ function versionView(text: string, pin: string): WindowsDaemonView {
 const BY_KIND: { readonly [K in BundledRead['kind']]: (r: Extract<BundledRead, { kind: K }>, pin: string) => WindowsDaemonView } = {
   version: (r, pin) => versionView(r.text, pin),
   unavailable: () => NO_WINDOWS_DAEMON,
-  failed: (r) => ({ line: `${PREFIX}could not run — ${safeText(r.reason, 300)}`, level: 'warn' }),
+  failed: (r) => ({ line: `${PREFIX}could not run — ${safeText(r.reason, MAX_REASON)}`, level: 'warn' }),
 };
 
 /** The row for the host's last read — "checking…" before the first one answered. */

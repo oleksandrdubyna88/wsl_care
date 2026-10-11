@@ -25,6 +25,7 @@ public sealed class FetchWindowsDaemonFlows
     private const string Member = Folder + "/wsl-care.exe";
     private const string Zip = "wsl-care-0.3.0-win-x64.zip";
     private static readonly byte[] Exe = Encoding.UTF8.GetBytes("MZ the attested wsl-care.exe stand-in");
+    private static readonly byte[] Twin = Encoding.UTF8.GetBytes("MZ a second executable the build slipped in beside the attested one");
 
     private static void Runnable()
     {
@@ -307,7 +308,13 @@ public sealed class FetchWindowsDaemonFlows
         File.ReadAllText(world.Log).Should().Contain("attestation verify ", "the attest job asks the attestation itself — never the build's word");
     }
 
-    public static TheoryData<string> RefusedPackages => ["different", "missing", "twice"];
+    /// <summary>
+    /// The refused packages. Besides the wrong bytes, a missing or doubled member: a TWIN that VS Code's installer would write onto
+    /// the same <c>bin\wsl-care.exe</c> on case-insensitive NTFS (the last entry wins), and a DLL the exe would load from its own
+    /// folder (own Fable review of the code, finding 1). The build's allowlist refuses them too, but the build is the untrusted domain.
+    /// </summary>
+    public static TheoryData<string> RefusedPackages =>
+        ["different", "missing", "twice", "case-twin", "folder-twin", "dot-twin", "slash-twin", "backslash-twin", "bin-dll", "manifest-twin", "other-pe"];
 
     [Theory]
     [MemberData(nameof(RefusedPackages))]
@@ -321,7 +328,15 @@ public sealed class FetchWindowsDaemonFlows
         {
             "different" => [("extension/bin/wsl-care.exe", Encoding.UTF8.GetBytes("MZ rewritten after the fetch by a build step"))],
             "missing" => [],
-            _ => [("extension/bin/wsl-care.exe", Exe), ("extension/bin/wsl-care.exe", Exe)],
+            "twice" => [("extension/bin/wsl-care.exe", Exe), ("extension/bin/wsl-care.exe", Exe)],
+            "case-twin" => [("extension/bin/wsl-care.exe", Exe), ("extension/bin/WSL-CARE.EXE", Twin)],
+            "folder-twin" => [("extension/bin/wsl-care.exe", Exe), ("extension/BIN/wsl-care.exe", Twin)],
+            "dot-twin" => [("extension/bin/wsl-care.exe", Exe), ("extension/bin/./wsl-care.exe", Twin)],
+            "slash-twin" => [("extension/bin/wsl-care.exe", Exe), ("extension/bin//wsl-care.exe", Twin)],
+            "backslash-twin" => [("extension/bin/wsl-care.exe", Exe), (@"extension\bin\wsl-care.exe", Twin)],
+            "bin-dll" => [("extension/bin/wsl-care.exe", Exe), ("extension/bin/version.dll", Twin)],
+            "manifest-twin" => [("extension/bin/wsl-care.exe", Exe), ("extension/PACKAGE.JSON", Twin)],
+            _ => [("extension/bin/wsl-care.exe", Exe), ("extension/dist/helper.exe", Twin)],
         };
 
         var result = await VerifyAsync(world, Package(world, members));

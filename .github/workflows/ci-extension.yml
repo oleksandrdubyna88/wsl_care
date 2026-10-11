@@ -14,7 +14,7 @@ name: ci · extension
 #
 # Shipped artefact -> what a pull request runs for it (.agents/conventions/common/platform-limits.md part 2):
 #
-#   - the extension's bundle (dist/extension.js, one universal .vsix, E5.S3) runs inside VS Code on Windows
+#   - the extension's bundle (dist/extension.js, one win32-x64 .vsix since E7.S5a, E5.S3) runs inside VS Code on Windows
 #     (extensionKind ["ui"])                                               -> windows-latest
 #   - the same bundle off Windows answers "Windows + WSL only" and starts nothing (E5.S2's notice: the extension-host
 #     scenarios assert it in a real VS Code on Linux, under xvfb)          -> ubuntu-24.04
@@ -24,7 +24,7 @@ name: ci · extension
 # wsl.exe: every test process carries a tripwire that throws on any start of `wsl` / `wsl.exe`, and a test asserts it
 # is armed; in the extension host the runner is the strict fake or the CLOSED one, never the real one (Test mode).
 #
-# PACKAGING ON EVERY PULL REQUEST, on both legs (E5.S3, plan §15g M8): `vsce package` builds the universal .vsix exactly
+# PACKAGING ON EVERY PULL REQUEST, on both legs (E5.S3, plan §15g M8): `vsce package --target win32-x64` builds the one .vsix exactly
 # as release-extension.yml does, and scripts/check-vsix.mjs checks the ARTEFACT — `vsce ls --no-dependencies` equal to
 # vsix-files.txt, and inside the unzipped .vsix: exactly the allowlist, no drive / home / mnt / wsl-share path, no user
 # name of the runner (derived when the check runs) or word of vsix-denylist.txt, no e-mail address, no source map, a

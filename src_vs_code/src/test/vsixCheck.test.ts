@@ -33,7 +33,14 @@ test('E7.S5a: a RELEASE .vsix must target win32-x64 — the vsixmanifest is the 
   const entries = cleanEntries();
   const release = { ...OPTIONS, release: true, bundledExeDigest: OPTIONS.bundledExeDigest ?? '0'.repeat(64) };
   assert.doesNotMatch(vsixFindings(entries, release).join(' | '), /TargetPlatform/);
-  for (const manifest of ['<?xml version="1.0"?><PackageManifest><Metadata><Identity Id="ai-os-care"/></Metadata></PackageManifest>', TARGETED_MANIFEST.replace('win32-x64', 'linux-x64')]) {
+  // Own Fable review of the code, finding 6: the target counts only as the Identity's attribute — the same text in a comment,
+  // in another element's attribute or in a description is not the package's target.
+  const elsewhere = [
+    '<?xml version="1.0"?><PackageManifest><Metadata><Identity Id="ai-os-care"/><Description>TargetPlatform="win32-x64"</Description></Metadata></PackageManifest>',
+    '<?xml version="1.0"?><PackageManifest><Metadata><Identity Id="ai-os-care"/><Property Id="x" TargetPlatform="win32-x64"/></Metadata></PackageManifest>',
+    '<?xml version="1.0"?><PackageManifest><!-- TargetPlatform="win32-x64" --><Metadata><Identity Id="ai-os-care"/></Metadata></PackageManifest>',
+  ];
+  for (const manifest of ['<?xml version="1.0"?><PackageManifest><Metadata><Identity Id="ai-os-care"/></Metadata></PackageManifest>', TARGETED_MANIFEST.replace('win32-x64', 'linux-x64'), ...elsewhere]) {
     entries.set('extension.vsixmanifest', Buffer.from(manifest));
     assert.match(vsixFindings(entries, release).join(' | '), /a release \.vsix must target win32-x64: extension\.vsixmanifest carries no TargetPlatform="win32-x64"/, manifest);
     assert.doesNotMatch(vsixFindings(entries, OPTIONS).join(' | '), /TargetPlatform/, 'a pull request package is checked for content, not for its release target');
