@@ -37,6 +37,8 @@ const TIMEOUTS = {
   windowsTimeFixSeconds: { key: 'timeouts.windowsTimeFixSeconds', default: 180, minimum: 30, maximum: 3600, description: 'How long *Start Windows Time* may take, in seconds — it waits for YOU at the UAC prompt, then starts the Windows Time service and resyncs (up to three tries).' },
   windowsTimeGuardSeconds: { key: 'timeouts.windowsTimeGuardSeconds', default: 180, minimum: 30, maximum: 3600, description: 'How long installing or removing the Windows Time guard may take, in seconds — it waits for YOU at the UAC prompt, then registers or deletes one scheduled task.' },
   windowsTimeGuardQuerySeconds: { key: 'timeouts.windowsTimeGuardQuerySeconds', default: 30, minimum: 5, maximum: 300, description: 'How long the read-only Task Scheduler query behind the panel\'s *Windows Time guard* line may take, in seconds.' },
+  gpuQuerySeconds: { key: 'timeouts.gpuQuerySeconds', default: 20, minimum: 5, maximum: 120, description: 'How long the read-only query of Windows\' display adapters behind the panel\'s GPU alert may take, in seconds (measured: 0.6–1.5 s, once 6.2 s).' },
+  gpuEnableSeconds: { key: 'timeouts.gpuEnableSeconds', default: 120, minimum: 30, maximum: 600, description: 'How long *Enable <GPU>* may take, in seconds — it waits for YOU at the UAC prompt, then enables one display adapter.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
 const CLEANUP = {
@@ -67,12 +69,19 @@ const GUARD = {
   guardTimeLimitMinutes: { key: 'windowsTime.guard.timeLimitMinutes', default: 5, minimum: 1, maximum: 60, description: 'How long one run of the Windows Time guard may take before Task Scheduler stops it, in minutes. Applies when the guard is installed (again).' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
+/** The GPU alert (PLAN_gpu_health.md D1, D2). */
+const GPU = {
+  gpuCheckMinutes: { key: 'gpu.checkMinutes', default: 15, minimum: 0, maximum: 1440, description: 'How often Windows\' display adapters are read for the GPU alert, in minutes, besides when the panel opens or is refreshed (0 = only then). Each read starts one Windows PowerShell.' },
+  gpuEnableSettleSeconds: { key: 'gpu.enableSettleSeconds', default: 3, minimum: 0, maximum: 60, description: 'How long *Enable <GPU>*\'s elevated script waits after `Enable-PnpDevice` before it ends, so the re-read that follows sees the driver started, in seconds.' },
+  gpuOllamaLogTailKiB: { key: 'gpu.ollamaLogTailKiB', default: 256, minimum: 16, maximum: 4096, description: 'How much of the end of Ollama\'s server.log is read for the device it last chose, in KiB.' },
+} as const satisfies Readonly<Record<string, NumberSetting>>;
+
 const LOGS = {
   maxRunIndex: { key: 'logs.maxRunIndex', default: 9_999, minimum: 100, maximum: 100_000, description: 'The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read).' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
 /** Every number setting, by the name the code uses. */
-export const NUMBER_SETTINGS = { ...TIMEOUTS, ...CLEANUP, ...GUARD, ...LOGS } as const;
+export const NUMBER_SETTINGS = { ...TIMEOUTS, ...CLEANUP, ...GUARD, ...GPU, ...LOGS } as const;
 
 export type NumberName = keyof typeof NUMBER_SETTINGS;
 

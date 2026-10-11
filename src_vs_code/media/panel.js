@@ -6,8 +6,8 @@
 //
 // It sends the host only its closed set (src/panel/messages.ts): ready, rendered, the id of a pressed button — and, since
 // E6.S3, the cleanup messages: clean / cleanSelected with row ids, runFullCheck, stop with the index the host gave it — and the
-// Windows Time guard's bare installWindowsTimeGuard / removeWindowsTimeGuard, and (E10.S1) the archive's bare
-// chooseArchiveFolder / stopArchiving.
+// Windows Time guard's bare installWindowsTimeGuard / removeWindowsTimeGuard, (E10.S1) the archive's bare
+// chooseArchiveFolder / stopArchiving — and *Enable <GPU>*'s enableGpu with the index the host gave it (PLAN_gpu_health.md).
 (function () {
   'use strict';
 
@@ -279,11 +279,76 @@
     return isObject(value) && Array.isArray(value.buttons) && Array.isArray(value.agents);
   }
 
+  // ---- The GPU alerts (PLAN_gpu_health.md D6): the FIRST element of the panel, above the heading — a GPU that dropped out
+  // of Windows must be impossible to miss. ONE persistent container with role="alert", like the notice: its children are
+  // rebuilt only when the alerts' words change, so a screen reader announces a new alert once, not on every render. The
+  // level is carried by words and a sign, never by colour alone. Its button posts { type: 'enableGpu', index } — the index
+  // of the adapter in the host's own reading; the host holds the device id. ----
+
+  const gpuBox = element('div', undefined, { 'gpu-alerts': '' });
+  gpuBox.setAttribute('role', 'alert');
+  let gpuWords = '';
+  // The NEWEST read's stamp per adapter index: a click names the read the host holds now, while the alert's WORDS — not the
+  // stamp, which changes with every read — decide whether the live region is rebuilt and re-announced (own review 2, F4).
+  let gpuReadAt = {};
+
+  /** The alert's words: everything a person reads or presses, without the read's stamp. */
+  function gpuWordsOf(alert) {
+    const button = isObject(alert.button) ? { index: alert.button.index, label: alert.button.label, enabled: alert.button.enabled } : undefined;
+    return { level: alert.level, line: alert.line, fix: alert.fix, consequence: alert.consequence, button: button };
+  }
+
+  const SIGN = { critical: '⚠ ', unknown: '? ' };
+
+  function gpuAlert(alert) {
+    const box = element('div', undefined, { 'gpu-alert': '', level: alert.level });
+    box.appendChild(element('p', (SIGN[alert.level] || '') + alert.line, { 'gpu-line': '' }));
+    box.appendChild(element('p', alert.fix, { 'gpu-fix': '' }));
+    if (alert.consequence !== '') {
+      box.appendChild(element('p', alert.consequence, { 'gpu-consequence': '' }));
+    }
+    if (isObject(alert.button)) {
+      const index = alert.button.index;
+      box.appendChild(actionButton(alert.button.label, { 'gpu-action': 'enableGpu' }, !alert.button.enabled, function () { return { type: 'enableGpu', index: index, readAt: gpuReadAt[index] }; }));
+    }
+    return box;
+  }
+
+  function updateGpu(view) {
+    const alerts = isObject(view.gpu) && Array.isArray(view.gpu.alerts) ? view.gpu.alerts : [];
+    // A new map each render (never the old one changed in place — code round 5).
+    gpuReadAt = alerts.reduce(function (stamps, alert) {
+      return isObject(alert.button) ? Object.assign({}, stamps, { [alert.button.index]: alert.button.readAt }) : stamps;
+    }, {});
+    const words = JSON.stringify(alerts.map(gpuWordsOf));
+    if (words !== gpuWords) {
+      gpuWords = words;
+      gpuBox.replaceChildren(...alerts.map(gpuAlert));
+    }
+    return gpuBox;
+  }
+
+  /** The GPU host's line when every adapter works ('' otherwise — the alerts above carry the rest). */
+  function gpuLine(view) {
+    const line = isObject(view.gpu) && typeof view.gpu.line === 'string' ? view.gpu.line : '';
+    return line === '' ? [] : [element('p', line, { 'gpu-ok': '' })];
+  }
+
+  function guardParts(view) {
+    return isObject(view.windowsTimeGuard) && Array.isArray(view.windowsTimeGuard.buttons) ? [guardPart(view.windowsTimeGuard)] : [];
+  }
+
+  function healthExtras(view) {
+    const box = element('div', undefined, { 'health-extras': '' });
+    gpuLine(view).concat(guardParts(view)).forEach(function (part) { box.appendChild(part); });
+    return box;
+  }
+
   /** The sections the host's extra parts belong to — by the ids of src/panel/fieldMap.ts's SECTIONS. */
   const EXTRAS = {
     cleanup: function (view) { return isObject(view.cleanup) ? cleanupControls(view.cleanup) : undefined; },
     lastCleanup: function (view) { return isObject(view.cleanup) ? lastCleanupParts(view.cleanup) : undefined; },
-    health: function (view) { return isObject(view.windowsTimeGuard) && Array.isArray(view.windowsTimeGuard.buttons) ? guardPart(view.windowsTimeGuard) : undefined; },
+    health: healthExtras,
     aiAgents: function (view) { return isArchive(view.archive) ? archivePart(view.archive) : undefined; },
   };
 
@@ -305,8 +370,18 @@
     return isObject(data) && data.type === 'view' && isObject(data.view) && Array.isArray(data.view.sections);
   }
 
+  // The rest of the panel lives in ONE container beside the live region: a render replaces that container's children and
+  // never touches the root's, so the role="alert" box is mounted once and never detached (code round 4).
+  const rest = element('div', undefined, { part: 'rest' });
+  let mounted = false;
+
   function render(view) {
-    root.replaceChildren(header(view), ...view.sections.map(function (model) { return sectionWithExtras(model, view); }));
+    updateGpu(view);
+    if (!mounted) {
+      root.replaceChildren(gpuBox, rest);
+      mounted = true;
+    }
+    rest.replaceChildren(header(view), ...view.sections.map(function (model) { return sectionWithExtras(model, view); }));
     const rows = view.sections.reduce(function (sum, model) {
       return sum + model.rows.length;
     }, 0);

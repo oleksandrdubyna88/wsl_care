@@ -816,6 +816,24 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   elevated — Windows' UAC asks you — to set the service to start Automatic (`wslCare.windowsTime.setAutomaticStart`,
   default on), start it and run `w32tm /resync /force`; then a full check runs so the panel shows the result. Nothing
   else on Windows is changed, and nothing restarts the service if other software stops it again — that is the guard below.
+- **A GPU that is not working (2026-10-10, [PLAN_gpu_health.md](research/PLAN_gpu_health.md)).** The extension reads Windows' display
+  adapters itself (`Win32_VideoController`, unelevated — the Windows binary is not bundled yet), at start, on panel open
+  and *Refresh*, and every `wslCare.gpu.checkMinutes` (15). An adapter at a Device Manager code other than 0 is an alert at
+  the very TOP of the panel (name, code and meaning, the fix and whether it needs a restart, the consequence for local
+  models, and Ollama's last `inference compute` line from `%LOCALAPPDATA%\Ollama\server.log`) and `· GPU off` on the status
+  bar; a check that could not run is `· GPU ?`. Code 22 (disabled) gets **Enable <name>** (also *AI OS Care: Enable a
+  disabled GPU…*): a modal with the exact script and the program it elevates, then ONE elevated PowerShell through *Start
+  Windows Time*'s launcher re-checks the device and runs `Enable-PnpDevice`; the outcome is worded from what Windows
+  reports afterwards and names the engine that ran. The engine is **PowerShell 7** — the MSI install under
+  `%ProgramFiles%\PowerShell\7` when the extension's own read verified its signature there (at the path Windows' known-folder
+  API names, not the environment's), else the Store build by its RESOLVED package path
+  `%ProgramFiles%\WindowsApps\Microsoft.PowerShell_<version>_<arch>__8wekyb3d8bbwe\pwsh.exe` (a folder only TrustedInstaller
+  writes), which the extension's own read of Windows resolves with `Get-AppxPackage` and verifies (a real file, Authenticode
+  Valid from Microsoft) at every read and once more right after the modal, before the launch — and Windows PowerShell 5.1
+  when neither is there (the owner's decision of 2026-10-10, the path of 2026-10-11; the user's alias under
+  `%LOCALAPPDATA%` is never started). The button names the read it was rendered from, so a press after a newer read is
+  refused and Windows read again. Nothing in `status` / `doctor` about the GPU yet (story G2).
+  Measured: [research/2026-10-10_gpu_disabled.md](research/2026-10-10_gpu_disabled.md).
 - **The Windows Time guard (2026-10-08).** *AI OS Care: Install the Windows Time guard…* (also a button on the panel's
   *Health* section) registers ONE scheduled task, `\wsl-care\windows-time-guard`, that runs as SYSTEM at startup, at logon,
   every `wslCare.windowsTime.guard.everyHours` (4) hours, when the Windows Time service logs that it is stopping (its own

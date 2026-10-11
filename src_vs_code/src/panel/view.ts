@@ -1,4 +1,5 @@
 import type { ArchiveControls } from '../archive/archiveView';
+import type { GpuView } from '../gpu/gpuState';
 import type { GuardView } from '../windowsTime/guardState';
 
 /**
@@ -92,6 +93,8 @@ export type { GuardView } from '../windowsTime/guardState';
  * `archive status` / `archive preview` answers and its capabilities (`archive/archiveView.ts`) — never a page flag.
  */
 export type { ArchiveControls } from '../archive/archiveView';
+/** The GPU alerts (PLAN_gpu_health.md D6): derived by the host from what Windows answered — shown FIRST, above the sections. */
+export type { GpuView } from '../gpu/gpuState';
 
 export interface PanelView {
   readonly heading: string;
@@ -103,4 +106,5 @@ export interface PanelView {
   readonly cleanup: CleanupControls;
   readonly windowsTimeGuard: GuardView;
   readonly archive: ArchiveControls;
+  readonly gpu: GpuView;
 }

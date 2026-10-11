@@ -49,14 +49,16 @@ function baseName(file: unknown): string {
 export const TASK_TRIPWIRE_MESSAGE = 'noRealWsl: a test tried to change Task Scheduler, a service or the machine registry';
 
 /** The programs that change scheduled tasks or services by themselves (PLAN_windows_time_task.md D7, D8 o4). */
-const MACHINE_TOOLS: ReadonlySet<string> = new Set(['schtasks', 'schtasks.exe', 'sc', 'sc.exe']);
+const MACHINE_TOOLS: ReadonlySet<string> = new Set(['schtasks', 'schtasks.exe', 'sc', 'sc.exe', 'pnputil', 'pnputil.exe']);
 
 /**
  * The words a PowerShell would need to change this machine the way the Windows Time guard does — register or delete a task,
  * start / stop / reconfigure a service, write the registry, resync the clock (D8 o4). Matched as WORDS of the decoded text,
  * so a read — `NewTask(0).XmlText`, `GetTask`, PowerShell's parser — stays allowed, and the guard's own status query too.
+ * Since PLAN_gpu_health.md D7 also the device verbs (`Enable-PnpDevice`, `Disable-PnpDevice`; `pnputil` as a program): a
+ * test that reached *Enable <GPU>*'s real launcher would change a display adapter on the machine running the tests.
  */
-export const MUTATING = /\b(?:Register-ScheduledTask|Unregister-ScheduledTask|(?:Start|Stop|Enable|Disable|Set)-ScheduledTask|RegisterTask(?:Definition)?|DeleteTask|DeleteFolder|CreateFolder|(?:Start|Stop|Restart|Set|Suspend|Resume)-Service|(?:Set|New|Remove|Rename|Clear)-ItemProperty|New-Item|Remove-Item|w32tm|schtasks|sc(?:\.exe)?\s+(?:start|stop|config|delete|create|failure|sdset)|net(?:\.exe)?\s+(?:start|stop))\b/i;
+export const MUTATING = /\b(?:(?:Enable|Disable)-PnpDevice|Register-ScheduledTask|Unregister-ScheduledTask|(?:Start|Stop|Enable|Disable|Set)-ScheduledTask|RegisterTask(?:Definition)?|DeleteTask|DeleteFolder|CreateFolder|(?:Start|Stop|Restart|Set|Suspend|Resume)-Service|(?:Set|New|Remove|Rename|Clear)-ItemProperty|New-Item|Remove-Item|w32tm|schtasks|sc(?:\.exe)?\s+(?:start|stop|config|delete|create|failure|sdset)|net(?:\.exe)?\s+(?:start|stop))\b/i;
 
 /** `-EncodedCommand`, and every prefix PowerShell accepts for it (`-e`, `-ec`, `-enc`, …). */
 const ENCODED_SWITCH = /^-(?:ec|e(?:n(?:c(?:o(?:d(?:e(?:d(?:c(?:o(?:m(?:m(?:a(?:n(?:d)?)?)?)?)?)?)?)?)?)?)?)?)?)$/i;

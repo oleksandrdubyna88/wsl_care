@@ -1,5 +1,6 @@
 import type { StatusAnswer, Verdict, VerbOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
+import type { GpuBarMark } from '../gpu/gpuState';
 import { at, unavailableAncestor } from '../panel/jsonPath';
 
 /**
@@ -96,6 +97,21 @@ function failureView(status: Exclude<VerbOutcome, { kind: 'answered' }>): BarVie
   const words = failureText(status);
 
   return { text: status.kind === 'stopped' ? words.label : `AI OS Care: ${words.label}`, tooltip: `${words.sentence}\n${CLICK}`, level: 'none' };
+}
+
+const BAR_RANK: Readonly<Record<BarLevel, number>> = { none: 0, warn: 1, critical: 2 };
+
+/**
+ * The GPU mark (PLAN_gpu_health.md D6) on whatever the bar shows — WSL's figures, "WSL stopped", a failure: ` · GPU off` and
+ * the error colour while an adapter is not working, ` · GPU ?` and the warning colour while the check could not run, the
+ * adapters' lines first in the tooltip. A mark never LOWERS the bar's level. Pure.
+ */
+export function withGpuMark(view: BarView, mark: GpuBarMark): BarView {
+  if (mark.text === '') {
+    return view;
+  }
+
+  return { text: view.text + mark.text, tooltip: [...mark.lines, view.tooltip].join('\n'), level: BAR_RANK[mark.level] > BAR_RANK[view.level] ? mark.level : view.level };
 }
 
 export function barView(status: VerbOutcome | undefined): BarView {

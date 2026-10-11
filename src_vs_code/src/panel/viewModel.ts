@@ -7,6 +7,7 @@ import { isUnavailable, unavailableText } from './read';
 import { RENDERERS, type Rendered } from './rowRenderers';
 import type { CleanupControls, PanelView, ViewLevel, ViewRow, ViewSection } from './view';
 import { NO_ARCHIVE, type ArchiveControls } from '../archive/archiveView';
+import type { GpuView } from '../gpu/gpuState';
 import type { GuardView } from '../windowsTime/guardState';
 import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
 
@@ -118,8 +119,22 @@ export const NO_CLEANUP: CleanupControls = { enabled: false, state: '', stateLev
 /** The guard's line before the host has read Task Scheduler. */
 export const NO_GUARD: GuardView = { line: 'Windows Time guard: checking…', level: 'none', buttons: [] };
 
+/** The GPU part before the host has read Windows (or off Windows): nothing to show. */
+export const NO_GPU: GpuView = { alerts: [], line: '' };
+
+/** The daemon-side hosts' parts: the cleanup controls (E6.S3) and the Windows Time guard's view, each its "not derived yet" value until given. */
+function hostParts(cleanup: CleanupControls = NO_CLEANUP, guard: GuardView = NO_GUARD): Pick<PanelView, 'cleanup' | 'windowsTimeGuard'> {
+  return { cleanup, windowsTimeGuard: guard };
+}
+
+/** The archive host's controls (E10.S1) and the GPU host's view (PLAN_gpu_health.md), each its "not read yet" value until given. */
+function sideParts(archive: ArchiveControls = NO_ARCHIVE, gpu: GpuView = NO_GPU): Pick<PanelView, 'archive' | 'gpu'> {
+  return { archive, gpu };
+}
+
 /** `cleanup` is the host's derivation (`cleanup/cleanupView.ts`) — this module reads nothing of the root paths; `guard` is the
- * Windows Time guard host's (`windowsTime/guardHost.ts`); `archive` the archive host's (`archive/archiveHost.ts`, E10.S1). */
-export function buildPanelView(snapshot: Snapshot, cleanup: CleanupControls = NO_CLEANUP, guard: GuardView = NO_GUARD, archive: ArchiveControls = NO_ARCHIVE): PanelView {
-  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), cleanup, windowsTimeGuard: guard, archive };
+ * Windows Time guard host's (`windowsTime/guardHost.ts`); `archive` the archive host's (`archive/archiveHost.ts`, E10.S1); `gpu` the
+ * GPU host's (`gpu/gpuHost.ts`, PLAN_gpu_health.md). Each absent one is its "not yet" value. */
+export function buildPanelView(snapshot: Snapshot, cleanup?: CleanupControls, guard?: GuardView, archive?: ArchiveControls, gpu?: GpuView): PanelView {
+  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), ...hostParts(cleanup, guard), ...sideParts(archive, gpu) };
 }
