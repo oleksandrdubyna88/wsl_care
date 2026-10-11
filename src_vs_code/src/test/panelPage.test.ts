@@ -369,6 +369,16 @@ test('the alerts box is the SAME element across renders and is rebuilt only when
   assert.equal(box?.children.length, 0, 'no alert: the container stays, empty');
 });
 
+test('own review 2 F4: a new READ with the same words does not rebuild (re-announce) the alert — and the button still posts the NEWEST readAt', () => {
+  const { page, root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [GPU_ALERT], line: '' }));
+  const alert = root.children[0]?.one('div[data-gpu-alert]');
+  const later = { ...GPU_ALERT, button: { ...GPU_ALERT.button, readAt: GPU_ALERT.button.readAt + 900_000 } };
+  page.message({ type: 'view', view: buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [later], line: '' }) });
+  assert.equal(root.children[0]?.one('div[data-gpu-alert]'), alert, 'the same words from a newer read: the same element, nothing re-announced');
+  page.click(root.one('button[data-gpu-action="enableGpu"]'));
+  assert.deepEqual(page.posted.at(-1), { type: 'enableGpu', index: 1, readAt: GPU_ALERT.button.readAt + 900_000 }, 'the click names the read the host holds NOW, not the one the element was built from');
+});
+
 test('hostile adapter text renders as inert TEXT; an unknown check is an alert without a button; all working is one muted line in Health', () => {
   const hostile = 'GPU </script><img src=x onerror=alert(1)> is not working (code 22: it is disabled)';
   const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [{ ...GPU_ALERT, line: hostile }, { level: 'unknown', line: 'GPU state could not be checked: x', fix: 'Refresh to try again.', consequence: '', button: undefined }], line: '' }));

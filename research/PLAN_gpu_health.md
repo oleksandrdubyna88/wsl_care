@@ -4,8 +4,8 @@
 > display adapters, a per-adapter verdict, a top-of-panel alert, a status-bar mark, and ONE elevated action (*Enable <GPU>*,
 > code 22 only) through the existing Windows Time launcher. The daemon is not changed. What shipped differently is in §11
 > (the as-built record): the alert above the heading, 28 codes, the extracted pending-run rule, two code rounds and an own
-> review, and — the owner's decision of 2026-10-10 — PowerShell 7 elevated through the Store alias rather than the MSI-only
-> choice of D4.
+> review, and — the owner's decision of 2026-10-10, the path of 2026-10-11 — PowerShell 7 elevated by the Store package's
+> resolved, signature-checked path rather than the MSI-only choice of D4.
 >
 > Story G1 of the disk-and-memory epic (`todo/PLAN_disk_health.md`, written in parallel on its own branch; the owner moved
 > this story FIRST on 2026-10-10 because the card is disabled now and he wants to try the button). Evidence:
@@ -132,7 +132,8 @@ an optional `elevated` argument naming the PowerShell that runs ELEVATED (today 
 the Windows Time callers). The enable passes `%ProgramFiles%\PowerShell\7\pwsh.exe` when that file exists (an
 administrator-only folder; the Store `pwsh` under `WindowsApps` is NOT used — it is an app-execution alias, research G4),
 else the 5.1 one; both must pass `QUOTABLE_PATH`. *As built, the owner decided otherwise (2026-10-10, §11): the Store
-alias IS used, verified by the extension's own query, the MSI install preferred when present, 5.1 the fallback.* The inner
+build IS used — by its resolved package path under `Program Files\WindowsApps` (2026-10-11), never the alias — verified by
+the extension's own query, the MSI install preferred when present, 5.1 the fallback.* The inner
 script, a pure function of ONE validated instance id:
 
 ```powershell
@@ -228,19 +229,37 @@ is bounded by `ollamaLogTailKiB`.
   the program it elevates.
 - The daemon's own verdict (G2) and the contract table come later; until then `doctor` / `status --json` say nothing
   about the GPU.
-- **The Store alias is the user's own folder** (the owner's decision, 2026-10-10; research G8): a user-level process could
-  replace `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`. A real file or a link planted there is refused (5.1 runs); a
-  forged app-execution alias cannot be told from Windows' own by any read — checked: Node's `lstat` (EACCES on the alias),
-  PowerShell's `Get-Item` (Length, ReparsePoint, LinkType); NOT checked: whether a standard user can set the AppExecLink
-  reparse tag on a file of their own. The MSI install under `%ProgramFiles%` has no such hole and is preferred when present.
+- **The Store package's path is the query's stdout** (2026-10-11, research G9): it becomes the elevated program through
+  ONE check — a valid Microsoft signature verified by the read, and the exact shape of a Store package folder under THIS
+  machine's `Program Files\WindowsApps` (a folder only TrustedInstaller and SYSTEM write; Node cannot even see it). What is
+  trusted: the unelevated Windows PowerShell 5.1 that runs the query, and `ProgramFiles` from the environment (as the
+  Windows Time launcher trusts `SystemRoot`). Checked: `Get-AppxPackage`, `Get-Item`, `Get-AuthenticodeSignature` and the
+  folder ACL under both 5.1 and 7; NOT checked: an elevated start of the package path by the implementer (the coordinator
+  reports one worked, Authenticode Valid, on 2026-10-11). The user's alias under `%LOCALAPPDATA%` (the 2026-10-10 design,
+  G8) is never started. The MSI install under `%ProgramFiles%\PowerShell\7` is preferred when present.
 - **Two windows can both launch** (code round 2): the pending record in `globalState` is advisory coordination, not a lock
   (`common.reliability`: no compare-and-swap). The second look after the modal closes the modal's open time; the residual
   is the instant between that look and the write — two UAC prompts, and the elevated script's own re-check (still code 22)
   makes the second change nothing. The atomic claim — a directory created without `recursive` under the shared storage,
   with a heartbeat and a fenced release — is the epic's follow-up for every elevated flow (the Windows Time guard's pending
   run has the same shape), not this story's.
-- **The elevated run of the alias is first exercised by the owner's press**: `Process.Start` with `runas` on an
-  app-execution alias was not run here (nothing elevated by the implementer); the unelevated alias started 7.6.4 Core.
+- **The elevated run of the package path through THIS launcher is first exercised by the owner's press**: nothing was
+  elevated by the implementer. (Own review 2, note 9 — `ShellExecuteEx` returning no handle for a packaged app — was raised
+  for the alias; a direct path to `pwsh.exe` is an ordinary executable start, and the coordinator reports an elevated start of
+  that path worked.) If the launcher nevertheless exits 13 while the elevated `pwsh` runs: treat exit 13 on the Store engine
+  like a timeout (keep the record until its deadline, let the periodic read settle it).
+- **The account that elevates** (own review 2, F5): the package is resolved from the user's own view; a standard user whose
+  UAC prompt asks for another administrator's credentials may name a package that account does not have → exit 13, now said
+  in the sentence. A `wslCare.gpu.elevatedEngine` setting (`auto` | `windowsPowerShell`) would give such a machine a way out
+  without the MSI; proposed, not built — the owner's machine elevates as its own account.
+- **The tripwire judges argv only** (own review 2, note 10; pre-existing, not weakened): a PowerShell started with
+  `-File x.ps1` on a file holding `runas` or `Enable-PnpDevice` is invisible to it. The parse check writes such files
+  and only parses them. Optional hardening for the test support: on `-File` / `-f`, read the named file and apply the
+  same two patterns.
+- **A wall-clock deadline against a monotonic timer** (own review 2, note 12): the record's deadline is `Date.now()`, the
+  re-render a `setTimeout`; this extension's own Windows Time fix moves the clock by hours. A forward jump ends a pending
+  record early (harmless — the elevated script re-checks code 22); a backward jump leaves "Waiting…" past the timer with
+  nothing re-arming until the next read. Rare; recorded, not fixed.
 
 ## 10. Definition of Done
 
@@ -315,25 +334,51 @@ kept — then GREEN), one rejected with its reason:
 | Major: two windows can both pass the pending check and both launch | accepted, as the Windows Time guard flow does it | the pending record is read AGAIN after the modal, before the write; the residual (the instant between that look and the write) is stated in `gpuEnable.ts`'s header and in §9, with the atomic claim named as the epic's follow-up |
 | Minor: the palette command waits silently for the adapter query (up to the 120 s ceiling) | accepted | the read runs under a progress notification ("Reading Windows' display adapters…") |
 
-### The owner's decision (2026-10-10, evening): PowerShell 7 through the Store alias
+### The own review 2 (Fable, read-only, the elevated path after code round 3 and the owner's decision: no Critical, no Major, five Minor, seven Notes)
 
-D4 chose the MSI `pwsh` only and refused the Store alias as a user-writable path. The owner decided the button runs
-PowerShell 7 via the user's alias `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe` (this machine has the Store build and no
-MSI), falls back to Windows PowerShell 5.1 when no `pwsh` is there, and says which engine ran. As built (research G8):
+| Finding | Done |
+|---|---|
+| F1: the engine and the settle value were looked at twice — the modal could name what the run did not use | ONE look in `precondition` (`Ready` carries the engine and the settle), the request built for that engine (`enableRequestFor`); a test with a setting that changes between looks |
+| F2: `QUOTABLE_PATH` let PowerShell's smart quotes (U+2018–U+201F) through — a curly apostrophe in a user name would have made the outer script a parse error instead of the clean 5.1 fallback | the regex refuses them (the Windows Time launcher's regex, so every elevated program gets it); eight quotes tested |
+| F3: the deadline re-render (own review M2) was armed only by the pressing window, and a settings change dropped it | armed at `start()` (a reload mid-run) and after every read; `settingsChanged` stops only the periodic timer; `dispose` ends both |
+| F4: `readAt` had joined the alert's identity in the page, so every read rebuilt the `role="alert"` box — re-announced every 15 minutes (a regression of code round 2) | the words decide the rebuild; the newest stamp per index is kept beside and read at click time, so the click names the read the host holds now |
+| F5: the Store PowerShell is chosen from the user's view, but `runas` may elevate as ANOTHER account that has no Store package → exit 13 | the exit-13 sentence on the Store engine says so ("the Store package may not be available to the account that elevates; install PowerShell 7 (MSI) or elevate as your own account"); a `wslCare.gpu.elevatedEngine` setting (auto \| windowsPowerShell) is the reviewer's proposal — a question for the owner, below |
+| Note 6: "the shell folder API, not the environment" overstated the cross-check — `GetFolderPath` expands `%USERPROFILE%` from the same environment | the words now say what the check proves (G8, `gpuScripts.ts`) |
+| Note 7: a declined UAC prompt still read Windows again (one PowerShell for nothing) | no second read after a decline |
+| Note 8: the stale wording named the panel's button on the palette path too | "since that choice was shown … choose it again" |
+| Note 11: a query that THREW escaped `refresh()` as an unhandled rejection in the extension host | one `unknown` state with the reason |
+| Notes 9, 10, 12 | recorded in §9 below, not changed |
 
-- Node cannot read the alias (`lstat`/`stat` answer EACCES, `existsSync` false), so the **unelevated query** reports it as
-  Windows sees it — `pwsh.kind` = `alias` (a zero-byte reparse point with no link type), `file` (anything else there) or
-  `absent` — and `pwsh.path` from `[Environment]::GetFolderPath('LocalApplicationData')`; the host elevates the alias only
-  while its LAST read said `alias` at the very path it computes from `LOCALAPPDATA` (compared case-insensitively) and
-  PowerShell can quote that path — else it is skipped, never refused.
-- The order: the MSI install when `lstat` shows a real file (not a link, bytes in it) → the verified alias → 5.1. The
+Nine break-its on the product lines (the second look at the setting, the smart quotes, the deadline at start, the stamp in the alert's identity, the alias note, the declined re-read, the rejection — and round 3's re-verification and checking line) each went red on the real symptom and were restored.
+
+### The owner's decision (2026-10-10, evening) and the path (2026-10-11): PowerShell 7 by the Store package's resolved path
+
+D4 chose the MSI `pwsh` only and refused the Store build as a user-writable path. The owner decided (2026-10-10) that the
+button runs PowerShell 7 (this machine has the Store build and no MSI), falls back to Windows PowerShell 5.1 when no `pwsh`
+is there, and says which engine ran; the first build started the user's app-execution alias `%LOCALAPPDATA%\Microsoft\
+WindowsApps\pwsh.exe`, verified by the query as a zero-byte alias (research G8) — with the residual that the folder is the
+user's own. On 2026-10-11 the coordinator reported that an elevated start of the Store PowerShell by its RESOLVED package
+path works (`C:\Program Files\WindowsApps\Microsoft.PowerShell_<version>_x64__8wekyb3d8bbwe\pwsh.exe`, Authenticode Valid,
+Microsoft), so the button starts that path instead (research G9):
+
+- The **unelevated query** resolves the package at every read — `Get-AppxPackage -Name Microsoft.PowerShell` (the version in
+  the path moves with every Store update: 7.6.4 on 2026-10-10, 7.6.6 the next morning — never pinned) — and verifies its
+  `pwsh.exe`: `pwsh.store` = `signed` (a real file with bytes, no link type, `Get-AuthenticodeSignature` Valid from
+  `CN=Microsoft Corporation`), `unsigned` (anything else there) or `absent`, and `pwsh.path`. Node cannot see the folder at
+  all (`lstat` ENOENT), so the read's facts stand alone.
+- The host elevates that path only while its LAST read — the one taken right after the modal, before the launch (code
+  round 3) — said `signed`, AND the path has exactly a Store package's shape under this machine's `Program Files\WindowsApps`
+  with Microsoft's publisher id (`storePwsh`), AND PowerShell can quote it; else 5.1 runs, nothing is refused. A package the
+  Store replaced while the modal stood open is a different path → "the elevated program changed while the question was
+  open", nothing runs.
+- The order: the MSI install when `lstat` shows a real file (not a link, bytes in it) → the verified package → 5.1. The
   launcher itself stays Windows PowerShell 5.1 (`elevatedRequest`'s unelevated outer script); only the elevated program
-  changes.
-- The modal names "The elevated program: PowerShell 7 (C:\…\pwsh.exe)" / "Windows PowerShell 5.1 (…)"; every outcome
-  sentence ends with "Elevated program: …".
-- Measured on this machine, read-only: the built probe answered `pwsh.kind=alias` at Node's path (the suite's own
-  Windows-leg test); the alias starts 7.6.4 Core from `C:\Program Files\WindowsApps\…`. The elevated run through the alias
-  is the owner's press.
+  changes. The alias is never started.
+- The modal names "The elevated program: PowerShell 7 (C:\Program Files\WindowsApps\…\pwsh.exe)" / "Windows PowerShell 5.1
+  (…)"; every outcome sentence ends with "Elevated program: …".
+- Measured on this machine, read-only (G9): the built probe answered `pwsh.store=signed` at the 7.6.6 path (the suite's own
+  Windows-leg test); the probe costs 0.9–1.3 s under 5.1 per read, most of it `Get-AppxPackage` — about 1.5 min of one core
+  a day at the default 15 minutes, on top of G7's 45 s. The elevated run through this launcher is the owner's press.
 
 ### The rebase (2026-10-10)
 

@@ -11,14 +11,14 @@ import { enableExitOf, enableGpu, enablePrompt, enableSentence, type EnableDeps 
 import { GpuHost, type GpuHostDeps } from '../gpu/gpuHost';
 import { GPU_PENDING_KEY, readGpuPending, sweepGpuPending } from '../gpu/gpuPending';
 import { DEVICE_PROBLEMS, FIX_WORDS, NEEDS_RESTART } from '../gpu/gpuProblems';
-import { ALIAS_PROBE, aliasPwsh, DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, engineOf, INSTANCE_ID, QUERY_SCRIPT, queryRequest, TAG_HELPER, type FileInfo, type PwshAlias } from '../gpu/gpuScripts';
+import { DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, engineOf, INSTANCE_ID, QUERY_SCRIPT, queryRequest, STORE_PROBE, storePwsh, TAG_HELPER, type Engine, type FileInfo, type PwshStore } from '../gpu/gpuScripts';
 import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, type Adapter, type GpuState } from '../gpu/gpuState';
 import { newGpuRecorder } from '../gpu/gpuRecorder';
 import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '../gpu/ollamaLog';
 import { parsePageMessage } from '../panel/messages';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { withGpuMark } from '../statusBar/statusBarModel';
-import { EXIT } from '../windowsTime/windowsTimeFix';
+import { EXIT, quotablePath } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING, revealed } from './support/noRealWsl';
 
 /**
@@ -43,10 +43,13 @@ const AT = Date.UTC(2026, 9, 10, 12, 0, 0);
 const PS51 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
 const PS51_LABEL = `Windows PowerShell 5.1 (${PS51})`;
 const MSI_PWSH = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-const ALIAS_PWSH = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe';
-const ALIAS: PwshAlias = { kind: 'alias', path: ALIAS_PWSH };
+/** The Store package's resolved path on the owner's machine, 2026-10-11 (research G9) — the version moves with every Store update. */
+const STORE_PWSH = 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe';
+const STORE: PwshStore = { kind: 'signed', path: STORE_PWSH };
+const PS51_ENGINE: Engine = { file: PS51, label: PS51_LABEL, kind: 'windows' };
+const STORE_ENGINE: Engine = { file: STORE_PWSH, label: `PowerShell 7 (${STORE_PWSH})`, kind: 'store' };
 
-/** What Node's lstat would say per path — nothing for the rest (absent, or EACCES as on the real alias). */
+/** What Node's lstat would say per path — nothing for the rest (absent, or ENOENT as on the real WindowsApps folder). */
 function files(table: Readonly<Record<string, FileInfo>>): (file: string) => FileInfo | undefined {
   return (file) => table[file];
 }
@@ -207,37 +210,41 @@ test('the elevated script re-checks the device as administrator before it acts: 
 
 test('an id that could be more than text is refused before any request exists: a quote, $, a backtick, whitespace, a newline, 201 characters', () => {
   for (const id of [`${R9700_ID}'`, `${R9700_ID}$x`, `${R9700_ID}\``, 'PCI\\VEN 1002', 'PCI\\VEN\r\nexit', `PCI\\${'A'.repeat(197)}`, '', `PCI\\VEN';Remove-Item C:\\ -Recurse;'`]) {
-    assert.equal(typeof enableRequest(ENV, id, 120_000, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), ALIAS, 3), 'string', JSON.stringify(id));
+    assert.equal(typeof enableRequest(ENV, id, 120_000, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), STORE, 3), 'string', JSON.stringify(id));
     assert.equal(INSTANCE_ID.test(id), false, JSON.stringify(id));
   }
   assert.equal(INSTANCE_ID.test(`PCI\\${'A'.repeat(196)}`), true, '200 characters is the largest accepted');
 });
 
-test('owner 2026-10-10: the elevated engine is PowerShell 7 — the MSI install when it is a real file, else the Store alias while the LAST read saw a zero-byte app-execution alias at the path this extension computes — and Windows PowerShell 5.1 otherwise', () => {
-  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), ALIAS), MSI_PWSH, 'an administrator-only install is preferred over the alias');
+test('owner 2026-10-10 / 2026-10-11: the elevated engine is PowerShell 7 — the MSI install when it is a real file, else the Store package by its RESOLVED path when the LAST read saw it signed by Microsoft under Program Files\\WindowsApps — and Windows PowerShell 5.1 otherwise', () => {
+  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), STORE), MSI_PWSH, 'an administrator-only install is preferred');
   assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: true } }), undefined), undefined, 'a link where the MSI pwsh should be is not elevated');
   assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 0, symlink: false } }), undefined), undefined, 'an empty file there is not elevated');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), ALIAS), ALIAS_PWSH, 'the Store alias, as the query saw it');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'file', path: ALIAS_PWSH }), undefined, 'a real file (or a link) where the alias should be is not elevated');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'absent', path: ALIAS_PWSH }), undefined);
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'alias', path: 'C:\\Elsewhere\\WindowsApps\\pwsh.exe' }), undefined, 'the query looked at another path than this extension would start');
-  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'alias', path: ALIAS_PWSH.toUpperCase() }), ALIAS_PWSH, 'the same path in another case is the same path');
-  assert.equal(elevatedPowerShellFor({ ...ENV, LOCALAPPDATA: "C:\\Users\\O'Brien\\AppData\\Local" }, files({}), { kind: 'alias', path: "C:\\Users\\O'Brien\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" }), undefined, 'a path PowerShell could not quote is skipped — 5.1 runs, nothing is refused');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), STORE), STORE_PWSH, 'the Store package, resolved and signature-checked by the query');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'unsigned', path: STORE_PWSH }), undefined, 'a package whose pwsh.exe is not a valid Microsoft signature is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'absent', path: '' }), undefined);
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'C:\\Users\\user\\pwsh.exe' }), undefined, 'a signed file OUTSIDE Program Files\\WindowsApps is not elevated — the path is the query\'s stdout');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'C:\\Program Files\\WindowsApps\\Evil.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe' }), undefined, 'another package name is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__abcdefghijkl\\pwsh.exe' }), undefined, 'another publisher id is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: 'D:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe' }), undefined, 'not under THIS machine\'s Program Files');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'signed', path: STORE_PWSH.toUpperCase() }), STORE_PWSH.toUpperCase(), 'the same path in another case is the same path');
+  assert.equal(elevatedPowerShellFor({ ...ENV, ProgramFiles: "C:\\Pro'gram Files" }, files({}), { kind: 'signed', path: "C:\\Pro'gram Files\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe" }), undefined, 'a path PowerShell could not quote is skipped — 5.1 runs, nothing is refused');
   assert.equal(elevatedPowerShellFor(ENV, files({}), undefined), undefined, 'before any read: 5.1');
-  const withAlias = enableRequest(ENV, R9700_ID, 120_000, files({}), ALIAS, 3) as ProcessRequest;
-  assert.match(withAlias.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe'/);
-  assert.equal(withAlias.file, PS51, 'the LAUNCHER stays Windows PowerShell; only the elevated program changes');
+  const withStore = enableRequest(ENV, R9700_ID, 120_000, files({}), STORE, 3) as ProcessRequest;
+  assert.match(withStore.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe'/);
+  assert.equal(withStore.file, PS51, 'the LAUNCHER stays Windows PowerShell; only the elevated program changes');
   const without = enableRequest(ENV, R9700_ID, 120_000, files({}), undefined, 3) as ProcessRequest;
   assert.match(without.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe'/);
-  assert.deepEqual(engineOf(ENV, files({}), ALIAS), { file: ALIAS_PWSH, label: `PowerShell 7 (${ALIAS_PWSH})` });
-  assert.deepEqual(engineOf(ENV, files({}), undefined), { file: PS51, label: PS51_LABEL });
-  assert.equal(aliasPwsh(ENV), ALIAS_PWSH);
+  assert.deepEqual(engineOf(ENV, files({}), STORE), STORE_ENGINE);
+  assert.deepEqual(engineOf(ENV, files({}), undefined), PS51_ENGINE);
+  assert.equal(engineOf(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), undefined).kind, 'msi');
+  assert.equal(storePwsh(ENV, { kind: 'signed', path: STORE_PWSH }), STORE_PWSH);
 });
 
-test('code round 2 / owner 2026-10-10: the query prints every field through ONE helper that strips line breaks, and reports the Store alias as WINDOWS sees it — RUN by Windows PowerShell on this machine, once, read-only', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
+test('code round 2 / 2026-10-11: the query prints every field through ONE helper that strips line breaks, and resolves the Store package and its signature as WINDOWS sees them — RUN by Windows PowerShell on this machine, once, read-only', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
   assert.equal((QUERY_SCRIPT.match(/\btag \(/g) ?? []).length, 4, 'id, code, driver and name each go through the helper');
   // ONE PowerShell for both probes: the suite runs its files in parallel, and every extra child loads the timing tests.
-  const probe = `${TAG_HELPER}\ntag 'name.0' ("GPU\`r\`nadapters=0")\ntag 'code.0' $null\n${ALIAS_PROBE}\nexit 0`;
+  const probe = `${TAG_HELPER}\ntag 'name.0' ("GPU\`r\`nadapters=0")\ntag 'code.0' $null\n${STORE_PROBE}\nexit 0`;
   const result = childProcess.spawnSync(PS51, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(probe, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 60_000 });
   assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
   const lines = result.stdout.split(/\r?\n/).filter((l) => l !== '');
@@ -245,8 +252,10 @@ test('code round 2 / owner 2026-10-10: the query prints every field through ONE 
   const state = parseGpuAnswer(`${lines.slice(2).join('\n')}\nadapters=0\n`, AT);
   assert.equal(state.kind, 'read', JSON.stringify(state));
   const pwsh = state.kind === 'read' ? state.pwsh : undefined;
-  assert.ok(pwsh !== undefined && ['alias', 'file', 'absent'].includes(pwsh.kind), JSON.stringify(pwsh));
-  assert.equal(pwsh?.path.toLowerCase(), aliasPwsh(process.env)?.toLowerCase(), 'the shell folder API and LOCALAPPDATA name the same file');
+  assert.ok(pwsh !== undefined && ['signed', 'unsigned', 'absent'].includes(pwsh.kind), JSON.stringify(pwsh));
+  if (pwsh?.kind === 'signed') {
+    assert.equal(storePwsh(process.env, pwsh), pwsh.path, 'a signed package resolves under this machine\'s Program Files\\WindowsApps with Microsoft\'s publisher id');
+  }
 });
 
 // ---- D4: the outcome, worded from what Windows says AFTER ----
@@ -254,24 +263,27 @@ test('code round 2 / owner 2026-10-10: the query prints every field through ONE 
 test('every exit and every re-read code is its own sentence: enabled → code 0; still 22; another code → restart; declined; nothing done; failed; timed out', () => {
   const adapter = r9700();
   const ran = enableExitOf(exited(0));
-  const seven = `PowerShell 7 (${ALIAS_PWSH})`;
-  assert.deepEqual(enableSentence(adapter, ran, measured(0), seven), { sentence: `AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU. Elevated program: ${seven}.`, failed: false }, 'the owner asked which engine ran');
-  assert.deepEqual(enableSentence(adapter, ran, measured(22), PS51_LABEL), { sentence: `AMD Radeon AI PRO R9700 is still disabled (code 22). Elevated program: ${PS51_LABEL}.`, failed: true });
+  const seven = STORE_ENGINE;
+  assert.deepEqual(enableSentence(adapter, ran, measured(0), seven), { sentence: `AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU. Elevated program: ${seven.label}.`, failed: false }, 'the owner asked which engine ran');
+  assert.deepEqual(enableSentence(adapter, ran, measured(22), PS51_ENGINE), { sentence: `AMD Radeon AI PRO R9700 is still disabled (code 22). Elevated program: ${PS51_LABEL}.`, failed: true });
   assert.match(enableSentence(adapter, ran, measured(43), seven).sentence, /enabled, but still not working \(code 43: Windows stopped it because it reported problems\) — restart Windows/);
-  assert.deepEqual(enableSentence(adapter, enableExitOf(exited(EXIT.declined)), measured(), seven), { sentence: `Nothing was changed: the UAC prompt was declined. Elevated program: ${seven}.`, failed: false });
+  assert.deepEqual(enableSentence(adapter, enableExitOf(exited(EXIT.declined)), measured(), seven), { sentence: `Nothing was changed: the UAC prompt was declined. Elevated program: ${seven.label}.`, failed: false });
   assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.notDisabled)), measured(0), seven).sentence, /^Nothing was done: that device is no longer disabled\. .*code 0/);
   assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.enableFailed)), measured(), seven).sentence, /Enable-PnpDevice failed/);
   assert.match(enableSentence(adapter, enableExitOf(exited(EXIT.launchFailed)), measured(), seven).sentence, /could not be started/);
   assert.match(enableSentence(adapter, enableExitOf({ kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), measured(), seven).sentence, /120 s \(wslCare\.timeouts\.gpuEnableSeconds\)/);
   assert.match(enableSentence(adapter, ran, { kind: 'unknown', reason: 'the display-adapter query exited 1' }, seven).sentence, /could not be read/);
-  assert.equal(enableSentence(adapter, ran, measured(0), '').sentence.includes('Elevated program'), false, 'no PowerShell at all: no engine named');
+  assert.equal(enableSentence(adapter, ran, measured(0), { file: '', label: '', kind: 'windows' }).sentence.includes('Elevated program'), false, 'no PowerShell at all: no engine named');
+  // Own review 2, F5: a standard user whose UAC asks for ANOTHER account's credentials may hold a Store package that account does not have.
+  assert.match(enableSentence(adapter, enableExitOf(exited(EXIT.launchFailed)), measured(), seven).sentence, /could not be started — the Store package may not be available to the account that elevates; install PowerShell 7 \(MSI\) or elevate as your own account/);
+  assert.doesNotMatch(enableSentence(adapter, enableExitOf(exited(EXIT.launchFailed)), measured(), PS51_ENGINE).sentence, /Store package/);
 });
 
 function enableDeps(over: Partial<EnableDeps> & { readonly answers?: ProcessResult; readonly after?: GpuState } = {}): EnableDeps & { readonly log: string[]; readonly store: MemoryStore } {
   const log: string[] = [];
   const store = new MemoryStore();
   return {
-    env: ENV, fileInfo: files({}), pwshAlias: undefined, timeoutMs: () => 120_000, settleSeconds: () => 3,
+    env: ENV, fileInfo: files({}), pwshStore: undefined, timeoutMs: () => 120_000, settleSeconds: () => 3,
     confirm: () => { log.push('confirm'); return Promise.resolve(true); },
     run: (request) => { log.push(`run ${request.file}`); log.push(`pending ${store.get(GPU_PENDING_KEY) === undefined ? 'absent' : 'written'}`); return Promise.resolve(over.answers ?? exited(0)); },
     report: (message, failed) => { log.push(`${failed ? 'error' : 'info'}: ${message}`); },
@@ -281,10 +293,10 @@ function enableDeps(over: Partial<EnableDeps> & { readonly answers?: ProcessResu
   };
 }
 
-test('the order that makes it safe: the modal, THEN the pending record, THEN the one elevated run, THEN Windows read again, THEN the sentence', async () => {
+test('the order that makes it safe: the modal, THEN a fresh read that re-verifies the elevated program, THEN the pending record, THEN the one elevated run, THEN Windows read again, THEN the sentence', async () => {
   const deps = enableDeps();
   assert.equal(await enableGpu(r9700(), deps), 'ran');
-  assert.deepEqual(deps.log, ['confirm', 'run C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'pending written', 'reread', `info: AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU. Elevated program: ${PS51_LABEL}.`]);
+  assert.deepEqual(deps.log, ['confirm', 'reread', 'run C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'pending written', 'reread', `info: AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU. Elevated program: ${PS51_LABEL}.`]);
   assert.equal(deps.store.get(GPU_PENDING_KEY), undefined, 'cleared once the launcher answered');
 });
 
@@ -394,16 +406,17 @@ test('the tail is bounded, a missing log is no line, and the path is Ollama\'s u
 
 // ---- the host ----
 
-function hostDeps(over: Partial<GpuHostDeps> = {}): GpuHostDeps & { readonly recorder: ReturnType<typeof newGpuRecorder>; readonly timers: number[]; readonly deadlines: number[] } {
+function hostDeps(over: Partial<GpuHostDeps> = {}): GpuHostDeps & { readonly recorder: ReturnType<typeof newGpuRecorder>; readonly timers: number[]; readonly deadlines: number[]; readonly cancelled: number[] } {
   const recorder = newGpuRecorder();
   recorder.queryResult = exited(0, MEASURED);
   const timers: number[] = [];
   const deadlines: number[] = [];
+  const cancelled: number[] = [];
   return {
     env: ENV, platform: 'win32', fileInfo: files({}), queryTimeoutMs: () => 20_000, enableTimeoutMs: () => 120_000, enableSettleSeconds: () => 3, ollamaTailBytes: () => 4096, checkMinutes: () => 15,
     ui: { confirm: (p) => { recorder.prompts.push(p); return Promise.resolve(recorder.answer); }, run: (r) => { recorder.requests.push(r); return Promise.resolve(recorder.result); }, query: (r) => { recorder.queries.push(r); return Promise.resolve(recorder.queryResult); }, report: (m, f) => { recorder.reports.push({ message: m, failed: f }); } },
-    durable: new MemoryStore(), nowUtcMs: () => AT, every: (ms) => { timers.push(ms); return () => undefined; }, after: (ms) => { deadlines.push(ms); return () => undefined; }, formatTime: () => '14:31', readTail: () => ({ kind: 'text', text: `${OLLAMA_CPU}\n` }),
-    recorder, timers, deadlines, ...over,
+    durable: new MemoryStore(), nowUtcMs: () => AT, every: (ms) => { timers.push(ms); return () => undefined; }, after: (ms) => { deadlines.push(ms); return () => { cancelled.push(ms); }; }, formatTime: () => '14:31', readTail: () => ({ kind: 'text', text: `${OLLAMA_CPU}\n` }),
+    recorder, timers, deadlines, cancelled, ...over,
   };
 }
 
@@ -436,25 +449,54 @@ test('the host\'s enable acts on ITS reading at the index — the recorded reque
   assert.deepEqual(host.view().alerts, [], 'Windows now says code 0: the alert is gone');
 });
 
-test('owner 2026-10-10: the host elevates the Store alias only when ITS OWN read of Windows reported it as an alias at the path it computes — the modal and the outcome name PowerShell 7', async () => {
+test('2026-10-11: the host elevates the Store package only when ITS OWN read of Windows resolved it, signed, under Program Files\\WindowsApps — the modal and the outcome name PowerShell 7 by that path', async () => {
   const deps = hostDeps();
-  deps.recorder.queryResult = exited(0, `${MEASURED}pwsh.kind=alias\r\npwsh.path=${ALIAS_PWSH.toUpperCase()}\r\n`);
+  deps.recorder.queryResult = exited(0, `${MEASURED}pwsh.store=signed\r\npwsh.path=${STORE_PWSH}\r\n`);
   const host = new GpuHost(deps);
   await host.refresh();
   deps.recorder.answer = true;
   deps.recorder.result = exited(0);
   await host.enable(1, AT);
-  assert.match(deps.recorder.prompts.at(-1)?.detail ?? '', /The elevated program: PowerShell 7 \(C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe\)/);
-  assert.match(deps.recorder.requests[0]?.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe'/);
-  assert.match(deps.recorder.reports.at(-1)?.message ?? '', /Elevated program: PowerShell 7 \(C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe\)\.$/);
+  assert.match(deps.recorder.prompts.at(-1)?.detail ?? '', /The elevated program: PowerShell 7 \(C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe\)/);
+  assert.match(deps.recorder.requests[0]?.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe'/);
+  assert.match(deps.recorder.reports.at(-1)?.message ?? '', /Elevated program: PowerShell 7 \(C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe\)\.$/);
 
   const file = hostDeps();
-  file.recorder.queryResult = exited(0, `${MEASURED}pwsh.kind=file\r\npwsh.path=${ALIAS_PWSH}\r\n`);
+  file.recorder.queryResult = exited(0, `${MEASURED}pwsh.store=unsigned\r\npwsh.path=${STORE_PWSH}\r\n`);
   const planted = new GpuHost(file);
   await planted.refresh();
   file.recorder.answer = true;
   await planted.enable(1, AT);
-  assert.match(file.recorder.prompts.at(-1)?.detail ?? '', /The elevated program: Windows PowerShell 5\.1/, 'a real file where the alias should be: 5.1 runs');
+  assert.match(file.recorder.prompts.at(-1)?.detail ?? '', /The elevated program: Windows PowerShell 5\.1/, 'a package whose signature does not verify: 5.1 runs');
+});
+
+test('code round 3: the elevated program is verified AGAIN after the modal, from a fresh read — a Store package whose signature no longer verifies (or that the Store replaced) while the question was open starts nothing', async () => {
+  const replaced: GpuState = { ...(measured() as Extract<GpuState, { kind: 'read' }>), pwsh: { kind: 'unsigned', path: STORE_PWSH } };
+  const deps = enableDeps({ pwshStore: STORE, after: replaced });
+  assert.equal(await enableGpu(r9700(), deps), 'notStarted');
+  assert.ok(!deps.log.some((l) => l.startsWith('run')), 'nothing was launched');
+  assert.equal(deps.store.get(GPU_PENDING_KEY), undefined, 'no pending record was written');
+  assert.match(deps.log.at(-1) ?? '', /^error: Nothing ran: the elevated program changed while the question was open \(PowerShell 7 \(C:\\Program Files\\WindowsApps\\Microsoft\.PowerShell_7\.6\.6\.0_x64__8wekyb3d8bbwe\\pwsh\.exe\) is now Windows PowerShell 5\.1/);
+
+  const same = enableDeps({ pwshStore: STORE, after: { ...(measured(0) as Extract<GpuState, { kind: 'read' }>), pwsh: STORE } });
+  assert.equal(await enableGpu(r9700(), same), 'ran', 'the same program at the last look: the run goes ahead');
+  assert.deepEqual(same.log.slice(0, 3), ['confirm', 'reread', `run ${PS51}`], 'the fresh read comes AFTER the modal and BEFORE the launch');
+});
+
+test('code round 3: while a query runs, the working line says a check is in flight — the last answer stays, never a blank', async () => {
+  const base = hostDeps();
+  let answer: (r: ProcessResult) => void = () => undefined;
+  const deps = hostDeps({ ui: { ...base.ui, query: () => new Promise((resolve) => { answer = resolve; }) } });
+  const host = new GpuHost(deps);
+  const first = host.refresh();
+  answer(exited(0, MEASURED.replace('code.1=22', 'code.1=0')));
+  await first;
+  assert.equal(host.view().line, 'GPU: AMD Radeon(TM) 890M Graphics, AMD Radeon AI PRO R9700 — working (checked 14:31)');
+  const second = host.refresh();
+  assert.equal(host.view().line, 'GPU: AMD Radeon(TM) 890M Graphics, AMD Radeon AI PRO R9700 — working (checked 14:31) — checking again…');
+  answer(exited(0, MEASURED.replace('code.1=22', 'code.1=0')));
+  await second;
+  assert.equal(host.view().line, 'GPU: AMD Radeon(TM) 890M Graphics, AMD Radeon AI PRO R9700 — working (checked 14:31)');
 });
 
 test('off Windows the host is silent: no query, no alert, no mark, no timer', async () => {
@@ -539,7 +581,7 @@ test('code round 2: a button rendered from an OLDER read acts on nothing — the
   assert.equal(deps.recorder.prompts.length, 0, 'no modal');
   assert.equal(deps.recorder.requests.length, 0, 'nothing ran');
   assert.ok(deps.recorder.queries.length > queries, 'Windows was read again');
-  assert.match(deps.recorder.reports.at(-1)?.message ?? '', /read again since the panel showed that button/);
+  assert.match(deps.recorder.reports.at(-1)?.message ?? '', /read again since that choice was shown/);
   assert.equal(await host.enable(1, AT + 5_000), 'ran', 'the current read\'s token is accepted');
   assert.equal(deps.recorder.prompts.length, 1);
 });
@@ -572,7 +614,8 @@ test('own review M2: after a timed-out enable the host schedules ONE re-render a
   deps.recorder.answer = true;
   deps.recorder.result = { kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   await host.enable(1, AT);
-  assert.deepEqual(deps.deadlines, [120_000 + 60_000 + 1]);
+  assert.equal(deps.deadlines.at(-1), 120_000 + 60_000 + 1, 'the re-render is armed at the deadline of the record');
+  assert.equal(deps.deadlines.length - deps.cancelled.length, 1, 'exactly ONE stands — every re-arm cancels the one before');
 });
 
 test('own review M4: a press on an adapter no longer at 22 reads Windows again, as its sentence says', async () => {
@@ -583,4 +626,59 @@ test('own review M4: a press on an adapter no longer at 22 reads Windows again, 
   await host.enable(0, AT);
   assert.ok(deps.recorder.queries.length > queries, 'Windows was read again');
   assert.match(deps.recorder.reports.at(-1)?.message ?? '', /Windows is read again/);
+});
+
+// ---- own review 2 (Fable, 2026-10-10, after code round 3): the five Minor findings and two Notes ----
+
+test('own review 2 F1: the modal and the request come from ONE look at the engine and ONE at the settle setting — a value that changes between two looks cannot make the modal show one script and the run another', async () => {
+  let settle = 3;
+  const prompts: { readonly detail: string }[] = [];
+  const requests: ProcessRequest[] = [];
+  const deps = enableDeps({ settleSeconds: () => settle++, confirm: (p) => { prompts.push(p); return Promise.resolve(true); }, run: (r) => { requests.push(r); return Promise.resolve(exited(0)); } });
+  assert.equal(await enableGpu(r9700(), deps), 'ran');
+  const shown = /Start-Sleep -Seconds (\d+)/.exec(prompts[0]?.detail ?? '')?.[1];
+  const ran = /Start-Sleep -Seconds (\d+)/.exec(revealed(requests[0]?.args ?? []))?.[1];
+  assert.equal(shown, ran, `the modal showed ${shown}, the run carried ${ran}`);
+});
+
+test('own review 2 F2: a path carrying one of PowerShell\'s smart quotes is not quotable — a package under such a Program Files is skipped, 5.1 runs', () => {
+  for (const quote of ['\u2018', '\u2019', '\u201A', '\u201B', '\u201C', '\u201D', '\u201E', '\u201F']) {
+    const programs = `C:\\Pro${quote}gram Files`;
+    const pwsh = `${programs}\\WindowsApps\\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\\pwsh.exe`;
+    assert.equal(quotablePath(pwsh), false, JSON.stringify(quote));
+    assert.equal(elevatedPowerShellFor({ ...ENV, ProgramFiles: programs }, files({}), { kind: 'signed', path: pwsh }), undefined, JSON.stringify(quote));
+  }
+  assert.equal(quotablePath(STORE_PWSH), true);
+});
+
+test('own review 2 F3: the deadline re-render is armed at START too (a reload mid-run), after every read, and survives a settings change', async () => {
+  const deadlines: number[] = [];
+  const cancelled: number[] = [];
+  let minutes = 15;
+  const deps = hostDeps({ checkMinutes: () => minutes, after: (ms) => { deadlines.push(ms); return () => { cancelled.push(ms); }; } });
+  await deps.durable.update(GPU_PENDING_KEY, { name: 'AMD Radeon AI PRO R9700', id: R9700_ID, startedAtUtcMs: AT, deadlineUtcMs: AT + 180_000 });
+  const host = new GpuHost(deps);
+  host.start();
+  await host.refresh();
+  assert.ok(deadlines.length >= 1, 'a pending record found at start arms the re-render at its deadline');
+  minutes = 30;
+  host.settingsChanged();
+  assert.equal(deadlines.length - cancelled.length, 1, 'exactly one deadline stands after the settings change');
+  host.dispose();
+  assert.equal(deadlines.length - cancelled.length, 0, 'dispose ends it');
+});
+
+test('own review 2 note 7: a declined UAC prompt reads Windows no second time — nothing changed, nothing to re-read', async () => {
+  const deps = enableDeps({ answers: exited(EXIT.declined) });
+  assert.equal(await enableGpu(r9700(), deps), 'ran');
+  assert.deepEqual(deps.log, ['confirm', 'reread', `run ${PS51}`, 'pending written', `info: Nothing was changed: the UAC prompt was declined. Elevated program: ${PS51_LABEL}.`]);
+});
+
+test('own review 2 note 11: a query that THROWS is one unknown state with its reason — refresh() never rejects into the extension host', async () => {
+  const base = hostDeps();
+  const deps = hostDeps({ ui: { ...base.ui, query: () => Promise.reject(new Error('the runner broke')) } });
+  const host = new GpuHost(deps);
+  await host.refresh();
+  assert.deepEqual(host.current(), { kind: 'unknown', reason: 'the display-adapter query failed: the runner broke' });
+  assert.equal(host.view().alerts[0]?.level, 'unknown');
 });

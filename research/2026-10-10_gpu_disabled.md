@@ -105,13 +105,37 @@ read-only before building it (nothing elevated):
 So the extension cannot verify the alias from Node; its own unelevated query (Windows PowerShell) reports `pwsh.kind` —
 `alias` for a zero-byte reparse point with no link type, `file` for anything else there, `absent` — and `pwsh.path` from
 `[Environment]::GetFolderPath('LocalApplicationData')`, and the host elevates the alias only while the LAST read said
-`alias` at the very path it computes from `LOCALAPPDATA`. The built probe, run by the unit suite on this machine
+`alias` at the very path it computes from `LOCALAPPDATA`. What that comparison proves (own review 2, note 6): that the
+shell's folder and `LOCALAPPDATA` agree under one environment — `GetFolderPath` expands `%USERPROFILE%` from the same
+inherited environment, so a process that sets both consistently passes — and that a real file or a link planted at the
+alias path is caught by `Get-Item`; it does not prove the environment honest. The built probe, run by the unit suite on this machine
 (`gpu.test.ts`, *the query reports the Store alias as WINDOWS sees it*): `pwsh.kind=alias`, the path equal to Node's, 0.9 s.
 
 **The residual the owner accepted:** the folder is the user's own, so a user-level process could replace the alias; a
 real file or a symbolic link planted there is refused (5.1 runs instead), but a forged app-execution alias cannot be told
 from Windows' own by any read, and the UAC prompt names `pwsh.exe` either way. The MSI install under `%ProgramFiles%` has
 no such hole and is preferred whenever it exists.
+
+## G9 — the Store package by its resolved path (2026-10-11, the design that shipped)
+
+The coordinator's fact (2026-10-11): an elevated start of the Store PowerShell by its resolved package path works —
+`C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.4.0_x64__8wekyb3d8bbwe\pwsh.exe`, Authenticode Valid, Microsoft. So the
+button starts THAT path, resolved right before the launch, instead of the alias of G8. Measured read-only the same morning:
+
+| Fact | Measured |
+|---|---|
+| `Get-AppxPackage -Name Microsoft.PowerShell` | `Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe`, `SignatureKind Store`, `PublisherId 8wekyb3d8bbwe` — **7.6.6 already**: the Store updated the package overnight, so the version in the path is never pinned |
+| its `pwsh.exe` (`Get-Item`) | 301 368 bytes, `Archive`, no link type |
+| `Get-AuthenticodeSignature` | `Valid`, "Signature verified.", signer `CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US` |
+| the folder's writers (`Get-Acl`) | `NT SERVICE\TrustedInstaller` and `NT AUTHORITY\SYSTEM` only — not Administrators, not the user |
+| Windows PowerShell 5.1, unelevated | resolves and verifies the same (`InstallLocation`, `Valid`) — the query's engine can do the check |
+| Node 24 `lstat` / `accessSync` / `readdirSync` on the package path and on `WindowsApps` | **ENOENT** — Node cannot see the folder at all, so the read's facts stand alone |
+| the built probe under 5.1, three runs | `pwsh.store=signed`, the 7.6.6 path; `Get-AppxPackage` 680–810 ms, the probe 0.9–1.3 s in all, 1.35–1.8 s wall for the process |
+
+So the query carries `pwsh.store` (`signed` / `unsigned` / `absent`) and `pwsh.path`, and the host elevates the path only
+while the LAST read — the one taken after the modal — said `signed` and the path has a Store package's exact shape under this
+machine's `Program Files\WindowsApps` with Microsoft's publisher id. The cost: about 1 s of one core more per read, ≈ 1.5 min a
+day at the default 15 minutes, on top of G7.
 
 After the own review (2026-10-10 15:50Z), the elevated script finds System32 through `[Environment]::SystemDirectory`
 (GetSystemDirectory) instead of `$env:SystemRoot`: the same read half, unelevated, printed `sysdir=C:\WINDOWS\system32

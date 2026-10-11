@@ -41,7 +41,7 @@ export interface GpuHostDeps {
 const REREAD: ReadonlySet<EnableResult> = new Set<EnableResult>(['notOffered', 'stale']);
 
 /** Told when a button from an older read is pressed (code round 2) — the panel is re-rendered from the current read. */
-const STALE_BUTTON = 'The display adapters were read again since the panel showed that button — the panel is refreshed; press it again.';
+const STALE_BUTTON = 'The display adapters were read again since that choice was shown — the panel is refreshed; choose it again.';
 
 /** Whether Windows' answer shows the device a pending enable was for as no longer at code 22 (or gone). */
 function noLongerDisabled(state: GpuState, id: string): boolean {
@@ -66,23 +66,33 @@ export class GpuHost {
     return this.deps.platform === 'win32';
   }
 
-  /** The first query, and the periodic one at `wslCare.gpu.checkMinutes` (re-read by `settingsChanged`). */
+  /**
+   * The first query, the periodic one at `wslCare.gpu.checkMinutes` (re-read by `settingsChanged`), and — after a reload
+   * mid-run — the re-render at a pending enable's deadline (own review 2, F3).
+   */
   start(): void {
     if (!this.active()) {
       return;
     }
     void this.refresh();
     this.settingsChanged();
+    this.watchDeadline();
   }
 
+  /** The periodic timer follows the setting; the deadline re-render is not the setting's and stands (own review 2, F3). */
   settingsChanged(): void {
     const minutes = this.deps.checkMinutes();
     if (this.timerRunsAt(minutes)) {
       return;
     }
-    this.dispose();
+    this.stopTimer?.();
     this.timerMinutes = minutes;
-    this.stopTimer = this.active() && minutes > 0 ? this.deps.every(minutes * 60_000, () => { void this.refresh(); }) : undefined;
+    this.stopTimer = this.periodic(minutes);
+  }
+
+  /** The periodic read every `minutes`, on Windows and above 0 — or none. */
+  private periodic(minutes: number): (() => void) | undefined {
+    return this.active() && minutes > 0 ? this.deps.every(minutes * 60_000, () => { void this.refresh(); }) : undefined;
   }
 
   private timerRunsAt(minutes: number): boolean {
@@ -100,8 +110,9 @@ export class GpuHost {
     return this.state;
   }
 
+  /** The panel's part — while a query is in flight the last answer stays, and the working line says a check runs (code round 3). */
   view(): GpuView {
-    return this.active() ? gpuView(this.state, this.ollama, readGpuPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatTime) : { alerts: [], line: '' };
+    return this.active() ? gpuView(this.state, this.ollama, readGpuPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatTime, this.querying !== undefined) : { alerts: [], line: '' };
   }
 
   barMark(): GpuBarMark {
@@ -122,7 +133,8 @@ export class GpuHost {
       this.again = true;
       return this.querying;
     }
-    this.querying = this.queries().finally(() => { this.querying = undefined; this.changed(); });
+    // A query that THROWS (the runner, the store) is one unknown state, never a rejection into the extension host (own review 2, note 11).
+    this.querying = this.queries().catch((e: unknown) => { this.state = { kind: 'unknown', reason: `the display-adapter query failed: ${e instanceof Error ? e.message : String(e)}` }; }).finally(() => { this.querying = undefined; this.changed(); });
     this.changed();
     return this.querying;
   }
@@ -180,7 +192,7 @@ export class GpuHost {
     return enableGpu(read?.adapters[index], {
       env: this.deps.env,
       fileInfo: this.deps.fileInfo,
-      pwshAlias: read?.pwsh,
+      pwshStore: read?.pwsh,
       timeoutMs: this.deps.enableTimeoutMs,
       settleSeconds: this.deps.enableSettleSeconds,
       confirm: this.deps.ui.confirm,
@@ -204,6 +216,7 @@ export class GpuHost {
     this.state = typeof request === 'string' ? { kind: 'unknown', reason: request } : gpuStateOf(await this.deps.ui.query(request), this.deps.nowUtcMs());
     this.ollama = this.readOllama();
     await this.settlePending();
+    this.watchDeadline();
     this.changed();
   }
 

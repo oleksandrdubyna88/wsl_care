@@ -48,8 +48,12 @@ export function encoded(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
 }
 
-/** A path PowerShell reads inside single quotes with nothing to escape. */
-const QUOTABLE_PATH = /^[A-Za-z]:\\[^'`$\r\n"]*$/;
+/**
+ * A path PowerShell reads inside single quotes with nothing to escape — no quote, backtick, `$`, double quote or line
+ * break, and none of PowerShell's SMART quotes (U+2018–U+201F close a single- or double-quoted string just as the ASCII
+ * ones do; a curly apostrophe is a legal character in a Windows user name — own review 2, F2).
+ */
+const QUOTABLE_PATH = /^[A-Za-z]:\\[^'`$\r\n"‘-‟]*$/;
 
 /** Whether PowerShell reads `file` inside single quotes with nothing to escape — the test every program this launcher starts passes. */
 export function quotablePath(file: string): boolean {

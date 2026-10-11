@@ -60,7 +60,7 @@ export function gpuParts(context: vscode.ExtensionContext, testMode: boolean, nu
   return { host, recorder, enable };
 }
 
-/** Node's `lstat` of a program the enable might elevate — `undefined` when it cannot be read (absent; EACCES on an app-execution alias). */
+/** Node's `lstat` of a program the enable might elevate — `undefined` when it cannot be read (absent; ENOENT under WindowsApps, EACCES on an app-execution alias). */
 function fileInfoOf(file: string): FileInfo | undefined {
   try {
     const info = fs.lstatSync(file);

@@ -288,6 +288,15 @@
   const gpuBox = element('div', undefined, { 'gpu-alerts': '' });
   gpuBox.setAttribute('role', 'alert');
   let gpuWords = '';
+  // The NEWEST read's stamp per adapter index: a click names the read the host holds now, while the alert's WORDS — not the
+  // stamp, which changes with every read — decide whether the live region is rebuilt and re-announced (own review 2, F4).
+  const gpuReadAt = {};
+
+  /** The alert's words: everything a person reads or presses, without the read's stamp. */
+  function gpuWordsOf(alert) {
+    const button = isObject(alert.button) ? { index: alert.button.index, label: alert.button.label, enabled: alert.button.enabled } : undefined;
+    return { level: alert.level, line: alert.line, fix: alert.fix, consequence: alert.consequence, button: button };
+  }
 
   const SIGN = { critical: '⚠ ', unknown: '? ' };
 
@@ -300,15 +309,19 @@
     }
     if (isObject(alert.button)) {
       const index = alert.button.index;
-      const readAt = alert.button.readAt;
-      box.appendChild(actionButton(alert.button.label, { 'gpu-action': 'enableGpu' }, !alert.button.enabled, function () { return { type: 'enableGpu', index: index, readAt: readAt }; }));
+      box.appendChild(actionButton(alert.button.label, { 'gpu-action': 'enableGpu' }, !alert.button.enabled, function () { return { type: 'enableGpu', index: index, readAt: gpuReadAt[index] }; }));
     }
     return box;
   }
 
   function updateGpu(view) {
     const alerts = isObject(view.gpu) && Array.isArray(view.gpu.alerts) ? view.gpu.alerts : [];
-    const words = JSON.stringify(alerts);
+    alerts.forEach(function (alert) {
+      if (isObject(alert.button)) {
+        gpuReadAt[alert.button.index] = alert.button.readAt;
+      }
+    });
+    const words = JSON.stringify(alerts.map(gpuWordsOf));
     if (words !== gpuWords) {
       gpuWords = words;
       gpuBox.replaceChildren(...alerts.map(gpuAlert));

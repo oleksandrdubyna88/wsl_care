@@ -1,7 +1,7 @@
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
-import { DISABLED_CODE, INSTANCE_ID, TAGS, type PwshAlias } from './gpuScripts';
+import { DISABLED_CODE, INSTANCE_ID, TAGS, type PwshStore } from './gpuScripts';
 import { FIX_WORDS, problemOf, type FixKind } from './gpuProblems';
 import { choiceSentence, type OllamaRead } from './ollamaLog';
 
@@ -22,7 +22,7 @@ export interface Adapter {
 
 export type GpuState =
   | { readonly kind: 'unknown'; readonly reason: string }
-  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshAlias };
+  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshStore };
 
 export const NOT_ASKED: GpuState = { kind: 'unknown', reason: 'checking…' };
 
@@ -101,15 +101,15 @@ export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
   return count > MAX_ADAPTERS ? overCap(count) : adaptersOf(tags, count, atUtcMs);
 }
 
-function isAliasKind(kind: string | undefined): kind is PwshAlias['kind'] {
-  return kind === 'alias' || kind === 'file' || kind === 'absent';
+function isStoreKind(kind: string | undefined): kind is PwshStore['kind'] {
+  return kind === 'signed' || kind === 'unsigned' || kind === 'absent';
 }
 
-/** The Store alias as the query saw it (`ALIAS_PROBE`), when it answered one of the three kinds. */
-function pwshOf(tags: ReadonlyMap<string, string>): PwshAlias | undefined {
+/** The Store package as the query resolved it (`STORE_PROBE`), when it answered one of the three kinds. */
+function pwshOf(tags: ReadonlyMap<string, string>): PwshStore | undefined {
   const kind = tags.get(TAGS.pwshKind);
 
-  return isAliasKind(kind) ? { kind, path: tags.get(TAGS.pwshPath) ?? '' } : undefined;
+  return isStoreKind(kind) ? { kind, path: tags.get(TAGS.pwshPath) ?? '' } : undefined;
 }
 
 function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: number): GpuState {
@@ -228,17 +228,26 @@ function alertFor(adapter: Adapter, index: number, ollama: OllamaRead | undefine
   };
 }
 
+/** The working line's tail while a query is in flight (code round 3): the last answer stays on screen, and says a check runs. */
+const CHECKING_AGAIN = ' — checking again…';
+
 /**
  * The panel's GPU part (D3, D6): one critical alert per adapter that is not working, the unknown state as an alert of its
- * own, and — when all work — one muted line. `formatTime` is the presentation edge's local-time formatter.
+ * own, and — when all work — one muted line, with `checking` while a query runs. `formatTime` is the presentation edge's
+ * local-time formatter.
  */
-export function gpuView(state: GpuState, ollama: OllamaRead | undefined, pending: PendingEnable | undefined, formatTime: (utcMs: number) => string): GpuView {
+export function gpuView(state: GpuState, ollama: OllamaRead | undefined, pending: PendingEnable | undefined, formatTime: (utcMs: number) => string, checking = false): GpuView {
   if (state.kind === 'unknown') {
     return unknownView(state);
   }
   const alerts = state.adapters.flatMap((a, i) => (a.code === 0 ? [] : [alertFor(a, i, ollama, pending, state.atUtcMs)]));
 
-  return { alerts, line: alerts.length > 0 ? '' : workingLine(state.adapters, formatTime(state.atUtcMs)) };
+  return { alerts, line: alerts.length > 0 ? '' : workingText(state, formatTime, checking) };
+}
+
+/** "GPU: … — working (checked 14:31)", and " — checking again…" while a query runs. */
+function workingText(state: Extract<GpuState, { kind: 'read' }>, formatTime: (utcMs: number) => string, checking: boolean): string {
+  return workingLine(state.adapters, formatTime(state.atUtcMs)) + (checking ? CHECKING_AGAIN : '');
 }
 
 function unknownView(state: Extract<GpuState, { kind: 'unknown' }>): GpuView {
