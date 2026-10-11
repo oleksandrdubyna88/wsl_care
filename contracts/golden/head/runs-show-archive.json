@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "runId": "20000101T000000Z-1",
+  "state": "done",
+  "run": {
+    "runId": "20000101T000000Z-1",
+    "trigger": "manual",
+    "startedAt": "2000-01-01T00:00:00+00:00",
+    "endedAt": "2000-01-01T00:00:00+00:00",
+    "outcome": "completed",
+    "dryRun": false,
+    "detail": "runs/2000-01-01/20000101T000000Z-1.json",
+    "detailState": "present",
+    "freedBytes": 0,
+    "cleanup": true,
+    "actions": [
+      {
+        "id": "A13",
+        "status": "ran",
+        "count": 1,
+        "freedBytes": 0
+      }
+    ],
+    "kind": "act"
+  },
+  "detailState": "present",
+  "detail": {
+    "kind": "act",
+    "dryRun": false,
+    "dryRunReason": "a button or the CLI never dry-runs: it previews, then runs on confirmation (plan §5)",
+    "targetUser": {
+      "found": true,
+      "name": "user",
+      "home": "/home/user",
+      "source": "single login account"
+    },
+    "actions": [
+      {
+        "id": "A13",
+        "summary": "move aged AI-agent sessions into the archive (archive.baseFolder) as the target user — the product's own binary, never root",
+        "status": "ran",
+        "reason": "ran",
+        "preview": {
+          "what": "move aged AI-agent sessions into the archive as user: 1 session(s) due, 0 archived session(s) due to be removed",
+          "available": true,
+          "count": 1,
+          "bytes": 200,
+          "basis": "the archive child's own preview (archive preview --json), run as the target user; counts only",
+          "facts": {
+            "dueSessions": 1,
+            "dueFiles": 2,
+            "removalsDue": 0,
+            "quarantined": 0
+          },
+          "refusal": "",
+          "items": [
+            {
+              "kind": "agent",
+              "name": "claude-code",
+              "bytes": 200,
+              "note": "1 session(s) due, 2 file(s)"
+            }
+          ],
+          "skip": "",
+          "urgent": ""
+        },
+        "run": {
+          "count": 1,
+          "freedBytes": 0,
+          "freedBasis": "the bytes the archive removed from the agents' folders once their copies were verified again — moved to the archive, not deleted",
+          "removed": [
+            {
+              "kind": "agent",
+              "name": "claude-code",
+              "bytes": 0,
+              "note": "copied 1 session(s) (2 files, 200 bytes), removed 0, gone at source 0, superseded 0, damaged 0, waiting 1"
+            }
+          ],
+          "commands": [
+            {
+              "template": "archive-preview",
+              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive preview --json",
+              "outcome": "exited",
+              "exit": 0,
+              "detail": ""
+            },
+            {
+              "template": "archive-reach",
+              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive reach --json",
+              "outcome": "exited",
+              "exit": 0,
+              "detail": ""
+            },
+            {
+              "template": "archive-run",
+              "display": "runuser -u user -- /opt/wsl-care/bin/wsl-care archive run --budget-seconds 1800 --run-id 20000101T000000Z-1 --json",
+              "outcome": "exited",
+              "exit": 0,
+              "detail": ""
+            }
+          ],
+          "failure": "",
+          "succeeded": true,
+          "notRemoved": [],
+          "notes": [
+            "the archive child answered done at 0.0 files/s, 0.00 MB/s"
+          ]
+        }
+      }
+    ],
+    "notes": []
+  }
+}

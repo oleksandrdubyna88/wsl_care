@@ -3755,6 +3755,24 @@ touched.
 | own review #4–#6: a restore that ends during a read reads AGAIN after it; *Select* is refused while a restore runs; a list naming one id twice hands it once | `archiveController.test.ts` (*own review #4*, *#5*, *#6*) | red: 2 reads not 3; the toggle selected; `[[id, id]]` |
 | own review #7: the restore confirm's exit 2 is `shownListRefused` (the retry road); A20 dropped from `status.actions` between the preview and the confirm refuses the confirm | `restoreRoot.test.ts` (*own review #7*) | backfill — green at once (the code already held) |
 
+### What each E10.S2c guarantee rests on (2026-10-11)
+
+The Logs page names the archive runs (plan §15s D8, *E10.S2c build notes*). RED first, then green; the extension's words were
+then broken one product line at a time (L1–L4), each red.
+
+| Guarantee | Held by | RED, and teeth |
+|---|---|---|
+| an A13 run and an A20 run as `runs show` answers them, produced by DAEMON code: the engine runs `ArchiveAction` / `RestoreAction` over the answers the real CLI gave in the archive scene, writes the records, and the CLI's `runs show` reads them | `GoldenContractTests` (Linux legs: `runs-show-archive.json`, `runs-show-restore.json` regenerated and compared), `ArchiveRunGoldens.cs` | red: "runs-show-archive.json is checked in" — the file missing; on the way: both runs had ONE run id (one clock, one pid — the second run overwrote the first), the rate the machine measured in A13's note, and the new privacy rule (#109) catching "as me:" in the goldens — the target user is `user` now |
+| the archive run's detail names agents and counts, never a session (§15q R9); the restore run's names the sessions by entry id only | `ArchiveRunGoldenTests` (every OS, over the checked-in goldens; a planted key is found) | green from the start — the daemon already holds the rule; the planted key proves the scan |
+| D8: the run list's *Actions* cell reads "A13 ran (n) — AI sessions archived" / "A20 ran (n) — archived sessions restored", the count the daemon's | `logsPage.test.ts` (*D8: the run list*) | red: `'A13 ran (1)'`; teeth L1 → 1 red |
+| D8: the A13 detail's removed table is "A13 — AI sessions archived, per agent" with Agent / Moved / What the archive did over each agent's name, bytes and note | `logsPage.test.ts` (*per-agent table*) | red: `'A13 — removed'`; teeth L2 → 4 red |
+| D8 (the plan round's #1): the A20 detail's removed table is "A20 — archived sessions restored" with Archived session / Size / Agent, month and outcome | `logsPage.test.ts` (*by entry id*), `restoreFlow.test.ts` (the words table) | red: `'A20 — removed'`; teeth L4 → 3 red |
+| *This run*'s actions table names the run too | `logsPage.test.ts` (*This run of an archive run*) | red: `'A13'`; teeth L3 → 3 red |
+| a cleanup action keeps the generic table | `logsPage.test.ts` (*keeps the generic words*) | — (the companion) |
+| the plan round's #0: the daemon-made goldens through the strict fake, the REAL client, the Logs controller and `media/logs.js` — *This run* of each renders its name and its table | `scenarios/logsArchiveFlows.test.ts` | teeth L2, L3 and L4 turn it red (L3: the name; L2, L4: the tables) |
+| the words table the Logs page imports stays root-free | `structure.test.ts` (*the words table the Logs page imports*) | — |
+
+
 Each break-it was one mutation of a product file, compiled, the named test files run (`--test-concurrency=8`), then the file
 restored and recompiled; the mutations are listed by their B-number in the plan's *As built — E10.S2a*.
 ### What the service-account fix of the `.vsix` leak check rests on (release PR #47, 2026-10-08)

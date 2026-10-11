@@ -244,6 +244,9 @@ VS Code 1.85.0 + stable `host/suite.ts` (*Clean A4 through the host*).
 E6.S4 (2026-10-05, plan §7.4, §15j M3, M7, M8; §15k #19) is the second webview: a `WebviewPanel` in the editor area,
 opened by *Logs* in the panel's title bar (`wslCare.openLogs`) and by *Logs* beside *Last cleanup* (that run). It reads
 the daemon's history and NOTHING is computed on the page or in its view model — every figure is a field of an answer.
+Since E10.S2c (D8) an archive run and a restore run read in the archive's words (`cleanup/runWords.ts`: "AI sessions
+archived", "archived sessions restored", their removed tables titled per agent and by entry id), tested against the run
+goldens the daemon's own engine writes (`runs-show-archive.json`, `runs-show-restore.json`, `ArchiveRunGoldens.cs`).
 
 ```mermaid
 sequenceDiagram

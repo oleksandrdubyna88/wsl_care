@@ -285,3 +285,12 @@ test('own review #3: a list the daemon CUT opens no modal — refused before it,
   assert.deepEqual(w.journal.entries(), []);
   assert.match(w.notices.at(-1)?.sentence ?? '', /showed only 1 of the 3/);
 });
+
+// ---- E10.S2c: the Logs page's words come from the same table ----
+
+test('the words table names each run for the Logs page, and A13 and A20 their removed tables — A21 keeps the generic one', () => {
+  assert.deepEqual(RUN_WORDS.map((w) => [w.id, w.logs]), [['A13', 'AI sessions archived'], ['A20', 'archived sessions restored'], ['A21', 'client-gone relays stopped']]);
+  assert.deepEqual(runWordsOf(['A13'])?.removed, { title: 'AI sessions archived, per agent', headers: ['Agent', 'Moved', 'What the archive did'] });
+  assert.deepEqual(runWordsOf(['A20'])?.removed, { title: 'archived sessions restored', headers: ['Archived session', 'Size', 'Agent, month and outcome'] });
+  assert.equal(runWordsOf(['A21'])?.removed, undefined);
+});

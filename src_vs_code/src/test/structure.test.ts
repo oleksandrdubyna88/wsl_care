@@ -225,6 +225,14 @@ test('no panel, status-bar, poller, install, store, Logs-page or Archive-page mo
   assert.ok(sources().some((s) => s.file.startsWith('src/archivePage/')), 'the scan sees the Archive page modules (E10.S2a)');
 });
 
+/** E10.S2c: the Logs page takes its run words from `cleanup/runWords.ts` — so that table must stay as far from root as the page. */
+test('the words table the Logs page imports (cleanup/runWords.ts) imports nothing under src/root/ or src/config/', () => {
+  const words = sources().find((s) => s.file === 'src/cleanup/runWords.ts');
+  assert.ok(words !== undefined, 'the scan sees the words table');
+  assert.deepEqual(resolvedImports(words).filter((m) => m.startsWith('src/root/') || m.startsWith('src/config/')), []);
+  assert.ok(sources().some((s) => s.file === 'src/logsPage/runDetail.ts' && resolvedImports(s).includes('src/cleanup/runWords.ts')), 'the Logs page does import it');
+});
+
 test('rootCall.ts imports only the client\'s argv builder, the verbs, the runner\'s types and the typed ids — no process API', () => {
   const source = sources().find((s) => s.file === ROOT_CALL);
   assert.ok(source !== undefined);

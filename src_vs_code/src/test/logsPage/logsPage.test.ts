@@ -314,3 +314,67 @@ test('review: a figure the answer does not carry reads "not answered" or "not re
   const freed = block(root, 'runList').all('tr[data-run]')[1]?.all('[data-cell]')[4]?.textContent;
   assert.equal(freed, 'not answered');
 });
+
+// ---- E10.S2c: the archive runs in the archive's words, over the daemon's own run goldens ----
+
+/** The run lines of the two archive goldens as the run list of a period, each expandable to its own `runs show`. */
+function archiveRuns(): { archive: Json; restore: Json; parts: Partial<LogsState> } {
+  const archive = golden('runs-show-archive.json');
+  const restore = golden('runs-show-restore.json');
+  const runs = { ...golden('runs-local-day.json'), count: 2, runs: [archive.run, restore.run] };
+
+  return { archive, restore, parts: { runs: answered(runs), details: new Map([[0, answered(archive)], [1, answered(restore)]]) } };
+}
+
+function titleOf(holder: Element, table: string): string {
+  return holder.one(`[data-table-of="${table}"]`).one('[data-title]').textContent;
+}
+
+function headersOf(holder: Element, table: string): string[] {
+  return holder.one(`table[data-table="${table}"]`).all('[data-header]').map((cell) => cell.textContent);
+}
+
+function removedOf(show: Json): Json[] {
+  return ((((show.detail as Json).actions as Json[])[0] as Json).run as Json).removed as Json[];
+}
+
+test('D8: the run list names an archive run "AI sessions archived" and a restore run "archived sessions restored" — the daemon\'s count unchanged', () => {
+  const { archive, restore, parts } = archiveRuns();
+  const { root } = show(viewOf(parts));
+  const actions = block(root, 'runList').all('tr[data-run]').map((row) => row.all('[data-cell]')[3]?.textContent);
+  const count = (show: Json): string => String((((show.run as Json).actions as Json[])[0] as Json).count);
+  assert.deepEqual(actions, [`A13 ran (${count(archive)}) — AI sessions archived`, `A20 ran (${count(restore)}) — archived sessions restored`]);
+});
+
+test('D8: an archive run\'s detail is the per-agent table it is — its own title and headings, each agent\'s row as the daemon wrote it', () => {
+  const { archive, parts } = archiveRuns();
+  const { root } = show(viewOf(parts));
+  const holder = root.one('[data-detail-for="0"]');
+  assert.equal(titleOf(holder, 'removed-0'), 'A13 — AI sessions archived, per agent');
+  assert.deepEqual(headersOf(holder, 'removed-0'), ['Agent', 'Moved', 'What the archive did']);
+  assert.deepEqual(cells(holder, 'removed-0'), removedOf(archive).map((item) => [String(item.name), gbOf(Number(item.bytes)), String(item.note)]));
+  assert.equal(titleOf(holder, 'notRemoved-0'), 'A13 — not removed', 'the other tables stay as they are');
+});
+
+test('D8 (the plan round\'s #1): a restore run\'s detail lists the sessions put back by entry id — its own title, headings and rows', () => {
+  const { restore, parts } = archiveRuns();
+  const { root } = show(viewOf(parts));
+  const holder = root.one('[data-detail-for="1"]');
+  assert.equal(titleOf(holder, 'removed-0'), 'A20 — archived sessions restored');
+  assert.deepEqual(headersOf(holder, 'removed-0'), ['Archived session', 'Size', 'Agent, month and outcome']);
+  assert.deepEqual(cells(holder, 'removed-0'), removedOf(restore).map((item) => [String(item.name), gbOf(Number(item.bytes)), String(item.note)]));
+});
+
+test('D8: This run of an archive run names it in its actions table too', () => {
+  const archive = golden('runs-show-archive.json');
+  const { root } = show(viewOf({ logs: { kind: 'idle' }, runs: { kind: 'idle' }, show: answered(archive) }, { kind: 'thisRun', runId: '20000101T000000Z-1' }));
+  assert.equal(cells(block(root, 'run'), 'actions')[0]?.[0], 'A13 — AI sessions archived');
+});
+
+test('a cleanup action keeps the generic words — the table names only the runs it knows', () => {
+  const done = golden('runs-show-done.json');
+  const { root } = show(viewOf({ details: new Map([[1, answered(done)]]) }));
+  const holder = root.one('[data-detail-for="1"]');
+  assert.equal(titleOf(holder, 'removed-0'), 'A10 — removed');
+  assert.deepEqual(headersOf(holder, 'removed-0'), ['Type', 'Name', 'Size', 'Note']);
+});

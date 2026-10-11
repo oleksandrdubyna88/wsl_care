@@ -301,6 +301,10 @@ internal static partial class GoldenContracts
 
             // E9.S2b: one run over that session (its answer is the LAST line — the lines before it are progress), then the status.
             (await archive.RunAsync("config", "set", "archive.baseFolder", "/mnt/v/ai-archive")).Exit.Should().Be((int)ExitCode.Ok);
+
+            // E10.S2c: the answers A13's children get in the run goldens below — the real CLI's, with the base set.
+            var childPreview = ArchiveRunGoldens.Answer(await archive.RunAsync("archive", "preview", "--json"), archive.SandboxRoot);
+            var childReach = ArchiveRunGoldens.Answer(await archive.RunAsync("archive", "reach", "--json"), archive.SandboxRoot);
             var run = await archive.RunAsync("archive", "run", "--agent", "claude-code", "--json");
             files.Add(Answered("archive-run.json", archive, run with { Stdout = run.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
             files.Add(Answered("archive-status.json", archive, await archive.RunAsync("archive", "status", "--json"), matched));
@@ -322,8 +326,20 @@ internal static partial class GoldenContracts
             File.Exists(second).Should().BeFalse("the second session was removed before the restore");
             (await archive.RunAsync("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s1.jsonl", "--json")).Exit.Should().Be((int)ExitCode.Ok);
             var ids = JsonNode.Parse((await archive.RunAsync("archive", "list", "--json")).Stdout)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!);
+            var restorable = await archive.RunAsync("archive", "list", "--restorable", "--json");
             var restore = await archive.RunAsync("archive", "restore", "--entry", string.Join(',', ids), "--json");
             files.Add(Answered("archive-restore.json", archive, restore with { Stdout = restore.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
+
+            // E10.S2c: an A13 run and an A20 run, run by the daemon's ENGINE over those answers and read back by `runs show`.
+            var restorableIds = JsonNode.Parse(restorable.Stdout)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!).ToList();
+            var answers = new ArchiveRunGoldens.ChildAnswers(childPreview, childReach, ArchiveRunGoldens.Answer(run, archive.SandboxRoot),
+                ArchiveRunGoldens.Answer(restorable, archive.SandboxRoot), ArchiveRunGoldens.Answer(restore, archive.SandboxRoot), restorableIds);
+            var (archiveShow, restoreShow, runs) = await ArchiveRunGoldens.RunAsync(answers);
+            using (runs)
+            {
+                files.Add(Answered(ArchiveRunGoldens.ArchiveFile, runs, archiveShow, matched));
+                files.Add(Answered(ArchiveRunGoldens.RestoreFile, runs, restoreShow, matched));
+            }
         }
 
         using var day = new ScenarioHome("golden-local-day");
