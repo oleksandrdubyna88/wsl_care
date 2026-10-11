@@ -57,6 +57,29 @@ public sealed class TempRootTests
         swept.Should().Be(1);
     }
 
+    /// <summary>The coai code round: the sweep runs inside the first constructor through a <see cref="Lazy{T}"/>, which caches an
+    /// exception — one unreadable marker would then break every root of the process. A marker that cannot be read keeps its root
+    /// (keep rather than guess), and the sweep goes on to the next.</summary>
+    [Fact]
+    public void An_unreadable_marker_keeps_its_root_and_the_sweep_goes_on()
+    {
+        using var temp = new TempRoot("leftovers-unreadable");
+        var now = DateTime.UtcNow;
+        var held = Root(temp, $"wsl-care-test-held-{new string('f', 32)}", now.AddDays(-2));
+        File.WriteAllText(held + TempRoot.MarkerSuffix, "1 1");
+        var next = Root(temp, $"wsl-care-test-next-{new string('0', 32)}", now.AddDays(-2));
+
+        int swept;
+        using (File.Open(held + TempRoot.MarkerSuffix, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            swept = TempRoot.SweepLeftovers(temp.Path, now, TempRoot.LeftoverAge);
+        }
+
+        Directory.Exists(held).Should().BeTrue("a marker that cannot be read may name a live process: its root is kept");
+        Directory.Exists(next).Should().BeFalse("the sweep goes on past the root it could not judge");
+        swept.Should().Be(1);
+    }
+
     private static long CurrentStartTicks() => System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks;
 
     /// <summary>A root as the constructor would name it, with a file in it, written <paramref name="lastWriteUtc"/>.</summary>

@@ -51,10 +51,28 @@ public sealed class TempRoot : IDisposable
             .Count(d => DeleteRootAndMarker(d.FullName));
 
     /// <summary>Whether the marker names a process that still runs: the same pid with the same start time. A process whose start
-    /// time cannot be read is taken as alive (keep rather than guess); a missing or unreadable marker names nobody.</summary>
-    private static bool OwnerAlive(string marker)
+    /// time cannot be read is taken as alive (keep rather than guess), and so is a marker that exists but cannot be read; a missing
+    /// marker names nobody (a root from before the markers is judged by its age alone).</summary>
+    private static bool OwnerAlive(string marker) => ReadMarker(marker) is not { } text || NamesALiveProcess(text);
+
+    /// <summary>The marker's text; empty when there is none; <c>null</c> when it exists but cannot be read (the coai code round: the
+    /// sweep runs in a <see cref="Lazy{T}"/>, which would cache the exception and break every root of the process — so an
+    /// unreadable marker keeps its root instead).</summary>
+    private static string? ReadMarker(string marker)
     {
-        var parts = System.IO.File.Exists(marker) ? System.IO.File.ReadAllText(marker).Split(' ') : [];
+        try
+        {
+            return System.IO.File.Exists(marker) ? System.IO.File.ReadAllText(marker) : string.Empty;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    private static bool NamesALiveProcess(string text)
+    {
+        var parts = text.Split(' ');
         return parts.Length == 2
             && int.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out var pid)
             && long.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out var ticks)
@@ -83,7 +101,7 @@ public sealed class TempRoot : IDisposable
         {
             return process.StartTime.ToUniversalTime().Ticks;
         }
-        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException or System.Security.SecurityException)
         {
             return UnreadableStart;
         }
