@@ -1,16 +1,17 @@
 # PLAN — the Windows Time launcher elevates PowerShell 7 by the same resolver as *Enable <GPU>*, and the panel names each engine
 
-> Status: **in progress (2026-10-11): D1 (the move) built; D2/D4 built in their first form, D2 then revised by §11 (the
-> engine read moves out of the guard query); D3, D5, D6 and §11's R1–R12 not yet built.** Scope: the VS Code extension
+> Status: **IMPLEMENTED, 2026-10-11.** What shipped differently is in §12 (the as-built record): D2 replaced by its own engine
+> read (`EngineHost`, §11 R3), the shipped G1 hardened (§11 R1), the stamp line (R4). The open tail: the owner's first
+> elevated presses under PowerShell 7 (POST_DEPLOY item 9, the acceptance gate). Scope: the VS Code extension
 > (`src_vs_code/`) — the engine resolver of story G1 moved out of `src/gpu/` into one shared module, the Windows Time
 > launcher's three user-context elevated runs (*Start Windows Time*, *Install the Windows Time guard*, *Remove the Windows
 > Time guard*) moved onto it, and one line per part in the panel that names the engine. The SYSTEM task stays on Windows
 > PowerShell 5.1. The daemon is not changed. **§11 overrides the sections above it where they differ.**
 >
-> Related: [PLAN_gpu_health.md](../research/PLAN_gpu_health.md) (the resolver, §11 *The owner's decision … and the path*),
-> [PLAN_windows_time_guard.md](../research/PLAN_windows_time_guard.md) (the launcher, D7),
-> [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the guard's task, D3–D8),
-> [2026-10-10_gpu_disabled.md](../research/2026-10-10_gpu_disabled.md) (G8, G9), [module_vs_code.md](../research/module_vs_code.md).
+> Related: [PLAN_gpu_health.md](PLAN_gpu_health.md) (the resolver, §11 *The owner's decision … and the path*),
+> [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md) (the launcher, D7),
+> [PLAN_windows_time_task.md](PLAN_windows_time_task.md) (the guard's task, D3–D8),
+> [2026-10-10_gpu_disabled.md](2026-10-10_gpu_disabled.md) (G8, G9), [module_vs_code.md](module_vs_code.md).
 
 ## 1. Goal
 
@@ -256,3 +257,45 @@ worktree; all accepted (R5 partly):
 
 **Build order from here:** R2 (launcher move) → R1 → R8 → R3 (EngineHost, guard query back, stamp R4) → D3 with R5–R7 and
 R12 → D5 → D6 with R11 → docs.
+
+## 12. As built (2026-10-11) — what shipped differently
+
+Built RED first where a defect could be watched (R1's spoofed `ProgramFiles` elevated a planted path before the fix; the
+"one resolver" and "no cycle" structure tests failed before their moves); the flows were written before their tests, so each
+of those tests was proven by a break-it on PRODUCT code, every one red, then restored: the engine dropped from the fix
+request; the guard's re-read replaced by the pre-modal read; an unanswered re-read worded as "changed"; the busy check moved
+before the re-read (R5); the import line removed (D4); the probe moved after the Task Scheduler read (D2, before R3 removed
+it); `reread()` sharing a read in flight (R6); the page dropping the guard's engine line, the guard host ignoring the last
+read, the GPU host naming no engine (D6).
+
+**Deviations from §4:**
+
+- **D2 replaced (§11 R3).** The engine is NOT read by the guard's status query: `src/powershell/engineHost.ts` reads it with
+  a probe of its own (`ENGINE_QUERY`), behind `EngineHost`, read by the panel's refresh and by both Windows Time flows. The
+  guard query went back to its pre-D2 form, plus `stamp=present|absent` (R4).
+- **The launcher moved too (R2):** `src/powershell/elevatedLauncher.ts`; `windowsTimeFix.ts` keeps `EXIT` by spreading
+  `LAUNCH_EXIT`.
+- **The strict tagged-answer reader moved** from `gpuState.ts` to `src/powershell/taggedAnswer.ts` (reuse-first: the engine
+  read needed it), with an "ignored tags" parameter for the GPU's `adapter=` marker. The guard's own first-wins reader is a
+  different contract and stayed.
+- **Shipped G1 changed on purpose (R1):** the GPU query pins the module path first; the probe prints `pwsh.programFiles`;
+  `storePwsh` takes the known-folder Program Files and requires the environment to agree. G1's own changed-engine sentence and
+  outcome suffix now come from the shared module (`engineChangedSentence`, `byEngine`).
+- **No `checkedEngineOf`:** the "could not be checked" label is made where a read fails (`engineHost.ts`'s `failedRead`), so
+  `engineOf` and G1's labels are unchanged.
+- **`GpuAlert.engine` is optional** (the page renders it only when it is a non-empty string), so the unknown alert and the
+  existing fixtures need no field.
+- **The engine line before any read** says "checking which PowerShell…" rather than "5.1 until a read verifies PowerShell 7":
+  the panel's refresh starts that read at once.
+- **The guard's busy refusal before any read** names no engine (`NO_ENGINE`).
+- **A drive path in the Test-mode default answer** was caught by the bundle scan (`vsixCheck`): `NO_PWSH_ANSWER` carries the
+  two `absent` verdicts and no path.
+- **New key:** `wslCare.timeouts.engineProbeSeconds` (default 20, 5–120).
+
+**Tests:** extension 1127 pass (1 skipped), lint and typecheck clean. One load-sensitive runner timing test (*a child past its
+ceiling is reported timed out within the ceiling plus the kill grace*) failed once under the full parallel suite and passed
+alone and on the next full run — not touched by this story.
+
+**Open tail:** the acceptance gate — the owner's first *Remove*, *Install* and *Start Windows Time* under PowerShell 7
+(POST_DEPLOY item 9): whether the ScheduledTasks module registers under elevated pwsh 7, and whether the Store package's
+registry virtualisation leaves the stamp behind.
