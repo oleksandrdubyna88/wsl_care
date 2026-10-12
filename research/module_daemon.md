@@ -81,6 +81,7 @@ flowchart TB
 | `Staging`, `StagingPlace`, `StagingAccess`, `StageInput`, `StageReport` / `StageRemoveReport`, `StagingFolder`, `StagingSweep` | `Core/Scheduler` | `tasks stage` and `--remove` (WR-D2; section below): the copy made, read back and recorded, the sweep of the other digest folders (also the `tasks run` start's), every copy removed |
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 | `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
+| `PwshProbe`, `PwshEngine` / `InteropEngine` | `Core/Health` | E15.S1b (section below): what the clock probe saw of the MSI PowerShell 7, and the PURE choice of the engine the disk script runs under |
 
 ## Entry points
 
@@ -273,7 +274,7 @@ The first LIVE full run (2026-10-12 10:01Z, `dryRun` false) warned `systemd.fail
   user (display) key: it quiets a warning and changes no action. `ConfigKeyShapeTests` holds the list shape, and the cap is an
   allow-listed schema limit.
 
-## The Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10)
+## The Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10; the engine, E15.S1b, 2026-10-12)
 
 The first story of [PLAN_disk_health.md](../todo/PLAN_disk_health.md) (§3.1, Road 1): the full run reads the SLOW Windows facts
 through a second fixed interop script, as it reads the Windows clock. It only collects and records; no verdict judges these
@@ -282,14 +283,15 @@ facts yet (E15.S2, S4, S5, S8 do).
 ```mermaid
 flowchart LR
     collect["collect (full run only)<br/>HealthCollector.CollectAsync"]
-    clock["powershell.exe clock probe<br/>+ the clock reference"]
-    disk["powershell.exe -NoProfile -NonInteractive -Command<br/>WindowsDiskCommands.Script<br/>(two clamped integers, no slot)"]
-    policy["CommandPolicy: never-list closed set<br/>HealthCommands.FixedScripts<br/>+ template ReadCommandTemplates.WindowsDisk"]
+    clock["powershell.exe clock probe (always 5.1)<br/>+ pwsh.* tags (PwshProbe)<br/>+ the clock reference"]
+    engine["PwshEngine.Choose (PURE)<br/>msi or windowsPowerShell + reason"]
+    disk["powershell.exe OR pwsh.exe<br/>-NoProfile -NonInteractive -Command<br/>WindowsDiskCommands.Script<br/>(pin, Storage import, two clamped integers)"]
+    policy["CommandPolicy: never-list closed set of THREE<br/>HealthCommands.FixedScripts<br/>+ templates WindowsDisk / WindowsDiskUnderPwsh"]
     parse["WindowsDiskParsers.Parse<br/>by tag · end=1 last · malformed counted"]
-    sample["HealthSample.WindowsDisk<br/>WindowsDiskSample(SampledAt, Elapsed, Facts)"]
-    detail["run detail<br/>health.windowsDisk (WindowsDiskReport)"]
+    sample["HealthSample.WindowsDisk<br/>WindowsDiskSample(SampledAt, Elapsed, Facts) + Engine"]
+    detail["run detail<br/>health.windowsDisk (WindowsDiskReport)<br/>+ engine {program, reason}"]
 
-    collect --> clock --> disk
+    collect --> clock --> engine --> disk
     disk --> policy
     disk --> parse --> sample --> detail
 ```
@@ -336,17 +338,42 @@ flowchart LR
   5.1, unelevated, 2.4–3.3 s warm, 10.7 s cold; 26 lines on the owner's machine. After the code round (2026-10-11): 6.1–6.2 s
   warm, 21.9 s cold under load (73 % of the ceiling), 29 lines. The captured answer, anonymised, is the
   fixture `tests/fixtures/health/windows-disk-2026-10-10`.
-- **The closed set.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell (`powershell` or `pwsh`, any path)
-  that is not EXACTLY one of `HealthCommands.FixedScripts` — the clock probe and the disk script, program AND arguments,
-  under the configuration in force. A third script, a one-word variant of either, `-File`, `-EncodedCommand`, a trailing
-  argument and the right arguments under `pwsh` are all refused (`PowerShellClosedSetTests`). The read template is not
-  `CommandTemplate.Fixed` (it freezes an argv at first use): its one slot, `SlotKind.WindowsDiskScript`, accepts exactly the
-  script the configuration in force builds.
-- **Which PowerShell: 5.1, for now.** The owner's preference (2026-10-10) is `pwsh` 7, falling back to 5.1. The Store `pwsh`
-  is an app-execution alias under the USER's profile — a file the Windows user can replace — while the system drive's
-  fallback starts only programs in administrator-only folders, from a closed list. Admitting the alias would let the root
-  daemon start a user-writable program; that is a policy decision, not a setting, and it is left as a follow-up
-  (PLAN_disk_health.md, *E15.S1 as built*). The clock probe's program is unchanged.
+- **The closed set — three members since E15.S1b.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell
+  (`powershell` or `pwsh`, any path) that is not EXACTLY one of `HealthCommands.FixedScripts`, program AND arguments, under
+  the configuration in force: the clock probe under `powershell.exe`; the disk script under `powershell.exe`; and the SAME
+  disk script under the bare `pwsh.exe` (`WindowsDiskCommands.WindowsDiskUnderPwsh` — `WindowsDisk` with only the program,
+  the name `pwsh-windows-disk` and the summary changed, so both carry one `Arguments` list). A third script, a one-word variant,
+  `-File`, `-EncodedCommand`, a trailing argument, the clock probe under `pwsh.exe`, and the disk script under `pwsh`,
+  `PWSH.EXE` or any path to a pwsh (`/mnt/c/Program Files/…`, `C:\Program Files\…`, a user's `WindowsApps`) are all refused
+  (`PowerShellClosedSetTests`). The read templates are not `CommandTemplate.Fixed` (it freezes an argv at first use): their
+  one slot, `SlotKind.WindowsDiskScript`, accepts exactly the script the configuration in force builds;
+  `ReadCommandTemplates.WindowsDisk` and `WindowsDiskUnderPwsh` are one helper under two programs.
+- **Which PowerShell (E15.S1b, 2026-10-12): the MSI pwsh 7 when the clock probe verified it, else Windows PowerShell 5.1.**
+  The clock probe stays on 5.1 (the trusted System32 path, and its latency is calibrated for 5.1). AFTER its two instants
+  and the Windows Time lines it looks at `<known folder>\PowerShell\7\pwsh.exe` and prints four tagged lines —
+  `pwsh.knownFolder=`, `pwsh.envProgramFiles=`, `pwsh.msi=` (`absent` / `link` / `directory` / `empty` / `file`) and
+  `pwsh.signature=` (`signed` only for Authenticode Valid from `CN=Microsoft Corporation`, through the pinned module path) —
+  inside its own `try`, so no third PowerShell starts per run. `PwshEngine.Choose(sample, automountRoot)` is PURE: the MSI
+  pwsh only when the known folder is EXACTLY `C:\Program Files`, the environment's `ProgramFiles` agrees (case-insensitive),
+  the item is a `file` and it is `signed`; anything else, a failed probe and a probe from before the tags give 5.1 with the
+  reason. `HealthCollector.CollectAsync` chooses after the clock probe and its reference (the MSI file named under the
+  automount root `/etc/wsl.conf` sets) and runs `WindowsDiskCommands.Under(engine)`. The started program is always the BARE
+  `pwsh.exe`; the resolver finds it on PATH or in its one fixed folder on the system drive
+  (`WindowsSystemDrive.Programs`: `pwsh.exe` → `Program Files/PowerShell/7`, the same file checks as `powershell.exe`). Never
+  the Store package: it is an app-execution alias under the USER's profile, a file the Windows user can replace.
+- **The Storage import (E15.S1b, measured 2026-10-12).** With the module path pinned to `$PSHOME\Modules`, pwsh 7 has no
+  `Get-Volume`, `Get-Partition`, `Get-PhysicalDisk` or `Get-StorageReliabilityCounter`: under the Store pwsh 7.6.6 the script
+  answered `volumes.error`, `disks.error` and `reliability.refused` = `CommandNotFoundException`. So right after the pin the
+  script imports Storage by its ABSOLUTE path, `[IO.Path]::Combine([Environment]::SystemDirectory,
+  'WindowsPowerShell\v1.0\Modules\Storage')` (GetSystemDirectory, not a variable; `[IO.Path]::Combine`, not `Join-Path`, as
+  the rest of the script joins paths), in its own `try` — a failed import leaves each Storage section to print its own
+  error line. Under 5.1 it is the same module the pinned path already names. Live after the change (read-only, the owner's
+  machine): 4 volumes, 2 disks, `end=1` under the Store pwsh (9–15 s, two harmless nested-module errors on stderr, exit 0)
+  and under 5.1 (6–8 s). `RealPwshDiskScriptTests` runs the actual script under `%ProgramFiles%\PowerShell\7\pwsh.exe` on
+  CI's `windows-latest`; it skips where the MSI build is absent.
+- **The run detail names the engine.** `WindowsDiskSample.Engine` (a `Reading`, chosen before the run, so it is kept also
+  when the script fails) becomes `health.windowsDisk.engine {program, reason}` (`InteropEngineReport`, a wire record) —
+  absent on the Windows binary and on a detail written before E15.S1b.
 - **What the detail holds** is the machine's own facts (profile paths, the machine id). The detail stays on this machine;
   the redacted statistics export is E17.S3's.
 

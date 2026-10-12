@@ -361,6 +361,14 @@ reliability counters' refusal (they need elevation, which wsl-care never asks fo
 Memory Compression, Windows' edition, build and install date, the machine id and the display adapters' problem codes. Its
 ceiling is `health.windowsDiskTimeoutSeconds` (30).
 
+**Which PowerShell the daemon uses** (E15.S1b). The clock probe always runs under Windows PowerShell 5.1 (`powershell.exe`,
+System32). The disk script runs under the MSI PowerShell 7 (`C:\Program Files\PowerShell\7\pwsh.exe`) when the clock probe
+verified it in the same run — a real file (no link) under the known Program Files folder, which the environment's
+`ProgramFiles` names too, with a valid Authenticode signature from Microsoft — and under Windows PowerShell 5.1 otherwise.
+The Store build of `pwsh` and its alias are never used: they are files the Windows user can replace. The run detail says
+which one ran and why, in `health.windowsDisk.engine` (`program`, `reason`). Both engines run the same fixed script; it pins
+the module path and imports the Storage module from System32 by its absolute path, because pwsh 7 has none of its own.
+
 **The virtual disks and the hosting volume** (E15.S2, a report: nothing acts on these). From those facts each full run judges every
 virtual disk and records the figures in its detail's `disk` section; `status --json` carries the newest run's section as `disk`,
 with its basis (`fullRun`, the run, its end, its age). For each disk: its hosting volume, what its guest uses, the GAP (file −

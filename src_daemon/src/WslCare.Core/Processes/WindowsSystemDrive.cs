@@ -11,7 +11,7 @@ public sealed record SystemDriveMount(string MountPoint, uint DeviceMajor, uint 
 /// <summary>
 /// Where the distro sees the Windows system drive and whether WSL interop can run a Windows program at all — the inputs of
 /// the fallback <see cref="ExecutableResolver"/> takes for the closed list <see cref="Programs"/> (the clock probe's
-/// <c>powershell.exe</c>, nothing else) when <c>PATH</c> does not name the program. The files themselves are checked by
+/// <c>powershell.exe</c> and, since E15.S1b, the MSI <c>pwsh.exe</c> for the disk script; nothing else) when <c>PATH</c> does not name the program. The files themselves are checked by
 /// <see cref="SystemDriveFiles"/>.
 /// </summary>
 /// <remarks>

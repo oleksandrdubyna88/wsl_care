@@ -3,6 +3,9 @@
 > Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
 > built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 built on its branch `feat/wc-e15s5-host-memory` (*E15.S5 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
 > and E15.S6 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
+> not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -1294,3 +1297,79 @@ fails on CI. That is S3's work, not a new story.
    daemon uses), module_tests (E15.S1b: the checks, the RED messages, the break-its), *E15.S1b as built* and the status line.
    *Files:* `research/module_daemon.md`, `README.md`, `research/module_tests.md`, `todo/PLAN_disk_health.md`.
    *Tests:* `plan-lifecycle.mjs`; every suite green; `dotnet format --verify-no-changes`.
+
+## E15.S1b as built (2026-10-12, branch `feat/wc-e15s1b-msi-pwsh`)
+
+**Models.** S1 and S2: Fable. The split into five stories: Fable. S3, S4 and S5: Opus.
+
+**What shipped.**
+- **S1 — the probe.** The clock probe (Windows PowerShell 5.1) looks at `<known folder>\PowerShell\7\pwsh.exe` AFTER its two
+  instants and the Windows Time lines, inside its own `try`, and prints `pwsh.knownFolder=`, `pwsh.envProgramFiles=`,
+  `pwsh.msi=` (`absent` | `link` | `directory` | `empty` | `file`) and `pwsh.signature=` (`signed` | `unsigned:<status>|<subject>`).
+  The parser reads them by tag into `PwshProbe`; `WindowsClockSample.Pwsh` carries it (not written to the history line).
+  Fixture: `tests/fixtures/health/pwsh-engine-2026-10-12` (5.1, the owner's machine, `absent`).
+- **S2 — the judgement.** `PwshEngine.Choose(sample, automountRoot)` is pure: the MSI pwsh only when the known folder is
+  exactly `C:\Program Files`, the environment agrees (case-insensitive), the item is a `file` and it is `signed`; else
+  `powershell.exe` with the reason. `WindowsSystemDrive.Programs` gains `pwsh.exe` → `Program Files/PowerShell/7`.
+- **S3 — the closed set and the script.** `WindowsDiskCommands.WindowsDiskUnderPwsh` is `WindowsDisk` with only the program
+  (the bare `pwsh.exe`), the name (`pwsh-windows-disk`) and the summary changed — one `Arguments` list.
+  `HealthCommands.FixedScripts` is three: the clock probe (5.1 only), the disk script under 5.1, the disk script under pwsh.
+  `ReadCommandTemplates.WindowsDiskUnderPwsh` is the same words and slot under `pwsh.exe`. The never-list's words name the
+  pwsh member. The script imports Storage by its absolute System32 path right after the pin.
+  `RealPwshDiskScriptTests` runs the actual script under `%ProgramFiles%\PowerShell\7\pwsh.exe` (Windows; it skips without
+  the MSI build).
+- **S4 — the run.** `HealthCollector.CollectAsync` chooses the engine after the clock probe and its reference (the MSI file
+  under the automount root of `/etc/wsl.conf`) and runs `WindowsDiskCommands.Under(engine)`. `WindowsDiskSample.Engine` (a
+  `Reading`, kept when the script fails) becomes the run detail's `health.windowsDisk.engine {program, reason}`
+  (`InteropEngineReport`) — absent on the Windows binary and on an older detail. The scenario harness installs a fake
+  `pwsh` (`pwsh.exe` on Linux).
+- **S5 — the record.** module_daemon (the engine choice, the closed set of three, the Storage import), README (which
+  PowerShell the daemon uses), module_tests (the E15.S1b row and the flow row), this section, the status line and the
+  `todo/README.md` row.
+
+**Measured (2026-10-12, the owner's machine, read-only, unelevated).**
+- The disk script WITHOUT the Storage import under the Store pwsh 7.6.6 (`pwsh.exe -NoProfile -NonInteractive -Command`):
+  `volumes.error=CommandNotFoundException`, `disks.error=CommandNotFoundException`,
+  `reliability.refused=CommandNotFoundException`, `end=1`.
+- WITH the import: 4 volumes, 2 disks, `reliability.refused=CimException` (unelevated, as under 5.1), `end=1`, 27 lines,
+  exit 0, under the Store pwsh in 9.2–15.7 s and under 5.1 in 6.2–7.4 s (two runs each; the machine was loaded). Under
+  pwsh, `Import-Module` writes two non-terminating errors to stderr — the nested modules `StorageHealth.cdxml` and
+  `StorageSubSystem.cdxml` are not found with the module path pinned. The cmdlets the script uses all answer, and the
+  daemon reads stderr only for a non-zero exit.
+- The script without the import under 5.1 answers in full (the pinned path already names Storage there).
+
+**Tests.** RED messages and break-its are in [module_tests.md](../research/module_tests.md) *E15.S1b*. Totals after S4:
+Windows Core 2670 (0 failed, 82 skipped), Cli 391 (0 failed, 2 skipped), Scenarios 598 (0 failed, 284 skipped — the Linux
+legs). Linux (WSL `Ubuntu`, the copy `/tmp/wc-e15s1b-linux-20261012T104403Z`): Core 2670 (0 failed, 27 skipped), Cli 391
+(0 failed, 12 skipped), Scenarios 598 (2 failed, 5 skipped). The two failures were `FixturePrivacyTests`: the script set
+`HOME` to a folder named `home`, and the test takes HOME's last segment as this machine's user name, which many tracked
+files contain. Rerun with a neutral `HOME`: 57 of 57 green, and `WindowsDiskFlows` 3 of 3. No golden changed: no golden
+holds the Windows disk section's engine.
+
+**Deviations.**
+1. **The Storage import joins with `[IO.Path]::Combine`, not `Join-Path`.** The split named the extension's G6 road, which
+   uses `Join-Path`. An existing test of the disk script forbids `Join-Path` (it resolves the drive and throws on an
+   unmounted letter — the E15.S1 code round), so the import uses the script's own rule. The path is the same:
+   `[Environment]::SystemDirectory` + `WindowsPowerShell\v1.0\Modules\Storage`.
+2. **A failed Storage import has no line of its own.** The import sits in `try { … } catch { }`. Each Storage section then
+   fails inside its own `try` and prints its own error line (`volumes.error=CommandNotFoundException`), so the other
+   sections still answer. A new `storage.error=` tag would have changed the parser and the wire; the sections' own lines
+   already say what failed.
+3. **The real-pwsh test starts the MSI file by its absolute path through `Process`, not through the product's runner.** The
+   policy refuses an absolute `pwsh.exe` on purpose, and the test is about THAT file; the arguments are the pwsh member's
+   own `Arguments`. Its ceiling is 120 s (a cold pwsh on a CI runner), not the product's 30 s.
+4. **`WindowsDiskCommands.Under(engine)`** is the one place that maps an engine to a command (the split named it in S4's
+   *What*; it is a pure static function).
+
+**Open.**
+- **PATH still wins for `pwsh.exe`.** The resolver looks on PATH first and on the system drive second (as for
+  `powershell.exe`). Under the timer, systemd's PATH holds no Windows folder, so the drive's `Program Files/PowerShell/7` is
+  used. A root collect through `wsl.exe -u root` gets the Windows PATH appended; the MSI installer puts its folder in the
+  SYSTEM PATH, which comes before the user's `WindowsApps` (the Store alias). If the MSI build was installed WITHOUT its
+  PATH entry and the Store build is present, that collect would start the Store alias although the probe verified the MSI
+  file. The exposure is the same class as `powershell.exe`'s today. A fix is a resolver rule "a verified program is taken
+  from its fixed folder only"; it is not built here, because the scenario harness reaches the fakes through PATH.
+- **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
+  the first CI run on `windows-latest` is the evidence that the selection is safe to ship.
+- **pwsh is slower than 5.1 for this script on the owner's machine** (9–16 s against 6–7 s, the Store build, loaded
+  machine). Both are under the 30 s ceiling; the MSI build's own timing is measured on the first machine that has it.
