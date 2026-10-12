@@ -13,7 +13,8 @@ namespace WslCare.Cli.Commands;
 /// the supervisor. It names the worker from the CLOSED table (<see cref="TaskWorkers"/>: this binary's own path, the arguments spelt
 /// there), and hands it to <see cref="CliHost.Supervisor"/>: created suspended inside a kill-on-close job, resumed only inside it,
 /// ended with its whole tree at its deadline. The worker's stdout and stderr ARE this process's (inherited), so the worker's answer is
-/// the answer; the supervisor adds one stderr line when it ended the worker, and nothing to stdout, ever.
+/// the answer; the supervisor adds ONE stderr line when supervision starts (the task, the worker's argv, the deadline and its key) and
+/// ONE terminal line (exited N, ended at the deadline, stopped, refused) — and nothing to stdout, ever.
 /// </summary>
 /// <remarks>Exit codes: the worker's own code when it exited by itself; 84 <c>TaskEnded</c> when the deadline ended it; 2 on the distro's
 /// binary, for <c>archive</c> (its body is WR-D5's) and when this process's own path cannot be read; 1 when the supervisor could not start
@@ -33,7 +34,7 @@ internal static partial class TasksCommand
         SweepStagingAtRunStart(host, windows, loaded.Config);
         return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config) switch
         {
-            Reading<WorkerLaunch>.Available launch => Ended(request.Task, host.Supervisor.Run(launch.Value, cancellationToken), stderr),
+            Reading<WorkerLaunch>.Available launch => Supervised(request.Task, launch.Value, host.Supervisor, stderr, cancellationToken),
             Reading<WorkerLaunch>.Unavailable refused => Refused(request.Task, refused.Reason, stderr),
             _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
         };
@@ -56,20 +57,30 @@ internal static partial class TasksCommand
         return (int)ExitCode.Usage;
     }
 
-    /// <summary>The run's exit, from how the supervised worker ended.</summary>
-    private static int Ended(WindowsTask task, WorkerOutcome outcome, TextWriter stderr)
+    /// <summary>The supervised run: its start line, the run, its terminal line (the coai code round on WR-D3, finding 3).</summary>
+    private static int Supervised(WindowsTask task, WorkerLaunch launch, IWorkerSupervisor supervisor, TextWriter stderr, CancellationToken cancellationToken)
+    {
+        Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run {task}: starting {WindowsCommandLine.Of(launch.Executable, launch.Arguments)} in a kill-on-close job, deadline {launch.Deadline.TotalMinutes:0.##} min ({launch.DeadlineKey})"));
+        return Ended(task, launch, supervisor.Run(launch, cancellationToken), stderr);
+    }
+
+    /// <summary>The run's exit and its ONE terminal line, from how the supervised worker ended. The deadline's key is the launch's own,
+    /// read from the same table entry as its duration.</summary>
+    private static int Ended(WindowsTask task, WorkerLaunch launch, WorkerOutcome outcome, TextWriter stderr)
     {
         switch (outcome)
         {
             case WorkerOutcome.Exited exited:
+                Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run {task}: the worker exited {exited.Code}"));
                 return exited.Code;
             case WorkerOutcome.DeadlinePassed passed:
-                Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run {task}: the worker was still running at its deadline of {passed.Deadline.TotalMinutes:0.##} min ({TaskWorkers.DeadlineKey(task).Name}, counted on the unbiased clock); its job was terminated, so its whole tree is gone"));
+                Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run {task}: the worker was still running at its deadline of {passed.Deadline.TotalMinutes:0.##} min ({launch.DeadlineKey}, counted on the unbiased clock); its job was terminated, so its whole tree is gone"));
                 return (int)ExitCode.TaskEnded;
             case WorkerOutcome.Refused refused:
-                Output.Note(stderr, $"tasks run {task}: {refused.Reason}");
+                Output.Note(stderr, $"tasks run {task}: refused: {refused.Reason}");
                 return (int)ExitCode.RunFailed;
             default:
+                Output.Note(stderr, $"tasks run {task}: stopped by a signal; its job was closed, so its whole tree is gone");
                 return Output.Interrupted(stderr);
         }
     }

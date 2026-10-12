@@ -25,8 +25,8 @@ public sealed class JobSupervisorTests
         outcome.Should().Be(new WorkerOutcome.Exited(7), "the worker's own code is the run's answer");
         jobs.Calls.Should().Equal(
             "create-job",
-            "start-suspended C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\" + new string('a', 64) + "\\wsl-care.exe watch --timer --json",
-            "assign 4242",
+            "start-suspended-in-job C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\" + new string('a', 64) + "\\wsl-care.exe watch --timer --json",
+            "in-job 4242",
             "resume 4242",
             "wait 4242 00:10:00",
             "close-worker 4242",
@@ -34,21 +34,21 @@ public sealed class JobSupervisorTests
     }
 
     [Fact]
-    public void A_failed_assign_terminates_the_suspended_worker()
+    public void A_worker_not_in_its_job_is_ended_and_never_resumed()
     {
-        var jobs = new RecordingJobs { AssignAnswer = "AssignProcessToJobObject failed: error 5 (Access is denied.)" };
+        var jobs = new RecordingJobs { InJobAnswer = "IsProcessInJob answered false: the worker is not in its job" };
 
         var outcome = new JobSupervisor(jobs, new ScriptedClock(0)).Run(Launch(), CancellationToken.None);
 
-        outcome.Should().BeOfType<WorkerOutcome.Refused>().Which.Reason.Should().Contain("could not be put in its job").And.Contain("error 5").And.Contain("never ran outside the job");
-        jobs.Calls.Should().Equal("create-job", jobs.Calls[1], "assign 4242", "end-suspended 4242 0xC5A1", "close-worker 4242", "close-job");
+        outcome.Should().BeOfType<WorkerOutcome.Refused>().Which.Reason.Should().Contain("is not in its job").And.Contain("IsProcessInJob answered false").And.Contain("never ran outside the job");
+        jobs.Calls.Should().Equal("create-job", jobs.Calls[1], "in-job 4242", "end-job 0xC5A1", "end-suspended 4242 0xC5A1", "close-worker 4242", "close-job");
         jobs.Calls.Should().NotContain(c => c.StartsWith("resume", StringComparison.Ordinal), "a worker outside the job is never resumed (§4)");
     }
 
     [Fact]
     public void A_suspended_worker_that_cannot_be_ended_is_named_and_never_claimed_ended()
     {
-        var jobs = new RecordingJobs { AssignAnswer = "AssignProcessToJobObject failed: error 5", EndSuspendedAnswer = "TerminateProcess failed: error 5 (Access is denied.)" };
+        var jobs = new RecordingJobs { InJobAnswer = "IsProcessInJob answered false", EndSuspendedAnswer = "TerminateProcess failed: error 5 (Access is denied.)" };
 
         var outcome = new JobSupervisor(jobs, new ScriptedClock(0)).Run(Launch(), CancellationToken.None);
 
@@ -145,7 +145,7 @@ public sealed class JobSupervisorTests
     }
 
     private static WorkerLaunch Launch() =>
-        new("C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\" + new string('a', 64) + "\\wsl-care.exe", ["watch", "--timer", "--json"], Deadline);
+        new("C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\" + new string('a', 64) + "\\wsl-care.exe", ["watch", "--timer", "--json"], Deadline, "mcpWatchdog.runLimitMinutes");
 
     /// <summary>The unbiased clock, one scripted reading per call (the last repeats); <see cref="MissingAfter"/> readings, then none.</summary>
     private sealed class ScriptedClock(params long[] readings) : IWindowsBoot
@@ -175,7 +175,7 @@ public sealed class JobSupervisorTests
 
         public string StartAnswer { get; init; } = string.Empty;
 
-        public string AssignAnswer { get; init; } = string.Empty;
+        public string InJobAnswer { get; init; } = string.Empty;
 
         public string EndSuspendedAnswer { get; init; } = string.Empty;
 
@@ -187,16 +187,16 @@ public sealed class JobSupervisorTests
             return JobAnswer.Length > 0 ? Reading.Missing<IJobHandle>(JobAnswer) : Reading.Of<IJobHandle>(new Handle(() => Calls.Add("close-job")));
         }
 
-        public Reading<IWorkerProcess> StartSuspended(string executable, string commandLine)
+        public Reading<IWorkerProcess> StartSuspended(IJobHandle job, string executable, string commandLine)
         {
-            Calls.Add($"start-suspended {commandLine}");
+            Calls.Add($"start-suspended-in-job {commandLine}");
             return StartAnswer.Length > 0 ? Reading.Missing<IWorkerProcess>(StartAnswer) : Reading.Of<IWorkerProcess>(new Worker(() => Calls.Add("close-worker 4242")));
         }
 
-        public string Assign(IJobHandle job, IWorkerProcess worker)
+        public string InJob(IJobHandle job, IWorkerProcess worker)
         {
-            Calls.Add($"assign {worker.Pid}");
-            return AssignAnswer;
+            Calls.Add($"in-job {worker.Pid}");
+            return InJobAnswer;
         }
 
         public string Resume(IWorkerProcess worker)

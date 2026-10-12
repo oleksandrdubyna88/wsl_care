@@ -93,9 +93,29 @@ public sealed partial class Win32JobControlTests
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
 
-        var outcome = new JobSupervisor(new Win32JobControl(), new Win32Boot()).Run(new WorkerLaunch(Cmd, ["/d", "/c", "exit 7"], TimeSpan.FromSeconds(60)), CancellationToken.None);
+        var outcome = new JobSupervisor(new Win32JobControl(), new Win32Boot()).Run(new WorkerLaunch(Cmd, ["/d", "/c", "exit 7"], TimeSpan.FromSeconds(60), "test.deadline"), CancellationToken.None);
 
         outcome.Should().Be(new WorkerOutcome.Exited(7));
+    }
+
+    /// <summary>The coai code round on WR-D3, finding 1: the worker is created ALREADY INSIDE the job (<c>PROC_THREAD_ATTRIBUTE_JOB_LIST</c>)
+    /// — right after its suspended start, before any resume, Windows says it is in the job, and the product's verify agrees. There is no
+    /// window in which a supervisor that dies would leave it outside the kill-on-close job.</summary>
+    [Fact]
+    public void A_worker_is_inside_its_job_from_its_suspended_start()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var control = new Win32JobControl();
+        using var job = Created();
+        using var worker = control.StartSuspended(job, Cmd, WindowsCommandLine.Of(Cmd, ["/d", "/c", "exit 7"])).Should().BeOfType<Reading<IWorkerProcess>.Available>().Subject.Value;
+
+        var inTheJob = InTheJob(worker, job);
+        var verified = control.InJob(job, worker);
+        var ended = control.EndSuspended(worker, JobSupervisor.EndedExitCode);
+
+        inTheJob.Should().BeTrue("the worker is in its job before it was ever resumed");
+        verified.Should().BeEmpty();
+        ended.Should().BeEmpty("the test's own helper is ended still suspended, inside or outside the job");
     }
 
     /// <summary>The worker really is created suspended: a <c>cmd /c exit 7</c> created by <see cref="Win32JobControl.StartSuspended"/>
@@ -164,18 +184,30 @@ public sealed partial class Win32JobControlTests
 
     private static string Cmd => Path.Combine(Environment.SystemDirectory, "cmd.exe");
 
-    private static WorkerLaunch Launch(JobHelperTree tree, TimeSpan deadline) => new(JobHelperTree.Executable, tree.Arguments, deadline);
+    private static WorkerLaunch Launch(JobHelperTree tree, TimeSpan deadline) => new(JobHelperTree.Executable, tree.Arguments, deadline, "test.deadline");
 
     private static Win32JobControl.Job Created() =>
         new Win32JobControl().CreateJob().Should().BeOfType<Reading<IJobHandle>.Available>().Subject.Value.Should().BeOfType<Win32JobControl.Job>().Subject;
 
-    /// <summary>A <c>cmd.exe</c> created suspended and put in <paramref name="job"/> — the test's own helper, ended when the job closes.</summary>
+    /// <summary>A <c>cmd.exe</c> created suspended INSIDE <paramref name="job"/> — the test's own helper, ended when the job closes. A
+    /// worker found outside the job is ended at once, still suspended, by its own handle, and the test fails: no helper of a test ever
+    /// runs outside a job.</summary>
     private static IWorkerProcess Started(Win32JobControl control, IJobHandle job, string command = "exit 7")
     {
-        var worker = control.StartSuspended(Cmd, WindowsCommandLine.Of(Cmd, ["/d", "/c", command])).Should().BeOfType<Reading<IWorkerProcess>.Available>().Subject.Value;
-        control.Assign(job, worker).Should().BeEmpty();
+        var worker = control.StartSuspended(job, Cmd, WindowsCommandLine.Of(Cmd, ["/d", "/c", command])).Should().BeOfType<Reading<IWorkerProcess>.Available>().Subject.Value;
+        if (!InTheJob(worker, job))
+        {
+            control.EndSuspended(worker, JobSupervisor.EndedExitCode);
+            worker.Dispose();
+            Assert.Fail("the helper was created outside its job; it was ended while still suspended");
+        }
+
         return worker;
     }
+
+    /// <summary>The test's own read of the membership, through Windows' <c>IsProcessInJob</c> — not the product's <c>InJob</c>.</summary>
+    private static bool InTheJob(IWorkerProcess worker, IJobHandle job) =>
+        IsProcessInJob(((Win32JobControl.Worker)worker).Exit.SafeWaitHandle, ((Win32JobControl.Job)job).Handle, out var inJob) && inJob;
 
 
     /// <summary>The test's OWN <c>JOBOBJECT_EXTENDED_LIMIT_INFORMATION</c> (a structure of another assembly is not blittable to the source
@@ -217,4 +249,8 @@ public sealed partial class Win32JobControlTests
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool QueryInformationJobObject(SafeWaitHandle job, int informationClass, out ExtendedLimits information, uint length, out uint returned);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool IsProcessInJob(SafeWaitHandle process, SafeWaitHandle job, [MarshalAs(UnmanagedType.Bool)] out bool result);
 }

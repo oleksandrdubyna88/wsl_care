@@ -12,10 +12,11 @@ namespace WslCare.Core.Processes;
 /// </summary>
 /// <remarks>
 /// <list type="number">
-/// <item>The job first, kill-on-close, its handle not inheritable; then the worker, SUSPENDED and without a window, inheriting the
-/// three standard handles only.</item>
-/// <item>The worker is put in the job; when that fails it is ended while still suspended and the run is refused — fail closed, never
-/// resumed outside the job. Only then is its thread resumed.</item>
+/// <item>The job first, kill-on-close, its handle not inheritable; then the worker, SUSPENDED, without a window, inheriting the three
+/// standard handles only — and created ALREADY INSIDE the job (<c>PROC_THREAD_ATTRIBUTE_JOB_LIST</c>), so there is no moment, not even
+/// between its creation and an assign, in which a supervisor that dies would leave it outside the kill-on-close job.</item>
+/// <item>Its membership is verified; a worker not in the job is ended (through the job, then by its own handle, still suspended) and
+/// the run is refused — fail closed, never resumed outside the job. Only then is its thread resumed.</item>
 /// <item>The wait is on the worker's process with the deadline; each time the wait times out the elapsed time is read again on the
 /// UNBIASED clock (<see cref="IWindowsBoot.UnbiasedMilliseconds"/>, which stops while the host sleeps), so a sleep is not run time.
 /// Past the deadline the whole job is ended with <see cref="EndedExitCode"/> — the caller exits 84 <c>TaskEnded</c>. A clock that
@@ -56,7 +57,7 @@ public sealed class JobSupervisor(IJobControl jobs, IWindowsBoot clock) : IWorke
         // CloseHandle(job) always — whatever this returns, every process still in the job ends with it.
         using (job)
         {
-            return jobs.StartSuspended(run.Launch.Executable, WindowsCommandLine.Of(run.Launch.Executable, run.Launch.Arguments)) switch
+            return jobs.StartSuspended(job, run.Launch.Executable, WindowsCommandLine.Of(run.Launch.Executable, run.Launch.Arguments)) switch
             {
                 Reading<IWorkerProcess>.Available started => Started(job, started.Value, run),
                 Reading<IWorkerProcess>.Unavailable missing => new WorkerOutcome.Refused($"the worker could not be created ({missing.Reason}); nothing was started"),
@@ -69,21 +70,23 @@ public sealed class JobSupervisor(IJobControl jobs, IWindowsBoot clock) : IWorke
     {
         using (worker)
         {
-            return jobs.Assign(job, worker) is { Length: > 0 } notAssigned ? NotAssigned(worker, notAssigned)
+            return jobs.InJob(job, worker) is { Length: > 0 } notInJob ? NotInJob(job, worker, notInJob)
                 : jobs.Resume(worker) is { Length: > 0 } notResumed ? NotResumed(job, worker, notResumed)
                 : Supervise(job, worker, run);
         }
     }
 
-    /// <summary>The worker is not in the job: it is ended while still suspended — and when even that fails, the refusal says so and
-    /// never claims it ended (m2 of the WR-D3 review). Either way it is never resumed.</summary>
-    private WorkerOutcome NotAssigned(IWorkerProcess worker, string why)
+    /// <summary>The worker is not (verifiably) in the job: it is ended through the job and then by its own handle while still
+    /// suspended — and when that fails, the refusal says so and never claims it ended (m2 of the WR-D3 review). Either way it is never
+    /// resumed.</summary>
+    private WorkerOutcome NotInJob(IJobHandle job, IWorkerProcess worker, string why)
     {
+        jobs.EndJob(job, EndedExitCode);
         var notEnded = jobs.EndSuspended(worker, EndedExitCode);
         var after = notEnded.Length == 0
             ? "it was ended while still suspended and never ran outside the job"
             : $"ending it while suspended failed too ({notEnded}): it stays suspended, never resumed, and must be ended by hand";
-        return new WorkerOutcome.Refused($"the worker (pid {worker.Pid}) could not be put in its job ({why}); {after}");
+        return new WorkerOutcome.Refused($"the worker (pid {worker.Pid}) is not in its job ({why}); {after}");
     }
 
     private WorkerOutcome NotResumed(IJobHandle job, IWorkerProcess worker, string why)

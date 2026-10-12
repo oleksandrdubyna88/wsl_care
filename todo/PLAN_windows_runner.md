@@ -449,3 +449,23 @@ item fixed in the same story, RED first:
   `Cli.Tests/TasksRunCommandTests.A_stopped_run_exits_130_and_its_whole_tree_is_gone` runs the whole program over the real
   supervisor with the helper tree in place of the worker, cancels the run's token (what `ShutdownSignals` fires), and asserts exit
   130 and both helpers gone.
+
+**The coai code round on WR-D3** (session `ce1d140d`): proceed, three findings, all accepted and fixed, RED first:
+
+- **Major — no window outside the job; a DEVIATION from §3.3 point 3** ("`AssignProcessToJobObject` after `CreateProcessW`"). With
+  assign-after-create, a supervisor ended (Task Scheduler's *End*, a crash) between the suspended start and a successful assign left
+  a suspended worker OUTSIDE the kill-on-close job until reboot. Now the worker is CREATED INSIDE the job:
+  `PROC_THREAD_ATTRIBUTE_JOB_LIST` (`0x2000D`, Windows 10+) in the same attribute list as the handle list (two attributes; one when
+  there is no standard handle to pass), its value the job's handle — which stays NON-inheritable (the list needs no inheritance; it
+  is add-ref'd while its raw value sits in the list). A `CreateProcessW` Windows refuses (a parent job that forbids nesting) started
+  nothing → refused, exit 1. Before the resume `IsProcessInJob` verifies the membership; a worker not in the job is ended through the
+  job and then by its own handle while still suspended, and refused. The previous-suspend-count-of-1 rule stays. **The assign step is
+  gone** (not kept as a check: `IsProcessInJob` is the read-only check); `AssignProcessToJobObject` stays in the job scan's list, so
+  no file may call it, the seam included in effect (it no longer declares it). `IJobControl.Assign` became `InJob`, and
+  `StartSuspended` takes the job.
+- **Minor — one entry per task**: `TaskWorkers`' closed table holds the task, its arguments and its deadline KEY in ONE entry; the
+  launch carries the duration and `WorkerLaunch.DeadlineKey` from it, and the timeout line names `launch.DeadlineKey` — it can no
+  longer name another key.
+- **Minor — two stderr lines per run**: `tasks run <task>: starting <argv> in a kill-on-close job, deadline N min (<key>)` before the
+  worker starts, and ONE terminal line: `the worker exited N`, the deadline line, `refused: <why>`, or `stopped by a signal` (then the
+  program's `interrupted.`). So "one stderr line on timeout" (§3.3 point 5) is now the terminal line of two.

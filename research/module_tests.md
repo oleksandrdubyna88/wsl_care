@@ -3086,8 +3086,10 @@ refusal test); the principal's SID dropped from the summary; the watch repeating
 
 | Guarantee | Tests |
 |---|---|
-| the worker is created SUSPENDED, put in the job, and only then resumed; its own code is the run's answer; the worker's handles and then the job's are closed | `Core.Tests/Processes/JobSupervisorTests.The_worker_is_created_suspended_and_resumed_only_inside_the_job` (a fake `IJobControl` that records every call in order) |
-| a failed assign ends the still-suspended worker and refuses the run — never a resume outside the job | `…A_failed_assign_terminates_the_suspended_worker` |
+| the worker is created SUSPENDED and already IN the job, its membership verified, and only then resumed; its own code is the run's answer; the worker's handles and then the job's are closed | `Core.Tests/Processes/JobSupervisorTests.The_worker_is_created_suspended_and_resumed_only_inside_the_job` (a fake `IJobControl` that records every call in order: create-job → start-suspended-in-job → in-job → resume) |
+| a worker the verify does not find in its job is ended (through the job, then by its own handle, still suspended) and the run refused — never a resume outside the job | `…A_worker_not_in_its_job_is_ended_and_never_resumed` |
+| the real worker is inside its job from its suspended start — `IsProcessInJob` (the test's own read) says so BEFORE any resume, and the product's verify agrees (the coai code round, finding 1: no window outside the job) | `Win32JobControlTests.A_worker_is_inside_its_job_from_its_suspended_start` |
+| the deadline's duration and its key come from ONE entry of the closed table; the start line names the argv, the deadline and that key; ONE terminal line per run (exited N, the deadline, refused, stopped) | `TaskWorkersTests.The_watch_worker_is_…` (`launch.DeadlineKey`), `Cli.Tests/TasksRunCommandTests.The_worker_is_this_binary_s_own_watch_timer_and_its_code_is_the_exit` (the two lines exactly), `…A_worker_past_its_deadline_exits_84_…`, `…A_refused_supervisor_exits_1_…` |
 | the deadline is counted on the UNBIASED clock: a wait that timed out while the host slept waits again for what is left; awake time past the deadline ends the whole job with `0xC5A1`; a clock that stops answering mid-run ends it too (fail closed) | `…The_deadline_counts_unbiased_time`, `…Awake_time_past_the_deadline_ends_the_whole_job_with_the_supervisor_s_code`, `…A_clock_that_stops_answering_mid_run_ends_the_job_rather_than_waiting_unbounded` |
 | a cancelled run closes the job (kill-on-close is the stop); an unreadable clock, a job that cannot be made, a worker that cannot be created start nothing and close what was made | `…A_cancelled_run_closes_the_job_which_ends_its_tree`, `…An_unreadable_clock_or_a_job_that_cannot_be_made_starts_nothing`, `…A_worker_that_cannot_be_created_closes_the_job_and_starts_nothing` |
 | the real job (Windows legs): its handle is not inheritable (`GetHandleInformation`); its limits are `KILL_ON_JOB_CLOSE` alone, no breakaway (`QueryInformationJobObject`) | `Core.Tests/Processes/Win32JobControlTests.The_job_handle_is_not_inheritable`, `…The_job_is_kill_on_close_and_lets_no_child_break_away` |
@@ -3128,6 +3130,17 @@ to be …TimedOut … because a suspended exit 7 runs no instruction, but found 
 ((IDisposable?)null)`: both the Core cancellation test and `A_stopped_run_exits_130…` red, both helpers `exited False`). Also red on
 product mutations: `Resume` accepting any count, `EndSuspended`'s error ignored, a failed duplicate ignored, an unreadable exit read
 as `Exited(-1)`.
+
+**The coai code round on WR-D3 (session `ce1d140d`), red first:** with the worker still created outside the job and assigned after,
+`A_worker_is_inside_its_job_from_its_suspended_start` — `Expected inTheJob to be True because the worker is in its job before it was
+ever resumed, but found False` (and every test that starts a helper through `Started` failed safely: a helper found outside its job is
+ended at once, still suspended, by its own handle); `launch.DeadlineKey` — `Expected … "mcpWatchdog.runLimitMinutes" … but "" has a
+length of 0`; the stderr lines — `Expected lines to contain 2 item(s) because the start line and ONE terminal line, but found 1` and
+`… Last() "wsl-care: tasks run watch: AssignProcessToJobObject failed: error 5" to contain "tasks run watch: refused:"`. The fake order
+tests held through the renamed seam and passed at once. **Teeth:** `PROC_THREAD_ATTRIBUTE_JOB_LIST` dropped (`… found False`, run alone;
+the helper was ended still suspended by the test); a failed verify ignored (both not-in-job fake tests red: the worker was resumed and
+waited on); the timeout key read from another entry (`TaskWorkersTests` and two `TasksRunCommandTests` red: `… deadline 10 min
+(timer.runLimitMinutes)`); the start line removed (two `TasksRunCommandTests` red).
 
 ## The extension (`src_vs_code/`)
 

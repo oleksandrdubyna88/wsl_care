@@ -45,6 +45,6 @@ public sealed partial class ArchitectureTests
         JobCall().Matches(planted).Select(m => LineOf(planted, m.Index)).Should().Equal(1, 3, 4, 5, 6, 7, 8);
         JobCall().IsMatch("the supervisor terminates the job (TerminateJobObject) at the deadline").Should().BeFalse("prose names the call without calling it");
         JobCall().Matches(File.ReadAllText(Metadata("WslCare.JobSeam"))).Select(m => m.Value.TrimEnd('(', ' ')).Should()
-            .Contain(["TerminateJobObject", "TerminateProcess", "AssignProcessToJobObject", "\"CreateProcessW\""], "the scanner still finds the seam's own declarations");
+            .Contain(["TerminateJobObject", "TerminateProcess", "\"CreateProcessW\""], "the scanner still finds the seam's own declarations");
     }
 }

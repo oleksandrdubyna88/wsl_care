@@ -19,7 +19,9 @@ namespace WslCare.Core.Processes;
 /// <para><b>The job</b> is made with an explicit NON-inheritable security attribute and the extended limit
 /// <c>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</c> alone: no <c>BREAKAWAY_OK</c>, no <c>SILENT_BREAKAWAY_OK</c>, so no child may leave it.</para>
 /// <para><b>The worker</b> is created by its absolute path (<c>lpApplicationName</c>: no search), <c>CREATE_SUSPENDED |
-/// CREATE_NO_WINDOW</c>, with the three standard handles inherited through <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> — inheritable
+/// CREATE_NO_WINDOW</c>, ALREADY INSIDE the job through <c>PROC_THREAD_ATTRIBUTE_JOB_LIST</c> (never outside it, not for a moment;
+/// <c>IsProcessInJob</c> verifies it before the resume), with the three standard handles inherited through
+/// <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> — inheritable
 /// DUPLICATES of them, closed again once the worker exists; nothing else is inherited, the job's handle least of all. A standard
 /// handle this process does not have is simply not passed.</para>
 /// <para>Native AOT: every call is a source-generated <c>LibraryImport</c>; the structures are blittable.</para>
@@ -34,6 +36,7 @@ public sealed partial class Win32JobControl : IJobControl
     private const uint CreateNoWindowFlag = 0x08000000;
     private const uint ExtendedStartupInfoPresent = 0x00080000;
     private const nint HandleListAttribute = 0x00020002;
+    private const nint JobListAttribute = 0x0002000D;
     private const uint UseStdHandles = 0x00000100;
     private const uint DuplicateSameAccess = 0x00000002;
     private const uint ResumeFailed = 0xFFFFFFFF;
@@ -55,16 +58,23 @@ public sealed partial class Win32JobControl : IJobControl
             : Failed<IJobHandle>("SetInformationJobObject(KILL_ON_JOB_CLOSE)", handle);
     }
 
-    public Reading<IWorkerProcess> StartSuspended(string executable, string commandLine) =>
+    public Reading<IWorkerProcess> StartSuspended(IJobHandle job, string executable, string commandLine) =>
         StandardCopies(InheritableCopyOf, CloseCopy) switch
         {
-            Reading<nint[]>.Available standard => CreateClosing(executable, commandLine, standard.Value),
+            Reading<nint[]>.Available standard => CreateClosing(executable, commandLine, standard.Value, ((Job)job).Handle),
             Reading<nint[]>.Unavailable refused => Reading.Missing<IWorkerProcess>(refused.Reason),
             _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
         };
 
-    public string Assign(IJobHandle job, IWorkerProcess worker) =>
-        AssignProcessToJobObject(((Job)job).Handle, ((Worker)worker).Exit.SafeWaitHandle) ? string.Empty : Error("AssignProcessToJobObject");
+    /// <summary>The membership check before the resume (<c>IsProcessInJob</c>, read-only): the worker was created in the job, and this
+    /// verifies it rather than trusting it. There is no assign step any more — the coai code round on WR-D3, finding 1.</summary>
+    public string InJob(IJobHandle job, IWorkerProcess worker) =>
+        IsProcessInJob(((Worker)worker).Exit.SafeWaitHandle, ((Job)job).Handle, out var inJob) switch
+        {
+            false => Error("IsProcessInJob"),
+            true when !inJob => "IsProcessInJob answered false: the worker is not in its job",
+            _ => string.Empty,
+        };
 
     /// <summary>Resumes the worker's first thread ONLY from its suspended start: <c>ResumeThread</c> answers the previous suspend count,
     /// and anything but exactly 1 means the worker was not where the supervisor put it (m1 of the WR-D3 review).</summary>
@@ -126,10 +136,14 @@ public sealed partial class Win32JobControl : IJobControl
         public ProcessExit(SafeWaitHandle process) => SafeWaitHandle = process;
     }
 
-    private static Reading<IWorkerProcess> Create(string executable, string commandLine, nint[] standard)
+    /// <summary>The worker created suspended and ALREADY IN the job whose raw handle is <paramref name="job"/>: the job goes in the start's
+    /// <c>PROC_THREAD_ATTRIBUTE_JOB_LIST</c> (the handle is not inherited for that — the list needs no inheritance), so Windows makes
+    /// the process a member before its first instruction. When Windows refuses (a parent job that forbids nesting, an older Windows),
+    /// <c>CreateProcessW</c> fails and nothing was started.</summary>
+    private static Reading<IWorkerProcess> Create(string executable, string commandLine, nint[] standard, nint job)
     {
         var listed = standard.Where(h => h != 0).ToArray();
-        using var attributes = AttributeList.For(listed);
+        using var attributes = AttributeList.For(listed, job);
         if (attributes.Problem.Length > 0)
         {
             return Reading.Missing<IWorkerProcess>(attributes.Problem);
@@ -137,17 +151,16 @@ public sealed partial class Win32JobControl : IJobControl
 
         var startup = StartupOf(standard, attributes.Pointer, listed.Length > 0);
         var line = (commandLine + '\0').ToCharArray();
-        var flags = CreateSuspendedFlag | CreateNoWindowFlag | (listed.Length > 0 ? ExtendedStartupInfoPresent : 0);
-        return CreateProcess(executable, line, 0, 0, listed.Length > 0, flags, 0, null, ref startup, out var created)
+        return CreateProcess(executable, line, 0, 0, listed.Length > 0, CreateSuspendedFlag | CreateNoWindowFlag | ExtendedStartupInfoPresent, 0, null, ref startup, out var created)
             ? Reading.Of<IWorkerProcess>(new Worker(new SafeWaitHandle(created.Process, ownsHandle: true), new SafeWaitHandle(created.Thread, ownsHandle: true), (int)created.ProcessId))
-            : Reading.Missing<IWorkerProcess>(Error("CreateProcessW"));
+            : Reading.Missing<IWorkerProcess>(Error("CreateProcessW (suspended, inside its job)"));
     }
 
     private static StartupInfoEx StartupOf(nint[] standard, nint attributeList, bool inherits) => new()
     {
         StartupInfo = new StartupInfo
         {
-            Size = (uint)(inherits ? Marshal.SizeOf<StartupInfoEx>() : Marshal.SizeOf<StartupInfo>()),
+            Size = (uint)Marshal.SizeOf<StartupInfoEx>(),
             Flags = inherits ? UseStdHandles : 0,
             StdInput = standard[0],
             StdOutput = standard[1],
@@ -190,15 +203,23 @@ public sealed partial class Win32JobControl : IJobControl
 
     private static void CloseCopy(nint copy) => _ = CloseHandle(copy);
 
-    /// <summary>The worker created, then the standard copies closed again — they were only for the worker to inherit.</summary>
-    private static Reading<IWorkerProcess> CreateClosing(string executable, string commandLine, nint[] standard)
+    /// <summary>The worker created inside <paramref name="job"/>, then the standard copies closed again — they were only for the worker to
+    /// inherit. The job's handle is held (add-ref) while its raw value sits in the attribute list.</summary>
+    private static Reading<IWorkerProcess> CreateClosing(string executable, string commandLine, nint[] standard, SafeWaitHandle job)
     {
+        var held = false;
         try
         {
-            return Create(executable, commandLine, standard);
+            job.DangerousAddRef(ref held);
+            return Create(executable, commandLine, standard, job.DangerousGetHandle());
         }
         finally
         {
+            if (held)
+            {
+                job.DangerousRelease();
+            }
+
             foreach (var copy in standard.Where(h => h != 0))
             {
                 CloseCopy(copy);
@@ -224,16 +245,17 @@ public sealed partial class Win32JobControl : IJobControl
         return string.Create(CultureInfo.InvariantCulture, $"{call} failed: error {code} ({new Win32Exception(code).Message})");
     }
 
-    /// <summary>The <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> of the worker's start: the handles it may inherit, nothing else. Owns its
-    /// unmanaged memory, which must outlive <c>CreateProcessW</c>.</summary>
+    /// <summary>The worker's start attributes: <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c> — the handles it may inherit, nothing else (left
+    /// out when there are none) — and <c>PROC_THREAD_ATTRIBUTE_JOB_LIST</c> — the one job it is created in. Owns its unmanaged memory
+    /// (the list, then the handles followed by the job), which must outlive <c>CreateProcessW</c>.</summary>
     private sealed class AttributeList : IDisposable
     {
-        private readonly nint _handles;
+        private readonly nint _values;
 
-        private AttributeList(nint pointer, nint handles, string problem)
+        private AttributeList(nint pointer, nint values, string problem)
         {
             Pointer = pointer;
-            _handles = handles;
+            _values = values;
             Problem = problem;
         }
 
@@ -241,33 +263,37 @@ public sealed partial class Win32JobControl : IJobControl
 
         public string Problem { get; }
 
-        public static AttributeList For(nint[] handles)
+        public static AttributeList For(nint[] handles, nint job)
         {
-            if (handles.Length == 0)
-            {
-                return new(0, 0, string.Empty);
-            }
-
+            var count = handles.Length > 0 ? 2 : 1;
             nuint size = 0;
-            _ = InitializeProcThreadAttributeList(0, 1, 0, ref size);
+            _ = InitializeProcThreadAttributeList(0, count, 0, ref size);
             var list = Marshal.AllocHGlobal((nint)size);
-            var array = Marshal.AllocHGlobal(IntPtr.Size * handles.Length);
-            Marshal.Copy(handles, 0, array, handles.Length);
-            return Filled(list, array, handles.Length, size);
-        }
-
-        private static AttributeList Filled(nint list, nint array, int count, nuint size)
-        {
-            if (!InitializeProcThreadAttributeList(list, 1, 0, ref size))
+            var values = Marshal.AllocHGlobal(IntPtr.Size * (handles.Length + 1));
+            Marshal.Copy(handles, 0, values, handles.Length);
+            Marshal.WriteIntPtr(values, IntPtr.Size * handles.Length, job);
+            if (!InitializeProcThreadAttributeList(list, count, 0, ref size))
             {
                 var problem = Error("InitializeProcThreadAttributeList");
                 Marshal.FreeHGlobal(list);
-                Marshal.FreeHGlobal(array);
+                Marshal.FreeHGlobal(values);
                 return new(0, 0, problem);
             }
 
-            var updated = UpdateProcThreadAttribute(list, 0, HandleListAttribute, array, (nuint)(IntPtr.Size * count), 0, 0);
-            return new(list, array, updated ? string.Empty : Error("UpdateProcThreadAttribute(HANDLE_LIST)"));
+            return new(list, values, Filled(list, values, handles.Length));
+        }
+
+        /// <summary>The two attributes written; empty when both are, else the first that is not.</summary>
+        private static string Filled(nint list, nint values, int handleCount)
+        {
+            if (handleCount > 0 && !UpdateProcThreadAttribute(list, 0, HandleListAttribute, values, (nuint)(IntPtr.Size * handleCount), 0, 0))
+            {
+                return Error("UpdateProcThreadAttribute(HANDLE_LIST)");
+            }
+
+            return UpdateProcThreadAttribute(list, 0, JobListAttribute, values + (IntPtr.Size * handleCount), (nuint)IntPtr.Size, 0, 0)
+                ? string.Empty
+                : Error("UpdateProcThreadAttribute(JOB_LIST)");
         }
 
         public void Dispose()
@@ -278,9 +304,9 @@ public sealed partial class Win32JobControl : IJobControl
                 Marshal.FreeHGlobal(Pointer);
             }
 
-            if (_handles != 0)
+            if (_values != 0)
             {
-                Marshal.FreeHGlobal(_handles);
+                Marshal.FreeHGlobal(_values);
             }
         }
     }
@@ -383,7 +409,7 @@ public sealed partial class Win32JobControl : IJobControl
 
     [LibraryImport(Kernel32, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AssignProcessToJobObject(SafeWaitHandle job, SafeWaitHandle process);
+    private static partial bool IsProcessInJob(SafeWaitHandle process, SafeWaitHandle job, [MarshalAs(UnmanagedType.Bool)] out bool result);
 
     [LibraryImport(Kernel32, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

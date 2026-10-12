@@ -19,11 +19,12 @@ public interface IWorkerSupervisor
 /// (§4: "never start free argv through the supervisor").</summary>
 public sealed record WorkerLaunch
 {
-    internal WorkerLaunch(string executable, IReadOnlyList<string> arguments, TimeSpan deadline)
+    internal WorkerLaunch(string executable, IReadOnlyList<string> arguments, TimeSpan deadline, string deadlineKey)
     {
         Executable = executable;
         Arguments = arguments;
         Deadline = deadline;
+        DeadlineKey = deadlineKey;
     }
 
     /// <summary>The worker's executable, by its absolute path (never looked up on <c>PATH</c>).</summary>
@@ -34,6 +35,10 @@ public sealed record WorkerLaunch
 
     /// <summary>How long the worker may run, counted on the unbiased clock (a host sleep is not run time).</summary>
     public TimeSpan Deadline { get; }
+
+    /// <summary>The configuration key <see cref="Deadline"/> was read from — taken from the SAME table entry, so what a run says about
+    /// its deadline can never name another key (the coai code round on WR-D3, finding 2).</summary>
+    public string DeadlineKey { get; }
 }
 
 /// <summary>How a supervised run ended — a closed set.</summary>
@@ -71,12 +76,13 @@ public interface IJobControl
     /// <summary>A new job: kill-on-close, no breakaway, its handle NOT inheritable — or why it could not be made.</summary>
     Reading<IJobHandle> CreateJob();
 
-    /// <summary>The worker created SUSPENDED and without a window, inheriting the three standard handles and nothing else — or why it
-    /// could not be created.</summary>
-    Reading<IWorkerProcess> StartSuspended(string executable, string commandLine);
+    /// <summary>The worker created SUSPENDED, without a window, and ALREADY INSIDE <paramref name="job"/> (it is never outside it, not
+    /// even between its creation and an assign), inheriting the three standard handles and nothing else — or why it could not be
+    /// created (then nothing was started).</summary>
+    Reading<IWorkerProcess> StartSuspended(IJobHandle job, string executable, string commandLine);
 
-    /// <summary>Puts the suspended worker in the job; empty when it is in, else why not.</summary>
-    string Assign(IJobHandle job, IWorkerProcess worker);
+    /// <summary>Whether the suspended worker is in the job: empty when it is, else why not (it is then ended, never resumed).</summary>
+    string InJob(IJobHandle job, IWorkerProcess worker);
 
     /// <summary>Lets the worker's first thread run; empty when it does, else why not.</summary>
     string Resume(IWorkerProcess worker);
@@ -87,7 +93,7 @@ public interface IJobControl
     /// <summary>Ends every process in the job with <paramref name="exitCode"/>.</summary>
     void EndJob(IJobHandle job, uint exitCode);
 
-    /// <summary>Ends the worker that never left its suspended start (an assign that failed) with <paramref name="exitCode"/>; empty
+    /// <summary>Ends the worker that never left its suspended start (one found outside its job) with <paramref name="exitCode"/>; empty
     /// when it was ended, else why not (it then stays suspended — never resumed).</summary>
     string EndSuspended(IWorkerProcess worker, uint exitCode);
 }

@@ -27,6 +27,7 @@ public sealed class TaskWorkersTests
         launch.Executable.Should().Be(Self);
         launch.Arguments.Should().Equal(arguments);
         launch.Deadline.Should().Be(TimeSpan.FromMinutes(Defaults.Int(ConfigKeys.McpWatchdog.RunLimitMinutes)));
+        launch.DeadlineKey.Should().Be(ConfigKeys.McpWatchdog.RunLimitMinutes.Name, "the deadline and its key come from ONE table entry");
         TaskWorkers.DeadlineKey(WindowsTask.Watch).Should().Be(ConfigKeys.McpWatchdog.RunLimitMinutes);
     }
 

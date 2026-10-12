@@ -82,11 +82,15 @@ public sealed class TasksRunCommandTests
 
         exit.Should().Be(75, "the worker's own code passes through (75: another run held the lock — a normal answer)");
         stdout.Should().BeEmpty("the worker's answer is on the inherited stdout; the supervisor adds nothing");
-        stderr.Should().BeEmpty();
         var launch = supervisor.Launches.Should().ContainSingle().Subject;
         launch.Executable.Should().Be(World.Self);
         launch.Arguments.Should().Equal("watch", "--timer", "--json");
         launch.Deadline.Should().Be(TimeSpan.FromMinutes(10), "mcpWatchdog.runLimitMinutes, default 10");
+        launch.DeadlineKey.Should().Be("mcpWatchdog.runLimitMinutes", "the deadline and its key come from ONE entry of the closed table");
+        // The coai code round on WR-D3, finding 3: one line when supervision starts, one when it ends.
+        stderr.TrimEnd().Split('\n').Select(l => l.TrimEnd('\r')).Should().Equal(
+            $"wsl-care: tasks run watch: starting {World.Self} watch --timer --json in a kill-on-close job, deadline 10 min (mcpWatchdog.runLimitMinutes)",
+            "wsl-care: tasks run watch: the worker exited 75");
     }
 
     [Fact]
@@ -99,8 +103,10 @@ public sealed class TasksRunCommandTests
 
         exit.Should().Be((int)ExitCode.TaskEnded).And.Be(84);
         stdout.Should().BeEmpty();
-        stderr.TrimEnd().Split('\n').Should().ContainSingle()
-            .Which.Should().StartWith("wsl-care: tasks run watch:").And.Contain("10 min").And.Contain("mcpWatchdog.runLimitMinutes").And.Contain("whole tree");
+        var lines = stderr.TrimEnd().Split('\n');
+        lines.Should().HaveCount(2, "the start line and ONE terminal line");
+        lines[0].Should().Contain("starting").And.Contain("(mcpWatchdog.runLimitMinutes)");
+        lines[1].Should().StartWith("wsl-care: tasks run watch:").And.Contain("10 min").And.Contain("mcpWatchdog.runLimitMinutes").And.Contain("whole tree");
     }
 
     [Fact]
@@ -114,7 +120,9 @@ public sealed class TasksRunCommandTests
 
         refused.Exit.Should().Be((int)ExitCode.RunFailed);
         refused.Stderr.Should().Contain("tasks run watch").And.Contain("error 5");
+        refused.Stderr.TrimEnd().Split('\n').Last().Should().Contain("tasks run watch: refused:").And.Contain("error 5");
         cancelled.Exit.Should().Be((int)ExitCode.Interrupted);
+        cancelled.Stderr.Should().Contain("tasks run watch: stopped by a signal");
     }
 
     [Fact]
@@ -176,12 +184,12 @@ public sealed class TasksRunCommandTests
     /// <summary>The real supervisor, handed the helper tree in place of the launch the product built (which it records).</summary>
     private sealed class HelperTreeSupervisor(IWorkerSupervisor real, JobHelperTree tree) : IWorkerSupervisor
     {
-        public WorkerLaunch ProductLaunch { get; private set; } = new(string.Empty, [], TimeSpan.Zero);
+        public WorkerLaunch ProductLaunch { get; private set; } = new(string.Empty, [], TimeSpan.Zero, string.Empty);
 
         public WorkerOutcome Run(WorkerLaunch launch, CancellationToken cancellationToken)
         {
             ProductLaunch = launch;
-            return real.Run(new WorkerLaunch(JobHelperTree.Executable, tree.Arguments, launch.Deadline), cancellationToken);
+            return real.Run(new WorkerLaunch(JobHelperTree.Executable, tree.Arguments, launch.Deadline, launch.DeadlineKey), cancellationToken);
         }
     }
 

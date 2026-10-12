@@ -25,19 +25,32 @@ public static class TaskWorkers
 
     private const string JsonFlag = "--json";
 
+    /// <summary>One entry of the closed table: a task, its worker's arguments, the key its deadline is read from, and — while its body
+    /// is not built — why it is refused. The deadline's duration and its key come from this ONE entry (the coai code round on WR-D3,
+    /// finding 2), so what a run says about its deadline can never name another key.</summary>
+    private sealed record Entry(WindowsTask Task, IReadOnlyList<string> Arguments, ConfigKey.IntKey Deadline, string NotBuilt);
+
+    private static readonly IReadOnlyList<Entry> Table =
+    [
+        new(WindowsTask.Watch, ["watch", "--timer"], ConfigKeys.McpWatchdog.RunLimitMinutes, string.Empty),
+        new(WindowsTask.Archive, [], ConfigKeys.Timer.RunLimitMinutes, ArchiveNotBuilt),
+    ];
+
     /// <summary>The launch of <paramref name="task"/>'s worker, or why there is none.</summary>
     /// <param name="self">This process's own executable path — the worker is always the same binary.</param>
     /// <param name="json">Whether the supervisor was asked for <c>--json</c>; the worker then answers in JSON on the same stdout.</param>
-    public static Reading<WorkerLaunch> For(WindowsTask task, string self, bool json, EffectiveConfig config) => task switch
+    public static Reading<WorkerLaunch> For(WindowsTask task, string self, bool json, EffectiveConfig config) => EntryOf(task) switch
     {
         _ when !Path.IsPathFullyQualified(self) => Reading.Missing<WorkerLaunch>($"this process's own path could not be read as an absolute path (\"{self}\"), so no worker can be named; nothing was started"),
-        _ when task == WindowsTask.Watch => Reading.Of(new WorkerLaunch(self, ["watch", "--timer", .. Json(json)], TimeSpan.FromMinutes(config.Int(ConfigKeys.McpWatchdog.RunLimitMinutes)))),
-        _ when task == WindowsTask.Archive => Reading.Missing<WorkerLaunch>(ArchiveNotBuilt),
-        _ => throw new ArgumentOutOfRangeException(nameof(task), task.Name, $"not a task of this plan; one of: {string.Join(", ", WindowsTask.All)}"),
+        { NotBuilt.Length: > 0 } refused => Reading.Missing<WorkerLaunch>(refused.NotBuilt),
+        var entry => Reading.Of(new WorkerLaunch(self, [.. entry.Arguments, .. Json(json)], TimeSpan.FromMinutes(config.Int(entry.Deadline)), entry.Deadline.Name)),
     };
 
-    /// <summary>The deadline's key of each task — what a refusal and the timeout line name.</summary>
-    public static ConfigKey.IntKey DeadlineKey(WindowsTask task) => task == WindowsTask.Watch ? ConfigKeys.McpWatchdog.RunLimitMinutes : ConfigKeys.Timer.RunLimitMinutes;
+    /// <summary>The deadline's key of each task, from its table entry.</summary>
+    public static ConfigKey.IntKey DeadlineKey(WindowsTask task) => EntryOf(task).Deadline;
+
+    private static Entry EntryOf(WindowsTask task) =>
+        Table.FirstOrDefault(e => e.Task == task) ?? throw new ArgumentOutOfRangeException(nameof(task), task.Name, $"not a task of this plan; one of: {string.Join(", ", WindowsTask.All)}");
 
     private static IReadOnlyList<string> Json(bool json) => json ? [JsonFlag] : [];
 }
