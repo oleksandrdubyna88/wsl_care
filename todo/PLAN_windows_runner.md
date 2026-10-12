@@ -415,8 +415,12 @@ root kind `taskEnded`); the docs in [module_daemon.md](../research/module_daemon
   reused — no new key); a mid-run clock that stops answering counts as past the deadline (fail closed). The standard handles are
   inherited as inheritable DUPLICATES (closed right after `CreateProcessW`); a missing one is not passed, with none at all nothing
   is inherited, and one that exists but cannot be copied refuses the start (n1 below). The worker starts by `lpApplicationName` = its absolute path (no search).
-- **The WR-D2 seam**: `TasksCommand.SweepStagingAtRunStart(host, paths, config)` is called before the worker starts and does
-  nothing yet; WR-D2 calls ITS staging sweep there (§3.10) — no second sweep was written.
+- **The WR-D2 seam**: `TasksCommand.SweepStagingAtRunStart` is called before the worker starts; WR-D3 left it empty, and WR-D2
+  fills it with ITS staging sweep (§3.10) — no second sweep was written. Wired when WR-D2 rebased onto WR-D3 (2026-10-12):
+  `Staging.Sweep` with the digest the run's own copy is staged under (`StagedCopies.DigestOf`, read from the path, nothing hashed),
+  before the worker takes the run lock; a retirement or a failure is one stderr line, and a failure never stops the run
+  (`TasksRunCommandTests.The_run_start_sweep_retires_an_older_verified_copy_before_the_worker_starts_and_keeps_its_own_and_the_newest`,
+  red before the wiring; break-it: the call removed → red).
 - **The Windows test leg's helper tree** (`TestSupport/JobHelperTree.cs`, shared by Core.Tests and Cli.Tests) is Windows PowerShell
   (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, the worker) starting `ping.exe` (the grandchild): the precedent
   `TestSupport/HoldingChild` uses PowerShell; the FakeTool needs a scenario script. The helper writes both pids AND both creation

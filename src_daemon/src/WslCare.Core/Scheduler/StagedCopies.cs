@@ -78,8 +78,9 @@ public static class StagedCopies
         new(true, digest, version, $"a verified staged copy: {path} hashes to its folder's digest and {StageRecord.FileName} names it and release {version}");
 
     /// <summary>The digest folder <paramref name="processPath"/> sits in when it is exactly <c>&lt;root&gt;\&lt;64-hex&gt;\wsl-care.exe</c>
-    /// (no <c>.</c> or <c>..</c> on the way); empty otherwise.</summary>
-    private static string DigestOf(string stagingRoot, string processPath)
+    /// (no <c>.</c> or <c>..</c> on the way); empty otherwise. Read from the path alone, nothing hashed: the <c>tasks run</c> start
+    /// names the copy it runs from to the sweep this way (the sweep verifies every folder it keeps itself).</summary>
+    public static string DigestOf(string stagingRoot, string processPath)
     {
         var rules = PathRules.Windows;
         if (!rules.IsAbsolute(processPath) || PathSpelling.HasBadSegment(processPath))

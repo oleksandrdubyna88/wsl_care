@@ -505,7 +505,7 @@ sequenceDiagram
     participant W as worker (self watch --timer)
     TS->>SV: tasks run watch --json
     SV->>SV: Windows layout? task in the closed table? own path absolute?
-    SV->>SV: [seam] SweepStagingAtRunStart (WR-D2 fills it)
+    SV->>SV: SweepStagingAtRunStart: Staging.Sweep keeps its own copy + the newest verified (run lock, never waited on)
     SV->>JC: CreateJob: KILL_ON_JOB_CLOSE, no breakaway, handle NOT inheritable
     SV-->>TS: stderr: starting (argv), deadline N min (its key)
     SV->>JC: StartSuspended(job, self, "watch --timer --json"): CREATE_SUSPENDED | CREATE_NO_WINDOW, JOB_LIST = the job, HANDLE_LIST = the 3 std handles

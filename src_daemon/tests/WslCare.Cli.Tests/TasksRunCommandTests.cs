@@ -193,12 +193,34 @@ public sealed class TasksRunCommandTests
         }
     }
 
-    private sealed class RecordingSupervisor(WorkerOutcome outcome) : IWorkerSupervisor
+    /// <summary>WR-D2 wired into WR-D3 (PLAN_windows_runner.md §3.10, §14): the run-start sweep retires an older VERIFIED copy, and
+    /// does so BEFORE the worker starts (both take the run lock); it keeps the copy the run comes from and the newest verified one.</summary>
+    [Fact]
+    public void The_run_start_sweep_retires_an_older_verified_copy_before_the_worker_starts_and_keeps_its_own_and_the_newest()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new World("tasks-run-sweep");
+        var older = world.PlantVerified("an older copy", TimeSpan.FromDays(3));
+        var running = world.PlantVerified("the copy this run comes from", TimeSpan.FromDays(2));
+        var newest = world.PlantVerified("the newest copy", TimeSpan.FromDays(1));
+        var olderAtStart = new List<bool>();
+        var supervisor = new RecordingSupervisor(new WorkerOutcome.Exited(0), () => olderAtStart.Add(Directory.Exists(older)));
+
+        var (exit, _, stderr) = CliRun.Over(world.Host(supervisor, Path.Combine(running, Core.Scheduler.StagedCopies.ExeName)), "tasks", "run", "watch");
+
+        exit.Should().Be(0, stderr);
+        olderAtStart.Should().Equal([false], "the older verified copy was retired before the worker started");
+        Directory.Exists(running).Should().BeTrue("the copy this run comes from is never swept by its own run");
+        Directory.Exists(newest).Should().BeTrue("the newest verified copy is kept: the tasks may be registered to it already");
+    }
+
+    private sealed class RecordingSupervisor(WorkerOutcome outcome, Action? onRun = null) : IWorkerSupervisor
     {
         public List<WorkerLaunch> Launches { get; } = [];
 
         public WorkerOutcome Run(WorkerLaunch launch, CancellationToken cancellationToken)
         {
+            onRun?.Invoke();
             Launches.Add(launch);
             return outcome;
         }
@@ -210,16 +232,33 @@ public sealed class TasksRunCommandTests
 
         private readonly TempRoot _root = new(purpose);
 
-        public CliHost Host(IWorkerSupervisor supervisor)
+        private readonly FixedTimeProvider _clock = new();
+
+        private WindowsHostPaths Paths => new(WindowsEnvironment.Sandboxed(_root.Path));
+
+        public CliHost Host(IWorkerSupervisor supervisor, string self = Self)
         {
-            var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(_root.Path));
-            var clock = new FixedTimeProvider();
-            return new CliHost(paths, new Core.Files.PhysicalFileSystem(paths) { OwnersAreThisProcess = true }, clock, new RecordingCommandRunner())
+            var paths = Paths;
+            return new CliHost(paths, new Core.Files.PhysicalFileSystem(paths) { OwnersAreThisProcess = true }, _clock, new RecordingCommandRunner())
             {
-                Probe = new FakeProbe(HostSide.Windows, clock),
-                ProcessPath = () => Self,
+                Probe = new FakeProbe(HostSide.Windows, _clock),
+                ProcessPath = () => self,
                 Supervisor = supervisor,
             };
+        }
+
+        /// <summary>A verified staged copy in the sandbox's staging root: the exe's bytes under the folder their SHA-256 names, and a
+        /// <c>stage.json</c> that agrees, staged <paramref name="ago"/> before the clock's now. Answers the digest folder.</summary>
+        public string PlantVerified(string content, TimeSpan ago)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+            var digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
+            var folder = Path.Combine(Core.Scheduler.StagedCopies.Root(Paths), digest);
+            Directory.CreateDirectory(folder);
+            File.WriteAllBytes(Path.Combine(folder, Core.Scheduler.StagedCopies.ExeName), bytes);
+            var record = new Core.Scheduler.StageRecord("0.4.0", digest, _clock.GetUtcNow() - ago, "C:\\Users\\user\\.vscode\\extensions\\x\\bin\\wsl-care.exe");
+            File.WriteAllText(Path.Combine(folder, Core.Scheduler.StageRecord.FileName), System.Text.Json.JsonSerializer.Serialize(record, Core.Json.WslCareJsonContext.Default.StageRecord));
+            return folder;
         }
 
         public void Dispose() => _root.Dispose();
