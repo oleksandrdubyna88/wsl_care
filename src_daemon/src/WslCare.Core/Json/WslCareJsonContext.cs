@@ -75,6 +75,8 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Mcp.McpCpuFile))]
 [JsonSerializable(typeof(Watch.WatchTriesFile))]
 [JsonSerializable(typeof(Watch.WatchReport))]
+[JsonSerializable(typeof(Scheduler.TasksRenderReport))]
+[JsonSerializable(typeof(Scheduler.StageRecord))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {
     public static readonly WslCareJsonContext Compact = new(new JsonSerializerOptions

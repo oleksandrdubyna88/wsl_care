@@ -435,6 +435,23 @@ nothing writes no history line; during a dry run it only samples, and the full r
 run holds the lock, 77 not root. The timer's own full run now waits up to `requests.lockWaitSeconds` (30) for a lock the watch
 holds for its seconds, instead of being lost to the next slot.
 
+## Tasks render — the Windows runner's task XML (WR-D1)
+
+```powershell
+wsl-care.exe tasks render watch --json     # or: archive; without --json a person reads it
+```
+
+The first step of the Windows runner ([PLAN_windows_runner.md](todo/PLAN_windows_runner.md)): the Windows binary renders the XML
+of its two per-user scheduled tasks — `\wsl-care\watch`, at logon + `windowsTasks.watchLogonDelaySeconds` (60) and then every
+`mcpWatchdog.periodMinutes` (5), and `\wsl-care\archive`, at logon + `windowsTasks.archiveLogonDelayMinutes` (20) and then every
+`windowsTasks.archiveEveryHours` (4) — as you (`InteractiveToken`, `LeastPrivilege`, never elevated), running the staged copy
+with `tasks run <task> --json`. The answer also carries the numbers it used, the summary lines Task Scheduler's read-back of the
+XML must print, the Windows dry-run state (read without starting the week) and `registrable`: true only when the exe that
+answered is a verified staged copy, `%LOCALAPPDATA%\wsl-care\bin\<sha256>\wsl-care.exe` whose bytes hash to its folder's name and
+whose `stage.json` agrees — never the extension folder's exe. It registers nothing and writes nothing; staging, the supervised
+run and the extension's buttons are later steps. Exit codes: 0 answered (registrable or not), 2 on the distro's binary, 78 while
+a configuration layer is in error.
+
 ## Busy — may an agent start heavy work now?
 
 ```bash

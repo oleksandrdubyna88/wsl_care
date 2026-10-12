@@ -133,6 +133,17 @@ Admin actions are marked with a shield and run through the elevated task.
 6. Extension Windows group.
 7. One week of `dryRun`; review and tune in `research/`.
 
+**Boundary with [PLAN_windows_runner.md](PLAN_windows_runner.md) (written 2026-10-11 with its WR-D1; named on both sides).**
+Step 3's "two scheduled tasks" are split: the two UNELEVATED per-user tasks of the bundled exe — `\wsl-care\watch` (every
+`mcpWatchdog.periodMinutes`) and `\wsl-care\archive` (W-A15's schedule, logon + `windowsTasks.archiveLogonDelayMinutes` and every
+`windowsTasks.archiveEveryHours`) — are that plan's, registered by the extension from `wsl-care.exe tasks render`. E11 keeps the
+rest.
+
+| item | PLAN_windows_runner.md | E11 (this plan) |
+|---|---|---|
+| W-A15's schedule | the `\wsl-care\archive` task | E11 no longer schedules the Windows archive |
+| `\wsl-care\collect` (the 4-hourly Windows collect), every elevated task, `collect-elevated` | — | E11 |
+
 ## 8. Test plan
 
 - Collectors against recorded fixtures from this machine (`Get-Counter` samples, process lists with

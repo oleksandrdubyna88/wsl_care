@@ -3135,6 +3135,45 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "windowsTasks.watchLogonDelaySeconds",
+      "shape": "int",
+      "min": 0,
+      "max": 3600,
+      "default": 60,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "windowsTasks.archiveLogonDelayMinutes",
+      "shape": "int",
+      "min": 0,
+      "max": 720,
+      "default": 20,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "windowsTasks.archiveEveryHours",
+      "shape": "int",
+      "min": 1,
+      "max": 24,
+      "default": 4,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "archive.removeAfterHours",
       "shape": "int",
       "min": 1,

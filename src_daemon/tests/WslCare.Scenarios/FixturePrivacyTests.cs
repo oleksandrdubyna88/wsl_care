@@ -247,6 +247,8 @@ public sealed class FixturePrivacyTests
         "FirstLoginUid",              // a number
         "AccountTag",                 // a constant tag of the Windows disk script
         "user.Source",                // where the target user came from (SUDO_USER, the login uid …)
+        "identity.UserSid",           // WR-D1: a Windows SID (S-1-5-21-…), a numeric identifier, never an account name
+        "Shown(report.UserSid)",      // the same SID in the text form of `tasks render`
     };
 
     /// <summary>ActCommand's helper renders "{name} ({source})", which its caller writes after "target user: " — the caller's hole

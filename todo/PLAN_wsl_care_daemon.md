@@ -3016,6 +3016,16 @@ run (D8) instead of probed with 100 scratch files (a probe that at the measured 
 from archive plan §4). If the live gate shows the steady daily volume does not fit the budget, the hand-off becomes a story after
 E11 — it needs a Windows binary at a fixed installed path, which only E11 provides (*Boundaries*).
 
+**D9's boundary with [PLAN_windows_runner.md](PLAN_windows_runner.md)** (written 2026-10-11 with its WR-D1; named on both sides):
+the "until E11" clause is closed by that plan, not by E11. Its per-user task `\wsl-care\archive` runs the Windows side's archive
+on a schedule (logon + `windowsTasks.archiveLogonDelayMinutes`, then every `windowsTasks.archiveEveryHours`), as the user, through
+a verified staged copy and its supervisor (dry → `archive preview`, real → `archive run`; WR-D5). This plan keeps the verbs, the
+lock and the reconcile; the runner adds no archive rule.
+
+| item | PLAN_windows_runner.md | D9 (this plan) |
+|---|---|---|
+| W-A15's schedule | the `\wsl-care\archive` task | the verbs stay here; D9's "until E11" clause is closed by the runner |
+
 **D10 — The agent's own retention, coupled, and EFFECTIVE (f; review M7).** Claude Code deletes at `cleanupPeriodDays` (default
 30). A coupled rule in `NumberRules`, checked at load and at `config set`: **⌈`archive.removeAfterHours` / 24⌉ +
 `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays`** — with the defaults 1 + 14 + 7 ≤ 30: a session is

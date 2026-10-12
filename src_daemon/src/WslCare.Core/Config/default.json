@@ -358,5 +358,10 @@
     "busyMinutes": 30,
     "periodMinutes": 5,
     "runLimitMinutes": 10
+  },
+  "windowsTasks": {
+    "watchLogonDelaySeconds": 60,
+    "archiveLogonDelayMinutes": 20,
+    "archiveEveryHours": 4
   }
 }

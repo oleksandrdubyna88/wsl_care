@@ -20,7 +20,7 @@ view over its CLI contract.
 flowchart TB
     subgraph CLI["WslCare.Cli (the binary)"]
         program["Program.Main<br/>host → config → logger → verb"]
-        verbs["Commands/<br/>status · preview · collect · act · doctor<br/>events follow · logs · runs · config · agents"]
+        verbs["Commands/<br/>status · preview · collect · act · doctor<br/>events follow · logs · runs · config · agents · tasks"]
         logging["Logging/<br/>AnsiConsoleSink (stderr) · DailyRunFileSink · LogRetention"]
     end
     subgraph Core["WslCare.Core (no packages)"]
@@ -33,6 +33,7 @@ flowchart TB
         runner["Processes<br/>ProcessCommandRunner: argv, ceiling, tree kill"]
         files["Files/<br/>IFileSystem → DeletionPolicy → disk"]
         history["History/<br/>logs · runs"]
+        scheduler["Scheduler/ (Windows binary)<br/>WindowsTaskDefinitions · StagedCopies · StageRecord"]
     end
     tools["docker · systemctl · journalctl · sysctl · runuser<br/>npm · pnpm · uv · pip · snap · fstrim · powershell.exe"]
     state[("/var/lib/wsl-care · /run/wsl-care.lock<br/>/var/log/wsl-care · /etc/wsl-care/config.json")]
@@ -44,6 +45,10 @@ flowchart TB
     verbs --> collect
     verbs --> engine
     verbs --> history
+    verbs --> scheduler
+    scheduler --> config
+    scheduler --> engine
+    scheduler --> files
     collect --> collectors
     collect --> engine
     engine --> actions
@@ -68,6 +73,9 @@ flowchart TB
 | `CommandTemplate`, `CommandPolicy` | `Core/Processes/Policy` | the only argv shapes that may run; everything else is refused |
 | `DeletionPolicy`, `ProtectedRoots` | `Core/Files/Deletion` | the one judge of every delete and move: agent folders, `~/git`, Claude's temp folder, memory, and their ancestors |
 | `RunningFile`, `FirstTimerRun` | `Core/Actions/Engine` | `running.json` (pid + start + heartbeat) and the start of the timer's 7-day dry run |
+| `DryRunPeek` / `DryWeek` | `Core/Actions/Engine` | what a timer run NOW would decide about the dry run, read without writing the stamp (`DryRunWindow.Peek`, WR-D1; section below) |
+| `WindowsTask`, `TaskIdentity`, `WindowsTaskDefinition`, `TasksRenderReport` | `Core/Scheduler` | the Windows runner's two tasks (a closed set), who a task runs as and what it starts, the rendered XML with its numbers and summary, the `tasks render --json` answer (section below) |
+| `StageRecord` / `StageRead`, `StagedCheck` | `Core/Scheduler` | `stage.json` beside a staged copy and its strict reader; whether this process is a verified staged copy (`registrable`) |
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 | `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
 
@@ -117,6 +125,7 @@ has none.
 | tests and the harness | [module_tests.md](module_tests.md), architecture.md *The scenario harness (E1.S3)* |
 | the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
 | the Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) §3.1, the measurement [2026-10-10_disk.md](2026-10-10_disk.md) |
+| the Windows runner's render: `tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek` (WR-D1, 2026-10-11) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2–§3.7 |
 
 ## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
 
@@ -362,3 +371,71 @@ flowchart LR
 - **Known limit**: a distro cloned with `wsl --export` / `wsl --import` carries the old `{state}/distro-name.json`; until a root
   collect through `wsl.exe` records the new name, the clone's timer runs map the ORIGINAL distro's disk by mount (own review,
   2026-10-11 — not fixed: no unelevated fact ties a VHDX to the running filesystem).
+
+## The Windows runner's render (WR-D1 of PLAN_windows_runner.md, 2026-10-11)
+
+The first story of [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md): the contract every later step reads. The Windows
+binary renders the XML of its two per-user scheduled tasks and says whether that XML may be registered. Read-only: nothing is
+registered, staged, started or written (WR-D2 stages, WR-D3 supervises, WR-E3 registers).
+
+```mermaid
+flowchart LR
+    argv["wsl-care.exe tasks render &lt;watch|archive&gt; [--json]"] --> refuse{"Windows layout?<br/>config valid?"}
+    refuse -- "distro's binary" --> u2["exit 2"]
+    refuse -- "layer in error" --> u78["exit 78"]
+    refuse -- yes --> parts
+    subgraph parts["the pure parts"]
+        def["WindowsTaskDefinitions.Render<br/>(config, user SID, own path)"]
+        staged["StagedCopies.Check<br/>path shape · stage.json · sha256"]
+        peek["DryRunWindow.Peek<br/>reads first-timer-run.json, never writes"]
+    end
+    parts --> report["TasksRender.Report<br/>registrable = staged ∧ SID known"]
+    report --> out["JSON (TasksRenderReport) or text; exit 0"]
+```
+
+- **The verb** (`Cli/Commands/TasksCommand.cs`, `CommandLine.cs`: `tasks render <watch|archive> [--json]`, a closed set
+  `Core/Scheduler/WindowsTask.cs`). The distro's binary refuses it with exit 2 ("the Windows binary's"), as the Windows binary
+  refuses `watch`. A configuration layer in error refuses it with exit 78 — no task is rendered from a configuration the
+  daemon refuses (the `units dropin` rule). Otherwise it answers with exit 0, registrable or not.
+- **The seams** (`CliHost.UserSid`, `CliHost.ProcessPath`): the real SID comes from `WindowsIdentity.GetCurrent().User` and the
+  real path from `Environment.ProcessPath`, wired ONLY in `CliHost.ForThisMachine`; a host built by a test has empty ones and
+  hands its own. So the XML is a pure function of (configuration, SID, path) and golden-testable.
+- **The XML** (`Core/Scheduler/WindowsTaskDefinitions.cs`): principal = the user's SID, `InteractiveToken`, `LeastPrivilege`;
+  ONE `LogonTrigger` naming the same SID (an unelevated account may register a logon trigger for itself only) with a `Delay`
+  and an indefinite `Repetition`; settings `IgnoreNew`, `StartWhenAvailable`, no battery stop, no wake, not only when idle,
+  not hidden, priority 7; `ExecutionTimeLimit` = the deadline + `NumberRules.RunMarginMinutes` (10); the `Exec` action is the
+  ABSOLUTE staged path with `tasks run <name> --json`. A delay of 0 writes no `Delay` element (the guard's rule).
+
+  | task | delay | repetition | deadline (+10 min = `ExecutionTimeLimit`) |
+  |---|---|---|---|
+  | `\wsl-care\watch` | `windowsTasks.watchLogonDelaySeconds` (60) | `mcpWatchdog.periodMinutes` (5) | `mcpWatchdog.runLimitMinutes` (10) |
+  | `\wsl-care\archive` | `windowsTasks.archiveLogonDelayMinutes` (20) | `windowsTasks.archiveEveryHours` (4) | `timer.runLimitMinutes` (276) |
+
+- **The summary lines** are the shape of the extension's `SUMMARY_FUNCTION` (`src_vs_code/src/windowsTime/guardTask.ts`):
+  `principal=<sid> logon=3 level=0`, `trigger=logon enabled=True delay=<d> interval=<i>`, `settings limit=PT<n>M instances=2
+  whenAvailable=True battery=False enabled=True`, `action type=0 path=<path> args=tasks run <name> --json`. The logon line's
+  `interval=` is ONE field more than the guard's: WR-E2 widens `SUMMARY_FUNCTION`'s logon case to print the repetition.
+  Durations are spelt as the XML spells them (`PT60S`); Task Scheduler may store `PT1M`, so the extension compares by value.
+- **`registrable`** (`Core/Scheduler/StagedCopies.cs`): true only when `Environment.ProcessPath` is exactly
+  `<stagingRoot>\<64 lower-case hex>\wsl-care.exe` (no `.`/`..` segment; the staging root is `WindowsHostPaths.StateDirectory`
+  + `bin`, from the shell-folder API), `stage.json` beside it is a whole record naming that digest and this build's release (the
+  version text before `+`, `StagedCopies.ReleaseOf`), and the file — opened through the archive's no-link open
+  (`IArchiveFiles.OpenSource`: this account's regular file with one link, no reparse point followed) — hashes to the digest; and
+  the user's SID is known. The first failed check is the `reason`. So no task XML can name the extension folder (the bundle
+  plan's §4 rule, enforced in the daemon too).
+- **`stage.json`** (`Core/Scheduler/StageRecord.cs`): `{ version, sha256, stagedAtUtc, source }`, written by WR-D2 through
+  `WslCareJsonContext`, read here strictly — exactly those four members, each well formed (a missing or unknown member, a
+  malformed digest, an empty value, a relative `source` is refused naming it), capped at `records.maxStateFileBytes`.
+- **The dry state** (`DryRunWindow.Peek(paths, files, config, now)`, `Core/Actions/Engine/DryRunWindow.cs`): what `Decide` would
+  find for a timer run now, read from the same stamp by the same read and NEVER written — `week` is `notStarted` (no stamp: the
+  first timer or task run starts it), `restarts` (an unreadable stamp), `running` (with `until`) or `passed`; `dryRun` is the
+  setting OR the week. On Windows the stamp is `%LOCALAPPDATA%\wsl-care\first-timer-run.json` — a Windows-local dry state.
+- **The answer** (`Core/Scheduler/TasksRender.cs`, `TasksRenderReport`): `schemaVersion, task, taskPath, registrable, reason,
+  userSid, command, digest, version, numbers[{key, value}], executionTimeLimitMinutes, summary[], xml, dry{dryRun, setting,
+  week, until?, reason}`. Its golden is `contracts/golden/windows-tasks-render.json` — the two tasks from a staged copy and the
+  watch from the extension folder, built from these pure parts by `Scenarios/ContractFilesTests` (every OS; regenerate with
+  `WSL_CARE_WRITE_GOLDENS=1`).
+- **The keys** (`Config/ConfigKeys.WindowsTasks.cs`): `windowsTasks.watchLogonDelaySeconds` (60, 0–3600),
+  `windowsTasks.archiveLogonDelayMinutes` (20, 0–720), `windowsTasks.archiveEveryHours` (4, 1–24) — all `SafeDirection.Higher`,
+  none machine-only (an unelevated runner's own user layer is the natural place, the plan's Q2). No new coupled rule: the
+  existing `mcpWatchdog.periodMinutes < mcpServers.cpuIntervalMaxMinutes` holds the watch cadence under the baseline's maximum.
