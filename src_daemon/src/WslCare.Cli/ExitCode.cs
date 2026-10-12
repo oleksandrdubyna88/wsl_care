@@ -88,6 +88,11 @@ internal enum ExitCode
     /// <see cref="Busy"/>, 75, which means another run holds the run lock.)</summary>
     MachineBusy = 83,
 
+    /// <summary><c>tasks run &lt;task&gt;</c> (WR-D3 of PLAN_windows_runner.md §3.3): the supervised worker was ended at its deadline (counted
+    /// on the unbiased clock, so a host sleep is not run time); its whole tree is gone — the job it ran in was terminated. One line on
+    /// stderr names the deadline and its key; every other run of the supervisor exits with the worker's own code.</summary>
+    TaskEnded = 84,
+
     /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention). Under a unit the only signal
     /// is systemd's SIGTERM - a stop someone asked for (<c>act --stop</c>, <c>systemctl stop</c>, a shutdown) - and the run records
     /// itself <c>interrupted</c> first (or leaves running.json / its request for the sweep), so both units count it as a success

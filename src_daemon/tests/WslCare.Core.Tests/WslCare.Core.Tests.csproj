@@ -32,6 +32,8 @@
     <AssemblyMetadata Include="WslCare.FileSystemSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Files\PhysicalFileSystem.cs'))" />
     <AssemblyMetadata Include="WslCare.ProcessSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Processes\ProcessCommandRunner.cs'))" />
     <AssemblyMetadata Include="WslCare.SignalSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Processes\ProcessSignals.cs'))" />
+    <!-- WR-D3: the Win32 half of the job supervisor, the ONE file that may end a process through a job or by its handle. -->
+    <AssemblyMetadata Include="WslCare.JobSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Processes\JobSupervisor.Win32.cs'))" />
   </ItemGroup>
 
   <ItemGroup>

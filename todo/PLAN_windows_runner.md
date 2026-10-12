@@ -1,6 +1,6 @@
 # PLAN — the Windows runner: two per-user scheduled tasks run the staged `wsl-care.exe` under one bounded supervisor
 
-> Status: **in progress, 2026-10-11 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 onward not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
+> Status: **in progress, 2026-10-12 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D2, WR-D4 onward not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
 >
 > Related: [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b (A22 = S7b.3, the Windows stop; S7b.1 the ledger; S2b the watch), [PLAN_windows_care.md](PLAN_windows_care.md) §2 and W-A15 (E11), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) D9 (:3010–3017), [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md), [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a, §4 and its forward note), [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the task-registration precedent), [PLAN_pwsh_engine_windows_time.md](../research/PLAN_pwsh_engine_windows_time.md) (the engine rule, F1/F2), [2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md).
 >
@@ -384,3 +384,36 @@ Deviations and decisions the plan did not spell out:
   the product harness (`Scenarios/WindowsTasksRenderFlows`: both tasks answered and not registrable from the build folder, nothing
   written; the refusal on the Linux legs; break-it: a `Peek` that starts the week turns both red). The week's boundary rule is one
   function, `DryRunWindow.InWeek`, used by `Decide` and `Peek` alike, so the shown dry state cannot drift from the next run's.
+
+**WR-D3 as built (2026-10-12).** `Cli/Commands/TasksCommand.Run.cs` (`TasksCommand` became `partial`), `Core/Processes/`
+(`IWorkerSupervisor.cs` — `IWorkerSupervisor`, `WorkerLaunch`, `WorkerOutcome`, `IJobControl`, `RefusingWorkerSupervisor`;
+`JobSupervisor.cs`; `JobSupervisor.Win32.cs` — `Win32JobControl`; `WindowsCommandLine.cs`), `Core/Scheduler/TaskWorkers.cs`,
+`CliHost.Supervisor`, exit `84 TaskEnded` (`contracts/exit-codes.json` regenerated; the extension's `DAEMON_EXIT.taskEnded` and its
+root kind `taskEnded`); the docs in [module_daemon.md](../research/module_daemon.md) § *The Windows runner's supervisor* and
+[module_tests.md](../research/module_tests.md). Deviations and decisions the plan did not spell out:
+
+- **Two files, one supervisor.** The rules (the order of the calls, the deadline loop) are `JobSupervisor` over an `IJobControl`
+  seam, so a fake reads the order; the Win32 calls are `Win32JobControl` in `JobSupervisor.Win32.cs`, and THAT file is the job
+  scan's only allowed site (`AssemblyMetadata WslCare.JobSeam`). The scan also covers `CreateProcess*` (one name more than §3.3
+  lists): a process created through Win32 outside the child runner would otherwise slip past the process-start scan.
+- **`archive` is refused as not built** (exit 2, `TaskWorkers.ArchiveNotBuilt`, before any job or process exists) — WR-D5 adds its
+  body to the closed table. Its deadline key (`timer.runLimitMinutes`) is already `TaskWorkers.DeadlineKey`.
+- **`--json` passes through**: the table gives `watch --timer`, plus `--json` when the supervisor got it (the task's action always
+  passes it) — still a closed table of two shapes; a person running `tasks run watch` by hand reads text.
+- **The other exits**: a supervisor that could not start the worker inside a job (no job, no process, a failed assign or resume, an
+  unreadable unbiased clock) exits **1** with the reason as its one stderr line — no new code beyond 84; a signal exits **130**
+  after the job is closed; a host whose own path is not absolute starts nothing (2). A configuration in error is NOT refused by
+  `tasks run` (the worker reads the same layers and answers for itself).
+- **The cancellation stop is the close**, not `TerminateJobObject`: Ctrl+C / a console close returns the wait and the job's handle is
+  closed, so kill-on-close ends the tree — which is what makes kill-on-close testable (the cancellation test turns red without it).
+  Task Scheduler's *End* terminates the supervisor itself; the OS closes the handle and kill-on-close does the same.
+- **After the deadline** the worker is waited for within `commands.drainGraceMilliseconds` (the child runner's existing grace,
+  reused — no new key); a mid-run clock that stops answering counts as past the deadline (fail closed). The standard handles are
+  inherited as inheritable DUPLICATES (closed right after `CreateProcessW`); a missing one is not passed, and with none at all
+  nothing is inherited. The worker starts by `lpApplicationName` = its absolute path (no search).
+- **The WR-D2 seam**: `TasksCommand.SweepStagingAtRunStart(host, paths, config)` is called before the worker starts and does
+  nothing yet; WR-D2 calls ITS staging sweep there (§3.10) — no second sweep was written.
+- **The Windows test leg's helper tree** is Windows PowerShell (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, the
+  worker) starting `ping.exe` (the grandchild): the precedent `TestSupport/HoldingChild` uses PowerShell; the FakeTool needs a
+  scenario script. Each pid is opened and held by its handle the moment it is read (pid AND creation time), and a failed test ends
+  what is left through those handles only.

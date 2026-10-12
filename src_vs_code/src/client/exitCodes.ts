@@ -29,6 +29,8 @@ export const DAEMON_EXIT = {
   requestUnusable: 82,
   /** E14 S6: `busy` only — the machine is too busy to START heavy work now (advice; not `busy`, 75, a held run lock). */
   machineBusy: 83,
+  /** WR-D3 (PLAN_windows_runner.md §3.3): the Windows binary's `tasks run` only — its supervised worker was ended at its deadline, whole tree. */
+  taskEnded: 84,
   interrupted: 130,
 } as const;
 

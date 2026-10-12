@@ -48,6 +48,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// hands its own.</summary>
     public Func<string> ProcessPath { get; init; } = static () => string.Empty;
 
+    /// <summary>What <c>tasks run</c> starts its worker under (WR-D3): the kill-on-close <see cref="JobSupervisor"/> in the Windows
+    /// binary; a supervisor that starts nothing in the distro's and in every host a test builds without its own.</summary>
+    public IWorkerSupervisor Supervisor { get; init; } = new RefusingWorkerSupervisor("a host built by a test starts no worker");
+
     /// <summary>What the archive's open-file check asks on the Windows side (plan §15r E9.S5): the Restart Manager and
     /// <see cref="WindowsProcesses"/> in the Windows binary; a check that did not run in the distro's.</summary>
     public IWindowsSide ArchiveWindows() =>
@@ -171,6 +175,7 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
             WindowsBoot = WindowsBootFor(paths),
             UserSid = static () => UserSidOfThisProcess(),
             ProcessPath = static () => Environment.ProcessPath ?? string.Empty,
+            Supervisor = SupervisorFor(paths),
             InteropRefusal = () => paths is LinuxHostPaths linux ? UserLayerTrusts.InteropRefusal(linux, files) : string.Empty,
         };
     }
@@ -233,6 +238,13 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         paths is WindowsHostPaths && OperatingSystem.IsWindows()
             ? new Win32Boot()
             : new UnreadWindowsBoot("the distro's binary keeps the distro's CPU ledger (mcpServers)");
+
+    /// <summary>The job supervisor of the Windows binary (its unbiased clock is the boot's); none in the distro — the per-user tasks are
+    /// Windows'.</summary>
+    private static IWorkerSupervisor SupervisorFor(IHostPaths paths) =>
+        paths is WindowsHostPaths && OperatingSystem.IsWindows()
+            ? new JobSupervisor(new Win32JobControl(), new Win32Boot())
+            : new RefusingWorkerSupervisor("the distro's binary supervises no Windows task");
 
     /// <summary>The SID of the user this process runs as, on Windows; empty in the distro (no Windows principal there) and when the
     /// token names none.</summary>

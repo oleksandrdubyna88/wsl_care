@@ -52,6 +52,7 @@ const WORDS: Words = {
   requestGone: (f) => ({ label: 'request gone', sentence: `No request names that run any more.${lines(f.messages)}` }),
   requestUnusable: (f) => ({ label: 'request unusable', sentence: `The run's request could not be used; it was recorded as refused and nothing ran.${lines(f.messages)}` }),
   machineBusy: (f) => ({ label: 'machine busy', sentence: `The machine is too busy to start heavy work now (wsl-care busy); nothing was started.${lines(f.messages)}` }),
+  taskEnded: (f) => ({ label: 'ended at its deadline', sentence: `A Windows task's run was still going at its deadline and was ended with everything it started.${lines(f.messages)}` }),
   actionFailed: (f) => ({ label: 'an action failed', sentence: `An action failed.${lines(f.messages)}` }),
   recordsUnreadable: (f) => ({ label: 'records unreadable', sentence: `The daemon's records cannot be read.${lines(f.messages)}` }),
 };
