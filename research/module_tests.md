@@ -4001,6 +4001,13 @@ What [2026-10-12_wsl_clock_fight.md](2026-10-12_wsl_clock_fight.md) § 8 found, 
   sentence is one constant (`ClockVerdicts.SharedClockWriters`). **Break-its** (each restored): the damage arm removed →
   *… to contain "clock.fight counts 11"*; `Covers` always true → *found Level.Ok*; earlier, `journal.history` back on
   `Since`, the collector's stamp removed and the rotation check in the floor arm removed → each its test red.
+- **Code round 2 (coai, 4 of 4 reviewers, 3 of 4 findings accepted)**: damage warns at the ORDINARY rate too (the theory's
+  100/11 row — red: *found Level.Ok*); `clock.fight` judges against the same effective `thresholds.timeJumpsBackWarnPer4h`
+  as `clock.jumps` (`Clock_fight_and_clock_jumps_judge_the_backward_jumps_by_the_same_effective_limit`, limit 5, 7 jumps —
+  red: *clock.fight … found Level.Ok*); `JudgedJumps` split to keep each method within complexity 4. Rejected, with the
+  reason: deriving `NumbersAreConfigurationTests.GroupA` from the key list (the group is the classification under test).
+  **Break-its**: the damage arm disabled → the 480/11 and 100/11 rows red; `Fight` back on the process tuning → the
+  same-limit test red.
 
 ### What the extension's tests do not prove
 

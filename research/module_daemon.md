@@ -247,8 +247,9 @@ flowchart TB
     by its rotations, not by the count of steps. The floor needs the rotation count to cover the SAME window: it counts
     this boot's last 4 h, the clock changes count since the last run, so a run whose window is longer than the uptime
     (a VM restart) or than 4 h applies no floor; an unread count or uptime applies none either; a count above its limit
-    is damage however much of the window it covers. Both verdicts take the writers' sentence from ONE constant,
-    `ClockVerdicts.SharedClockWriters`.
+    is damage however much of the window it covers — and warns at ANY rate, the ordinary one included. Both verdicts take
+    the writers' sentence from ONE constant, `ClockVerdicts.SharedClockWriters`, and judge the backward jumps against the
+    SAME effective `thresholds.timeJumpsBackWarnPer4h` (the full run passes its configuration to `ClockVerdicts.Fight`).
   - `journal.history` counts its days from `HealthSample.JournalReadAt` (a `Reading<DateTimeOffset>`: the injected clock
     right after `journalctl --list-boots` answered), no longer from `HealthSample.Since` (the previous run's start); a
     sample without that instant is `unknown` with the reason.

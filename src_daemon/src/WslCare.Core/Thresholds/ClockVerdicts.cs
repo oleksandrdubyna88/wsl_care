@@ -26,7 +26,7 @@ public static class ClockVerdicts
     public static IReadOnlyList<Verdict> Evaluate(HealthSample health, EffectiveConfig config)
     {
         var judgement = health.ClockJudgement;
-        return [TimeService(health.WindowsClock.TimeServiceReading, judgement, config), Reference(judgement, config), Fight(health.TimeJumpsBack)];
+        return [TimeService(health.WindowsClock.TimeServiceReading, judgement, config), Reference(judgement, config), Fight(health.TimeJumpsBack, config.Int(ConfigKeys.Thresholds.TimeJumpsBackWarnPer4h))];
     }
 
     /// <summary>Stopped is a WARNING while the clock agrees (on a workgroup PC Windows trigger-starts it, measured 2026-10-08)
@@ -72,12 +72,17 @@ public static class ClockVerdicts
     /// <summary>The wire name of a standing (<c>windowsSlow</c>, …) — the enum's own JSON spelling.</summary>
     public static string Name(ClockStanding standing) => char.ToLowerInvariant(standing.ToString()[0]) + standing.ToString()[1..];
 
-    public static Verdict Fight(Reading<int> jumpsBack)
+    /// <summary>The fight judged against the PROCESS tuning — the full run passes its effective configuration instead.</summary>
+    public static Verdict Fight(Reading<int> jumpsBack) => Fight(jumpsBack, (int)TimeJumpsBackWarnPer4h);
+
+    /// <summary>The fight judged against <paramref name="warnAbove"/>, the SAME effective <c>thresholds.timeJumpsBackWarnPer4h</c>
+    /// <c>clock.jumps</c> uses (code round 2: the two read different sources).</summary>
+    public static Verdict Fight(Reading<int> jumpsBack, int warnAbove)
     {
-        var limit = string.Create(CultureInfo.InvariantCulture, $"warn > {TimeJumpsBackWarnPer4h:0} in the last 4 h of this boot (thresholds.timeJumpsBackWarnPer4h)");
+        var limit = string.Create(CultureInfo.InvariantCulture, $"warn > {warnAbove} in the last 4 h of this boot (thresholds.timeJumpsBackWarnPer4h)");
         return jumpsBack switch
         {
-            Reading<int>.Available { Value: var n } when n > TimeJumpsBackWarnPer4h => new(
+            Reading<int>.Available { Value: var n } when n > warnAbove => new(
                 FightId,
                 Level.Warn,
                 string.Create(CultureInfo.InvariantCulture, $"{n} in 4 h"),

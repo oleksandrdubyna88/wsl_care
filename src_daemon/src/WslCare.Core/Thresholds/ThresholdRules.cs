@@ -292,11 +292,21 @@ public static class ThresholdRules
     private static bool Covers(Reading<TimeSpan> uptime, TimeSpan since) =>
         uptime is Reading<TimeSpan>.Available { Value: var up } && since <= up && since <= ClockReferences.FightWindow;
 
+    /// <summary>Journal damage first — a rotation count above its limit warns at ANY rate (code round 2: an ordinary rate must
+    /// not hide it) — then the rate.</summary>
     private static (Level Level, string Reason) JudgedJumps(double perFourHours, Reading<int> rotations, int warnAbove, int floor, int rotationLimit) => rotations switch
     {
+        Reading<int>.Available { Value: var r } when r > rotationLimit => (Level.Warn, Invariant($"the journal is being rotated: clock.fight counts {r} backward jumps in 4 h, above its limit; {ClockVerdicts.SharedClockWriters}")),
         _ when perFourHours <= warnAbove => (Level.Ok, $"systemd-resolved's \"Clock change detected\" since the last run; {ClockVerdicts.SharedClockWriters}"),
-        Reading<int>.Available { Value: var r } when r <= rotationLimit && perFourHours <= floor => (Level.Ok, Invariant($"the rate of a periodic stepper, not journal damage: {ClockVerdicts.SharedClockWriters}; clock.fight counts {r} backward jumps in 4 h, within its limit; systemd-resolved flushes its DNS cache at each step")),
-        Reading<int>.Available { Value: var r } => (Level.Warn, Invariant($"more clock steps than a periodic stepper explains, or the journal is being rotated (clock.fight counts {r} backward jumps in 4 h): {ClockVerdicts.SharedClockWriters}")),
+        _ => AboveTheOrdinaryLimit(perFourHours, rotations, floor),
+    };
+
+    /// <summary>Above <c>thresholds.clockJumpsWarnPer4h</c> with no journal damage seen: ok up to the stepper floor while the
+    /// rotation count covers the window; warn above the floor, or when no count can prove the journal undamaged.</summary>
+    private static (Level Level, string Reason) AboveTheOrdinaryLimit(double perFourHours, Reading<int> rotations, int floor) => rotations switch
+    {
+        Reading<int>.Available { Value: var r } when perFourHours <= floor => (Level.Ok, Invariant($"the rate of a periodic stepper, not journal damage: {ClockVerdicts.SharedClockWriters}; clock.fight counts {r} backward jumps in 4 h, within its limit; systemd-resolved flushes its DNS cache at each step")),
+        Reading<int>.Available => (Level.Warn, $"more clock steps than a periodic stepper explains (above thresholds.clockJumpsStepperFloorPer4h): {ClockVerdicts.SharedClockWriters}"),
         var unproven => (Level.Warn, $"above the ordinary limit, and no floor applies: {unproven.ReasonOrEmpty}; {ClockVerdicts.SharedClockWriters}; clock.fight judges the journal's damage"),
     };
 

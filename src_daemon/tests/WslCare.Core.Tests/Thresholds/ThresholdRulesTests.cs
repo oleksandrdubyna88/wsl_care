@@ -215,6 +215,15 @@ public sealed class ThresholdRulesTests : IDisposable
     }
 
     [Fact]
+    public void Clock_fight_and_clock_jumps_judge_the_backward_jumps_by_the_same_effective_limit()
+    {
+        var verdicts = Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(7)), config: """{ "thresholds": { "timeJumpsBackWarnPer4h": 5 } }""");
+
+        Find(verdicts, "clock.jumps").Level.Should().Be(Level.Warn, "7 backward jumps are above the effective limit of 5");
+        Find(verdicts, "clock.fight").Level.Should().Be(Level.Warn, "the same 7 against the same effective limit (code round 2: it read the process's tuning instead)");
+    }
+
+    [Fact]
     public void Journal_history_without_the_instant_it_was_read_is_unknown_never_a_value_from_another_instant()
     {
         var health = Health() with { JournalOldestEntry = Reading.Of(Now.AddDays(-9)) };
@@ -229,6 +238,7 @@ public sealed class ThresholdRulesTests : IDisposable
     [InlineData(480, 11, Level.Warn)] // the journal is being rotated
     [InlineData(601, 0, Level.Warn)] // above the floor
     [InlineData(638, 95, Level.Warn)] // the 2026-10-12 10:02Z run
+    [InlineData(100, 11, Level.Warn)] // within the ordinary limit, but the journal is being rotated (code round 2)
     public void Clock_jumps_at_the_rate_of_a_periodic_stepper_warn_only_with_journal_damage_or_above_the_floor(int perFourHours, int rotations, Level expected) =>
         Find(Evaluate(Reading.Of(Memory(50)), Steps(perFourHours, Reading.Of(rotations))), "clock.jumps").Level.Should().Be(expected);
 
