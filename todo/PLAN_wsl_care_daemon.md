@@ -4936,6 +4936,11 @@ history's retention floor, with a test; #1 the real `ArchiveAction` through the 
   read false. Break-its M1–M7 on product code (`defer-breakit`): M1 dry-run lines count → 2 red; M2 a build no longer blocks → 2 red;
   M3 `>` for `≥` → 1 red; M4 0 no longer never → 2 red; M5 the walk never ends → 11 red; M6 A13 declares no limit → 2 red; M7 the
   reason not carried → 3 red.
+- After the code round and the own review, rebased onto 281dd59 (#133): M3 and M4 again on the new lines (1 and 2 red), M8 the
+  not-counted note dropped → 1 red, M9 a line dated after now counts → 1 red, M10 the tie reversed → 1 red, M11 a failed forced run
+  loses its reason → 1 red, M12 the waited note dropped → 2 red; each file restored by its sha256. The touched classes: 290 tests,
+  0 failed; the contract test green. The full Windows suites ran under heavy load from other sessions (builds of 12 minutes):
+  timing tests elsewhere failed there and passed alone; CI ran every suite green.
 
 **The code round** (coai session b5e43e7f, `proceed`, codex, 3 gating of 5): #0 this status and record; #1
 `research/architecture.md` names the idle gate's one exception; #2 `IdleDeferrals.StreakStart` takes the typed `ActionId`; #4 a forced
