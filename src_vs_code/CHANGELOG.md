@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.5.0...extension-v0.6.0) (2026-10-12)
+
+
+### Features
+
+* **daemon:** the virtual disks and the hosting volume — gap, growth, free space (E15.S2) ([#111](https://github.com/oleksandrdubyna88/wsl_care/issues/111)) ([dd543b7](https://github.com/oleksandrdubyna88/wsl_care/commit/dd543b75b3c9881f57700540c52afe33bc6010d7))
+* **extension:** E10.S2c — the Logs page names the archive runs, tested against run goldens the daemon's engine writes ([#114](https://github.com/oleksandrdubyna88/wsl_care/issues/114)) ([befb57a](https://github.com/oleksandrdubyna88/wsl_care/commit/befb57a07ece7ed9c068a821e7fe1a35eae784a1))
+
+
+### Bug Fixes
+
+* **extension:** an archive agent row reads as one line ([#120](https://github.com/oleksandrdubyna88/wsl_care/issues/120)) ([73e99f0](https://github.com/oleksandrdubyna88/wsl_care/commit/73e99f0202ed21ba5a58d57ed764bce060aba702))
+* **extension:** the badge said once and coloured; a label and its value read as one text ([#121](https://github.com/oleksandrdubyna88/wsl_care/issues/121)) ([1a9d8f6](https://github.com/oleksandrdubyna88/wsl_care/commit/1a9d8f613fef8c1c922b377a7c6bb2e49837a8e7))
+* **extension:** the badge says what is at risk ([#123](https://github.com/oleksandrdubyna88/wsl_care/issues/123)) ([32badfa](https://github.com/oleksandrdubyna88/wsl_care/commit/32badfa1f0e4ee693efdb26cd6138769836857ae))
+
 ## [0.5.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.4.0...extension-v0.5.0) (2026-10-11)
 
 
