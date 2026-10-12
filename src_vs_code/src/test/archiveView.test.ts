@@ -64,11 +64,11 @@ test('the retention badge shows EXACTLY when the agent\'s own retention is below
   const agent = (days: number, known: boolean, age: number): Record<string, unknown> => ({ retention: { known, days }, effectiveAgeDays: age });
   assert.equal(retentionBadge(agent(30, true, 14)), '', 'retention above the age');
   assert.equal(retentionBadge(agent(14, true, 14)), '', 'equal: the archive takes them on the same day the agent would delete them');
-  assert.equal(retentionBadge(agent(7, true, 14)), 'before the archive takes them at 14 d', 'the retention beside it already says "after 7 d" — never said twice');
+  assert.equal(retentionBadge(agent(7, true, 14)), 'sessions are deleted before the archive takes them at 14 d', 'the retention beside it says "after 7 d"; the badge says what is at risk — sessions — and never repeats the retention');
   assert.equal(retentionBadge(agent(7, false, 14)), '', 'an unknown retention says nothing it does not know');
   const preview = goldenFile('archive-preview.json');
   const agents = goldenAgents().map((agent, i) => (i === 0 ? { ...agent, retention: { known: true, days: 7, source: 's' } } : agent));
-  assert.equal(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0]?.badge, 'before the archive takes them at 14 d');
+  assert.equal(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0]?.badge, 'sessions are deleted before the archive takes them at 14 d');
 });
 
 test('a daemon without the archive capability: said, and every button greyed; before any status: checking, greyed', () => {
@@ -184,7 +184,7 @@ test('a row with the retention badge sets the badge apart too', () => {
   const agents = goldenAgents().map((agent, i) => (i === 0 ? { ...agent, retention: { known: true, days: 7, source: 's' } } : agent));
   const rows = renderedAgentRowElements(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })));
   assert.equal(rows[0]?.one('span[data-retention-badge]').dataset.level, 'warn', 'the badge keeps its own span and its warn level (plan round #0)');
-  assert.equal(rows[0]?.textContent, 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 7 d — before the archive takes them at 14 d', 'the retention is said once (the follow-up to #120, #1)');
+  assert.equal(rows[0]?.textContent, 'Claude Code — 1 session · 2 files · 200 B older than 14 d — its own cleanup deletes after 7 d — sessions are deleted before the archive takes them at 14 d', 'the retention is said once (the follow-up to #120, #1)');
 });
 
 // ---- the follow-up to #120, #2: the badge's warn level is shown in the editor's warning colour, and the word stays ----
@@ -202,7 +202,7 @@ test('the badge\'s warn level has the editor\'s warning colour (a theme token) �
   const preview = goldenFile('archive-preview.json');
   const agents = goldenAgents().map((agent, i) => (i === 0 ? { ...agent, retention: { known: true, days: 7, source: 's' } } : agent));
   const badge = renderedAgentRowElements(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })))[0]?.one('span[data-retention-badge]');
-  assert.equal(badge?.textContent, 'before the archive takes them at 14 d');
+  assert.equal(badge?.textContent, 'sessions are deleted before the archive takes them at 14 d');
   // The rule's selector, part by part, on the RENDERED badge (the harness matches one attribute at a time; the plan round's #0):
   // a SPAN, with data-retention-badge (found by it above), with data-level="warn".
   assert.equal(badge?.tagName, 'SPAN');

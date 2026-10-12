@@ -4749,7 +4749,7 @@ below.
 
 ##### E10.S1 follow-up 2 — the badge said once and coloured, a label and its value set apart
 
-> Status: **built 2026-10-11 on `fix/wc-badge-and-line-separators` — the code round (proceed) and the own review on Opus done, every suite green; merge next (see *As built* below).** Branch `fix/wc-badge-and-line-separators`, from `main` 73e99f0 (#120
+> Status: **merged 2026-10-11, #121 (squash 1a9d8f6) — the code round (proceed) and the own review on Opus done, every suite green (see *As built* below).** Branch `fix/wc-badge-and-line-separators`, from `main` 73e99f0 (#120
 > merged). Extension only (`src/archive/archiveView.ts`, `media/panel.css`, `media/archive.js`, `media/logs.js`, their tests); not a
 > root path, so the own review runs on Opus. The three items #120's own review found outside its change.
 
@@ -4809,7 +4809,41 @@ line; #3 accepted — the badge joins the panel's existing warn rule (one select
 out of the rule) → 1 red, C2 now splits the badge into a rule of its own with another token; #4 (the cleanup row's tick, button and
 note run together in `textContent`) noted for the shared kit, not this change. #1 rejected for this PR: "them" in "before the archive
 takes them at 14 d" has no noun of its own — the coordinator set this exact text; a wording with the noun ("sessions go before the
-archive takes them at 14 d") is left to the owner.
+archive takes them at 14 d") is left to the owner — decided by the coordinator in *follow-up 3* below.
+
+##### E10.S1 follow-up 3 — the badge says what is at risk
+
+> Status: **built 2026-10-11 on `fix/wc-badge-says-sessions` — the code round (proceed) and the own review on Opus done, every suite green; merge next (see *As built* below).** Branch `fix/wc-badge-says-sessions`, from `main` 1a9d8f6 (#121 merged).
+> Extension only (`src/archive/archiveView.ts`, `src/test/archiveView.test.ts`); not a root path, so the own review runs on Opus.
+
+**The symptom.** Since follow-up 2 the badge reads "before the archive takes them at 14 d". "Them" has no noun of its own: the
+retention beside it ("its own cleanup deletes after 7 d") names none, and the likely row is "Claude Code — nothing older than 14 d —
+its own cleanup deletes after 7 d — before the archive takes them at 14 d", where "them" points at "nothing". The badge is the one
+coloured part, and its words alone do not say what is at risk (follow-up 2's own review, #1).
+
+**The fix (the coordinator's decision).** `retentionBadge` (`src/archive/archiveView.ts:184-189`) answers "sessions are deleted
+before the archive takes them at <N> d". The row reads "… — its own cleanup deletes after 7 d — sessions are deleted before the
+archive takes them at 14 d". The rule of WHEN it shows, the span, the `warn` level and the colour do not change.
+
+**Tests (RED first, whole texts).** `archiveView.test.ts`: the badge text, the badge in the derived view, the WHOLE badge row's
+`textContent`, and the badge's words in the colour test. RED on `main` (3 tests): "actual: 'before the archive takes them at 14 d'"
+and the whole row "… — its own cleanup deletes after 7 d — before the archive takes them at 14 d". Break-it on the product line:
+the badge's follow-up-2 text.
+
+**Build order:** the RED tests → the badge text → the whole extension suite, lint, package, check:vsix → `research/module_vs_code.md`,
+`research/module_tests.md` → the code round and the own review → merge; follow-up 2's status line reads merged (#121).
+
+**DoD:** the tests green and red under the break-it; every extension suite and check green; the docs say the badge's text.
+
+**The plan round** (coai session 41a4fc73, `proceed`, codex, no findings).
+
+**As built (2026-10-11).** As planned. RED first (3 tests, the texts above); break-it D1 (the follow-up-2 text back) → 3 red, restored
+by its sha256. The whole extension suite (1248 tests, 0 failed), lint, package and check:vsix (with the attested Windows daemon
+fetched) green.
+
+**The code round** (coai session 41a4fc73, `proceed`, no findings). **The own review on Opus** (3 findings, all low, docs): the
+`module_tests.md` row names its three tests; the follow-up-2 row points at the new text; follow-up 2's "left to the owner" points
+here.
 
 ##### E10.S2a build notes — the Archive page, browse only
 

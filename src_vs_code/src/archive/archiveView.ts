@@ -185,7 +185,7 @@ export function retentionBadge(agent: Body): string {
   const retention = retentionOf(agent);
   const age = count(agent, 'effectiveAgeDays');
 
-  return retention.known && retention.days < age ? `before the archive takes them at ${age} d` : '';
+  return retention.known && retention.days < age ? `sessions are deleted before the archive takes them at ${age} d` : '';
 }
 
 function agentLine(agent: Body): ArchiveAgentLine {
