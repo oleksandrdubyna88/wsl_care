@@ -20,15 +20,44 @@ function verdict(body: Body, id: string, level: string): Body {
   return body;
 }
 
-test('over the head golden: RAM used, swap, containers — short — and uncoloured, because every RELEVANT verdict is ok', () => {
+/** The head golden with its one relevant warning (E15.S5: the captured full run's `host.compression`, 9.86 GiB) set to ok — the
+ * calm machine the tests below colour one verdict at a time. */
+function calm(): Body {
+  return verdict(headBody('status'), 'host.compression', 'ok');
+}
+
+test('over the head golden: RAM used, swap, containers — short — and coloured warn by the full run\'s host.compression (E15.S5)', () => {
   const view = barView(answered('status', headBody('status')));
   assert.equal(view.text, 'WSL RAM 33% · swap 0.0G · 10 containers');
-  assert.equal(view.level, 'none');
+  assert.equal(view.level, 'warn');
+  assert.match(view.tooltip, /host\.compression: warn — 9\.86 GiB/);
   assert.doesNotMatch(view.tooltip, /update the daemon/);
 });
 
-test('only the verdicts about what the bar shows colour it: the head golden carries clock / systemd / collector warnings and stays uncoloured', () => {
-  const body = headBody('status');
+test('across the boundary (E15.S5): the HEAD GOLDEN the real daemon wrote carries host.commit and host.compression from the full run, and the bar colours from them', () => {
+  const verdicts = headBody('status').verdicts as { id: string; level: string; value?: string; basis?: { source?: string } }[];
+  const commit = verdicts.find((v) => v.id === 'host.commit');
+  const compression = verdicts.find((v) => v.id === 'host.compression');
+  assert.equal(commit?.level, 'ok');
+  assert.equal(commit?.value, '103.4 of 145.6 GiB = 71.0 %');
+  assert.equal(commit?.basis?.source, 'fullRun');
+  assert.equal(compression?.level, 'warn');
+  assert.equal(compression?.basis?.source, 'fullRun');
+  assert.ok(RELEVANT_VERDICT_PREFIXES.includes('host.'));
+  assert.equal(barView(answered('status', calm())).level, 'none', 'with the compression calm, nothing else relevant warns');
+});
+
+test('Windows memory pressure (E15.S5: host.commit, host.compression, host.vmmem) colours the bar — warn and critical — and names the verdict', () => {
+  const warn = barView(answered('status', verdict(calm(), 'host.commit', 'warn')));
+  assert.equal(warn.level, 'warn');
+  assert.match(warn.tooltip, /host\.commit: warn — 103\.4 of 145\.6 GiB = 71\.0 %/);
+  assert.equal(barView(answered('status', verdict(calm(), 'host.commit', 'critical'))).level, 'critical');
+  assert.equal(barView(answered('status', verdict(calm(), 'host.vmmem', 'warn'))).level, 'warn');
+  assert.equal(barView(answered('status', verdict(calm(), 'host.vmmem', 'unknown'))).level, 'none', 'the full run does not read vmmem: unknown colours nothing');
+});
+
+test('only the verdicts about what the bar shows colour it: the head golden carries clock / systemd / collector warnings, and with its host verdict calm it stays uncoloured', () => {
+  const body = calm();
   const warnings = (body.verdicts as { id: string; level: string }[]).filter((v) => v.level === 'warn').map((v) => v.id);
   // systemd.wslPro, not systemd.failedUnits: the captured failed unit is getty@tty1.service, ignored by default since 2026-10-12.
   assert.ok(warnings.includes('clock.jumps') && warnings.includes('systemd.wslPro') && warnings.includes('collectors.sysstat'), warnings.join(', '));
@@ -37,7 +66,7 @@ test('only the verdicts about what the bar shows colour it: the head golden carr
 });
 
 test('a memory warning colours the bar warn, a critical memory or kernel verdict colours it critical — the worst wins', () => {
-  assert.equal(barView(answered('status', verdict(headBody('status'), 'memory.swap', 'warn'))).level, 'warn');
+  assert.equal(barView(answered('status', verdict(calm(), 'memory.swap', 'warn'))).level, 'warn');
   assert.equal(barView(answered('status', verdict(headBody('status'), 'memory.available', 'critical'))).level, 'critical');
   assert.equal(barView(answered('status', verdict(headBody('status'), 'kernel.oomKills', 'critical'))).level, 'critical');
   const both = verdict(verdict(headBody('status'), 'memory.swap', 'warn'), 'memory.fragmentation', 'critical');
@@ -45,22 +74,22 @@ test('a memory warning colours the bar warn, a critical memory or kernel verdict
 });
 
 test('a busy machine (E14 S6: pressure.cpu or pressure.io warn) colours the bar warn and names the pressure', () => {
-  const view = barView(answered('status', verdict(headBody('status'), 'pressure.cpu', 'warn')));
+  const view = barView(answered('status', verdict(calm(), 'pressure.cpu', 'warn')));
   assert.equal(view.level, 'warn');
   assert.match(view.tooltip, /pressure\.cpu: warn/);
-  assert.equal(barView(answered('status', verdict(headBody('status'), 'pressure.io', 'warn'))).level, 'warn');
+  assert.equal(barView(answered('status', verdict(calm(), 'pressure.io', 'warn'))).level, 'warn');
 });
 
 test('swap running out (E14 S5: memory.swapFree) colours the bar; promised memory (memory.committed) does not — it is a promise, not a state the bar shows', () => {
-  assert.equal(barView(answered('status', verdict(headBody('status'), 'memory.swapFree', 'warn'))).level, 'warn');
-  const promised = barView(answered('status', verdict(headBody('status'), 'memory.committed', 'warn')));
+  assert.equal(barView(answered('status', verdict(calm(), 'memory.swapFree', 'warn'))).level, 'warn');
+  const promised = barView(answered('status', verdict(calm(), 'memory.committed', 'warn')));
   assert.equal(promised.level, 'none');
   assert.doesNotMatch(promised.tooltip, /memory\.committed/);
 });
 
 test('the virtual-disk verdicts (E15.S2: disk.vhdxGap, disk.vhdxGrowth, disk.hostFree) do not colour the bar — the panel shows them', () => {
   for (const id of ['disk.vhdxGap', 'disk.vhdxGrowth', 'disk.hostFree']) {
-    const view = barView(answered('status', verdict(headBody('status'), id, 'warn')));
+    const view = barView(answered('status', verdict(calm(), id, 'warn')));
     assert.equal(view.level, 'none', id);
     assert.ok(!view.tooltip.includes(id), id);
   }
@@ -72,7 +101,7 @@ test('the tooltip names each relevant verdict that is not ok, with its figure', 
 });
 
 test('an unknown level does not colour the bar', () => {
-  assert.equal(barView(answered('status', verdict(headBody('status'), 'memory.swap', 'unknown'))).level, 'none');
+  assert.equal(barView(answered('status', verdict(calm(), 'memory.swap', 'unknown'))).level, 'none');
 });
 
 test('a daemon without verdicts: uncoloured, and the tooltip says to update the daemon to see warnings', () => {
