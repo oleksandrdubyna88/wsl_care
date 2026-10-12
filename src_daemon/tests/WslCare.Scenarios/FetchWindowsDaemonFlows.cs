@@ -42,7 +42,7 @@ public sealed class FetchWindowsDaemonFlows
     private sealed record World(TempRoot Root, string Assets, string Out, string Log, Dictionary<string, string?> Env);
 
     /// <summary>A release folder the fake gh serves, an output folder with a STALE exe in bin/, and the fake on PATH.</summary>
-    private static World Make(TempRoot root, int attestExit = 0)
+    private static World Make(TempRoot root, int attestExit = 0, int downloadFails = 0)
     {
         var assets = root.Dir("release");
         var output = root.Dir("out");
@@ -54,6 +54,9 @@ public sealed class FetchWindowsDaemonFlows
             echo "$*" >> "$FAKE_GH_LOG"
             case "$1 $2" in
               "release download")
+                n=$(cat "$FAKE_GH_LOG.downloads" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE_GH_LOG.downloads"
+                if [ "$n" -le "$FAKE_GH_DOWNLOAD_FAILS" ]; then echo "release not found" >&2; exit 1; fi
+                if [ "$n" -le "$FAKE_GH_DOWNLOAD_HANGS" ]; then sleep 120; fi
                 dir=""; prev=""
                 for arg in "$@"; do [ "$prev" = "--dir" ] && dir="$arg"; prev="$arg"; done
                 prev=""
@@ -78,6 +81,10 @@ public sealed class FetchWindowsDaemonFlows
             ["FAKE_GH_LOG"] = log,
             ["FAKE_GH_ASSETS"] = assets,
             ["FAKE_GH_ATTEST"] = attestExit.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["FAKE_GH_DOWNLOAD_FAILS"] = downloadFails.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["FAKE_GH_DOWNLOAD_HANGS"] = "0",
+            // The flows never wait between attempts; the attempt count stays the script's default unless a test sets it.
+            ["WSL_CARE_FETCH_BACKOFF_SECONDS"] = "0",
         };
         return new World(root, assets, output, log, env);
     }
@@ -199,6 +206,7 @@ public sealed class FetchWindowsDaemonFlows
         result.Exit.Should().Be(1, result.Stdout + result.Stderr);
         NothingIn(world);
         File.ReadAllText(world.Log).Should().NotContain("attestation verify");
+        Downloads(world).Should().Be(1, "a wrong checksum is not transient: only the download is ever retried");
     }
 
     [Fact]
@@ -228,6 +236,7 @@ public sealed class FetchWindowsDaemonFlows
         result.Exit.Should().Be(1, result.Stdout + result.Stderr);
         result.Stdout.Should().Contain("carries no attestation by release.yml at daemon-v0.3.0");
         NothingIn(world);
+        Downloads(world).Should().Be(1, "a refused attestation is not transient: only the download is ever retried");
     }
 
     [Fact]
@@ -256,6 +265,95 @@ public sealed class FetchWindowsDaemonFlows
 
         result.Exit.Should().Be(1, result.Stdout + result.Stderr);
         result.Stdout.Should().Contain("is daemon 0.3.0 published with its win-x64 asset?");
+        NothingIn(world);
+    }
+
+    // ---- The bounded retry of the download (PR #124's CI leg failed once on "release not found" for a release that exists) ----
+
+    private static int Downloads(World world) =>
+        File.ReadAllLines(world.Log).Count(line => line.StartsWith("release download ", StringComparison.Ordinal));
+
+    [Fact]
+    public async Task A_download_that_fails_then_succeeds_is_retried_and_every_attempt_is_logged()
+    {
+        Runnable();
+        using var root = new TempRoot("fetch-retry");
+        var world = Make(root, downloadFails: 2);
+        Publish(world, SevenZipShape());
+        world.Env["WSL_CARE_FETCH_ATTEMPTS"] = "3";
+
+        var result = await FetchAsync(world);
+
+        result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+        Downloads(world).Should().Be(3, "two failed attempts, then the one that worked");
+        (result.Stdout + result.Stderr).Should().Contain("download attempt 1 of 3 failed").And.Contain("download attempt 2 of 3 failed");
+        result.Stderr.Should().Contain("download attempt 3 of 3 started (limit ", "a stalled attempt is never silent: its start is said before it runs (coai code round)");
+        File.ReadAllBytes(Path.Combine(world.Out, "bin", "wsl-care.exe")).Should().Equal(Exe);
+    }
+
+    [Fact]
+    public async Task A_download_that_fails_every_attempt_is_refused_after_the_last_and_leaves_nothing()
+    {
+        Runnable();
+        using var root = new TempRoot("fetch-retry-out");
+        var world = Make(root, downloadFails: 9);
+        Publish(world, SevenZipShape());
+        world.Env["WSL_CARE_FETCH_ATTEMPTS"] = "3";
+
+        var result = await FetchAsync(world);
+
+        result.Exit.Should().Be(1, result.Stdout + result.Stderr);
+        Downloads(world).Should().Be(3, "the attempts are bounded");
+        result.Stdout.Should().Contain("is daemon 0.3.0 published with its win-x64 asset?");
+        NothingIn(world);
+    }
+
+    /// <summary>The coai plan round: a download that HANGS (a network stall) must still end its attempt — each attempt is bounded by
+    /// <c>timeout</c>, as <c>wait-marketplace-served.sh</c> bounds its own — and the next attempt goes on.</summary>
+    [Fact]
+    public async Task A_download_that_hangs_is_ended_at_its_attempt_limit_and_the_next_attempt_goes_on()
+    {
+        Runnable();
+        using var root = new TempRoot("fetch-retry-hang");
+        var world = Make(root);
+        Publish(world, SevenZipShape());
+        world.Env["FAKE_GH_DOWNLOAD_HANGS"] = "1";
+        world.Env["WSL_CARE_FETCH_ATTEMPTS"] = "2";
+        world.Env["WSL_CARE_FETCH_ATTEMPT_SECONDS"] = "2";
+        world.Env["WSL_CARE_FETCH_KILL_GRACE_SECONDS"] = "1";
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await FetchAsync(world);
+
+        result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+        clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "the hung attempt was ended near its 2 s limit, not after the fake's 120 s sleep");
+        Downloads(world).Should().Be(2);
+        result.Stderr.Should().Contain("download attempt 1 of 2 failed (exit 124)", "timeout's own code names the ended attempt");
+    }
+
+    [Theory]
+    [InlineData("WSL_CARE_FETCH_ATTEMPT_SECONDS", "0")]
+    [InlineData("WSL_CARE_FETCH_ATTEMPT_SECONDS", "3601")]
+    [InlineData("WSL_CARE_FETCH_KILL_GRACE_SECONDS", "0")]
+    [InlineData("WSL_CARE_FETCH_KILL_GRACE_SECONDS", "61")]
+    [InlineData("WSL_CARE_FETCH_ATTEMPTS", "0")]
+    [InlineData("WSL_CARE_FETCH_ATTEMPTS", "eleven")]
+    [InlineData("WSL_CARE_FETCH_ATTEMPTS", "11")]
+    [InlineData("WSL_CARE_FETCH_BACKOFF_SECONDS", "-1")]
+    [InlineData("WSL_CARE_FETCH_BACKOFF_SECONDS", "301")]
+    public async Task A_retry_setting_out_of_range_is_a_usage_error_and_nothing_is_downloaded(string name, string value)
+    {
+        Runnable();
+        using var root = new TempRoot("fetch-retry-usage");
+        var world = Make(root);
+        Publish(world, SevenZipShape());
+        world.Env[name] = value;
+
+        var result = await FetchAsync(world);
+
+        result.Exit.Should().Be(2, result.Stdout + result.Stderr);
+        result.Stderr.Should().Contain(name);
+        File.Exists(world.Log).Should().BeFalse("a bad setting is refused before gh is asked anything");
         NothingIn(world);
     }
 
