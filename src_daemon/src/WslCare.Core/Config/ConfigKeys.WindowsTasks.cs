@@ -6,7 +6,7 @@ namespace WslCare.Core.Config;
 /// unelevated runner's own user layer is the natural place for them (the plan's Q2).</summary>
 public static partial class ConfigKeys
 {
-    public static partial class WindowsTasks
+    public static class WindowsTasks
     {
         /// <summary>The <c>\wsl-care\watch</c> task starts this many seconds after the person logs on, then repeats every
         /// <c>mcpWatchdog.periodMinutes</c>. A longer delay only starts the sampling later, so a user layer may only lengthen it.
