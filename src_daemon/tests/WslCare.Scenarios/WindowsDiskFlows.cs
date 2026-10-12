@@ -7,6 +7,7 @@ using WslCare.Cli;
 using WslCare.Core.Collect;
 using WslCare.Core.Health;
 using WslCare.Core.Json;
+using WslCare.Core.Processes;
 using WslCare.Core.Records;
 using WslCare.FakeTool;
 using WslCare.TestSupport;
@@ -98,8 +99,14 @@ public sealed class WindowsDiskFlows
     public async Task A_probe_that_verified_the_msi_pwsh_makes_collect_run_the_disk_script_under_pwsh_and_the_detail_names_it()
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "the disk script runs in the distro: the Linux legs");
+        var fixedFolder = string.Empty;
         using var home = CollectFlows.Captured("collect-windows-disk-pwsh", first: h =>
         {
+            // The fake MSI pwsh lives in its fixed folder on the SANDBOX's drive (the unprivileged sandbox's seam); the fake on
+            // PATH (every tool of the protocol is there) is the decoy that must never answer.
+            fixedFolder = Path.Combine(h.SandboxRoot, "mnt", "c", WindowsSystemDrive.Programs[HealthCommands.Pwsh]);
+            Directory.CreateDirectory(fixedFolder);
+            ScenarioHome.InstallFakes(fixedFolder, [Pwsh]);
             h.Answer(new FakeAnswer(PowerShell, HealthCommands.WindowsClock.Arguments, 0, h.WriteFile("powershell-clock-verified.out", PwshEngineFixture.Verified), string.Empty));
             h.Script(Pwsh, WindowsDiskCommands.WindowsDiskUnderPwsh.Arguments, 0, $"health/{WindowsDiskFixture.Name}/{WindowsDiskFixture.AnswerFile}");
         });
@@ -113,6 +120,7 @@ public sealed class WindowsDiskFlows
         disk.Engine!.Program.Should().Be("/mnt/c/Program Files/PowerShell/7/pwsh.exe");
         disk.Engine.Reason.Should().Contain("verified");
         home.Calls.Count(IsDiskScriptUnderPwsh).Should().Be(1, "once per full run, under pwsh");
+        Path.GetFullPath(home.Calls.Single(IsDiskScriptUnderPwsh).Location).TrimEnd('/').Should().Be(Path.GetFullPath(fixedFolder).TrimEnd('/'), "the fixed-folder file answered, never the pwsh.exe on PATH");
         home.Calls.Should().NotContain(c => IsDiskScript(c), "never also under powershell");
         home.Calls.Should().Contain(c => IsClockProbe(c), "the clock probe always runs under Windows PowerShell 5.1");
         home.Calls.Should().NotContain(c => c.Tool == Pwsh && !IsDiskScriptUnderPwsh(c), "pwsh runs the disk script and nothing else");

@@ -357,10 +357,21 @@ flowchart LR
   pwsh only when the known folder is EXACTLY `C:\Program Files`, the environment's `ProgramFiles` agrees (case-insensitive),
   the item is a `file` and it is `signed`; anything else, a failed probe and a probe from before the tags give 5.1 with the
   reason. `HealthCollector.CollectAsync` chooses after the clock probe and its reference (the MSI file named under the
-  automount root `/etc/wsl.conf` sets) and runs `WindowsDiskCommands.Under(engine)`. The started program is always the BARE
-  `pwsh.exe`; the resolver finds it on PATH or in its one fixed folder on the system drive
-  (`WindowsSystemDrive.Programs`: `pwsh.exe` → `Program Files/PowerShell/7`, the same file checks as `powershell.exe`). Never
-  the Store package: it is an app-execution alias under the USER's profile, a file the Windows user can replace.
+  automount root `/etc/wsl.conf` sets) and runs `WindowsDiskCommands.Under(engine)`. The argv names the BARE `pwsh.exe` (what
+  the policy judges); the resolver maps it ONLY to its one fixed folder on the mounted system drive
+  (`WindowsSystemDrive.Programs`: `pwsh.exe` → `Program Files/PowerShell/7`, through the same mount, interop, ancestor and
+  file checks as `powershell.exe`) and NEVER to PATH, with or without a PATH entry (`WindowsSystemDrive.FixedFolderOnly`,
+  `ExecutableResolver.OnPath`). The reason: a root collect through `wsl.exe -u root` inherits the Windows PATH, whose user
+  part holds the Store package's alias — a file the Windows user can replace — so the daemon never starts the Store package
+  or its alias, only the verified MSI file. On the Windows binary a `pwsh.exe` lookup answers "never from PATH" too.
+  `powershell.exe` keeps PATH first.
+- **The scenario seam (E15.S1b).** The scenario harness reaches its fakes through PATH, which `pwsh.exe` never uses. So the
+  product's runner asks `SystemDriveLookup.ForThisProcess`: `ThisMachine`, except for a process that is inside a sandbox
+  (`WSL_CARE_ROOT`) AND not really privileged, which gets `SystemDriveLookup.Sandboxed` — `<sandbox>/mnt/c`, interop taken as
+  enabled, a program startable when it is a regular file (no link) this account may start. A real root process (the timer,
+  or a root collect whose environment the Windows user reaches through `WSLENV`) never trusts a folder an environment
+  variable names. `WindowsDiskFlows` plants the fake pwsh in the sandbox's fixed folder and a decoy on PATH, and asserts the
+  fixed-folder file answered.
 - **The Storage import (E15.S1b, measured 2026-10-12).** With the module path pinned to `$PSHOME\Modules`, pwsh 7 has no
   `Get-Volume`, `Get-Partition`, `Get-PhysicalDisk` or `Get-StorageReliabilityCounter`: under the Store pwsh 7.6.6 the script
   answered `volumes.error`, `disks.error` and `reliability.refused` = `CommandNotFoundException`. So right after the pin the

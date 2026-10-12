@@ -365,7 +365,8 @@ ceiling is `health.windowsDiskTimeoutSeconds` (30).
 System32). The disk script runs under the MSI PowerShell 7 (`C:\Program Files\PowerShell\7\pwsh.exe`) when the clock probe
 verified it in the same run — a real file (no link) under the known Program Files folder, which the environment's
 `ProgramFiles` names too, with a valid Authenticode signature from Microsoft — and under Windows PowerShell 5.1 otherwise.
-The Store build of `pwsh` and its alias are never used: they are files the Windows user can replace. The run detail says
+The Store build of `pwsh` and its alias are never used: they are files the Windows user can replace. So `pwsh.exe` is
+never taken from `PATH`: the daemon starts it only from `Program Files/PowerShell/7` on the mounted system drive. The run detail says
 which one ran and why, in `health.windowsDisk.engine` (`program`, `reason`). Both engines run the same fixed script; it pins
 the module path and imports the Storage module from System32 by its absolute path, because pwsh 7 has none of its own.
 

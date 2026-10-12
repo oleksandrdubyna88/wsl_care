@@ -49,7 +49,8 @@ public abstract record ResolvedExecutable
 /// drive <see cref="WindowsSystemDrive"/> finds in mountinfo, only when WSL interop is enabled, and started only when
 /// every check <see cref="SystemDriveFiles"/> lists holds; the whole lookup runs under
 /// <see cref="WindowsSystemDrive.Ceiling"/>, and one that does not answer is a named refusal. Nothing else changes:
-/// <c>PATH</c> still wins, every other name is PATH-only, and the argv the <see cref="Policy.CommandPolicy"/> judges still
+/// <c>PATH</c> still wins (except for <see cref="WindowsSystemDrive.FixedFolderOnly"/>, E15.S1b: the MSI <c>pwsh.exe</c> comes from
+/// its fixed folder ONLY, never from PATH), every other name is PATH-only, and the argv the <see cref="Policy.CommandPolicy"/> judges still
 /// names the BARE program — the resolved absolute path is only what <c>Process.Start</c> receives, never re-resolved.</para>
 /// </remarks>
 public static class ExecutableResolver
@@ -60,7 +61,7 @@ public static class ExecutableResolver
     /// <summary>Resolves against this process's <c>PATH</c>, by this platform's rules — inside the distro falling back to
     /// the mounted Windows system drive for the programs <see cref="WindowsSystemDrive.Programs"/> names.</summary>
     public static ResolvedExecutable Resolve(string name, CancellationToken cancellationToken = default) =>
-        Resolve(name, Environment.GetEnvironmentVariable("PATH"), OperatingSystem.IsWindows(), SystemDriveLookup.ThisMachine, cancellationToken);
+        Resolve(name, Environment.GetEnvironmentVariable("PATH"), OperatingSystem.IsWindows(), SystemDriveLookup.ForThisProcess, cancellationToken);
 
     /// <summary>Resolves <paramref name="name"/> against <paramref name="pathVariable"/> ALONE by the rules of the platform
     /// <paramref name="windows"/> names (the file checks are this machine's) — the Windows system drive is not consulted.</summary>
@@ -85,7 +86,7 @@ public static class ExecutableResolver
             return new ResolvedExecutable.NotFound($"{name} is a relative path; only a bare name (looked up on PATH) or an absolute path is started");
         }
 
-        var onPath = ResolveIn(name, Directories(pathVariable, windows), windows);
+        var onPath = OnPath(name, pathVariable, windows);
         return onPath is ResolvedExecutable.NotFound notOnPath ? OrOnTheSystemDrive(name, windows, systemDrive, notOnPath, cancellationToken) : onPath;
     }
 
@@ -107,6 +108,16 @@ public static class ExecutableResolver
             ? new ResolvedExecutable.Found(found)
             : new ResolvedExecutable.NotFound(NotFoundReason(name, usable.Count, windows));
     }
+
+    /// <summary>
+    /// <paramref name="name"/> on PATH — except a program <see cref="WindowsSystemDrive.FixedFolderOnly"/> names (E15.S1b: the MSI
+    /// <c>pwsh.exe</c>), which is NEVER taken from PATH, with or without a PATH entry: a root collect through <c>wsl.exe -u root</c>
+    /// inherits the Windows PATH, whose user part holds the Store package's alias, a file the Windows user can replace.
+    /// </summary>
+    private static ResolvedExecutable OnPath(string name, string? pathVariable, bool windows) =>
+        WindowsSystemDrive.FixedFolderOnly.Contains(name, StringComparer.Ordinal)
+            ? new ResolvedExecutable.NotFound($"{name} is started only from its one fixed folder on the Windows system drive, never from PATH")
+            : ResolveIn(name, Directories(pathVariable, windows), windows);
 
     private static bool IsBareName(string name, bool windows) => name.Length > 0 && !HasADirectory(name, windows) && !Path.IsPathFullyQualified(name);
 

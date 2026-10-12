@@ -1300,7 +1300,7 @@ fails on CI. That is S3's work, not a new story.
 
 ## E15.S1b as built (2026-10-12, branch `feat/wc-e15s1b-msi-pwsh`)
 
-**Models.** S1 and S2: Fable. The split into five stories: Fable. S3, S4 and S5: Opus.
+**Models.** S1 and S2: Fable. The split into five stories: Fable. S3, S4, S5 and the fixed-folder rule: Opus.
 
 **What shipped.**
 - **S1 — the probe.** The clock probe (Windows PowerShell 5.1) looks at `<known folder>\PowerShell\7\pwsh.exe` AFTER its two
@@ -1345,6 +1345,12 @@ legs). Linux (WSL `Ubuntu`, the copy `/tmp/wc-e15s1b-linux-20261012T104403Z`): C
 `HOME` to a folder named `home`, and the test takes HOME's last segment as this machine's user name, which many tracked
 files contain. Rerun with a neutral `HOME`: 57 of 57 green, and `WindowsDiskFlows` 3 of 3. No golden changed: no golden
 holds the Windows disk section's engine.
+Totals after the fixed-folder rule and the rebase onto main (2026-10-12): Windows Core 2685 (0 failed, 87 skipped), Cli 391
+(0 failed, 2 skipped), Scenarios 610 (0 failed, 284 skipped). Linux (a new copy, `/tmp/wc-e15s1b-linux-20261012T184232Z`; the
+first folder was gone after WSL restarted with the session): Core 2685 (0 failed, 27 skipped), Cli 391 (0 failed, 12 skipped),
+Scenarios 610 (2 failed, 5 skipped). The two failures are `StatusFlows` time budgets on the loaded machine (3.40 s against
+3 s; 2.004 s against 2 s) — `status` starts no PowerShell and this story does not touch it; CI is the authority for them.
+`WindowsDiskFlows` 3 of 3 green there.
 
 **Deviations.**
 1. **The Storage import joins with `[IO.Path]::Combine`, not `Join-Path`.** The split named the extension's G6 road, which
@@ -1360,15 +1366,32 @@ holds the Windows disk section's engine.
    own `Arguments`. Its ceiling is 120 s (a cold pwsh on a CI runner), not the product's 30 s.
 4. **`WindowsDiskCommands.Under(engine)`** is the one place that maps an engine to a command (the split named it in S4's
    *What*; it is a pure static function).
+5. **The fixed-folder rule (the coordinator, after S4).** The first build left "PATH still wins for `pwsh.exe`" open. It is
+   closed in this story, in the smallest sound shape: the RESOLVER never takes `pwsh.exe` from PATH, with or without a PATH
+   entry (`WindowsSystemDrive.FixedFolderOnly`, `ExecutableResolver.OnPath`); it finds it ONLY in `Program Files/PowerShell/7`
+   on the mounted system drive, through the same mount, interop, ancestor and file checks as `powershell.exe`'s fallback. On
+   the Windows binary a `pwsh.exe` lookup answers "never from PATH" too. The argv still names the BARE `pwsh.exe` (the
+   coordinator's point 2 asked for the absolute engine path in the argv): an absolute path passes the resolver unchanged,
+   WITHOUT the system drive's checks (no link, the drive's device, a regular file, `MZ`), so naming it would have traded those
+   checks away. The file started is `<the drive's mount point>/Program Files/PowerShell/7/pwsh.exe` — the file the engine
+   names whenever `/etc/wsl.conf`'s automount root is where the drive is mounted. The scenario seam:
+   `SystemDriveLookup.ForThisProcess` gives `SystemDriveLookup.Sandboxed` (`<sandbox>/mnt/c`, a regular file, no link) only to
+   a process inside `WSL_CARE_ROOT` that is NOT really privileged; a real root process always asks this machine.
+   RED first: on Linux 5 of 7 `PwshFixedFolderTests` (*Expected type to be …NotFound because the resolver answered Found {
+   Path = /tmp/…/windowsapps/pwsh.exe, OnTheSystemDrive = False }*; *Expected resolved to be …Found { Path = /mnt/c/Program
+   Files/PowerShell/7/pwsh.exe, OnTheSystemDrive = True }*; the sandbox theory *… to be True … but found False*) and the
+   scenario (*Expected Path.GetFullPath(home.Calls.Single(IsDiskScriptUnderPwsh).Location) … to be the same string because the
+   fixed-folder file answered, never the pwsh.exe on PATH, but they differ at index 82* — the PATH decoy answered); on Windows
+   2 of 3 that run there. Break-its (product code, each restored): `pwsh.exe` taken from PATH again → 5 red on Linux (and the
+   scenario red), 1 on Windows; the sandbox granted to a privileged process too → the theory's privileged case red; the
+   sandbox's link check removed → *In_the_sandbox_a_link_in_the_fixed_folder_is_not_started* red (a guard written after the
+   fix, proved by this break-it).
+
+**Closed.**
+- **"PATH still wins for `pwsh.exe`"** — the first build's open point — is closed by deviation 5: `pwsh.exe` comes from its
+  fixed folder only, never from PATH.
 
 **Open.**
-- **PATH still wins for `pwsh.exe`.** The resolver looks on PATH first and on the system drive second (as for
-  `powershell.exe`). Under the timer, systemd's PATH holds no Windows folder, so the drive's `Program Files/PowerShell/7` is
-  used. A root collect through `wsl.exe -u root` gets the Windows PATH appended; the MSI installer puts its folder in the
-  SYSTEM PATH, which comes before the user's `WindowsApps` (the Store alias). If the MSI build was installed WITHOUT its
-  PATH entry and the Store build is present, that collect would start the Store alias although the probe verified the MSI
-  file. The exposure is the same class as `powershell.exe`'s today. A fix is a resolver rule "a verified program is taken
-  from its fixed folder only"; it is not built here, because the scenario harness reaches the fakes through PATH.
 - **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
   the first CI run on `windows-latest` is the evidence that the selection is safe to ship.
 - **pwsh is slower than 5.1 for this script on the owner's machine** (9–16 s against 6–7 s, the Store build, loaded

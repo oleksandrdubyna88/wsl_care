@@ -81,6 +81,13 @@ public static class WindowsSystemDrive
         [HealthCommands.Pwsh] = "Program Files/PowerShell/7",
     };
 
+    /// <summary>
+    /// The programs that come ONLY from their fixed folder in <see cref="Programs"/> — never from PATH (E15.S1b): the MSI
+    /// <c>pwsh.exe</c>, which the clock probe verified at that folder. On PATH a <c>pwsh.exe</c> is the Store package's alias
+    /// in the user's <c>WindowsApps</c> as often as not; the daemon never starts it. <c>powershell.exe</c> keeps PATH first.
+    /// </summary>
+    public static IReadOnlyList<string> FixedFolderOnly { get; } = [HealthCommands.Pwsh];
+
     /// <summary>The system drive's letter — <see cref="Drive"/>'s first character.</summary>
     private static readonly char DriveLetter = Drive[0];
 
