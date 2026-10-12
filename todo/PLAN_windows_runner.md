@@ -380,3 +380,7 @@ Deviations and decisions the plan did not spell out:
   a path with `&` and `<` escaped and read back — `A_path_with_xml_characters_is_escaped_in_the_xml_and_plain_in_the_summary`);
   the third added the real command line for the archive task (`A_verified_staged_copy_renders_the_archive_task_with_its_own_numbers`).
   The fixtures' profile folder is `C:\Users\user` (the repository's privacy rule).
+- **The coai code round on WR-D1** (same session): proceed, two findings, both accepted. The flow now runs over the BUILT CLI in
+  the product harness (`Scenarios/WindowsTasksRenderFlows`: both tasks answered and not registrable from the build folder, nothing
+  written; the refusal on the Linux legs; break-it: a `Peek` that starts the week turns both red). The week's boundary rule is one
+  function, `DryRunWindow.InWeek`, used by `Decide` and `Peek` alike, so the shown dry state cannot drift from the next run's.

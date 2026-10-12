@@ -98,9 +98,14 @@ public static class DryRunWindow
     {
         (FileReadResult.Missing, _) => new(true, DryWeek.NotStarted, null, "the dry-run week has not started: the first timer or task run starts it"),
         (_, null) => new(true, DryWeek.Restarts, null, $"{File(paths)} could not be read: the next timer or task run restarts the dry-run week"),
-        (_, { At: var at }) when now < at + length => new(true, DryWeek.Running, at + length, $"the first {length.TotalDays:0} days run dry: until {(at + length).UtcDateTime:yyyy-MM-dd HH:mm}Z"),
+        (_, { At: var at }) when InWeek(at, length, now) => new(true, DryWeek.Running, at + length, $"the first {length.TotalDays:0} days run dry: until {(at + length).UtcDateTime:yyyy-MM-dd HH:mm}Z"),
         (_, { At: var at }) => new(false, DryWeek.Passed, null, $"the {length.TotalDays:0} days since the first timer run ({at.UtcDateTime:yyyy-MM-dd}) have passed"),
     };
+
+    /// <summary>The week's ONE boundary rule, for <see cref="Decide"/> and <see cref="Peek"/> alike (the coai code round on WR-D1: a
+    /// change to the boundary must move both, or the shown dry state would disagree with the next run): still dry before the week
+    /// since <paramref name="at"/> has passed.</summary>
+    private static bool InWeek(DateTimeOffset at, TimeSpan length, DateTimeOffset now) => now < at + length;
 
     /// <summary>The stamp, read the one way <see cref="Decide"/> and <see cref="Peek"/> both read it.</summary>
     private static FileReadResult ReadStamp(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths), RootFileCaps.State);
@@ -109,7 +114,7 @@ public static class DryRunWindow
     private static DryRunDecision Week(DateTimeOffset? start, DateTimeOffset now, string note) => start switch
     {
         null => new DryRunDecision(true, $"the start of the dry-run week is not recorded{note}"),
-        { } at when now < at + Length => new DryRunDecision(true, $"the timer's first {Length.TotalDays:0} days run dry: until {(at + Length).UtcDateTime:yyyy-MM-dd HH:mm}Z{note}"),
+        { } at when InWeek(at, Length, now) => new DryRunDecision(true, $"the timer's first {Length.TotalDays:0} days run dry: until {(at + Length).UtcDateTime:yyyy-MM-dd HH:mm}Z{note}"),
         { } at => new DryRunDecision(false, $"dryRun is off and the {Length.TotalDays:0} days since the first timer run ({at.UtcDateTime:yyyy-MM-dd}) have passed"),
     };
 
