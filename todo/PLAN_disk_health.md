@@ -1,8 +1,8 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b built on its branch `feat/wc-install-distro-name` (*E15.S2b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
-> not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 built on its branch `feat/wc-e15s5-host-memory` (*E15.S5 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> and E15.S6 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -1028,3 +1028,53 @@ as-built section.
 
 **Out of scope, recorded:** a vmmem line in the distro's disk script. That would let the full run judge `host.vmmem` too. It
 waits until E15.S1b (which changes that script) has merged.
+
+## E15.S5 as built (2026-10-12, branch `feat/wc-e15s5-host-memory`)
+
+**What shipped.** The design above, in full. `Health/HostMemoryFacts.cs` (the facts, two builders), `Thresholds/HostRules.cs`
+(the ONE pure rule: `host.commit`, `host.compression`, `host.vmmem`), `Collectors/ProcessWorkingSets.cs` (the working-set reader
+that fails alone), `HostCommit` and the two new `HostSample` members, `IWindowsCounters.Commit()` / `CompressionWorkingSet()`, the
+three `thresholds.*` keys with their coupled rule, `HostRules` spread into `ThresholdRules.FromFullRun` after `disk.hostFree`, the
+replacement rule in `StatusVerdicts.From`, and `host.` in the extension's `RELEVANT_VERDICT_PREFIXES`. Nothing is acted on.
+
+**Deviations (the smallest sound change each time):**
+- `HostMemoryFacts` carries a sixth member, the `.wslconfig` audit, and both builders take it. `host.vmmem`'s reason is
+  `VmmemAdvice.For`'s text, and that text needs the audit; with it, the verdict and the Windows status's `host.vmmemAdvice` have
+  the SAME input. `status` on Windows reads `.wslconfig` ONCE and hands that audit to both (`StatusVerdicts.From` gained an
+  overload with it; the old signature passes the "status does not read it" reason, as before).
+- `VmmemAdvice.For` was widened with an overload over the host's RAM in bytes (the facts hold a `Reading<long>`, not a
+  `HostMemory`); the old overload delegates to it, so there is one text.
+- `host.vmmem`'s level follows the advice (warn exactly when the advice speaks). They cannot disagree by construction.
+- `ProcessWorkingSets.Sum` reads `vmmemWSL` too (reuse: one reader for both process names). So `vmmemWSL` now also fails alone;
+  before, a `vmmemWSL` that exited between the listing and the read threw out of `status`.
+- `Memory()` and `Commit()` each make their own `GlobalMemoryStatusEx` call, so one failure costs one figure.
+- The replacement is unconditional: on the Windows binary a sampled `host.*` verdict replaces the carried one even when the sample
+  is `unknown` (the Windows binary's own state holds no full run that judges these; the newer, direct reading wins). A sampled id
+  the full run does not judge would be added after the carried ones (none today).
+- The `status --json` `host` block is unchanged; the new figures travel as the verdicts' values.
+- The extension's head golden now colours the bar warn: its captured full run (2026-10-10) read 9.86 GiB of Memory Compression,
+  above the provisional 8. The status-bar tests that colour one verdict at a time start from that golden with `host.compression`
+  set to ok (`calm()`), so each keeps its teeth.
+- No architecture.md change: #129 split it into the module docs; the notes are in `module_daemon` and `module_vs_code`.
+
+**Tests, RED first** (every message and break-it is in `module_tests.md`, *E15.S5*): 25 of 242 Core checks and the CLI check red
+against stubs, each for the named reason (no verdicts; `host.commit` at index -1; an empty `host.commit` list; the coupled layer
+not refused; the charge read as the available figure; the planted exceptions escaping; the processes not released); the
+extension 3 of 18 red (*actual: 'none', expected: 'warn'*). Seven break-its on product code, each restored byte for byte and
+green again: the commit and compression edges, the replacement, the reader's catch, the coupled rule, the Windows status without
+its audit, and `host.commit` excluded from the bar.
+
+**Suites** (2026-10-12, a heavily loaded machine): Windows — Core 2654 (2573 passed, 81 skipped, 0 failed), CLI 392 (390, 2
+skipped), Scenarios 609 (325 passed, 283 skipped, 1 failed: `StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget…`
+at 3.55 s against its 3 s budget; alone it passed 2 of 3 runs, 4.15 s the third; the two new process snapshots cost about 17 ms and
+43 ms on this machine, so the budget is lost to the load, not to them — CI is the authority); Linux (WSL Ubuntu, one
+folder `/tmp/wc-e15s5-linux-20261012T184227Z`) — the seven status goldens regenerated there and `GoldenContractTests` green (7);
+Core 2654 (2626 passed, 27 skipped, 1 failed: `ClockGuardTests.A_wall_clock_that_jumps_during_the_measurement_voids_it` read
++7199.9 s for +7200.0 s under load, green on a rerun, 44 of 44), CLI 392 (379 passed, 13 skipped), Scenarios 609 (602 passed, 5
+skipped, 2 failed: the two `FixturePrivacyTests`, because the run's `HOME` folder was named `home` and the test takes `$HOME`'s
+name as a user name; with another folder name both are green, 57 of 57); the extension 1250 (1247 passed,
+1 skipped, 2 failed: two `fakeWsl.test` cases that timed out at 15 s under load and pass alone, 49 of 49); lint, format and
+plan-lifecycle clean.
+
+**Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
+that script. The three defaults are provisional until the full runs' records calibrate them.
