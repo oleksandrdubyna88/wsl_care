@@ -28,13 +28,22 @@ public static class ClockParsers
 
     /// <summary>The probe's four pwsh lines (E15.S1b), wherever they stand; unavailable when it printed none of them (a probe
     /// from before the story, or a fake that knows five lines). A tag printed empty is an empty value.</summary>
-    public static Reading<PwshProbe> PwshProbe(IReadOnlyList<string> lines)
-    {
-        string?[] values = [Tagged(lines, HealthCommands.PwshKnownFolderTag), Tagged(lines, HealthCommands.PwshEnvProgramFilesTag), Tagged(lines, HealthCommands.PwshMsiTag), Tagged(lines, HealthCommands.PwshSignatureTag)];
-        return values.All(v => v is null)
+    public static Reading<PwshProbe> PwshProbe(IReadOnlyList<string> lines) =>
+        PwshTags.Any(tag => lines.Count(l => l.StartsWith(tag, StringComparison.Ordinal)) > 1)
+            ? Reading.Missing<PwshProbe>(RepeatedPwshLine)
+            : Probe([.. PwshTags.Select(tag => Tagged(lines, tag))]);
+
+    /// <summary>Code round (gate, security): a pwsh tag printed more than once means a value carried a line break and forged a
+    /// tag — which copy is the probe's own is not guessed, so the whole look is not read and Windows PowerShell 5.1 runs (as
+    /// <see cref="Timesync"/> refuses a field printed twice).</summary>
+    public const string RepeatedPwshLine = "the Windows clock probe printed a pwsh line more than once: it is not read";
+
+    private static readonly string[] PwshTags = [HealthCommands.PwshKnownFolderTag, HealthCommands.PwshEnvProgramFilesTag, HealthCommands.PwshMsiTag, HealthCommands.PwshSignatureTag];
+
+    private static Reading<PwshProbe> Probe(IReadOnlyList<string?> values) =>
+        values.All(v => v is null)
             ? Reading.Missing<PwshProbe>(WindowsClockAnswer.NoPwshLine)
             : Reading.Of(new PwshProbe(values[0] ?? string.Empty, values[1] ?? string.Empty, values[2] ?? string.Empty, values[3] ?? string.Empty));
-    }
 
     private static string? Tagged(IReadOnlyList<string> lines, string tag) =>
         lines.FirstOrDefault(l => l.StartsWith(tag, StringComparison.Ordinal)) is { } line ? line[tag.Length..].Trim() : null;
@@ -82,7 +91,7 @@ public static class ClockParsers
             : [];
     }
 
-    private static string Cut(string text) => text.Trim().Length <= QuoteChars ? text.Trim() : text.Trim()[..QuoteChars] + "...";
+    internal static string Cut(string text) => text.Trim().Length <= QuoteChars ? text.Trim() : text.Trim()[..QuoteChars] + "...";
 
     private static int QuoteChars => Config.Tuning.Current.Int(Config.ConfigKeys.Records.MaxReasonChars);
 }

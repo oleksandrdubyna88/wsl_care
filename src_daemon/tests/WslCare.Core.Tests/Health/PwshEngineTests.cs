@@ -1,6 +1,7 @@
 using FluentAssertions;
 
 using WslCare.Core.Collectors;
+using WslCare.Core.Config;
 using WslCare.Core.Health;
 using WslCare.Core.Processes;
 using WslCare.Core.Records;
@@ -44,7 +45,7 @@ public sealed class PwshEngineTests
     [InlineData(ProgramFiles, ProgramFiles, "file", "", "signature")]
     public void Anything_short_of_a_verified_msi_pwsh_is_windows_powershell_with_the_reason(string knownFolder, string env, string msi, string signature, string reason)
     {
-        var engine = PwshEngine.Choose(Sample(knownFolder, env, msi, signature), "/mnt/");
+        var engine = PwshEngine.Choose(Sample(knownFolder, env, msi, signature));
 
         engine.Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
         engine.Program.Should().Be(HealthCommands.PowerShell);
@@ -52,28 +53,27 @@ public sealed class PwshEngineTests
     }
 
     [Fact]
-    public void Everything_verified_gives_the_msi_pwsh_at_its_path_under_the_automount_root()
+    public void Everything_verified_gives_the_msi_pwsh_by_its_bare_name_which_only_its_fixed_folder_answers()
     {
-        var engine = PwshEngine.Choose(Sample(Verified), "/mnt/");
+        var engine = PwshEngine.Choose(Sample(Verified));
 
         engine.Kind.Should().Be(InteropEngineKind.Msi);
-        engine.Program.Should().Be("/mnt/c/Program Files/PowerShell/7/pwsh.exe");
+        engine.Program.Should().Be(HealthCommands.Pwsh, "the policy judges the bare name; the resolver answers it from the fixed folder only");
         engine.Reason.Should().Contain("verified").And.Contain("CN=Microsoft Corporation").And.Contain(PwshEngine.MsiFile);
-        PwshEngine.Choose(Sample(Verified), "/win/").Program.Should().Be("/win/c/Program Files/PowerShell/7/pwsh.exe", "the automount root of /etc/wsl.conf, as the profile's");
     }
 
     [Fact]
     public void The_environment_may_differ_in_case_only()
     {
-        PwshEngine.Choose(Sample(ProgramFiles, @"c:\PROGRAM FILES", "file", "signed"), "/mnt/").Kind.Should().Be(InteropEngineKind.Msi, "Windows compares folder names without case");
-        PwshEngine.Choose(Sample(ProgramFiles, @"C:\Program Files\", "file", "signed"), "/mnt/").Kind.Should().Be(InteropEngineKind.WindowsPowerShell, "a trailing separator is another spelling, and the environment must name the SAME folder");
+        PwshEngine.Choose(Sample(ProgramFiles, @"c:\PROGRAM FILES", "file", "signed")).Kind.Should().Be(InteropEngineKind.Msi, "Windows compares folder names without case");
+        PwshEngine.Choose(Sample(ProgramFiles, @"C:\Program Files\", "file", "signed")).Kind.Should().Be(InteropEngineKind.WindowsPowerShell, "a trailing separator is another spelling, and the environment must name the SAME folder");
     }
 
     [Fact]
     public void A_failed_probe_and_a_probe_from_before_the_tags_give_windows_powershell_saying_the_probe_did_not_verify_pwsh()
     {
-        var failed = PwshEngine.Choose(new WindowsClockSample(Now, 0, 0, "powershell.exe could not be started: no interop"), "/mnt/");
-        var older = PwshEngine.Choose(new WindowsClockSample(Now, 0.1, 0.5, string.Empty), "/mnt/");
+        var failed = PwshEngine.Choose(new WindowsClockSample(Now, 0, 0, "powershell.exe could not be started: no interop"));
+        var older = PwshEngine.Choose(new WindowsClockSample(Now, 0.1, 0.5, string.Empty));
 
         failed.Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
         failed.Reason.Should().Contain("the clock probe did not verify pwsh").And.Contain("no interop");
@@ -87,20 +87,38 @@ public sealed class PwshEngineTests
         var captured = HealthParsers.WindowsClock(PwshEngineFixture.Answer).Should().BeOfType<Reading<WindowsClockAnswer>.Available>().Which.Value;
         var verified = HealthParsers.WindowsClock(PwshEngineFixture.Verified).Should().BeOfType<Reading<WindowsClockAnswer>.Available>().Which.Value;
 
-        PwshEngine.Choose(new WindowsClockSample(Now, 0.1, 0.5, string.Empty) { Pwsh = captured.Pwsh }, "/mnt/").Should()
+        PwshEngine.Choose(new WindowsClockSample(Now, 0.1, 0.5, string.Empty) { Pwsh = captured.Pwsh }).Should()
             .Match<InteropEngine>(e => e.Kind == InteropEngineKind.WindowsPowerShell && e.Reason.Contains("absent"), "the owner's machine has no MSI pwsh");
-        PwshEngine.Choose(new WindowsClockSample(Now, 0.1, 0.5, string.Empty) { Pwsh = verified.Pwsh }, "/mnt/").Kind.Should().Be(InteropEngineKind.Msi);
+        PwshEngine.Choose(new WindowsClockSample(Now, 0.1, 0.5, string.Empty) { Pwsh = verified.Pwsh }).Kind.Should().Be(InteropEngineKind.Msi);
     }
 
+    /// <summary>Code round: the program is DERIVED from the kind, and the msi program is a name the resolver takes from its fixed
+    /// folder ONLY — never from PATH, where the Store package's alias lives (<c>PwshFixedFolderTests</c> holds the
+    /// resolver's half).</summary>
     [Fact]
-    public void Never_the_store_package_or_the_alias_and_the_path_is_the_resolvers_own_folder()
+    public void The_program_follows_the_kind_and_the_msi_one_is_never_looked_up_on_path()
     {
-        var store = Sample(ProgramFiles, ProgramFiles, "file", "signed");
-        var engine = PwshEngine.Choose(store, "/mnt/");
+        var msi = PwshEngine.Choose(Sample(Verified));
+        var windows = PwshEngine.Choose(Sample(ProgramFiles, ProgramFiles, "absent", string.Empty));
 
-        engine.Program.Should().NotContainAny("WindowsApps", "AppData", "8wekyb3d8bbwe");
-        PwshEngine.MsiFile.Should().Be(@"C:\Program Files\PowerShell\7\pwsh.exe");
-        engine.Program.Should().Be("/mnt/c/" + WindowsSystemDrive.Programs[HealthCommands.Pwsh] + "/" + HealthCommands.Pwsh,
-            "the engine names the very file the resolver's system-drive fallback starts for pwsh.exe");
+        WindowsSystemDrive.FixedFolderOnly.Should().Contain(msi.Program, "the verified program is started from its fixed folder only");
+        WindowsSystemDrive.Programs[msi.Program].Should().Be("Program Files/PowerShell/7");
+        WindowsSystemDrive.FixedFolderOnly.Should().NotContain(windows.Program, "Windows PowerShell 5.1 keeps PATH first");
+        new InteropEngine(InteropEngineKind.Msi, "x").Program.Should().Be(HealthCommands.Pwsh);
+        new InteropEngine(InteropEngineKind.WindowsPowerShell, "x").Program.Should().Be(HealthCommands.PowerShell);
+    }
+
+    /// <summary>Code round: the probe's values are environment-controlled; a reason quotes them cut to
+    /// <c>records.maxReasonChars</c>, as <c>ClockParsers</c> cuts a quoted answer.</summary>
+    [Fact]
+    public void A_hostile_value_is_quoted_cut_to_the_reason_limit()
+    {
+        var huge = "D:\\" + new string('x', 5000);
+
+        var engine = PwshEngine.Choose(Sample(huge, huge, "file", "signed"));
+
+        engine.Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
+        engine.Reason.Length.Should().BeLessThan(2 * Tuning.Current.Int(ConfigKeys.Records.MaxReasonChars) + 300, "each quoted value is cut");
+        engine.Reason.Should().Contain("...");
     }
 }

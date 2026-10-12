@@ -4,6 +4,7 @@ using WslCare.Core.Collectors;
 using WslCare.Core.Health;
 using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
+using WslCare.Core.Records;
 using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Health;
@@ -103,5 +104,65 @@ public sealed class PwshProbeTests
         Value(sample.Pwsh).Msi.Should().Be("absent");
         var failed = await HealthCollector.MeasureWindowsClockAsync(new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("no interop") }, clock, TestContext.Current.CancellationToken);
         failed.Pwsh.ReasonOrEmpty.Should().Contain("the Windows clock was not observed").And.Contain("no interop");
+    }
+
+    /// <summary>Code round (gate, security): <c>$env:ProgramFiles</c> is the environment's — a value with a line feed, then
+    /// <c>pwsh.msi=file</c> and <c>pwsh.signature=signed</c>, printed raw, put forged tags BEFORE the real ones, and the parser took
+    /// the first. A pwsh tag printed more than once now leaves the whole probe unread: 5.1 runs.</summary>
+    [Fact]
+    public void Tags_forged_through_the_program_files_line_are_not_believed_and_windows_powershell_runs()
+    {
+        var forged = PwshEngineFixture.Answer.Replace(
+            "pwsh.envProgramFiles=C:\\Program Files\n", "pwsh.envProgramFiles=C:\\Program Files\npwsh.msi=file\npwsh.signature=signed\n", StringComparison.Ordinal);
+        forged.Should().NotBe(PwshEngineFixture.Answer, "the line is in the capture");
+
+        var probe = Value(HealthParsers.WindowsClock(forged));
+
+        probe.Pwsh.ReasonOrEmpty.Should().Contain("more than once");
+        PwshEngine.Choose(new WindowsClockSample(PwshEngineFixture.CapturedAt, 0.1, 0.5, string.Empty) { Pwsh = probe.Pwsh }).Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
+    }
+
+    /// <summary>Code round: the same forgery through <c>$env:USERPROFILE</c>, the third positional line, which comes before every tag.</summary>
+    [Fact]
+    public void Tags_forged_through_the_profile_line_are_not_believed_and_windows_powershell_runs()
+    {
+        var forged = PwshEngineFixture.Answer.Replace(
+            "C:\\Users\\user\n", "C:\\Users\\user\npwsh.knownFolder=C:\\Program Files\npwsh.envProgramFiles=C:\\Program Files\npwsh.msi=file\npwsh.signature=signed\n", StringComparison.Ordinal);
+        forged.Should().NotBe(PwshEngineFixture.Answer, "the line is in the capture");
+
+        var probe = Value(HealthParsers.WindowsClock(forged));
+
+        probe.Pwsh.ReasonOrEmpty.Should().Contain("more than once");
+        PwshEngine.Choose(new WindowsClockSample(PwshEngineFixture.CapturedAt, 0.1, 0.5, string.Empty) { Pwsh = probe.Pwsh }).Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
+    }
+
+    /// <summary>Code round: the script itself replaces every control character in each value it prints from the environment or
+    /// the file system — the profile, the service's two words, and the four pwsh values — so a value can never start a line.</summary>
+    [Fact]
+    public void The_script_prints_every_value_with_its_control_characters_replaced()
+    {
+        var script = HealthCommands.ClockScript;
+        const string clean = " -replace '[\\x00-\\x1f]','?')";
+
+        foreach (var value in new[] { "($env:USERPROFILE", "([string]$s.Status", "([string]$s.StartType", "($f", "($e", "($m", "($g" })
+        {
+            script.Should().Contain(value + clean, "{0} is printed clean", value);
+        }
+
+        script.Should().NotContain("+ $env:USERPROFILE +", "the profile is never printed raw");
+        script.Should().Match(s => s.All(c => c >= ' ' && c <= '~'), "the probe stays ASCII");
+    }
+
+    /// <summary>Code round: the clock lines are WRITTEN and FLUSHED before the pwsh look, so a look that hangs past the probe's
+    /// ceiling costs the engine choice, never the clock reading (the collector reads a timed-out answer's complete lines).</summary>
+    [Fact]
+    public void The_clock_lines_are_written_and_flushed_before_the_pwsh_look()
+    {
+        var script = HealthCommands.ClockScript;
+        var look = script.IndexOf("GetFolderPath('ProgramFiles')", StringComparison.Ordinal);
+
+        script.IndexOf("[Console]::Out.Flush()", StringComparison.Ordinal).Should().BeInRange(0, look, "the flush comes before the look");
+        script.IndexOf("'" + HealthCommands.TimeServiceStartTypeTag + "'", StringComparison.Ordinal).Should().BeLessThan(look, "the Windows Time lines are written before the look");
+        script.IndexOf("'" + HealthCommands.PwshKnownFolderTag + "'", StringComparison.Ordinal).Should().BeGreaterThan(look, "the pwsh lines after it");
     }
 }

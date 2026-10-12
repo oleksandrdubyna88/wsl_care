@@ -14,8 +14,9 @@ public static class HealthCommands
     /// <summary>The name WSL interop reaches PowerShell by from inside the distro; on Windows the same file name.</summary>
     public const string PowerShell = "powershell.exe";
 
-    /// <summary>The MSI PowerShell 7's file name (E15.S1b) — a bare name the policy judges; the resolver finds it on PATH or in its
-    /// one fixed folder on the system drive (<c>WindowsSystemDrive.Programs</c>), never under a user's profile.</summary>
+    /// <summary>The MSI PowerShell 7's file name (E15.S1b) — a bare name the policy judges; the resolver finds it ONLY in its one
+    /// fixed folder on the system drive (<c>WindowsSystemDrive.Programs</c>, <c>FixedFolderOnly</c>), never on PATH, never under a
+    /// user's profile.</summary>
     public const string Pwsh = "pwsh.exe";
 
     public const string Snap = "snap";
@@ -47,17 +48,6 @@ public static class HealthCommands
     public static IReadOnlyList<string> ClockTags { get; } =
         [TimeServiceStatusTag, TimeServiceStartTypeTag, PwshKnownFolderTag, PwshEnvProgramFilesTag, PwshMsiTag, PwshSignatureTag];
 
-    /// <summary>
-    /// What the probe prints, one per line: Windows' UTC now, the PowerShell process's own start (UTC, the same
-    /// clock), and <c>%USERPROFILE%</c>. The first two give the launch latency WITHOUT any skew in it, which is
-    /// what lets the skew subtract it (plan §15b #5); the profile is how the distro finds <c>.wslconfig</c> and
-    /// Docker Desktop's <c>daemon.json</c> through <c>/mnt</c> without a walk. Since PLAN_windows_time_guard.md D1 two more
-    /// TAGGED lines follow — the Windows Time service's status and start type, read AFTER both instants were taken, so the
-    /// latency is unchanged; tagged because an empty value must not shift the lines the parser reads by position. Since
-    /// E15.S1b four more tagged lines follow those (<see cref="PwshLook"/>): what the probe — Windows PowerShell 5.1, the
-    /// trusted System32 path — saw of the MSI PowerShell 7, so no third PowerShell start is needed to choose the engine the
-    /// disk script runs under.
-    /// </summary>
     /// <summary>The module path pinned to <c>$PSHOME\Modules</c> by an assignment — no command to autoload — so every cmdlet an
     /// interop script uses comes from the administrator-only module folder, never from a user's Documents (the coordinator,
     /// 2026-10-11, after the #104 Fable review). The SAME text as the extension's <c>MODULES</c>
@@ -73,7 +63,7 @@ public static class HealthCommands
     /// <c>Get-AuthenticodeSignature</c> (from the pinned module path) reads <c>Valid</c> from <c>CN=Microsoft Corporation</c>,
     /// else <c>unsigned:&lt;status&gt;|&lt;subject&gt;</c>. Inside its own <c>try</c>: a fault here prints
     /// <c>error:&lt;type&gt;</c> and never ends the probe — the clock reading matters more than the engine choice. Read-only:
-    /// nothing is started. It runs AFTER both instants and the service query (the latency is unchanged).
+    /// nothing is started. It runs AFTER the clock lines were written and flushed.
     /// </summary>
     public const string PwshLook =
         "$f = ''; $e = ''; $m = ''; $g = ''; try { $f = [string][Environment]::GetFolderPath('ProgramFiles'); $e = [string]$env:ProgramFiles; "
@@ -82,16 +72,39 @@ public static class HealthCommands
         + "else { $m = 'file'; $a = Get-AuthenticodeSignature -LiteralPath $i.FullName; if ($a.Status -eq 'Valid' -and $a.SignerCertificate.Subject -like 'CN=Microsoft Corporation,*') { $g = 'signed' } else { $g = 'unsigned:' + $a.Status + '|' + $a.SignerCertificate.Subject } } } "
         + "catch { $m = 'error:' + $_.Exception.GetType().Name }";
 
-    /// <summary>The four pwsh lines as the probe prints them, after the Windows Time lines.</summary>
-    private const string PwshLines =
-        " + '" + PwshKnownFolderTag + "' + $f + \"`n\" + '" + PwshEnvProgramFilesTag + "' + $e + \"`n\" + '" + PwshMsiTag + "' + $m + \"`n\" + '" + PwshSignatureTag + "' + $g + \"`n\"";
+    /// <summary>The tail that prints a value CLEAN (code round, security): every control character replaced by <c>?</c>, so a value
+    /// from the environment or the file system can never end its line and start a forged tagged one.</summary>
+    private const string Clean = " -replace '[\\x00-\\x1f]','?')";
 
+    /// <summary>The three positional lines and the two Windows Time lines, WRITTEN and FLUSHED before the pwsh look (code round):
+    /// a look that hangs past the ceiling then costs the engine choice, never the clock reading.</summary>
+    private const string ClockLines =
+        "[Console]::Out.Write($n + \"`n\" + $p + \"`n\" + ($env:USERPROFILE" + Clean + " + \"`n\" + '" + TimeServiceStatusTag + "' + ([string]$s.Status" + Clean
+        + " + \"`n\" + '" + TimeServiceStartTypeTag + "' + ([string]$s.StartType" + Clean + " + \"`n\"); [Console]::Out.Flush()";
+
+    /// <summary>The four pwsh lines as the probe prints them, after the look, each value clean.</summary>
+    private const string PwshLines =
+        "[Console]::Out.Write('" + PwshKnownFolderTag + "' + ($f" + Clean + " + \"`n\" + '" + PwshEnvProgramFilesTag + "' + ($e" + Clean + " + \"`n\" + '"
+        + PwshMsiTag + "' + ($m" + Clean + " + \"`n\" + '" + PwshSignatureTag + "' + ($g" + Clean + " + \"`n\"); [Console]::Out.Flush()";
+
+    /// <summary>
+    /// What the probe prints, one per line: Windows' UTC now, the PowerShell process's own start (UTC, the same
+    /// clock), and <c>%USERPROFILE%</c>. The first two give the launch latency WITHOUT any skew in it, which is
+    /// what lets the skew subtract it (plan §15b #5); the profile is how the distro finds <c>.wslconfig</c> and
+    /// Docker Desktop's <c>daemon.json</c> through <c>/mnt</c> without a walk. Since PLAN_windows_time_guard.md D1 two more
+    /// TAGGED lines follow — the Windows Time service's status and start type, read AFTER both instants were taken, so the
+    /// latency is unchanged; tagged because an empty value must not shift the lines the parser reads by position. Since
+    /// E15.S1b four more tagged lines follow those (<see cref="PwshLook"/>): what the probe — Windows PowerShell 5.1, the
+    /// trusted System32 path — saw of the MSI PowerShell 7, so no third PowerShell start is needed to choose the engine the
+    /// disk script runs under. Since the E15.S1b code round every printed value is clean and the clock lines are flushed first.
+    /// </summary>
     public const string ClockScript =
         ModulePathPin + "; "
         + "$n = [DateTime]::UtcNow.ToString('o'); $p = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o'); "
         + "$s = Get-Service -Name w32time -ErrorAction SilentlyContinue; "
+        + ClockLines + "; "
         + PwshLook + "; "
-        + "[Console]::Out.Write($n + \"`n\" + $p + \"`n\" + $env:USERPROFILE + \"`n\" + '" + TimeServiceStatusTag + "' + $s.Status + \"`n\" + '" + TimeServiceStartTypeTag + "' + $s.StartType + \"`n\"" + PwshLines + ")";
+        + PwshLines;
 
     /// <summary>Measured 2026-10-02 from WSL Ubuntu: 0.85–1.1 s per start, of which 0.56–0.83 s before the script ran.</summary>
     public static TimeSpan ClockCeiling => Tuning.Current.Seconds(ConfigKeys.Health.WindowsClockTimeoutSeconds);

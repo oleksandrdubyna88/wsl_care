@@ -367,7 +367,8 @@ verified it in the same run — a real file (no link) under the known Program Fi
 `ProgramFiles` names too, with a valid Authenticode signature from Microsoft — and under Windows PowerShell 5.1 otherwise.
 The Store build of `pwsh` and its alias are never used: they are files the Windows user can replace. So `pwsh.exe` is
 never taken from `PATH`: the daemon starts it only from `Program Files/PowerShell/7` on the mounted system drive. The run detail says
-which one ran and why, in `health.windowsDisk.engine` (`program`, `reason`). Both engines run the same fixed script; it pins
+which one ran and why, in `health.windowsDisk.engine` (`program` — the file that was started —, `reason`). If the MSI pwsh
+cannot be started, Windows PowerShell 5.1 runs the script instead and the reason says so. Both engines run the same fixed script; it pins
 the module path and imports the Storage module from System32 by its absolute path, because pwsh 7 has none of its own.
 
 **The virtual disks and the hosting volume** (E15.S2, a report: nothing acts on these). From those facts each full run judges every

@@ -117,7 +117,7 @@ public sealed class WindowsDiskFlows
         var disk = Report(result).Detail!.Health.WindowsDisk!;
         disk.Available.Should().BeTrue(disk.Reason);
         disk.Volumes!.Volumes!.Select(v => v.Letter).Should().Equal("E", "D", "C", "F");
-        disk.Engine!.Program.Should().Be("/mnt/c/Program Files/PowerShell/7/pwsh.exe");
+        Path.GetFullPath(disk.Engine!.Program).Should().Be(Path.GetFullPath(Path.Combine(fixedFolder, HealthCommands.Pwsh)), "the detail names the file the runner really started (code round: one source)");
         disk.Engine.Reason.Should().Contain("verified");
         home.Calls.Count(IsDiskScriptUnderPwsh).Should().Be(1, "once per full run, under pwsh");
         Path.GetFullPath(home.Calls.Single(IsDiskScriptUnderPwsh).Location).TrimEnd('/').Should().Be(Path.GetFullPath(fixedFolder).TrimEnd('/'), "the fixed-folder file answered, never the pwsh.exe on PATH");

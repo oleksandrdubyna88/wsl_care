@@ -267,12 +267,13 @@ public sealed class WindowsDiskTests
     [Fact]
     public void The_run_detail_names_the_engine_the_script_ran_under_and_a_sample_without_one_writes_none()
     {
-        var engine = new InteropEngine(InteropEngineKind.Msi, "/mnt/c/Program Files/PowerShell/7/pwsh.exe", "the clock probe verified it");
-        var read = new WindowsDiskSample(WindowsDiskFixture.CapturedAt, Reading.Of(TimeSpan.FromSeconds(3)), Reading.Of(Parse(WindowsDiskFixture.Answer))) { Engine = Reading.Of(engine) };
-        var failed = WindowsDiskSample.Unavailable(WindowsDiskFixture.CapturedAt, "pwsh.exe did not answer") with { Engine = Reading.Of(engine) };
+        const string started = "/mnt/c/Program Files/PowerShell/7/pwsh.exe";
+        var engine = new InteropEngine(InteropEngineKind.Msi, "the clock probe verified it");
+        var read = new WindowsDiskSample(WindowsDiskFixture.CapturedAt, Reading.Of(TimeSpan.FromSeconds(3)), Reading.Of(Parse(WindowsDiskFixture.Answer))) { Engine = Reading.Of(engine), StartedFrom = started };
+        var failed = WindowsDiskSample.Unavailable(WindowsDiskFixture.CapturedAt, "pwsh.exe could not be started") with { Engine = Reading.Of(engine) };
 
-        WslCare.Core.Collect.WindowsDiskReports.From(read).Engine.Should().Be(new WslCare.Core.Collect.InteropEngineReport(engine.Program, engine.Reason));
-        WslCare.Core.Collect.WindowsDiskReports.From(failed).Engine.Should().Be(new WslCare.Core.Collect.InteropEngineReport(engine.Program, engine.Reason), "the engine is chosen before the script runs");
+        WslCare.Core.Collect.WindowsDiskReports.From(read).Engine.Should().Be(new WslCare.Core.Collect.InteropEngineReport(started, engine.Reason), "the file the runner really started (code round: one source)");
+        WslCare.Core.Collect.WindowsDiskReports.From(failed).Engine.Should().Be(new WslCare.Core.Collect.InteropEngineReport(HealthCommands.Pwsh, engine.Reason), "nothing started: the bare program the policy judged");
         var windows = WslCare.Core.Collect.WindowsDiskReports.From(WindowsDiskSample.Unavailable(WindowsDiskFixture.CapturedAt, "the Windows binary"));
         windows.Engine.Should().BeNull();
         System.Text.Json.JsonSerializer.Serialize(windows, WslCare.Core.Json.WslCareJsonContext.Default.WindowsDiskReport).Should().NotContain("\"engine\"");
@@ -284,9 +285,9 @@ public sealed class WindowsDiskTests
     [Fact]
     public void The_command_follows_the_engine_and_only_the_verified_msi_pwsh_gets_pwsh()
     {
-        WindowsDiskCommands.Under(new InteropEngine(InteropEngineKind.Msi, "/mnt/c/Program Files/PowerShell/7/pwsh.exe", "verified")).Argv
+        WindowsDiskCommands.Under(new InteropEngine(InteropEngineKind.Msi, "verified")).Argv
             .Should().Equal(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv);
-        WindowsDiskCommands.Under(new InteropEngine(InteropEngineKind.WindowsPowerShell, HealthCommands.PowerShell, "absent")).Argv
+        WindowsDiskCommands.Under(new InteropEngine(InteropEngineKind.WindowsPowerShell, "absent")).Argv
             .Should().Equal(WindowsDiskCommands.WindowsDisk.Argv);
     }
 

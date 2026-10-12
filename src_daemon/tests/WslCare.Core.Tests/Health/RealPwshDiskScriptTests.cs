@@ -1,10 +1,9 @@
-using System.Diagnostics;
-using System.Text;
-
 using FluentAssertions;
 
 using WslCare.Core.Collectors;
 using WslCare.Core.Health;
+using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
 
 namespace WslCare.Core.Tests.Health;
 
@@ -18,8 +17,7 @@ namespace WslCare.Core.Tests.Health;
 /// </summary>
 /// <remarks>Windows only, and only where the MSI build is installed: it SKIPS on the owner's machine (only the Store pwsh there)
 /// and RUNS on CI's <c>windows-latest</c>, which ships PowerShell 7 at that path. Read-only: the script reads, prints and ends.
-/// The program is started by its absolute path here because the test is about THAT file; the daemon starts the bare
-/// <c>pwsh.exe</c>, which the resolver finds in the same folder on the system drive.</remarks>
+/// It runs through the product's runner and policy; only the lookup is the test's, so THAT file is the one started.</remarks>
 public sealed class RealPwshDiskScriptTests
 {
     /// <summary>A cold pwsh start on a CI runner plus the script's own reads — longer than the product's 30 s ceiling, which a
@@ -34,7 +32,7 @@ public sealed class RealPwshDiskScriptTests
         Assert.SkipUnless(OperatingSystem.IsWindows(), "the MSI PowerShell 7 is a Windows program; the Linux legs run the script through the fake");
         Assert.SkipUnless(File.Exists(MsiPwsh), $"{MsiPwsh} is absent: no MSI PowerShell 7 on this machine (the owner's has only the Store build); CI's windows-latest has it");
 
-        var stdout = await RunAsync(MsiPwsh, WindowsDiskCommands.WindowsDiskUnderPwsh.Arguments);
+        var stdout = await RunAsync(MsiPwsh);
 
         stdout.Should().EndWith(WindowsDiskCommands.EndLine + "\n", "a complete answer ends with its end line");
         var facts = Available(WindowsDiskParsers.Parse(stdout, WindowsDiskCommands.EventsMaxRead, WindowsDiskCommands.EventsSinceDays));
@@ -56,39 +54,17 @@ public sealed class RealPwshDiskScriptTests
         return ((Reading<T>.Available)reading).Value;
     }
 
-    /// <summary>Starts <paramref name="program"/> with <paramref name="arguments"/> as an argument LIST (no shell, no quoting),
-    /// reads stdout as UTF-8 (the script writes UTF-8 bytes on the raw stream), and kills the tree past <see cref="Ceiling"/>.</summary>
-    private static async Task<string> RunAsync(string program, IReadOnlyList<string> arguments)
+    /// <summary>The pwsh member of the closed set through the product's OWN runner and policy (code round: one shared process
+    /// launcher) — the policy judges the bare <c>pwsh.exe</c> with the disk arguments, and the runner's test-only lookup seam
+    /// (<c>WithResolverForItsOwnTests</c>) hands it THIS file, which the product resolver would find in the same folder. Only
+    /// the ceiling is the test's.</summary>
+    private static async Task<string> RunAsync(string program)
     {
-        var start = new ProcessStartInfo(program)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var argument in arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
+        var runner = ProcessCommandRunner.WithResolverForItsOwnTests(CommandPolicy.Product, (_, _) => new ResolvedExecutable.Found(program));
+        var command = WindowsDiskCommands.WindowsDiskUnderPwsh with { Ceiling = Ceiling };
 
-        using var process = Process.Start(start) ?? throw new InvalidOperationException($"{program} did not start");
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        timeout.CancelAfter(Ceiling);
-        var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
-        var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            throw;
-        }
+        var outcome = await runner.RunAsync(command.ToRequest(), TestContext.Current.CancellationToken);
 
-        process.ExitCode.Should().Be(0, await stderr);
-        return await stdout;
+        return ToolAnswers.Read(command, outcome).Should().BeOfType<Reading<string>.Available>("{0}", outcome).Which.Value;
     }
 }

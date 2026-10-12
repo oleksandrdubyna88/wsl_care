@@ -1361,9 +1361,8 @@ Scenarios 610 (2 failed, 5 skipped). The two failures are `StatusFlows` time bud
    fails inside its own `try` and prints its own error line (`volumes.error=CommandNotFoundException`), so the other
    sections still answer. A new `storage.error=` tag would have changed the parser and the wire; the sections' own lines
    already say what failed.
-3. **The real-pwsh test starts the MSI file by its absolute path through `Process`, not through the product's runner.** The
-   policy refuses an absolute `pwsh.exe` on purpose, and the test is about THAT file; the arguments are the pwsh member's
-   own `Arguments`. Its ceiling is 120 s (a cold pwsh on a CI runner), not the product's 30 s.
+3. **The real-pwsh test's ceiling is 120 s** (a cold pwsh on a CI runner), not the product's 30 s. The first build started the
+   file through `Process`; since the code round it runs through the product's runner and policy (item 4 below).
 4. **`WindowsDiskCommands.Under(engine)`** is the one place that maps an engine to a command (the split named it in S4's
    *What*; it is a pure static function).
 5. **The fixed-folder rule (the coordinator, after S4).** The first build left "PATH still wins for `pwsh.exe`" open. It is
@@ -1373,8 +1372,8 @@ Scenarios 610 (2 failed, 5 skipped). The two failures are `StatusFlows` time bud
    the Windows binary a `pwsh.exe` lookup answers "never from PATH" too. The argv still names the BARE `pwsh.exe` (the
    coordinator's point 2 asked for the absolute engine path in the argv): an absolute path passes the resolver unchanged,
    WITHOUT the system drive's checks (no link, the drive's device, a regular file, `MZ`), so naming it would have traded those
-   checks away. The file started is `<the drive's mount point>/Program Files/PowerShell/7/pwsh.exe` — the file the engine
-   names whenever `/etc/wsl.conf`'s automount root is where the drive is mounted. The scenario seam:
+   checks away. The file started is `<the drive's mount point>/Program Files/PowerShell/7/pwsh.exe`, and since the code round the
+   detail names exactly that file (the runner's `StartedFrom`). The scenario seam:
    `SystemDriveLookup.ForThisProcess` gives `SystemDriveLookup.Sandboxed` (`<sandbox>/mnt/c`, a regular file, no link) only to
    a process inside `WSL_CARE_ROOT` that is NOT really privileged; a real root process always asks this machine.
    RED first: on Linux 5 of 7 `PwshFixedFolderTests` (*Expected type to be …NotFound because the resolver answered Found {
@@ -1391,8 +1390,54 @@ Scenarios 610 (2 failed, 5 skipped). The two failures are `StatusFlows` time bud
 - **"PATH still wins for `pwsh.exe`"** — the first build's open point — is closed by deviation 5: `pwsh.exe` comes from its
   fixed folder only, never from PATH.
 
+**The code round (coai `proceed`, and the coordinator's own Opus review, 2026-10-12).** Each fix red first, each with a
+break-it on product code:
+1. **Forged pwsh tags (security).** The probe printed environment values raw: `$env:USERPROFILE` (the third positional line,
+   before every tag) and `$env:ProgramFiles`, and also the folder, the item and the signer. A value with a line feed and
+   `pwsh.msi=file` / `pwsh.signature=signed` put forged tags BEFORE the real ones, and the parser took the first: msi with no
+   verification. Fixed in both halves: the script prints every value with `-replace '[\x00-\x1f]','?'` (the profile, the
+   two Windows Time words, the four pwsh values; the probe stays ASCII), and the parser reads NO pwsh line when any pwsh tag
+   appears more than once (`ClockParsers.RepeatedPwshLine`), so 5.1 runs. RED: *Expected probe.Pwsh.ReasonOrEmpty "" to contain
+   "more than once"* (through the ProgramFiles line and through the profile line); the script test red on the missing
+   `-replace`. Live under 5.1 (read-only, a child process): a forged `USERPROFILE` printed as one line,
+   `C:\Users\x?pwsh.knownFolder=…`; a forged `ProgramFiles` never reached the child (Windows sets it per process bitness).
+   Break-its: the repeated-tag check removed → 2 red; the cleaning disabled → the script test red.
+2. **A verified MSI pwsh that cannot be started.** With the fixed-folder rule a refused or slow system-drive lookup lost the
+   whole disk section where 5.1 used to work. Now a `FailedToStart` under the MSI pwsh runs the 5.1 script ONCE and the
+   engine says why (`PwshEngine.NotStartable`, quoting the runner's reason). A timeout or an exit code under pwsh is not
+   retried (it would double the ceiling), and 5.1 has nothing to fall back to. RED: *Expected argv.Count(…WindowsDisk.Argv)
+   to be 1 because 5.1 runs once instead, but found 0*. Break-it: the fallback keyed to the wrong engine → 2 red.
+3. **One source for the program.** `InteropEngine(Kind, Reason)` derives its program from the kind, so the two cannot
+   disagree; `Choose` no longer takes the automount root. The detail's program is the file the RUNNER started
+   (`CommandOutcome.StartedFrom` → `WindowsDiskSample.StartedFrom`), as the drive's mount names it — not a path built from
+   `/etc/wsl.conf`; the bare program when nothing was started from the drive. RED: *Expected health.WindowsDisk.StartedFrom to
+   be "/mnt/x/Program Files/PowerShell/7/pwsh.exe" … but "" has a length of 0*; *Expected WindowsDiskReports.From(read).Engine
+   to be …InteropEngineReport*. Break-it: the report ignoring the started file → 1 red. The scenario now expects the sandbox's
+   fixed-folder file.
+4. **One shared process launcher.** `RealPwshDiskScriptTests` now runs through the product's `ProcessCommandRunner` and
+   `CommandPolicy.Product`; only the lookup is the test's (`WithResolverForItsOwnTests`, the existing internal seam), and
+   only the ceiling (120 s). The product is not weakened. Dev check (not committed): pointed at the Store alias it passed
+   (1 of 1) through the policy and the runner.
+5. **Cheaper fixes.** A quoted probe value is cut to `records.maxReasonChars` (`ClockParsers.Cut`, now internal; RED *found
+   5113*; break-it → red). The clock lines are written and flushed BEFORE the look, and a probe that times out during the
+   look still gives the clock from its whole flushed lines with the pwsh look unread (`HealthCollector.PwshLookTimedOut`;
+   RED *Expected sample.Measured to be True … but found False* and the flush-order test; break-its: the timed-out answer not
+   read → red; the first flush removed → red). `FixedFolderOnly` compares without case (the 9p share is case-insensitive;
+   the test was written after the fix and proved by revert on Linux). Stale doc comments fixed (`HealthCommands.Pwsh`;
+   `ModulePathPin` and `ClockScript` each have their own summary). The tautological "never the Store package" test is
+   replaced by one the code could fail: the msi program is in `FixedFolderOnly` and the 5.1 one is not.
+
+Totals after the code round: Windows Core 2766 (0 failed, 89 skipped), Cli 409 (0 failed, 2 skipped), Scenarios 614 (0
+failed, 285 skipped); Linux (`/tmp/wc-e15s1b-linux-20261012T184232Z`, refreshed) Core 2766 (0 failed, 39 skipped), Cli 409
+(0 failed, 18 skipped), Scenarios 614 (0 failed, 7 skipped). `dotnet format --verify-no-changes` and plan-lifecycle clean.
+
 **Open.**
 - **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
   the first CI run on `windows-latest` is the evidence that the selection is safe to ship.
 - **pwsh is slower than 5.1 for this script on the owner's machine** (9–16 s against 6–7 s, the Store build, loaded
   machine). Both are under the 30 s ceiling; the MSI build's own timing is measured on the first machine that has it.
+- **Residuals of the trust boundary (code round, recorded, not changed):** the signature rule trusts the user's own root
+  store (the folder is administrator-only, so a forged signature still needs an administrator to place the file); nothing ties
+  the started file to the verified one but its path (administrator-only, and the window is seconds); `powershell.exe` (the
+  probe) is still PATH-first; pwsh 7 reads the CurrentUser `powershell.config.json` and honours `DOTNET_STARTUP_HOOKS` /
+  `CORECLR_PROFILER` — the same trust boundary as the user's own session, since interop runs every Windows program as that user.

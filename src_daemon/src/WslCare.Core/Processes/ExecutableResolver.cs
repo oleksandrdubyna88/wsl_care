@@ -115,7 +115,7 @@ public static class ExecutableResolver
     /// inherits the Windows PATH, whose user part holds the Store package's alias, a file the Windows user can replace.
     /// </summary>
     private static ResolvedExecutable OnPath(string name, string? pathVariable, bool windows) =>
-        WindowsSystemDrive.FixedFolderOnly.Contains(name, StringComparer.Ordinal)
+        WindowsSystemDrive.FixedFolderOnly.Contains(name, StringComparer.OrdinalIgnoreCase)
             ? new ResolvedExecutable.NotFound($"{name} is started only from its one fixed folder on the Windows system drive, never from PATH")
             : ResolveIn(name, Directories(pathVariable, windows), windows);
 

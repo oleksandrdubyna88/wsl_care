@@ -353,18 +353,26 @@ flowchart LR
   and the Windows Time lines it looks at `<known folder>\PowerShell\7\pwsh.exe` and prints four tagged lines —
   `pwsh.knownFolder=`, `pwsh.envProgramFiles=`, `pwsh.msi=` (`absent` / `link` / `directory` / `empty` / `file`) and
   `pwsh.signature=` (`signed` only for Authenticode Valid from `CN=Microsoft Corporation`, through the pinned module path) —
-  inside its own `try`, so no third PowerShell starts per run. `PwshEngine.Choose(sample, automountRoot)` is PURE: the MSI
+  inside its own `try`, so no third PowerShell starts per run. Code round: every value the probe prints (the profile, the two
+  Windows Time words, the four pwsh values) has its control characters replaced by `?`, so an environment value can never
+  start a forged tagged line; the parser reads NO pwsh line when any pwsh tag appears more than once
+  (`ClockParsers.RepeatedPwshLine`), so 5.1 runs; and the clock lines are written and FLUSHED before the look, so a look that
+  hangs past the ceiling costs the engine choice, never the clock reading (`HealthCollector` reads a timed-out probe's whole
+  flushed lines). `PwshEngine.Choose(sample)` is PURE: the MSI
   pwsh only when the known folder is EXACTLY `C:\Program Files`, the environment's `ProgramFiles` agrees (case-insensitive),
   the item is a `file` and it is `signed`; anything else, a failed probe and a probe from before the tags give 5.1 with the
-  reason. `HealthCollector.CollectAsync` chooses after the clock probe and its reference (the MSI file named under the
-  automount root `/etc/wsl.conf` sets) and runs `WindowsDiskCommands.Under(engine)`. The argv names the BARE `pwsh.exe` (what
+  reason; a quoted value is cut to `records.maxReasonChars`. `InteropEngine(Kind, Reason)` DERIVES its program from the
+  kind, so the two can never disagree. `HealthCollector.CollectAsync` chooses after the clock probe and its reference and
+  runs `WindowsDiskCommands.Under(engine)`; when the MSI pwsh then FAILS TO START (the fixed-folder lookup refused it or did
+  not answer: virtiofs, several C: mounts, a non-root ancestor, interop off, a slow 9p), the 5.1 script runs once instead and
+  the engine says why (`PwshEngine.NotStartable`). A timeout or an exit code under pwsh is not retried. The argv names the BARE `pwsh.exe` (what
   the policy judges); the resolver maps it ONLY to its one fixed folder on the mounted system drive
   (`WindowsSystemDrive.Programs`: `pwsh.exe` → `Program Files/PowerShell/7`, through the same mount, interop, ancestor and
   file checks as `powershell.exe`) and NEVER to PATH, with or without a PATH entry (`WindowsSystemDrive.FixedFolderOnly`,
   `ExecutableResolver.OnPath`). The reason: a root collect through `wsl.exe -u root` inherits the Windows PATH, whose user
   part holds the Store package's alias — a file the Windows user can replace — so the daemon never starts the Store package
-  or its alias, only the verified MSI file. On the Windows binary a `pwsh.exe` lookup answers "never from PATH" too.
-  `powershell.exe` keeps PATH first.
+  or its alias, only the verified MSI file. On the Windows binary a `pwsh.exe` lookup answers "never from PATH" too. The rule
+  compares without case (the 9p share is case-insensitive). `powershell.exe` keeps PATH first.
 - **The scenario seam (E15.S1b).** The scenario harness reaches its fakes through PATH, which `pwsh.exe` never uses. So the
   product's runner asks `SystemDriveLookup.ForThisProcess`: `ThisMachine`, except for a process that is inside a sandbox
   (`WSL_CARE_ROOT`) AND not really privileged, which gets `SystemDriveLookup.Sandboxed` — `<sandbox>/mnt/c`, interop taken as
@@ -382,9 +390,12 @@ flowchart LR
   machine): 4 volumes, 2 disks, `end=1` under the Store pwsh (9–15 s, two harmless nested-module errors on stderr, exit 0)
   and under 5.1 (6–8 s). `RealPwshDiskScriptTests` runs the actual script under `%ProgramFiles%\PowerShell\7\pwsh.exe` on
   CI's `windows-latest`; it skips where the MSI build is absent.
-- **The run detail names the engine.** `WindowsDiskSample.Engine` (a `Reading`, chosen before the run, so it is kept also
-  when the script fails) becomes `health.windowsDisk.engine {program, reason}` (`InteropEngineReport`, a wire record) —
-  absent on the Windows binary and on a detail written before E15.S1b.
+- **The run detail names the engine and the file really started.** `WindowsDiskSample.Engine` (a `Reading`, chosen before
+  the run, so it is kept also when the script fails) and `WindowsDiskSample.StartedFrom` (the runner's
+  `CommandOutcome.StartedFrom`: the file it started from the system drive, as the drive's mount names it) become
+  `health.windowsDisk.engine {program, reason}` (`InteropEngineReport`, a wire record). Its program is the started file, ONE
+  source (code round), else the bare program the policy judged. Absent on the Windows binary and on a detail written before
+  E15.S1b.
 - **What the detail holds** is the machine's own facts (profile paths, the machine id). The detail stays on this machine;
   the redacted statistics export is E17.S3's.
 

@@ -79,6 +79,25 @@ public sealed class PwshFixedFolderTests : IDisposable
         _asked.Should().Be(0, "the Windows binary has no mounted system drive to ask");
     }
 
+    /// <summary>Code round: the system drive's 9p share is case-insensitive, so the rule is too — <c>Pwsh.exe</c> on PATH is the
+    /// same Windows file and is never taken from there either.</summary>
+    [Theory]
+    [InlineData("Pwsh.exe")]
+    [InlineData("PWSH.EXE")]
+    public void Pwsh_spelled_in_another_case_is_never_taken_from_path_either(string name)
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "a Linux PATH (split at ':') cannot hold this machine's drive-letter temp path");
+        var path = _root.File($"cased-{name}/{name}", "MZ a decoy");
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        var resolved = ExecutableResolver.Resolve(name, _root.Under($"cased-{name}"), windows: false, Lookup(), TestContext.Current.CancellationToken);
+
+        resolved.Should().BeOfType<ResolvedExecutable.NotFound>("the resolver answered {0}", resolved).Which.Reason.Should().Contain("never from PATH");
+    }
+
     [Fact]
     public void Powershell_on_path_still_wins_the_rule_is_for_pwsh_alone()
     {

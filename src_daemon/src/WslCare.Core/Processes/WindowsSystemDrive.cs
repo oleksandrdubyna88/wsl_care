@@ -84,7 +84,8 @@ public static class WindowsSystemDrive
     /// <summary>
     /// The programs that come ONLY from their fixed folder in <see cref="Programs"/> — never from PATH (E15.S1b): the MSI
     /// <c>pwsh.exe</c>, which the clock probe verified at that folder. On PATH a <c>pwsh.exe</c> is the Store package's alias
-    /// in the user's <c>WindowsApps</c> as often as not; the daemon never starts it. <c>powershell.exe</c> keeps PATH first.
+    /// in the user's <c>WindowsApps</c> as often as not; the daemon never starts it. <c>powershell.exe</c> keeps PATH first. Compared
+    /// without case (code round): the drive's 9p share is case-insensitive, so <c>Pwsh.exe</c> is the same Windows file.
     /// </summary>
     public static IReadOnlyList<string> FixedFolderOnly { get; } = [HealthCommands.Pwsh];
 

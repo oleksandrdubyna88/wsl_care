@@ -13,12 +13,15 @@ public enum InteropEngineKind
     Msi,
 }
 
-/// <summary>The engine chosen for the disk script: which, the program the daemon starts, and why.</summary>
-/// <param name="Program">For 5.1 the bare name the policy judges (<see cref="HealthCommands.PowerShell"/>, found on PATH or in
-/// System32 on the drive); for the MSI pwsh the file as the distro sees it (<c>/mnt/c/Program Files/PowerShell/7/pwsh.exe</c>) —
-/// the file the resolver's system-drive fallback starts for <see cref="HealthCommands.Pwsh"/>.</param>
+/// <summary>The engine chosen for the disk script: which, and why. The program is DERIVED from the kind (code round, E15.S1b), so
+/// the two can never disagree; the file the runner really started is the sample's <see cref="WindowsDiskSample.StartedFrom"/>.</summary>
 /// <param name="Reason">What the judgement rested on, in a sentence a person reads in the run detail.</param>
-public sealed record InteropEngine(InteropEngineKind Kind, string Program, string Reason);
+public sealed record InteropEngine(InteropEngineKind Kind, string Reason)
+{
+    /// <summary>The BARE program the policy judges: <see cref="HealthCommands.Pwsh"/> for the MSI pwsh (the resolver finds it in its
+    /// fixed folder on the system drive ONLY), <see cref="HealthCommands.PowerShell"/> for 5.1.</summary>
+    public string Program => Kind == InteropEngineKind.Msi ? HealthCommands.Pwsh : HealthCommands.PowerShell;
+}
 
 /// <summary>
 /// The PURE judgement of E15.S1b (PLAN_disk_health.md, <i>E15.S1b design</i> §2): from what the clock probe said
@@ -42,41 +45,47 @@ public static class PwshEngine
 
     private const string Signed = "signed";
 
-    /// <summary>The engine for <paramref name="sample"/>; the MSI pwsh's program is placed under <paramref name="automountRoot"/>
-    /// (<c>/mnt/</c>) exactly as the Windows profile is (<see cref="HealthCollector.InDistro"/>).</summary>
-    public static InteropEngine Choose(WindowsClockSample sample, string automountRoot) => sample.Pwsh switch
+    /// <summary>The engine for <paramref name="sample"/>.</summary>
+    public static InteropEngine Choose(WindowsClockSample sample) => sample.Pwsh switch
     {
-        Reading<PwshProbe>.Available { Value: var probe } => Judge(probe, automountRoot),
+        Reading<PwshProbe>.Available { Value: var probe } => Judge(probe),
         var missing => WindowsPowerShell($"the clock probe did not verify pwsh: {missing.ReasonOrEmpty}"),
     };
 
     /// <summary>The first refusal, in the order of the design — the folder, the environment, the file, the signature — else the MSI pwsh.</summary>
-    private static InteropEngine Judge(PwshProbe probe, string automountRoot)
+    private static InteropEngine Judge(PwshProbe probe)
     {
         string[] problems = [FolderProblem(probe), EnvironmentProblem(probe), FileProblem(probe), SignatureProblem(probe)];
         var refusal = problems.FirstOrDefault(p => p.Length > 0) ?? string.Empty;
-        return refusal.Length > 0 ? WindowsPowerShell(refusal) : Msi(automountRoot);
+        return refusal.Length > 0 ? WindowsPowerShell(refusal) : Msi();
     }
 
-    private static InteropEngine WindowsPowerShell(string reason) => new(InteropEngineKind.WindowsPowerShell, HealthCommands.PowerShell, reason);
+    private static InteropEngine WindowsPowerShell(string reason) => new(InteropEngineKind.WindowsPowerShell, reason);
 
-    private static InteropEngine Msi(string automountRoot) =>
+    /// <summary>Code round: the probe verified the MSI file, but the runner could not START <c>pwsh.exe</c> (its fixed-folder lookup
+    /// refused it or did not answer) — Windows PowerShell 5.1 runs the disk script instead, and this says why.</summary>
+    public static InteropEngine NotStartable(string reason) =>
+        WindowsPowerShell($"the clock probe verified {MsiFile}, but pwsh.exe could not be started: {Cut(reason)}; Windows PowerShell 5.1 ran instead");
+
+    /// <summary>A value the probe printed — environment-controlled — quoted cut to <c>records.maxReasonChars</c> (code round).</summary>
+    private static string Cut(string value) => ClockParsers.Cut(value);
+
+    private static InteropEngine Msi() =>
         new(
             InteropEngineKind.Msi,
-            HealthCollector.InDistro(MsiFile, automountRoot).ValueOr(MsiFile),
             $"the clock probe verified {MsiFile}: a real file, Authenticode Valid from CN=Microsoft Corporation, under the known folder {KnownFolder}, which the environment's ProgramFiles names too");
 
     /// <summary>EXACTLY the one folder the daemon maps (ordinal): the known-folder API's own spelling, nothing else.</summary>
     private static string FolderProblem(PwshProbe probe) =>
         string.Equals(probe.KnownFolder, KnownFolder, StringComparison.Ordinal)
             ? string.Empty
-            : $"the known folder ProgramFiles is \"{probe.KnownFolder}\", not {KnownFolder} — the one folder the daemon maps to the system drive";
+            : $"the known folder ProgramFiles is \"{Cut(probe.KnownFolder)}\", not {KnownFolder} — the one folder the daemon maps to the system drive";
 
     /// <summary>The environment must AGREE with the known folder (case-insensitive, as Windows compares folder names); it never decides.</summary>
     private static string EnvironmentProblem(PwshProbe probe) =>
         string.Equals(probe.EnvProgramFiles, probe.KnownFolder, StringComparison.OrdinalIgnoreCase)
             ? string.Empty
-            : $"the environment's ProgramFiles (\"{probe.EnvProgramFiles}\") does not name the known folder ({probe.KnownFolder})";
+            : $"the environment's ProgramFiles (\"{Cut(probe.EnvProgramFiles)}\") does not name the known folder ({Cut(probe.KnownFolder)})";
 
     private static string FileProblem(PwshProbe probe) =>
         probe.Msi == File ? string.Empty : $"{MsiFile} is {Item(probe.Msi)}";
@@ -88,11 +97,11 @@ public static class PwshEngine
         "directory" => "a directory, not a file",
         "empty" => "an empty file",
         "" => "not reported: the probe printed pwsh.msi empty",
-        _ => $"not readable ({msi})",
+        _ => $"not readable ({Cut(msi)})",
     };
 
     private static string SignatureProblem(PwshProbe probe) =>
         probe.Signature == Signed
             ? string.Empty
-            : $"{MsiFile} is not signed by Microsoft: {(probe.Signature.Length > 0 ? probe.Signature : "the probe printed no signature")}";
+            : $"{MsiFile} is not signed by Microsoft: {(probe.Signature.Length > 0 ? Cut(probe.Signature) : "the probe printed no signature")}";
 }
