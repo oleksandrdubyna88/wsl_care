@@ -17,3 +17,8 @@ Files:
 
 Redacted, by hand, and nothing else changed:
   - journalctl-time-jumps.out: the host name -> "host"
+
+DERIVED, said so:
+  proc-uptime-5h.txt            /proc/uptime of 18000 s - the capture's own uptime (11358.58 s) is shorter than the
+                                4-h window because the VM had restarted, so a scenario that needs the backward jumps to
+                                cover the whole window uses this one; with it only the jump at 4252.2 s is in the window

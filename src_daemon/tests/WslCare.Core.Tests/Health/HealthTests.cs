@@ -104,7 +104,7 @@ public sealed class HealthTests : IDisposable
 
         Value(health.ClockJumps).Should().Be(875);
         health.JournalOldestEntry.IsAvailable.Should().BeTrue(health.JournalOldestEntry.ReasonOrEmpty);
-        health.JournalReadAt.Should().Be(HealthFixture.CapturedAt, "journal.history counts from the instant the journal was read (research/2026-10-12_wsl_clock_fight.md), not from the window start");
+        Value(health.JournalReadAt).Should().Be(HealthFixture.CapturedAt, "journal.history counts from the instant the journal was read (research/2026-10-12_wsl_clock_fight.md), not from the window start");
         Value(health.Kernel).Should().Match<KernelSignals>(k => k.AllocationFailures == 1 && k.OomKills == 0);
         Value(health.FailedUnits).Should().ContainSingle();
         Value(health.JournalBytes).Should().BePositive();

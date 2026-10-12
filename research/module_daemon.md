@@ -244,10 +244,14 @@ flowchart TB
   - `clock.jumps` warns above `thresholds.clockJumpsWarnPer4h` (100 per 4 h) EXCEPT up to
     `thresholds.clockJumpsStepperFloorPer4h` (600: Docker's measured 480 per 4 h + 25 %) while `clock.fight`'s backward-jump
     count (`HealthSample.TimeJumpsBack`) stays within `thresholds.timeJumpsBackWarnPer4h` — the journal's damage is judged
-    by its rotations, not by the count of steps; an unread rotation count applies no floor.
-  - `journal.history` counts its days from `HealthSample.JournalReadAt` (the injected clock right after `journalctl
-    --list-boots` answered), no longer from `HealthSample.Since` (the previous run's start); a sample without that instant
-    is `unknown`.
+    by its rotations, not by the count of steps. The floor needs the rotation count to cover the SAME window: it counts
+    this boot's last 4 h, the clock changes count since the last run, so a run whose window is longer than the uptime
+    (a VM restart) or than 4 h applies no floor; an unread count or uptime applies none either; a count above its limit
+    is damage however much of the window it covers. Both verdicts take the writers' sentence from ONE constant,
+    `ClockVerdicts.SharedClockWriters`.
+  - `journal.history` counts its days from `HealthSample.JournalReadAt` (a `Reading<DateTimeOffset>`: the injected clock
+    right after `journalctl --list-boots` answered), no longer from `HealthSample.Since` (the previous run's start); a
+    sample without that instant is `unknown` with the reason.
 
 ## Failed units that are not failures (2026-10-12)
 

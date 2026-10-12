@@ -61,8 +61,8 @@ public sealed record HealthSample(
     public Reading<int> TimeJumpsBack { get; init; } = Reading.Missing<int>("not read");
 
     /// <summary>The instant <see cref="JournalOldestEntry"/> was read (UTC, the injected clock right after <c>journalctl
-    /// --list-boots</c> answered) — what <c>journal.history</c> counts its days from; the default when it was not recorded.</summary>
-    public DateTimeOffset JournalReadAt { get; init; }
+    /// --list-boots</c> answered) — what <c>journal.history</c> counts its days from; missing, with that reason, when it was not recorded.</summary>
+    public Reading<DateTimeOffset> JournalReadAt { get; init; } = Reading.Missing<DateTimeOffset>("the instant the journal was read was not recorded");
 
     /// <summary>The Windows disk facts the second fixed interop script read (E15.S1) — the full run's only; no verdict judges
     /// them yet, the run detail records them.</summary>

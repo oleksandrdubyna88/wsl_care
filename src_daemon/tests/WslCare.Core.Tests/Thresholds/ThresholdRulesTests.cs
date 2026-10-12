@@ -184,10 +184,26 @@ public sealed class ThresholdRulesTests : IDisposable
 
     /// <summary>The 2026-10-12 08:03:54Z reading: the previous run started 10-11 22:10Z, the oldest entry is 10-10 07:48Z.</summary>
     private static HealthSample Journal(DateTimeOffset since, DateTimeOffset readAt, DateTimeOffset oldest) =>
-        Health() with { Since = since, JournalOldestEntry = Reading.Of(oldest), JournalReadAt = readAt };
+        Health() with { Since = since, JournalOldestEntry = Reading.Of(oldest), JournalReadAt = Reading.Of(readAt) };
 
-    private static HealthSample Steps(int clockChanges, Reading<int> rotations) =>
-        Health() with { ClockJumps = Reading.Of(clockChanges), TimeJumpsBack = rotations };
+    /// <summary>A sample whose boot is <paramref name="uptimeHours"/> old — 10 h by default, so the 4-h rotation count covers
+    /// the whole 4-h window <see cref="Evaluate"/> judges the clock changes over.</summary>
+    private static HealthSample Steps(int clockChanges, Reading<int> rotations, double uptimeHours = 10) =>
+        Health() with { ClockJumps = Reading.Of(clockChanges), TimeJumpsBack = rotations, Uptime = Reading.Of(TimeSpan.FromHours(uptimeHours)) };
+
+    [Fact]
+    public void A_window_that_spans_a_reboot_applies_no_floor_because_the_rotations_cover_only_this_boot()
+    {
+        var spanning = Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(2), uptimeHours: 3.15)), "clock.jumps");
+
+        spanning.Level.Should().Be(Level.Warn, "the 2026-10-12 capture: a VM restarted 3.15 h ago, the clock changes counted over 4 h, the backward jumps over this boot only");
+        spanning.Reason.Should().Contain("do not cover");
+        Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(2), uptimeHours: 4)), "clock.jumps").Level.Should().Be(Level.Ok, "a boot exactly as old as the window covers it");
+        Find(Evaluate(Reading.Of(Memory(50)), Health() with { ClockJumps = Reading.Of(480), TimeJumpsBack = Reading.Of(2) }), "clock.jumps").Level
+            .Should().Be(Level.Warn, "an unread uptime cannot show the rotations cover the window");
+        Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(11), uptimeHours: 1)), "clock.jumps").Reason
+            .Should().Contain("clock.fight counts 11", "damage seen in part of the window is damage");
+    }
 
     [Fact]
     public void Journal_history_counts_its_days_from_the_moment_the_journal_was_read_not_from_the_window_start()

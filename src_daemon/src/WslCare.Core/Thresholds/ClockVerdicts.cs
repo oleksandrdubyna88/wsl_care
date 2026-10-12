@@ -17,6 +17,10 @@ public static class ClockVerdicts
     public const string ReferenceId = "clock.reference";
     public const string FightId = "clock.fight";
 
+    /// <summary>Who sets the one clock every WSL distro shares — measured 2026-10-12 (research/2026-10-12_wsl_clock_fight.md),
+    /// said in ONE place so <c>clock.fight</c> and <c>clock.jumps</c> never explain the same capture two ways (code round).</summary>
+    public const string SharedClockWriters = "the one clock every WSL distro shares has up to three writers — Docker Desktop's /initd (a step to Windows' time every 30 s while it runs, ≈ 480 per 4 h), WSL's own chronyd (the Hyper-V host clock) and timesyncd (NTP) — and they disagree by Windows' offset to NTP";
+
     public static double TimeJumpsBackWarnPer4h => Tuning.Current.Int(ConfigKeys.Thresholds.TimeJumpsBackWarnPer4h);
 
     public static IReadOnlyList<Verdict> Evaluate(HealthSample health, EffectiveConfig config)
@@ -78,7 +82,7 @@ public static class ClockVerdicts
                 Level.Warn,
                 string.Create(CultureInfo.InvariantCulture, $"{n} in 4 h"),
                 limit,
-                string.Create(CultureInfo.InvariantCulture, $"the distro's clock was set backwards {n} times in 4 h and journald rotated its file each time, which is why the journal history is short. The one clock every WSL distro shares has up to three writers — Docker Desktop's /initd (a step to Windows' time every 30 s while it runs), WSL's own chronyd (the Hyper-V host clock) and timesyncd (NTP) — and they disagree by Windows' offset to NTP; clock.reference names the wrong clock (research/2026-10-12_wsl_clock_fight.md)")),
+                string.Create(CultureInfo.InvariantCulture, $"the distro's clock was set backwards {n} times in 4 h and journald rotated its file each time, which is why the journal history is short; {SharedClockWriters}; clock.reference names the wrong clock (research/2026-10-12_wsl_clock_fight.md)")),
             Reading<int>.Available { Value: var n } => new(FightId, Level.Ok, string.Create(CultureInfo.InvariantCulture, $"{n} in 4 h"), limit, "journald's \"Time jumped backwards\" in the last 4 h of this boot (monotonic clock)"),
             var unknown => new(FightId, Level.Unknown, string.Empty, limit, unknown.ReasonOrEmpty),
         };

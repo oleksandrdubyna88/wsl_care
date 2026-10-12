@@ -96,7 +96,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             ClockJudgement = ClockStandings.Judge(clockSample, reference, ClockReferences.ToleranceSeconds),
             TimeJumpsBack = jumpsBack,
             WindowsDisk = disk,
-            JournalReadAt = journalReadAt,
+            JournalReadAt = Reading.Of(journalReadAt),
         };
     }
 
