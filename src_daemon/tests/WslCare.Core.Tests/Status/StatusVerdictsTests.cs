@@ -216,8 +216,37 @@ public sealed class StatusVerdictsTests : IDisposable
         verdicts.Where(v => v.Id == "host.commit").Should().ContainSingle()
             .Which.Should().Match<Verdict>(v => v.Level == Level.Warn && v.Value == "86.0 of 100.0 GiB = 86.0 %" && v.Basis == new VerdictBasis(VerdictSource.Sample, null, Now, 0));
         verdicts.Select(v => v.Id).Should().OnlyHaveUniqueItems();
-        verdicts.Select(v => v.Id).Should().Equal(StatusVerdicts.From(Sample(Memory(60)), NoFullRun, config, Now).Select(v => v.Id), "the replacement keeps the full run's order");
+        verdicts.Select(v => v.Id).Where(id => id != "host.vmmem").Should().Equal(StatusVerdicts.From(Sample(Memory(60)), NoFullRun, config, Now).Select(v => v.Id), "the replacement keeps the full run's order");
         Find(verdicts, "host.compression").Basis!.Source.Should().Be(VerdictSource.Sample);
+    }
+
+    /// <summary>E15.S5 own review: the full run judges no vmmem, so the Windows binary's sampled <c>host.vmmem</c> replaces nothing —
+    /// it is ADDED once, after every carried verdict (after <c>npm.cache</c>, the full run's last id).</summary>
+    [Fact]
+    public void The_windows_status_adds_its_sampled_host_vmmem_once_after_the_carried_verdicts()
+    {
+        var verdicts = StatusVerdicts.From(WindowsSample(chargeGib: 50), NoFullRun, Config(), Now);
+
+        var ids = verdicts.Select(v => v.Id).ToList();
+        verdicts.Where(v => v.Id == "host.vmmem").Should().ContainSingle().Which.Basis.Should().Be(new VerdictBasis(VerdictSource.Sample, null, Now, 0));
+        ids.IndexOf("host.vmmem").Should().Be(ids.IndexOf("npm.cache") + 1);
+        ids[^1].Should().Be("host.vmmem");
+    }
+
+    /// <summary>E15.S5 code round, finding 2: only the WINDOWS side judges its host sample. A distro-side sample that ever carried a
+    /// host part keeps the carried full-run <c>host.*</c> verdicts, unchanged.</summary>
+    [Fact]
+    public void A_distro_sample_with_a_host_part_keeps_the_carried_host_verdicts()
+    {
+        var runId = RunId.New(Now.AddHours(-1), 6);
+        var commit = new Verdict("host.commit", Level.Ok, "60.0 of 100.0 GiB = 60.0 %", "warn > 80 %, critical > 90 %", "Windows' commit charge");
+        var recorded = Reading.Of(new RecordedVerdicts(runId, Now.AddHours(-1), [commit]));
+        var distroWithHost = Sample(Memory(60)) with { Host = WindowsSample(chargeGib: 95).Host };
+
+        var verdicts = StatusVerdicts.From(distroWithHost, recorded, Config(), Now);
+
+        Find(verdicts, "host.commit").Should().Be(commit with { Basis = new VerdictBasis(VerdictSource.FullRun, runId.Text, Now.AddHours(-1), 3600) });
+        verdicts.Should().NotContain(v => v.Id == "host.vmmem");
     }
 
     /// <summary>E15.S5: the distro's binary has no host sample, so it carries the full run's host verdicts with their run and age.</summary>
@@ -234,6 +263,6 @@ public sealed class StatusVerdictsTests : IDisposable
         var basis = new VerdictBasis(VerdictSource.FullRun, runId.Text, Now.AddHours(-1), 3600);
         Find(verdicts, "host.commit").Should().Be(commit with { Basis = basis });
         Find(verdicts, "host.compression").Should().Be(compression with { Basis = basis });
-        Find(verdicts, "host.vmmem").Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Basis!.Source == VerdictSource.FullRun);
+        verdicts.Should().NotContain(v => v.Id == "host.vmmem", "the full run does not read vmmem; only the Windows binary judges it");
     }
 }

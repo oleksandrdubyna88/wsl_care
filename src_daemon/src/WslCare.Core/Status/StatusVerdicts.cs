@@ -1,6 +1,7 @@
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Health;
+using WslCare.Core.Hosting;
 using WslCare.Core.Thresholds;
 
 namespace WslCare.Core.Status;
@@ -45,15 +46,16 @@ public static class StatusVerdicts
             Reading.Missing<WslConfigAudit>(WslConfigReadByFullRun),
             config);
         var carried = ThresholdRules.UnreadFullRun(config).Select(unread => Carried(unread, fullRun, now)).ToList();
-        var sampledHost = SampledHost(sample.Host, hostWslConfig, config).Select(v => v with { Basis = basis }).ToList();
+        var sampledHost = SampledHost(sample, hostWslConfig, config).Select(v => v with { Basis = basis }).ToList();
         return [.. fromSample.Select(v => v with { Basis = basis }), .. Replaced(carried, sampledHost)];
     }
 
-    /// <summary>E15.S5: the Windows binary judges its OWN host sample by the full run's rule (<see cref="HostRules"/>); the distro's
-    /// binary has no host sample and judges nothing here, so it keeps the carried verdicts.</summary>
-    private static IReadOnlyList<Verdict> SampledHost(Reading<HostSample> host, Reading<WslConfigAudit> wslConfig, EffectiveConfig config) => host switch
+    /// <summary>E15.S5: the Windows binary judges its OWN host sample by the full run's rule (<see cref="HostRules"/>). Only the
+    /// Windows side does (code round, finding 2): the distro's binary judges nothing here, even if its sample ever carried a host
+    /// part, so it keeps the carried verdicts.</summary>
+    private static IReadOnlyList<Verdict> SampledHost(ProbeSample sample, Reading<WslConfigAudit> wslConfig, EffectiveConfig config) => sample switch
     {
-        Reading<HostSample>.Available { Value: var h } => HostRules.Verdicts(HostMemoryFacts.FromProbe(h, wslConfig), config),
+        { Side: HostSide.Windows, Host: Reading<HostSample>.Available { Value: var h } } => HostRules.Verdicts(HostMemoryFacts.FromProbe(h, wslConfig), config),
         _ => [],
     };
 

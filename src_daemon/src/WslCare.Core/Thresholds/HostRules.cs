@@ -29,11 +29,17 @@ public static class HostRules
 
     private const string VmmemReason = "the WSL VM's working set as Windows sees it (vmmemWSL)";
 
+    /// <summary>The Windows binary's road: all three verdicts, over its own sample.</summary>
     public static IReadOnlyList<Verdict> Verdicts(HostMemoryFacts facts, EffectiveConfig config) =>
+        [.. FullRunVerdicts(facts, config), Vmmem(facts, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb))];
+
+    /// <summary>The full run's road: commit and compression only. Its Windows disk script reads no vmmem (E15.S1b may add it), and a
+    /// verdict that could only be <c>unknown</c> would sit in every distro status, the status bar's tooltip and every history line
+    /// (E15.S5 own review). The SAME functions judge both roads.</summary>
+    public static IReadOnlyList<Verdict> FullRunVerdicts(HostMemoryFacts facts, EffectiveConfig config) =>
     [
         Commit(facts, config.Int(ConfigKeys.Thresholds.HostCommitWarnPercent), config.Int(ConfigKeys.Thresholds.HostCommitCriticalPercent)),
         Compression(facts.CompressionBytes, config.Int(ConfigKeys.Thresholds.HostCompressionWarnGb)),
-        Vmmem(facts, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb)),
     ];
 
     private static Verdict Commit(HostMemoryFacts facts, int warnPercent, int criticalPercent)

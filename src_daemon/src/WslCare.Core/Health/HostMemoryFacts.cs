@@ -39,7 +39,8 @@ public sealed record HostMemoryFacts(
             host.Memory.Map(m => m.TotalBytes),
             wslConfig);
 
-    /// <summary>The distro's full-run road: the Windows disk script's <c>commit=</c> and <c>compression=</c> lines.</summary>
+    /// <summary>The distro's full-run road: the Windows disk script's <c>commit=</c> and <c>compression=</c> lines. Its vmmem is unknown,
+    /// so the full run's rule (<c>HostRules.FullRunVerdicts</c>) judges no <c>host.vmmem</c> at all.</summary>
     public static HostMemoryFacts FromWindowsDisk(WindowsDiskSample disk, Reading<WslConfigAudit> wslConfig) =>
         new(
             disk.Facts.Bind(f => f.CommitBytes),

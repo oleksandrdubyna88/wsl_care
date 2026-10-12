@@ -41,6 +41,9 @@ public sealed record HostCommit(long ChargeBytes, long LimitBytes)
     /// <summary><c>MEMORYSTATUSEX</c>'s page-file fields: <c>ullTotalPageFile</c> is the commit limit and <c>ullAvailPageFile</c> is
     /// what can still be committed, so the charge is the difference (the same quantity as the perf counter's
     /// <c>CommittedBytes</c> / <c>CommitLimit</c>, research/2026-10-12_host_memory.md).</summary>
+    /// <remarks>Windows gives the SMALLER of the system's and the calling process's commit limits in these fields: inside a Job
+    /// Object with a commit limit they would be the job's figures. The daemon sets no commit limit on any job (WR-D3's supervisor
+    /// sets <c>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</c> alone), so they are the system's.</remarks>
     public static HostCommit FromPageFile(ulong totalPageFile, ulong availablePageFile) =>
         new((long)totalPageFile - (long)availablePageFile, (long)totalPageFile);
 }

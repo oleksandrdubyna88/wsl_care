@@ -61,6 +61,14 @@ public sealed class HostRulesTests : IDisposable
         HostRules.Verdicts(Facts(), Config()).Select(v => v.Id).Should().Equal("host.commit", "host.compression", "host.vmmem");
     }
 
+    /// <summary>E15.S5 own review: the full run does not read vmmem, so its road judges commit and compression ONLY — a verdict that
+    /// could never be anything but <c>unknown</c> would sit in every distro status, the status bar's tooltip and every history line.</summary>
+    [Fact]
+    public void The_full_run_road_judges_commit_and_compression_only()
+    {
+        HostRules.FullRunVerdicts(Facts(), Config()).Select(v => v.Id).Should().Equal("host.commit", "host.compression");
+    }
+
     [Theory]
     [InlineData(860, Level.Warn)]
     [InlineData(910, Level.Critical)]
@@ -142,7 +150,7 @@ public sealed class HostRulesTests : IDisposable
     }
 
     /// <summary>The same function on both bases: equal figures through the Windows binary's sample and through the full run's
-    /// disk script give the same verdicts (vmmem aside — the script does not read it).</summary>
+    /// disk script give the same commit and compression verdicts. The full run judges no vmmem (its script does not read it).</summary>
     [Fact]
     public void Equal_figures_on_both_roads_give_the_same_commit_and_compression_verdicts()
     {
@@ -160,12 +168,11 @@ public sealed class HostRulesTests : IDisposable
         };
 
         var windows = HostRules.Verdicts(HostMemoryFacts.FromProbe(probe, WslConfig), config);
-        var fullRun = HostRules.Verdicts(HostMemoryFacts.FromWindowsDisk(disk, WslConfig), config);
+        var fullRun = HostRules.FullRunVerdicts(HostMemoryFacts.FromWindowsDisk(disk, WslConfig), config);
 
-        fullRun.Where(v => v.Id != "host.vmmem").Should().Equal(windows.Where(v => v.Id != "host.vmmem"));
+        fullRun.Should().Equal(windows.Where(v => v.Id != "host.vmmem"));
         windows.Single(v => v.Id == "host.commit").Level.Should().Be(Level.Warn);
         windows.Single(v => v.Id == "host.compression").Level.Should().Be(Level.Warn);
-        fullRun.Single(v => v.Id == "host.vmmem").Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == HostMemoryFacts.VmmemReadByWindows);
     }
 
     /// <summary>The full run judges the CAPTURED script answer (2026-10-10: 110 976 245 760 of 156 356 161 536 B committed, Memory
@@ -185,7 +192,7 @@ public sealed class HostRulesTests : IDisposable
         ids.IndexOf("host.commit").Should().Be(ids.IndexOf("disk.hostFree") + 1);
         verdicts.Single(v => v.Id == "host.commit").Should().Match<Verdict>(v => v.Level == Level.Ok && v.Value == "103.4 of 145.6 GiB = 71.0 %");
         verdicts.Single(v => v.Id == "host.compression").Should().Match<Verdict>(v => v.Level == Level.Warn && v.Value == "9.86 GiB");
-        verdicts.Single(v => v.Id == "host.vmmem").Level.Should().Be(Level.Unknown);
+        ids.Should().NotContain("host.vmmem", "the full run does not read vmmem, so it judges none");
     }
 
     [Fact]
