@@ -328,7 +328,11 @@ public sealed class FetchWindowsDaemonFlows
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
         clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "the hung attempt was ended near its 2 s limit, not after the fake's 120 s sleep");
         Downloads(world).Should().Be(2);
-        result.Stderr.Should().Contain("download attempt 1 of 2 failed (exit 124)", "timeout's own code names the ended attempt");
+        // How the hung attempt ended depends on the machine's speed, not on the product: `timeout` answers 124 when TERM ended
+        // it, and 137 when the fake was still alive after the kill grace and KILL ended it — seen on CI's loaded Windows runner
+        // (PR #137, 2026-10-12). Both are "ended at its limit"; what the guarantee needs is that the attempt ended and the next
+        // one ran, asserted above.
+        result.Stderr.Should().MatchRegex(@"download attempt 1 of 2 failed \(exit (124|137)\)", "timeout's own code names the ended attempt: 124 after TERM, 137 after KILL");
     }
 
     [Theory]
