@@ -945,3 +945,74 @@ status budget at 4.6 s under load; a pid reused in the umask flow). Both passed 
 **Open — the extension's follow-up (design point 3).** `INSTALL_COMMAND` (`src_vs_code/src/install/installCommand.ts:44`)
 pins the `install.sh` of a RELEASED tag, and a released `install.sh` refuses an unknown argument. So the extension adds
 `--distro-name "$WSL_DISTRO_NAME"` only after a daemon release ships this change. Not changed here.
+
+## E15.S5 design — Windows memory pressure, one rule on both roads (2026-10-12, branch `feat/wc-e15s5-host-memory`)
+
+**Goal.** Three host verdicts, judged by ONE pure function, on whichever road has the facts:
+- `host.commit` — Windows' commit charge against its commit limit.
+- `host.compression` — the Memory Compression process's working set.
+- `host.vmmem` — the WSL VM's working set as Windows sees it.
+
+Read-only: nothing is acted on.
+
+**The two roads (mapped 2026-10-12):**
+- **The Windows binary's `status`.** `Collectors/WindowsProbe.cs` already calls `GlobalMemoryStatusEx`. `ullTotalPageFile` is the
+  commit limit, and `ullAvailPageFile` is what can still be committed, so charge = total − available. That is the same quantity as
+  the full run's `CommittedBytes` / `CommitLimit`. Neither field is read today (`Win32Counters.Memory`, `WindowsProbe.cs:64-70`).
+  `VmmemWorkingSet()` is read; Memory Compression is not.
+- **The distro's full run.** E15.S1's disk script gives `WindowsDiskFacts.CommitBytes`, `CommitLimitBytes` and
+  `CompressionBytes`. It gives no vmmem figure.
+
+**1. Facts.** `Health/HostMemoryFacts.cs` holds `HostMemoryFacts(Reading<long> CommitBytes, Reading<long> CommitLimitBytes,
+Reading<long> CompressionBytes, Reading<long> VmmemBytes, Reading<long> HostTotalBytes)`. It has two builders:
+- `FromProbe(HostSample)` (Windows);
+- `FromWindowsDisk(WindowsDiskSample)` (the full run). Here `VmmemBytes` is unknown, with the reason "vmmemWSL is read by the
+  Windows binary's status".
+
+The Windows sample gains `HostSample.Commit` (from `TotalPageFile` / `AvailablePageFile`) and `HostSample.CompressionBytes`
+(`Process.GetProcessesByName("Memory Compression")` from the kernel's snapshot, as `vmmemWSL` is read: nothing is started, and
+no handle is opened). `IWindowsCounters` gains the two readers, and its test fakes follow.
+
+**2. The one rule** (`Thresholds/HostRules.cs`, PURE): `Verdicts(HostMemoryFacts, EffectiveConfig)`.
+- `host.commit`: warn above `thresholds.hostCommitWarnPercent` (80); critical above `thresholds.hostCommitCriticalPercent` (90);
+  the value is "charge of limit = %".
+- `host.compression`: warn above `thresholds.hostCompressionWarnGb` (8 GiB).
+- `host.vmmem`: warn above the EXISTING `wslConfig.vmmemAdviceGb` (one number for one idea). The reason is
+  `VmmemAdvice.For(...)`'s text, so the advice and the verdict cannot disagree.
+- An unread figure is `unknown` with its reason, never `ok`.
+- Load-time rule: critical > warn. A layer that inverts them is refused, by the existing coupled-limits check (`NumberRules`).
+
+**3. Where each road judges:**
+- **Full run:** `HostRules` is spread into `ThresholdRules.FromFullRun` over `FromWindowsDisk(inputs.Health.WindowsDisk)`, so the
+  distro's `status` carries these verdicts with `basis: fullRun` and their age.
+- **Windows binary:** `StatusVerdicts.From` judges `HostRules` over `FromProbe(sample.Host)` with `basis: sample`. A sampled
+  verdict REPLACES the carried full-run verdict of the same id, because the newer, direct reading wins. So a `status` never lists
+  an id twice. The distro's binary has no host sample and keeps the carried ones.
+
+**4. Keys:** `thresholds.hostCommitWarnPercent` (50–99, 80), `thresholds.hostCommitCriticalPercent` (51–100, 90),
+`thresholds.hostCompressionWarnGb` (1–256, 8). These are display keys, with a coupled rule warn < critical. Defaults come from the
+plan row and are STARTING VALUES. Measured: on the owner's machine, commit was 10.4 of 44.9 GiB on the guest side (D3). The host
+side's 110.98 GB commit charge is in the 2026-10-10 capture, against a limit that the as-built section will record.
+
+**5. Extension:** `src_vs_code/src/statusBar/statusBarModel.ts` `RELEVANT_VERDICT_PREFIXES` gains `host.`, per the plan's stated
+assumption ("`host.*` verdicts colour the status bar"). Tests: `statusBar.test.ts`.
+
+**6. RED first:**
+- 86 % warns.
+- 91 % is critical.
+- 79.9 % is ok.
+- A limit of 0 or an unread charge is `unknown`.
+- 8.1 GiB of compression warns.
+- vmmem above `wslConfig.vmmemAdviceGb` warns, and its reason is the advice text.
+- **The same function on both bases:** equal figures built through `FromProbe` and through `FromWindowsDisk` give the same verdicts
+  (vmmem aside).
+- The Windows status lists `host.commit` once, with `basis: sample`, even when its history carries a full-run one.
+- The distro status carries the full-run `host.*` verdicts.
+- `GlobalMemoryStatusEx`'s page-file fields map to charge and limit (a fake counter).
+- The status bar colours on `host.commit` warn.
+
+Break-its on the edges and on the replacement. Docs: README (the keys), `module_daemon`, `module_vs_code`, `module_tests`, the
+as-built section.
+
+**Out of scope, recorded:** a vmmem line in the distro's disk script. That would let the full run judge `host.vmmem` too. It
+waits until E15.S1b (which changes that script) has merged.
