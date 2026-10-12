@@ -87,4 +87,60 @@ public sealed class ArchiveEngineTests : IDisposable
         Statuses(result).Should().Equal($"A13:{ActionStatus.Failed}", $"A1:{ActionStatus.Ran}");
         ((ActResult.Done)result).Detail.Actions[0].Reason.Should().Contain("ceiling");
     }
+
+    // ---- 2026-10-12, archive.maxDeferHours: the REAL A13 through the engine (the plan round's #1) ----
+
+    private void LiveTimer(string archive = """ "baseFolder": "/mnt/v/ai-archive" """)
+    {
+        _sandbox.Write("/home/me/.config/wsl-care/config.json", $$"""{ "dryRun": false, "archive": { {{archive}} } }""");
+        _sandbox.Write("/var/lib/wsl-care/first-timer-run.json", """{"schemaVersion":1,"at":"2026-09-01T00:00:00+00:00"}""");
+        _sandbox.Load(3.9, 3.9, 3.9, cpus: 4);
+    }
+
+    private void Deferred(params double[] hoursAgo)
+    {
+        var text = string.Concat(hoursAgo.OrderByDescending(h => h).Select(h => System.Text.Json.JsonSerializer.Serialize(MaxDeferTests.Line(h, ActionStatus.Deferred), Json.WslCareJsonContext.Compact.RunRecord) + "\n"));
+        Directory.CreateDirectory(Path.GetDirectoryName(RunHistory.File(_sandbox.Paths))!);
+        File.WriteAllText(RunHistory.File(_sandbox.Paths), text);
+    }
+
+    [Fact]
+    public async Task Past_archive_maxDeferHours_the_timer_runs_A13_despite_the_load_and_its_detail_says_why()
+    {
+        LiveTimer();
+        Deferred(26, 20, 14, 8, 2);
+        // The run child's answer names the run ROOT started (A13 believes no other run's answer): the fixed now and this pid.
+        var (engine, runner) = Engine([ArchiveActionTests.RunJson(ArchiveActionTests.RunReport() with { RunId = RunId.New(FixedTimeProvider.DefaultNow, Pid).Text })]);
+
+        var result = await engine.ExecuteAsync(Run(RunTrigger.Timer, "A13"), CancellationToken.None);
+
+        var outcome = result.Should().BeOfType<ActResult.Done>().Subject.Detail.Actions.Single();
+        outcome.Status.Should().Be(ActionStatus.Ran, outcome.Reason);
+        outcome.Reason.Should().StartWith("ran despite the load: A13 waited for idle since ").And.Contain("(26 h, archive.maxDeferHours 24)").And.Contain("is not below idle.cpuPercent 20 %");
+        outcome.Run!.Count.Should().BeGreaterThan(0, "the run child's measured answer is believed as on any run");
+        runner.Requests.Select(r => TargetUserArgv.Parse(r.Argv) is { Arguments: ["archive", var verb, ..] } ? verb : "?").Should().Equal(["preview", "reach", "run"], "the preview, the short reach child, then the streamed run child — every gate of A13's own kept");
+    }
+
+    [Fact]
+    public async Task Within_archive_maxDeferHours_the_timer_defers_A13_and_starts_no_run_child()
+    {
+        LiveTimer();
+        Deferred(20, 14, 8, 2);
+        var (engine, runner) = Engine();
+
+        var result = await engine.ExecuteAsync(Run(RunTrigger.Timer, "A13"), CancellationToken.None);
+
+        Statuses(result).Should().Equal($"A13:{ActionStatus.Deferred}");
+        runner.Requests.Should().ContainSingle("only the preview").Which.Argv.Should().Contain("preview");
+    }
+
+    [Fact]
+    public async Task With_archive_maxDeferHours_0_the_timer_defers_A13_however_long_it_waited()
+    {
+        LiveTimer(""" "baseFolder": "/mnt/v/ai-archive", "maxDeferHours": 0 """);
+        Deferred(70, 50, 30, 10, 1);
+        var (engine, _) = Engine();
+
+        Statuses(await engine.ExecuteAsync(Run(RunTrigger.Timer, "A13"), CancellationToken.None)).Should().Equal($"A13:{ActionStatus.Deferred}");
+    }
 }

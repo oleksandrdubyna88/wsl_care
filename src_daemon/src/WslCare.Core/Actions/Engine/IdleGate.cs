@@ -16,7 +16,12 @@ namespace WslCare.Core.Actions.Engine;
 public sealed record IdleSample(Reading<double> CpuBusyPercent, string Window, Reading<IReadOnlyList<string>> Builds);
 
 /// <summary>Idle, or busy with the reason the action is deferred.</summary>
-public sealed record IdleVerdict(bool Idle, string Reason);
+public sealed record IdleVerdict(bool Idle, string Reason)
+{
+    /// <summary>Busy for the LOAD alone: the load was read and is not below <c>idle.cpuPercent</c>, the builds were read and none runs —
+    /// the one deferral <see cref="ICleanupAction.MaxDeferHours"/> may override (an unknown figure or a running build never is).</summary>
+    public bool LoadOnly { get; init; }
+}
 
 /// <summary>
 /// Plan §5 <i>Heavy actions wait for idle</i>: CPU below <c>idle.cpuPercent</c> for <c>idle.minutes</c>, and no
@@ -61,7 +66,7 @@ public static class IdleGate
             (Reading<double>.Unavailable u, _) => new(false, $"deferred: CPU use is unknown ({u.Reason})"),
             (_, Reading<IReadOnlyList<string>>.Unavailable u) => new(false, $"deferred: running builds are unknown ({u.Reason})"),
             (Reading<double>.Available { Value: var busy }, _) when busy >= limit =>
-                new(false, string.Create(CultureInfo.InvariantCulture, $"deferred: CPU {busy:0.#} % over the last {sample.Window} is not below idle.cpuPercent {limit} %")),
+                new(false, string.Create(CultureInfo.InvariantCulture, $"deferred: CPU {busy:0.#} % over the last {sample.Window} is not below idle.cpuPercent {limit} %")) { LoadOnly = sample.Builds is Reading<IReadOnlyList<string>>.Available { Value.Count: 0 } },
             (_, Reading<IReadOnlyList<string>>.Available { Value.Count: > 0 } builds) =>
                 new(false, $"deferred: a build is running ({string.Join("; ", builds.Value.Take(3))})"),
             (Reading<double>.Available { Value: var quiet }, _) =>

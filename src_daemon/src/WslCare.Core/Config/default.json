@@ -113,6 +113,7 @@
     "marginDays": 7,
     "agentRetentionDays": 30,
     "urgentWithinDays": 7,
+    "maxDeferHours": 24,
     "minFreeGb": 5,
     "copyBufferKib": 1024,
     "runBudgetMinutes": 30,

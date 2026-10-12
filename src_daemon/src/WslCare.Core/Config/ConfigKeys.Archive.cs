@@ -46,6 +46,12 @@ public static partial class ConfigKeys
         /// <summary>Within this many days of an agent's retention the timer does not wait for an idle machine (§15r D8). Default 7.</summary>
         public static readonly ConfigKey.IntKey UrgentWithinDays = new("archive.urgentWithinDays", 0, 365) { Trust = KeyTrust.Higher };
 
+        /// <summary>Once A13's timer deferrals for a busy CPU have lasted this long, the next timer run runs it despite the load and says
+        /// why (2026-10-12, the first live run: about 20 sessions keep the load above <c>idle.cpuPercent</c> all day). 0 means never — it
+        /// waits for idle however long, the safest value. At most 72: well below <c>runs.historyRetentionDays</c>' floor (7 days), so the
+        /// streak's first deferral is still in the history when it comes due. Default 24.</summary>
+        public static readonly ConfigKey.IntKey MaxDeferHours = new("archive.maxDeferHours", 0, 72) { Trust = new(SafeDirection.Higher, ZeroIsUnbounded: true) };
+
         /// <summary>The base keeps this much free; a session that would go below it is not started (§15r D7). Default 5.</summary>
         public static readonly ConfigKey.IntKey MinFreeGb = new("archive.minFreeGb", 0, GbCeiling) { Trust = KeyTrust.Higher };
 

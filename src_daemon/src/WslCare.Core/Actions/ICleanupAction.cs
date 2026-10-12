@@ -238,6 +238,11 @@ public interface ICleanupAction
     /// home folder; <c>ActionHomeRootsTests</c> holds every user-scoped action to its declaration.</summary>
     IReadOnlyList<HomeFolder> HomeRoots => [];
 
+    /// <summary>How long the TIMER may defer this action for a busy CPU before it runs it anyway (A13: <c>archive.maxDeferHours</c>);
+    /// <c>null</c> — every action but A13 — waits for idle however long. Only the load is overridden: an unknown figure or a running
+    /// build still defers (<see cref="Engine.IdleDeferrals"/>).</summary>
+    ConfigKey.IntKey? MaxDeferHours => null;
+
     Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken);
 
     /// <summary>Whether the TIMER's trigger fired for this preview (a button runs regardless, plan §5).</summary>

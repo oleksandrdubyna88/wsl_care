@@ -1818,6 +1818,13 @@ present and the pipes-vs-sockets question cannot be measured yet. Both wait for 
 
 ### S8 — the 24 h × 20 sessions soak campaign
 
+> **Open question added 2026-10-12** (the `archive.maxDeferHours` change in [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md)): should
+> A13's idle gate read PSI (`pressure.cpu`, S6) instead of the load average? Measure it here first, beside the archive's throughput
+> and the sessions' latency: PSI cpu tells stall time, not the I/O headroom an archive to `/mnt/v` needs. The first reading points
+> that way: on 2026-10-12, with the usual sessions running, `/proc/loadavg` read 12.17 12.25 10.58 on 24 CPUs (51 %, a deferral
+> at `idle.cpuPercent` 20) while `/proc/pressure/cpu` read some avg10 1.31, avg60 1.73, avg300 2.72 — the CPU was hardly contended;
+> the load is mostly tasks waiting in the kernel, not for a CPU.
+
 **What is sampled, every `soak.periodMinutes` (10):** `wsl-care status --json` (the S1 MCP block, S5/S6 verdicts, memory,
 PSI), `wsl-care busy --json`, the count of Claude Code "connection timed out after 30000ms" lines since the previous sample
 (read-only, from Claude Code's own MCP logs), Windows counters (CPU, commit, `vmmemWSL`, `creds-mcp.exe` count and

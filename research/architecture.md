@@ -1033,6 +1033,12 @@ and a planted action that builds a shell string from a preview name.
   run is a moment, and the load average is the only CPU history the kernel keeps; it counts I/O wait as busy, the
   conservative direction. Builds are `docker … build|bake`, `dotnet build|test|publish|pack|msbuild`, `npm ci|install`
   among the distro's processes (the fast probe's table). An unread figure defers.
+- **The idle gate has one bounded exception (2026-10-12, `archive.maxDeferHours`).** An action that declares
+  `ICleanupAction.MaxDeferHours` (A13 alone) runs on the TIMER despite the load once its live timer deferrals in
+  `history.jsonl` have lasted that long (`IdleDeferrals.StreakStart`; a dry run, a button run or any other status ends the
+  streak). Only the load is overridden (`IdleVerdict.LoadOnly`); an unknown figure or a running build still defers, and every other
+  gate keeps its place. The outcome says "ran despite the load: … since <UTC> (<h> h, archive.maxDeferHours <n>); <the verdict>".
+  [module_archive.md](module_archive.md) has the archive's side of it.
 - **Heavy actions** (`IdleRule`): `TimerOnly` for A1 / A2, `Always` for A7 / A15 — a button press of A7 while a build
   runs is deferred too (refused with the reason); A10 never waits.
 - **A preview takes no lock** and writes nothing — it is a question, like `preview --all`; only `--confirm` locks.

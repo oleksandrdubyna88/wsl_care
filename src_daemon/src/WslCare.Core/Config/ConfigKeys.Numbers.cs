@@ -188,6 +188,7 @@ public static partial class ConfigKeys
         Archive.MarginDays,
         Archive.AgentRetentionDays,
         Archive.UrgentWithinDays,
+        Archive.MaxDeferHours,
         Archive.MinFreeGb,
         Archive.CopyBufferKib,
         Archive.RunBudgetMinutes,

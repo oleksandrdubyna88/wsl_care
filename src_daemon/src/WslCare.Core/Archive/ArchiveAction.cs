@@ -40,6 +40,8 @@ public sealed class ArchiveAction : ICleanupAction
 
     public IdleRule Idle => IdleRule.TimerOnly;
 
+    public ConfigKey.IntKey? MaxDeferHours => ConfigKeys.Archive.MaxDeferHours;
+
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];
 
     public IReadOnlyList<CommandTemplate> Commands { get; } = [ArchiveChildren.Preview, ArchiveChildren.Reach, ArchiveChildren.Run];
