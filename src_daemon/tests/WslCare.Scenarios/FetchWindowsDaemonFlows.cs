@@ -287,6 +287,7 @@ public sealed class FetchWindowsDaemonFlows
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
         Downloads(world).Should().Be(3, "two failed attempts, then the one that worked");
         (result.Stdout + result.Stderr).Should().Contain("download attempt 1 of 3 failed").And.Contain("download attempt 2 of 3 failed");
+        result.Stderr.Should().Contain("download attempt 3 of 3 started (limit ", "a stalled attempt is never silent: its start is said before it runs (coai code round)");
         File.ReadAllBytes(Path.Combine(world.Out, "bin", "wsl-care.exe")).Should().Equal(Exe);
     }
 
@@ -332,7 +333,9 @@ public sealed class FetchWindowsDaemonFlows
 
     [Theory]
     [InlineData("WSL_CARE_FETCH_ATTEMPT_SECONDS", "0")]
+    [InlineData("WSL_CARE_FETCH_ATTEMPT_SECONDS", "3601")]
     [InlineData("WSL_CARE_FETCH_KILL_GRACE_SECONDS", "0")]
+    [InlineData("WSL_CARE_FETCH_KILL_GRACE_SECONDS", "61")]
     [InlineData("WSL_CARE_FETCH_ATTEMPTS", "0")]
     [InlineData("WSL_CARE_FETCH_ATTEMPTS", "eleven")]
     [InlineData("WSL_CARE_FETCH_ATTEMPTS", "11")]

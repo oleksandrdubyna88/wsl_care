@@ -74,7 +74,7 @@ download_assets() {
     && timeout -k "$kill_grace" "$attempt_seconds" gh release download "$tag" --repo "$REPO" -p "$zip" -p "$zip.sha256" --dir "$(native "$work/download")"
 }
 
-with_retries "$attempts" "$backoff" download download_assets \
+with_retries "$attempts" "$backoff" download "(limit $attempt_seconds s)" download_assets \
   || refuse "could not download $zip and its .sha256 from $tag after $attempts attempts (is daemon $version published with its win-x64 asset?)"
 bash "$here/verify-release-assets.sh" "$version" "$work/download" win-x64 \
   || refuse "the download of $tag is not exactly $zip and its matching .sha256"

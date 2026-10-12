@@ -15,13 +15,15 @@ retry_setting() {
   exit 2
 }
 
-# with_retries <attempts> <backoff-seconds> <label> <command...>: runs the command up to <attempts> times. Before attempt k + 1 it
-# waits k x <backoff-seconds> (a growing backoff); every failed attempt is said on stderr with its exit code, so a cancelled job
-# still shows what it saw. Answers 0 on the first success, else the last attempt's exit code.
+# with_retries <attempts> <backoff-seconds> <label> <limit-note> <command...>: runs the command up to <attempts> times. Each attempt
+# is said on stderr as it STARTS, with <limit-note> (a stalled attempt is never silent — the coai code round), and again with its
+# exit code when it fails, so a cancelled job still shows what it saw. Before attempt k + 1 it waits k x <backoff-seconds> (a
+# growing backoff). Answers 0 on the first success, else the last attempt's exit code.
 with_retries() {
-  local attempts="$1" backoff="$2" label="$3" attempt=1 code=0
-  shift 3
+  local attempts="$1" backoff="$2" label="$3" note="$4" attempt=1 code=0
+  shift 4
   while true; do
+    echo "$label attempt $attempt of $attempts started $note" >&2
     if "$@"; then
       return 0
     else
