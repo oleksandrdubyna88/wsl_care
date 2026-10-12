@@ -30,7 +30,8 @@ test('over the head golden: RAM used, swap, containers — short — and uncolou
 test('only the verdicts about what the bar shows colour it: the head golden carries clock / systemd / collector warnings and stays uncoloured', () => {
   const body = headBody('status');
   const warnings = (body.verdicts as { id: string; level: string }[]).filter((v) => v.level === 'warn').map((v) => v.id);
-  assert.ok(warnings.includes('clock.jumps') && warnings.includes('systemd.failedUnits'), warnings.join(', '));
+  // systemd.wslPro, not systemd.failedUnits: the captured failed unit is getty@tty1.service, ignored by default since 2026-10-12.
+  assert.ok(warnings.includes('clock.jumps') && warnings.includes('systemd.wslPro') && warnings.includes('collectors.sysstat'), warnings.join(', '));
   assert.ok(warnings.every((id) => !RELEVANT_VERDICT_PREFIXES.some((p) => id.startsWith(p))));
   assert.equal(barView(answered('status', body)).level, 'none');
 });
