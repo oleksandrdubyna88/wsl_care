@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 /// other number key.</summary>
 public static partial class ConfigKeys
 {
-    public static partial class Disk
+    public static class Disk
     {
         /// <summary>E15.S1: the Windows disk script reads the System log's storage events of this many days back — baked into the
         /// fixed script as an integer, never as text. Default 60 (research/2026-10-10_disk.md D4).</summary>

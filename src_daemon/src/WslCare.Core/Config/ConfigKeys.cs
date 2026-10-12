@@ -95,41 +95,6 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey OlderThanDays = new("buildCache.olderThanDays", 0, DaysCeiling) { Trust = KeyTrust.Higher };
     }
 
-    public static partial class Npm
-    {
-        public static readonly ConfigKey.IntKey MaxCacheGb = new("npm.maxCacheGb", 0, GbCeiling) { Trust = KeyTrust.Higher };
-    }
-
-    public static partial class Journal
-    {
-        public static readonly ConfigKey.IntKey KeepDays = new("journal.keepDays", 1, DaysCeiling) { Trust = KeyTrust.Higher };
-    }
-
-    public static partial class BuildServers
-    {
-        public static readonly ConfigKey.IntKey IdleHours = new("buildServers.idleHours", 0, HoursCeiling) { Trust = KeyTrust.Higher };
-    }
-
-    public static partial class Processes
-    {
-        public static readonly ConfigKey.IntKey IdleOlderThanHours = new("processes.idleOlderThanHours", 0, HoursCeiling) { Trust = KeyTrust.Higher };
-        /// <summary>A11's families (§15q R1.3, review B1): only the catalogue's named families — never <c>other</c>, the catch-all, which
-        /// would let root end every account's idle orphans; and not <c>ai-agents</c>, whose processes are the owner's work (§15q Q13).</summary>
-        public static readonly ConfigKey.TextListKey Families = new("processes.families", Collectors.ProcessFamilies.ChoosableForA11) { Trust = new(SafeDirection.Subset) };
-
-        /// <summary>A18 (plan §15q E7.S2b, owner decision 2026-10-05): an AI agent's orphaned process is ended only after this many
-        /// hours with NO CPU, measured by identity, and with no session of its agent written in that window. A longer window is
-        /// stricter.</summary>
-        public static readonly ConfigKey.IntKey AiAgentsIdleHours = new("processes.aiAgentsIdleHours", 1, 168) { Trust = KeyTrust.Higher };
-    }
-
-    public static partial class Thresholds
-    {
-        public static readonly ConfigKey.IntKey MemAvailableWarnPercent = new("thresholds.memAvailableWarnPercent", 0, 100);
-        public static readonly ConfigKey.IntKey MemAvailableActPercent = new("thresholds.memAvailableActPercent", 0, 100) { Trust = KeyTrust.Lower };
-        public static readonly ConfigKey.IntKey SwapWarnGb = new("thresholds.swapWarnGb", 0, GbCeiling);
-    }
-
     public static class AiAgents
     {
         public static readonly ConfigKey.IntKey WarnGb = new("aiAgents.warnGb", 0, GbCeiling);
@@ -141,73 +106,10 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.AgentListKey Extra = new("aiAgents.extra");
     }
 
-    public static partial class McpServers
-    {
-        /// <summary>The MCP servers of the AI agents the daemon counts (plan §15q E7.S2d): a list CLOSED over the catalogue's names
-        /// (the E7.S0 B1 rule), every catalogued server by default. Since E14 S2a it also says which servers A19 may stop; it stays a display key — A19 stops only the target user's own idle servers, with every guard.</summary>
-        public static readonly ConfigKey.TextListKey Watched = new("mcpServers.watched", Mcp.McpServerCatalogue.Names) { Trust = KeyTrust.Display };
-
-        /// <summary>The user's OWN MCP servers, by program file name (plan E14 S2c, the owner's Q-M2 of 2026-10-08): an OPEN list,
-        /// every member a file name that is no AI agent, interpreter, shell, launcher, this product or catalogue server
-        /// (<see cref="TextRule.McpProgramName"/>), at most <see cref="Mcp.McpUserPrograms.MaxMembers"/>. Root's A19 and CPU history
-        /// read it, and it WIDENS what A19 may stop — yet it is an ordinary user key (no safe direction, not machine-only): A19 stops
-        /// only the TARGET user's own processes (the uid re-read from /proc) with every S2a guard, and never an orphan of a user
-        /// program, so a name a user adds lets root stop only what that user could stop. <c>auto.A19</c> off, or the name removed,
-        /// keeps a program running.</summary>
-        public static readonly ConfigKey.TextListKey Programs = new("mcpServers.programs", [], new TextRule.McpProgramName(), Mcp.McpUserPrograms.MaxMembers) { Trust = KeyTrust.Display };
-    }
-
-    public static partial class Archive
-    {
-        public static readonly ConfigKey.IntKey OlderThanDays = new("archive.olderThanDays", 1, DaysCeiling) { Trust = KeyTrust.Higher };
-
-        /// <summary>The E9.S5 amendment (owner decision 2026-10-09): while Claude Code runs on Windows — whose working folder cannot be
-        /// read — a Claude Code session moves only when ALL its files were untouched this many days. At least a day: a session idle for
-        /// less is likely the one open in a window this evening. At most a year: past it the rule would only restate "nothing moves
-        /// while Claude runs".</summary>
-        public static readonly ConfigKey.IntKey WindowsIdleDays = new("archive.windowsIdleDays", 1, WindowsIdleCeilingDays) { Trust = KeyTrust.Higher };
-
-        /// <summary>The tolerance of "now" against a file's time (the E9.S5 amendment): a NAS stamps a share's files, a WSL VM clock drifts
-        /// after sleep. A file dated later than now by more than this keeps its session — which clock is wrong is not guessed.</summary>
-        public static readonly ConfigKey.IntKey ClockSkewMinutes = new("archive.clockSkewMinutes", 0, MinutesPerDay) { Trust = KeyTrust.Higher };
-
-        /// <summary>Empty means no archive is configured and A13 does not run. The folder as THIS side sees it. An ordinary key since
-        /// plan §15r D1 (E9.S0): root never opens, writes or removes anything under it — the TARGET USER's own process moves — so the
-        /// user layer may name it; the base rules (§15r D7, <c>Archive.BaseFolderRules</c>) are judged by that user's process at
-        /// <c>config set</c>, by <c>archive check-base</c> and at the start of every run, never trusted because they held once. It
-        /// was machine-layer only until then (§15q R1.3, review B1).</summary>
-        public static readonly ConfigKey.TextKey BaseFolder = new("archive.baseFolder", new TextRule.AbsolutePathOrEmpty()) { Trust = KeyTrust.Display };
-
-        /// <summary>Which agents are archived (plan §15r): only agents whose catalogue entry carries an <c>archive</c> block — never one
-        /// whose layout nobody confirmed — and, off by default, manual agents named <c>manual:&lt;name&gt;</c> that carry a session
-        /// glob (E9.S0 review round decision (b)). Fewer is the safe direction.</summary>
-        public static readonly ConfigKey.TextListKey Agents = new("archive.agents", WslCare.Core.Agents.AgentCatalogue.ArchivableIds, manualAgents: true) { Trust = new(SafeDirection.Subset) };
-    }
-
     public static class Idle
     {
         public static readonly ConfigKey.IntKey CpuPercent = new("idle.cpuPercent", 0, 100) { Trust = KeyTrust.Lower };
         public static readonly ConfigKey.IntKey Minutes = new("idle.minutes", 0, 1440) { Trust = KeyTrust.Higher };
-    }
-
-    public static partial class Clock
-    {
-        public static readonly ConfigKey.IntKey MaxDriftSeconds = new("clock.maxDriftSeconds", 1, 3600) { Trust = KeyTrust.Higher };
-
-        /// <summary>The HTTPS address whose <c>Date</c> header is the independent clock reference (PLAN_windows_time_guard.md D2);
-        /// empty turns the HTTP reference off. Root sends the request, so only the MACHINE layer may set it.</summary>
-        public static readonly ConfigKey.TextKey ReferenceUrl = new("clock.referenceUrl", new TextRule.HttpsUrlOrEmpty())
-        {
-            Trust = new(SafeDirection.None, MachineOnly: true),
-        };
-
-        /// <summary>How far a clock may stand from the reference and still agree with it (D3). A smaller tolerance makes A16
-        /// skip more, so lower is safer.</summary>
-        public static readonly ConfigKey.IntKey ReferenceToleranceSeconds = new("clock.referenceToleranceSeconds", 5, 3600) { Trust = KeyTrust.Lower };
-
-        /// <summary>Whether a Windows Time service that starts Manual is a warning (D4) — what the report SAYS; the extension's
-        /// fix has its own switch for what it DOES.</summary>
-        public static readonly ConfigKey.BoolKey ManualStartWarns = new("clock.manualStartWarns") { Trust = KeyTrust.Display };
     }
 
     public static class Logging

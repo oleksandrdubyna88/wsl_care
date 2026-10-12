@@ -398,7 +398,7 @@ flowchart TD
 - **Windows:** `kernel32` — `CreateFileW`, `GetFileInformationByHandle`, `GetFinalPathNameByHandleW`, `SetFileInformationByHandle`
   (delete disposition, `FILE_RENAME_INFO` rename), `FlushFileBuffers`; the file's security descriptor (owner SID) through
   `System.Security.AccessControl`.
-- **Configuration:** the `archive.*` keys (`Config/ConfigKeys.cs`, `Config/ConfigKeys.Numbers.cs`) and their coupled rules
+- **Configuration:** the `archive.*` keys (`Config/ConfigKeys.cs`, and the number keys in `Config/ConfigKeys.Archive.cs`) and their coupled rules
   (`Config/NumberRules.cs` → `ArchiveRules`).
 - **Other modules:** the AI-agent catalogue and walk (E7), the deletion policy (E3), `TreeWalk` (`TreeRules.ListFiles`).
 
@@ -422,7 +422,7 @@ the conversation's SQLite sidecars joined the catalogue here. `AgentArchiveRules
 literal name matches a never-move name, the kinds and sources are the closed sets — and `AgentArchiveRules.IsNeverMoved` is the
 check the selection (E9.S1) applies to every concrete path.
 
-**The keys** (`Config/ConfigKeys.cs`, `Config/ConfigKeys.Numbers.cs` → `Archive`): the ages (`olderThanDays` 14,
+**The keys** (`Config/ConfigKeys.cs`, `Config/ConfigKeys.Archive.cs` → `Archive`): the ages (`olderThanDays` 14,
 `removeAfterHours` 24, `marginDays` 7, `agentRetentionDays` 30, `urgentWithinDays` 7), `minFreeGb`, `copyBufferKib` — the
 user's; the budget, the ceilings and the caps of what root reads back (`runBudgetMinutes`, `finishGraceMinutes`,
 `minRunMinutes`, `previewTimeoutSeconds`, `reachabilitySeconds`, `progressSilenceSeconds`, `restoreLimitMinutes`,
