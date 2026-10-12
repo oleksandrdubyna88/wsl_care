@@ -34,8 +34,8 @@
    erased everything older than 07:49Z.
 5. **Ranked fixes (§ 5):** F1 (advice only, decided 2026-10-12) leave the clock to WSL's own `chronyd` —
    `timedatectl set-ntp false` in `Ubuntu`, reversible;
-   F2 (YES, the owner 2026-10-12) keep Windows closer to NTP — the guard's existing `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker
-   Desktop has no setting for it — upstream issue, stop it when unused, and the daemon names it in its verdicts.
+   F2 (YES, the owner 2026-10-12) keep Windows closer to NTP — the guard's existing
+   `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker Desktop has no setting for it — upstream issue, stop it when unused, and the daemon names it in its verdicts.
 
 ## 1. Who can set the clock — the inventory (10:09:59Z unless stated)
 
