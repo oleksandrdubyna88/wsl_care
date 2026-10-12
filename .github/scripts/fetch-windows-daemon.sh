@@ -5,7 +5,9 @@
 #   fetch-windows-daemon.sh <version> <out-dir>       ->  <out-dir>/bin/wsl-care.exe and <out-dir>/bin/wsl-care.exe.sha256
 #
 # In order, and any failure exits 1 and leaves NOTHING in <out-dir>/bin (a file a previous run left there is removed):
-#   1. `gh release download daemon-v<version>` of exactly the win-x64 zip and its .sha256;
+#   1. `gh release download daemon-v<version>` of exactly the win-x64 zip and its .sha256 — up to WSL_CARE_FETCH_ATTEMPTS times
+#      (3; 1–10), waiting k x WSL_CARE_FETCH_BACKOFF_SECONDS (10; 0–300) before attempt k + 1, every failed attempt said on
+#      stderr (lib/retry.sh); a setting out of range is a usage error (2) before anything is asked;
 #   2. verify-release-assets.sh <version> <download> win-x64 — exactly those two files, the .sha256 one
 #      `<sha-256>  <zip>` line naming that zip, and the checksum matching;
 #   3. `gh attestation verify` with the EXACT signer identity `release.yml@refs/tags/daemon-v<version>`, the source ref of
@@ -33,6 +35,13 @@ rm -f "$exe" "$exe.sha256"
 here="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/daemon-assets.sh
 . "$here/lib/daemon-assets.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/retry.sh
+. "$here/lib/retry.sh"
+
+# The download's bounded retry (GitHub once answered "release not found" for a release that exists): the attempts and the
+# backoff step are settings of the caller's environment, checked before anything is asked.
+attempts="$(retry_setting WSL_CARE_FETCH_ATTEMPTS 3 1 10)"
+backoff="$(retry_setting WSL_CARE_FETCH_BACKOFF_SECONDS 10 0 300)"
 
 # The repository and the signer are constants: an identity taken from the environment could be pointed elsewhere.
 readonly REPO="oleksandrdubyna88/wsl_care"
@@ -53,9 +62,14 @@ refuse() {
 # shellcheck source-path=SCRIPTDIR source=lib/windows-tools.sh
 . "$here/lib/windows-tools.sh"
 
-mkdir -p "$work/download"
-gh release download "$tag" --repo "$REPO" -p "$zip" -p "$zip.sha256" --dir "$(native "$work/download")" \
-  || refuse "could not download $zip and its .sha256 from $tag (is daemon $version published with its win-x64 asset?)"
+# One attempt: a fresh, empty download folder each time, so a partial download never meets the asset check.
+download_assets() {
+  rm -rf "$work/download" && mkdir -p "$work/download" \
+    && gh release download "$tag" --repo "$REPO" -p "$zip" -p "$zip.sha256" --dir "$(native "$work/download")"
+}
+
+with_retries "$attempts" "$backoff" download download_assets \
+  || refuse "could not download $zip and its .sha256 from $tag after $attempts attempts (is daemon $version published with its win-x64 asset?)"
 bash "$here/verify-release-assets.sh" "$version" "$work/download" win-x64 \
   || refuse "the download of $tag is not exactly $zip and its matching .sha256"
 gh attestation verify "$(native "$work/download/$zip")" --repo "$REPO" \
