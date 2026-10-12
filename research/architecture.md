@@ -15,14 +15,14 @@
 > target user's home for every per-user path), and from E3.S3 A1, A2, A3, A15, A16, the timer's action pass inside `collect`
 > and the read-only `logs` / `runs` verbs — then hardened on 2026-10-03 by the epic's review round (section *E3 review
 > fixes* below) — and from E4.S1 the installer `install.sh` with the three systemd units and the machine configuration
-> layer it installs (section *The installer and the units*), and from E4.S2 the release pipeline — release-please, the
+> layer it installs (section *The installer and the units* of [module_daemon.md](module_daemon.md)), and from E4.S2 the release pipeline — release-please, the
 > per-RID `release.yml` with build-provenance attestations, the shared smoke / package / guard / verify scripts, and the
-> owner-applied rulesets, Sonar and CodeRabbit settings (section *The release pipeline*), and from E5.S0 the threshold
+> owner-applied rulesets, Sonar and CodeRabbit settings (section *The release pipeline* of [module_daemon.md](module_daemon.md)), and from E5.S0 the threshold
 > verdicts and the product version in `status --json` and the golden contracts the extension's client tests replay
 > (section *The verdicts in `status`*), and from E5.S1 the VS Code extension's skeleton — the runner seam, `WslCareClient` over
-four read-only verbs, the strict fake `wsl.exe` and `ci-extension.yml` (section *The extension: client, runner and fake*),
+four read-only verbs, the strict fake `wsl.exe` and `ci-extension.yml` (section *The extension: client, runner and fake* of [module_vs_code.md](module_vs_code.md)),
 and from E5.S2 its status bar, the read-only panel driven by one field map, and the focused-window polling (section *The
-extension: status bar, read-only panel and polling*), and from E5.S3 *Install daemon*, the universal `.vsix` with its leak checks, and the extension's own release pipeline as files and tests (section *The extension: Install daemon, packaging and its release*), and from E6.S0 the daemon read contract — `status`'s `actions`, `capabilities`, `running` and `lastCleanup`, A4's full `shown` list, `runs show`, the instant range, `RunLine.metrics`, SIGHUP as a cancellation and `contracts/*.json` (section *The daemon read contract* of [architecture-daemon-e6.md](architecture-daemon-e6.md)), and from E6.S1 the detached runs — `act` / `collect --detach`, the request files, `act --request`, the request sweep, `act --stop`, `--only -` and the template unit `wsl-care-act@.service` (section *Detached runs* of [architecture-daemon-e6.md](architecture-daemon-e6.md)); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+extension: status bar, read-only panel and polling* of [module_vs_code.md](module_vs_code.md)), and from E5.S3 *Install daemon*, the universal `.vsix` with its leak checks, and the extension's own release pipeline as files and tests (section *The extension: Install daemon, packaging and its release* of [module_vs_code.md](module_vs_code.md)), and from E6.S0 the daemon read contract — `status`'s `actions`, `capabilities`, `running` and `lastCleanup`, A4's full `shown` list, `runs show`, the instant range, `RunLine.metrics`, SIGHUP as a cancellation and `contracts/*.json` (section *The daemon read contract* of [architecture-daemon-e6.md](architecture-daemon-e6.md)), and from E6.S1 the detached runs — `act` / `collect --detach`, the request files, `act --request`, the request sweep, `act --stop`, `--only -` and the template unit `wsl-care-act@.service` (section *Detached runs* of [architecture-daemon-e6.md](architecture-daemon-e6.md)); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
 > `events follow`, `act` (with `--detach`, `--request`, `--stop`), `logs`, `runs` and `runs show`, and refuses everything else; the extension shows the daemon's state read-only (E5.S2). This file describes
 > what exists and is rewritten as each part lands.
 
@@ -83,29 +83,29 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
 - **`install.sh`** (E4.S1) — the installer and uninstaller a person pipes into `sudo sh`; with
   `src_daemon/systemd/` (`wsl-care.service`, `wsl-care.timer`, `wsl-care-events.service`) and
   `src_daemon/config/machine.json` (the empty machine layer) — what a release archive carries (section *The installer
-  and the units*).
+  and the units* of [module_daemon.md](module_daemon.md)).
 - **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`, since E5.S1
   `ci-extension.yml`, `dependabot.yml` (below); since E5.S3 `release-extension.yml` with `scripts/release-extension-guard.sh`,
   `verify-extension-assets.sh`, `lib/versions.sh` (since the E5 code round), `compare-installed-extension.sh` (2026-10-06) and
   `rulesets/tags-extension.json` (section *The
-  extension: Install daemon, packaging and its release*); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
+  extension: Install daemon, packaging and its release* of [module_vs_code.md](module_vs_code.md)); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
   CI and the release run (`scripts/smoke-daemon.sh`, `package-daemon.sh`, `release-guard.sh`, `verify-release-assets.sh`,
   `lib/daemon-assets.sh`), `sonarcloud.yml` + `sonar.properties`, `coderabbit-review.yml`, and the owner-applied ruleset
   bodies `rulesets/tags-daemon.json` and `rulesets/branch-main.json` — with `release-please-config.json`,
   `.release-please-manifest.json` and `.coderabbit.yaml` at the root and the owner's commands in `docs/repo-settings.md`
-  (section *The release pipeline*).
+  (section *The release pipeline* of [module_daemon.md](module_daemon.md)).
 - **`src_vs_code/`** (E5.S1) — the VS Code extension: `package.json` (AI OS Care — id `ai-os-care`, publisher `remsoftdev`, renamed from *WSL Care* on 2026-10-06; 0.0.0, `extensionKind ["ui"]`,
   `engines.vscode ^1.85.0`, every setting application-scoped — `wslCare.distro`, `wslCare.refreshSeconds` and the number table of `src/settings/numbers.ts`), `src/process/runner.ts` (the one process launcher),
   `src/process/runnerSelection.ts`, `src/client/` (`WslCareClient`, the closed `VERBS`, the handshake, the failure
   reading, the exit-code names), `src/wsl/` (the launcher path, UTF-16LE, distribution names), `src/test/` (unit,
   structural, bundle and client-scenario tests, the strict fake, the tripwire), esbuild into `dist/extension.js`
-  (section *The extension: client, runner and fake*); since E5.S2 `src/statusBar/`, `src/panel/` (the field map, the
+  (section *The extension: client, runner and fake* of [module_vs_code.md](module_vs_code.md)); since E5.S2 `src/statusBar/`, `src/panel/` (the field map, the
   view model, the webview shell and provider), `src/poll/`, `src/state/`, `media/` (the page script, its styles, the
   activity-bar icon), the page harness and the extension-host suite (`src/test/host/`, `scripts/run-host.mjs`) (section
-  *The extension: status bar, read-only panel and polling*); since E5.S3 `src/install/` (*Install daemon*),
+  *The extension: status bar, read-only panel and polling* of [module_vs_code.md](module_vs_code.md)); since E5.S3 `src/install/` (*Install daemon*),
   `scripts/bundle.mjs` (the build stamp and `dist/min-daemon.json`), `scripts/check-vsix.mjs` with `vsix-files.txt` /
   `vsix-denylist.txt`, `media/icon.png`, `CHANGELOG.md`, `LICENSE`, and since the E5 code round the checked-in
-  `min-daemon.json` the release guard reads (section *The extension: Install daemon, packaging and its release*); since
+  `min-daemon.json` the release guard reads (section *The extension: Install daemon, packaging and its release* of [module_vs_code.md](module_vs_code.md)); since
   E6.S2 `src/root/` (the closed root union `rootCall.ts`, the cleanup controller, the gate, the answer and failure readers,
   the typed ids, the root words), `src/text/safeText.ts` (the one sanitiser), `src/client/enumValue.ts`, and the runner's
   stdin (section *The extension: the root boundary* of [architecture-extension-e6.md](architecture-extension-e6.md)); since E6.S3 `src/cleanup/` (the cleanup buttons' host transaction,
@@ -1365,287 +1365,28 @@ was first seen failing for the real symptom ([module_tests.md](module_tests.md) 
 | gate #10 | `logs` totals from history lines alone; details only when asked, bounded | `RunLogs`, `logs --detail` |
 | gate #11 | `collect` holds its own `running.json` | `CollectRun` |
 
-## The installer and the units (E4.S1)
+## The installer, the units and the release pipeline (E4.S1, E4.S2) — in module_daemon.md
 
-`install.sh` (repository root, POSIX `sh`, `set -eu`, no `eval`, shellcheck-clean) is the install trust boundary:
-`curl … | sudo sh` runs it as root on the owner's distro. It installs what a release archive carries —
-`wsl-care-$VERSION-$RID.tar.gz` holding `wsl-care-$VERSION-$RID/` with `wsl-care`, `systemd/` (every unit of
-`src_daemon/systemd/`) and `config/machine.json` (`src_daemon/config/machine.json`) — the layout E4.S2's release job
-packs (plan §15e #1).
+Moved on 2026-10-12 to [module_daemon.md](module_daemon.md) § *Story history*, unchanged apart from heading levels and the
+cross-references the move made wrong, to keep this file well under the conventions resolver's 256 KiB per-file limit.
+In short:
 
-```mermaid
-flowchart TD
-    args["arguments<br/>--version · --skip-attestation · --set-default-user · --distro-name · --dry-run · --uninstall [--purge]<br/>each value checked against a whole-string pattern<br/>(--distro-name: WSL's rule = DistroIdentity.NamePatternText; empty = no name)"]
-    pre["preflight — nothing written yet<br/>Linux · root (or --dry-run) · systemd booted (/run/systemd/system)<br/>arch → linux-x64 / linux-arm64 · tools<br/>/usr/local/bin/wsl-care absent or ours · wsl.conf decision"]
-    ghpre{"gh ≥ 2.56.0 with attestation verify<br/>--bundle · --cert-identity · --deny-self-hosted-runners<br/>(unless --skip-attestation; asked BEFORE any download)"}
-    rel["release: --version, or the newest daemon-v* of the releases API<br/>(never releases/latest — the extension's)"]
-    dl["download archive + .sha256 into a mktemp folder (trap removes it)<br/>curl https-only, redirects too, --max-time"]
-    sum{"sha256 of the archive<br/>= the .sha256?"}
-    fetchatt["root fetches the attestations itself, unauthenticated:<br/>GET /repos/R/attestations/sha256:digest → each bundle_url<br/>→ the snappy bundle → unsnappy (od + awk)"]
-    att{"as root, gh isolated in the temp folder, no token:<br/>gh attestation verify --bundle · --repo<br/>--cert-identity release.yml@refs/tags/daemon-vVERSION<br/>--deny-self-hosted-runners — any ONE bundle passes"}
-    skip["--skip-attestation:<br/>ATTESTATION NOT VERIFIED, on stderr"]
-    unp{"members: regular files and folders,<br/>all under wsl-care-V-RID/, no '..', no link"}
-    files["/opt/wsl-care/bin/wsl-care 0755 · link /usr/local/bin/wsl-care<br/>the units → /etc/systemd/system 0644<br/>/etc/wsl-care/config.json ONLY if absent<br/>/var/lib/wsl-care · /var/log/wsl-care 0755"]
-    conf["/etc/wsl.conf: [user] default= ONLY with the flag and only when none is set<br/>otherwise advice, nothing written"]
-    pkgs["sysstat + atop via apt when missing<br/>debconf sysstat/enable=true; dpkg-reconfigure when still off"]
-    units["systemctl daemon-reload · try-restart follower (upgrade)<br/>enable --now wsl-care.timer wsl-care-events.service<br/>enable --now sysstat.service atop.service<br/>each call ≤ WSL_CARE_INSTALL_SYSTEMCTL_SECONDS (900) + 10 s kill grace"]
-    first["said first: may take minutes, at most 900 s<br/>[env WSL_DISTRO_NAME=--distro-name] /opt/wsl-care/bin/wsl-care collect<br/>(a root collect: DistroIdentity.Record writes distro-name.json — the installer never does)<br/>(one full run: records, never acts; ≤ 900 s + 30 s kill grace)"]
-    ver["verify: sar · atop on PATH → is-active timer · events<br/>→ doctor --json healthy (wall-clock wait ≤ WSL_CARE_INSTALL_DOCTOR_SECONDS,<br/>each call cut to the deadline, at least 10 s)"]
-    fail["exit 1: FAILED at step #quot;…#quot;<br/>+ how to re-run or --uninstall once something was written"]
-    ok["summary"]
-
-    args --> pre --> ghpre
-    ghpre -- "missing / too old / a flag missing" --> fail
-    ghpre -- usable --> rel --> dl --> sum
-    sum -- no --> fail
-    sum -- yes --> fetchatt --> att
-    sum -- "yes, --skip-attestation" --> skip --> unp
-    att -- refused --> fail
-    att -- verified --> unp
-    unp -- no --> fail
-    unp -- yes --> files --> conf --> pkgs --> units --> first --> ver
-    ver -- "a check fails" --> fail
-    ver -- all hold --> ok
-```
-
-**What each check proves.** The `.sha256` is integrity only — whoever can replace the archive can replace its checksum
-beside it. Authenticity is the build-provenance attestation, pinned to the EXACT certificate identity
-`https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release.yml@refs/tags/daemon-v<version>`
-(`--cert-identity`) with `--repo oleksandrdubyna88/wsl_care` and `--deny-self-hosted-runners`. E4.S1 used
-`--signer-workflow …/release.yml`, which gh matches as a literal PREFIX of the identity, so `release.yml` built from any
-branch passed (independent review HIGH, 2026-10-03; measured on gh 2.97.0 with cli/cli's own attestation:
-`--signer-workflow …/deploy` accepted `…/deployment.yml@refs/heads/trunk`).
-
-**How it is verified — root, a bundle, no login** (review LOW, the better design taken). E4.S1 ran `gh` online as
-`SUDO_USER` through `runuser`, so that user's gh login, configuration and Sigstore cache decided the verdict. Now root
-asks GitHub's attestation API for the archive's digest **unauthenticated** (`Accept: application/vnd.github+json`,
-`X-GitHub-Api-Version: 2026-03-10`); the API answers every attestation by `bundle_url` alone (`bundle: null`, observed
-for every probe on 2026-10-03), a blob of snappy-compressed JSON (`application/x-snappy`), which the installer fetches
-(≤ 1 MiB, ≤ 10 bundles) and decompresses itself — `unsnappy`, awk over `od`, `LC_ALL=C` so mawk and gawk both write
-each value as one byte (a real bundle carries bytes above 127). Then root runs `gh attestation verify <archive>
---bundle <file> …` with `HOME`, `GH_CONFIG_DIR`, `XDG_{CONFIG,CACHE,DATA,STATE}_HOME` inside the run's temporary folder
-and every token variable unset: **measured, a `--bundle` verification needs no login** (gh 2.56.0–2.97.0, empty
-configuration, no token); gh still fetches Sigstore's trusted root by TUF from `tuf-repo-cdn.sigstore.dev`, unauthenticated
-(with the network cut it hangs until the 180 s ceiling — a refusal, never a pass). Each bundle is verified on its own
-and any ONE passing suffices (gh before 2.65 stops at the first bundle in a set that fails — GitHub's own immutable-release
-attestation sits beside a build attestation for some artifacts).
-
-**Which gh** (review MEDIUM, corrected by measurement). The review assumed `gh attestation` (2.49.0+) suffices; bisected
-over gh's releases on 2026-10-03, **2.56.0** is the oldest that verifies a public-good attestation today — 2.49.0 to
-2.55.0 fail with `unsupported tlog public key type: PKIX_ED25519` (Sigstore's trusted root now carries a Rekor v2
-Ed25519 key), and Ubuntu 24.04's own gh is 2.45.0 (no `gh attestation`). The preflight asks BOTH the version (≥
-2.56.0) and `gh attestation verify --help` for the four flags, BEFORE any download, and points at GitHub's apt
-repository (`cli.github.com/packages`) — never `apt-get install gh`, never a login. `--skip-attestation` proceeds with
-a banner on stderr and the checksum still applies.
-
-**Every step that writes goes through `run`**, which under `--dry-run` only prints `would run: …`; the dry run still
-downloads and verifies into its temporary folder, needs no root, and changes nothing else. A failed step exits 1 naming
-it (`preflight`, `resolve-release`, `download`, `checksum`, `attestation`, `unpack`, `install-binary`, `install-units`,
-`machine-config`, `wsl-conf`, `packages`, `upgrade-wait`, `enable-units`, `first-run`, `verify: …`; uninstall: `units`, `purge`,
-`verify: …`); a usage refusal exits 2.
-`apt-get install` has no kill ceiling on purpose (a dpkg killed mid-configure breaks the package database) — its waits
-are bounded by `DPkg::Lock::Timeout=300`; every other wait has one (`curl --max-time`, `timeout` around `gh`, `apt-get
-update`, `units dropin`, `status`, every job-waiting `systemctl`, `collect` and `doctor`).
-
-**The ceilings** (retro reviews of PR #8 and PR #11, 2026-10-06). Every `timeout` carries `-k`: SIGTERM at the ceiling,
-SIGKILL after a grace (10 s; 30 s for the first `collect`), so a child that ignores SIGTERM never outlives its ceiling by
-more than the grace. Every `systemctl` call that waits for a job — `daemon-reload`, `try-restart`, `enable --now`,
-`disable --now`, `stop` — goes through `systemctl_job`, under `WSL_CARE_INSTALL_SYSTEMCTL_SECONDS` (default 900: above a stop's
-worst case, `TimeoutStopSec` ≤ 300 s twice); measured on WSL Ubuntu, `sysstat.service` is `Type=oneshot` with
-`TimeoutStartUSec=infinity` and `JobTimeoutUSec=infinity`, so `enable --now` had no ceiling at all. At the ceiling only the
-WAIT ends — the step fails saying the job may still be running (`systemctl list-jobs`); a dry run prints the plain systemctl
-command. The two waits run on the WALL clock and end at their deadline: the health wait
-(`WSL_CARE_INSTALL_DOCTOR_SECONDS`, 120) gives each `doctor --json` what is left of it (at least 10 s) and never sleeps past
-it, then at most the last look and the readable report, 10 s each plus the kill grace — a refusal within 120 + 40 s (it
-counted only its 5 s sleeps before, so 120 s could stretch to ~50 minutes of 120 s calls); the upgrade wait
-(`WSL_CARE_INSTALL_RUN_WAIT_SECONDS`, 600) does the same with each `status --json` (`WSL_CARE_INSTALL_STATUS_SECONDS`, 30, cut to
-what is left, at least 5 s unless set lower). Every ceiling variable (and `WSL_CARE_INSTALL_PROGRESS_SECONDS`) is a whole number of seconds,
-no leading zero, at most a day, or a usage refusal (exit 2) before anything runs; `SYSTEMCTL` and `STATUS` refuse 0, which
-`timeout` reads as no ceiling. The first full run is announced before it starts — it takes minutes. An installed binary
-that EXISTS but cannot be started is no status answer (in flight, then the refusal with the manual escape); only a binary
-that does not exist means a fresh install.
-
-**Uninstall** stops and disables the timer and the follower, stops a running full run, removes the units (every loaded `wsl-care-act@*` instance stopped first), the
-binary, the link (only when it is the installer's) and the emptied `/opt/wsl-care`, and verifies the timer inactive and
-the files gone. It keeps `/var/lib/wsl-care`, `/var/log/wsl-care` and `/etc/wsl-care`; `--purge` names and removes
-exactly those and `/run/wsl-care.lock` — **only while it holds the run lock** (retro review of PR #8, G1): the daemon's
-`RunLock` is `flock(2)` on `/run/wsl-care.lock` (.NET's `FileShare.None`), so after the units are stopped and the binary is
-gone the installer takes `flock -n` on that file (fd 9) and removes the three folders and then the lock file itself, LAST,
-inside the locked section — with no binary left nothing can lock a new file at that path in between. A run started by hand
-(`sudo wsl-care collect`) still holding it refuses the purge at step `purge`: nothing of the state is removed, and the same
-command purges once that run has ended. `--purge` needs `flock` (util-linux) and refuses at `preflight`, before anything
-changes, without it. It never removes sysstat, atop, `/etc/wsl.conf` or a user's own layer.
-
-**The units** (`src_daemon/systemd/`, all root):
-
-| Unit | Shape | Why |
-|---|---|---|
-| `wsl-care.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care collect --timer`, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=1G`, `TimeoutStartSec=276min` (above the derived worst case of a timer run, E7.S2b/S2c review C-H2; 240 until PLAN_boot_settle.md added the settle step's waits), `SuccessExitStatus=75 130`, `NoNewPrivileges=yes`, `KillMode=control-group`, `TimeoutStopSec=90`; no `[Install]` | `--timer` is the only thing that makes a run the timer (§15d CI). 75 is `ExitCode.Busy`: a second run meeting the lock is designed, not a failed unit (the health collector counts failed units); 130 is a stop asked for, recorded `interrupted` (retro over PR #11). `MemoryMax` is the cgroup's, so it covers every child — npm, dotnet, pip, the Docker CLI, the 2M-entry walk — and §8's 256M (a guess for the binary alone) was raised to 1G by the E4 review |
-| `wsl-care.timer` | `OnCalendar=*-*-* 00/4:00:00`, `Persistent=true`, `RandomizedDelaySec=5min`, `AccuracySec=1min` | Persistent= acts on calendar timers only; the stored last trigger makes the first boot of the day run ONCE for the night's missed slots — the case §8's monotonic timer was chosen for. That catch-up fires at boot; the SERVICE then settles (`RunSettle`: `timer.bootDelayMinutes` after boot, then while S6 says busy, bounded) before it takes the lock — PLAN_boot_settle.md |
-| `wsl-care-events.service` | `Type=simple`, `ExecStart=/opt/wsl-care/bin/wsl-care events follow`, `Restart=always`, `RestartSec=30`, `MemoryMax=1G`, `NoNewPrivileges=yes`, `WantedBy=multi-user.target` | the follower waits for Docker in-process (§15b #8); the restart is the outer net |
-| `wsl-care-watch.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care watch --timer`, the hardening of `wsl-care.service`, `TimeoutStartSec=10min` (`mcpWatchdog.runLimitMinutes`, above `RunBudget.WatchRunWorstCase`), `SuccessExitStatus=75 130`; no `[Install]` | E14 S2b: the watch — root's MCP CPU ledger and the agents' CPU history every few minutes, and A19 as a recorded act (the busy half needs interval evidence the 4-hour timer never gives); since E14 S7b.2 the act is `[A19, A21]` — A21 ends client-gone interop relays with SIGTERM only, each action by its own switch; [module_mcp_servers.md](module_mcp_servers.md) § *The busy half and the watch*, § *A21* |
-| `wsl-care-watch.timer` | `OnActiveSec=5min`, `OnUnitActiveSec=5min` (`mcpWatchdog.periodMinutes`), `AccuracySec=30s` | monotonic, from the timer's own start (a past `OnBootSec` would fire at `enable --now`, into the installer's first run): nothing to catch up after the VM was off; installed only when the release ships it |
-| `wsl-care-act@.service` | template; `[Unit] CollectMode=inactive-or-failed`; `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care act --request %i`, the hardening of `wsl-care.service`, `TimeoutStartSec=infinity`, `SuccessExitStatus=3 75 76 78 79 80 82 130` (the RECORDED ends: an action failed, a refusal recorded, no request, an unusable request recorded, a stop recorded); no `[Install]` | a detached run the panel asked for (E6.S1, described with the detached runs below); `CollectMode` sits in `[Unit]`, the only section systemd reads it from (0.1.0 had it in `[Service]`, ignored — fixed in 0.1.1) |
-
-Each unit's configurable values (`timer.*`, `units.*`) come as a drop-in, `<unit>.d/50-wsl-care-config.conf`, that
-`install.sh` writes from `wsl-care units dropin <unit>` (E7.S2c); the drop-in of the defaults says what the unit file
-says.
-
-**Hardening, decided per action.** Deliberately NOT set, because each breaks a named action: `ProtectHome` (A8, A12,
-A14, A17 clean caches under the target user's home), `ProtectSystem=strict` (state, A9's `/var/cache/apt`, A10's
-journal), `ProtectKernelTunables` (A1, A2 write `/proc/sys/vm`), `ProtectClock` (A16's `hwclock -s`), `PrivateDevices`
-(A15's `fstrim`), `ProtectProc` / `PrivateUsers` / `PrivateTmp` (A11 and the collectors read every user's processes and
-signal them by pidfd), a `CapabilityBoundingSet` (the set the actions need is nearly all of root's). Set: only what no
-action relies on — `NoNewPrivileges=yes` (the run already is root; `runuser` only drops privilege; `sudo` is on the
-never-list) and §8's resource limits. **One known risk is kept on purpose:** no_new_privs also blocks the AppArmor profile
-change a snap application makes at start, so a Docker installed as a snap would fail under the timer (Docker figures
-unavailable, A4–A7 refused) while working from a terminal; Docker Desktop's CLI and apt's docker-ce are not snaps. The
-README says what to do, `POST_DEPLOY.md` #11 checks the journal for it (and for an OOM kill at `MemoryMax`). None of it
-has been OBSERVED on a live systemd yet (E4's live install): it is a request to systemd until then, and the unit files
-say so. `ShippedFilesTests` keeps the breaking directives out; CI's
-`verify-systemd-units.sh` step reads every unit file (templates as instances, with their drop-ins) with systemd's own
-parser.
-
-**The machine layer is deliberately empty** (`src_daemon/config/machine.json`: comments and `{}`), not a copy of the
-embedded defaults: a copy would freeze every default at the installed version, show every key as `(machine)` in `config
-get`, and — the moment a later release renames a key — make the layer invalid and every run observe-only. Its comment
-documents an example that `ShippedFilesTests` runs through the real loader.
-
-**The test harness** is `InstallWorld` / the `Install*Flows` classes in `WslCare.Scenarios` (C#, the product's language, no new
-dependency): the real script under `/bin/sh` over a temporary prefix `WSL_CARE_INSTALL_ROOT` (every path the script
-reads or writes as a file sits under it), `TMPDIR` the world's own, a `PATH` of exactly two folders — the fake tool under
-the names of everything that changes the machine or reaches the network (curl, gh, systemctl, apt-get, debconf,
-runuser, sudo, plus `id` / `uname` so a test can be root or arm64) and links to an allowlist of real text and file
-tools. The fake gained one answer option for it, `OutputFlag` (write the fixture to the file named after `--output`),
-and since the E4 review a verifying `gh`: `VerifiesAttestation` makes it ENFORCE the identity flags of the call over a
-bundle in Sigstore's own shape (`FakeAttestation`: the certificate's SAN and Fulcio extensions, the statement's digests;
-`--cert-identity` exact, `--signer-workflow` a prefix, as measured on the real gh), and `WSL_CARE_FAKE_RECORD_ENV` makes
-every call record the named environment variables — so a test proves what the installer's check lets through, and
-under whose configuration, rather than the argv it sent. The worlds publish an attestation per release
-(`AttestationBundles`: a self-signed certificate with the SAN and extensions, snappy-compressed, served at a bundle URL
-named by the API answer), and a captured cli/cli bundle (`src_daemon/tests/fixtures/attestation/`) exercises the
-decoder's copy elements.
-The released binary is a stub that logs the path it was started as and hands its argv to a fake `wsl-care`, so the
-absolute-path rule is observed, not assumed. [module_tests.md](module_tests.md) lists every flow and its red run.
-
-## The release pipeline (E4.S2)
-
-A daemon release is the tag `daemon-v<version>` plus a GitHub release holding, per RID, an archive, its `.sha256`, and a
-build-provenance attestation of the archive signed by `.github/workflows/release.yml` — the three things `install.sh`
-checks. Nothing has been released yet: the first cut, `daemon-v0.1.0`, is the owner's step after the settings of
-`docs/repo-settings.md` (the App, its secrets, the two rulesets) are in place.
-
-```mermaid
-sequenceDiagram
-    actor Owner
-    participant RP as release-please.yml<br/>(App token, contents: read)
-    participant GH as GitHub
-    participant Rel as release.yml
-    Owner->>RP: dispatch
-    RP->>GH: release PR — src_daemon/version.txt, manifest, src_daemon/CHANGELOG.md
-    Owner->>GH: squash-merge the release PR
-    Owner->>RP: dispatch again
-    RP->>GH: git.createRef refs/tags/daemon-vX (force-tag-creation)
-    RP->>GH: create the release as a DRAFT
-    GH-->>Rel: push of tag daemon-vX (an App-token ref is an ordinary push)
-    Rel->>Rel: guard — tag shape, version.txt at the tag, commit on main
-    Rel->>Rel: build × 3 RIDs — tests, AOT publish, smoke, package, attest, artifact
-    Rel->>GH: publish job — draft? then verify the built set, upload, verify FROM the draft
-    Rel->>GH: gh release edit --draft=false (the last step)
-```
-
-```mermaid
-flowchart TD
-    tag["push: tags daemon-v* — the only trigger<br/>(no pull_request, no workflow_dispatch)"]
-    guard["guard · ubuntu-24.04 · contents: read<br/>release-guard.sh: daemon-v + install.sh's version pattern<br/>= src_daemon/version.txt · ancestor of origin/main"]
-    subgraph legs["build · one leg per RID · contents: read + id-token: write + attestations: write"]
-        l1["linux-x64 · ubuntu-24.04"]
-        l2["linux-arm64 · ubuntu-24.04-arm"]
-        l3["win-x64 · windows-latest"]
-    end
-    steps["restore + Release build → Core, CLI, Scenarios test executables<br/>→ dotnet publish -r RID (AOT) → smoke-daemon.sh (the SAME script ci-daemon.yml runs)<br/>→ package-daemon.sh → archive + .sha256 → its path opened outside bash (pwsh)<br/>→ attest-build-provenance(archive)<br/>→ upload-artifact daemon-RID (1 day)"]
-    pub["publish · ubuntu-24.04 · contents: write (the only write in the file)<br/>needs guard + build, no if:"]
-    d{"release is a draft?"}
-    v1{"verify-release-assets.sh<br/>over the built set"}
-    up["gh release upload --clobber"]
-    v2{"verify-release-assets.sh<br/>over gh release download"}
-    live["gh release edit --draft=false"]
-    stop["red run, the release stays an invisible draft<br/>fix forward; never move or delete the tag"]
-
-    tag --> guard --> legs
-    l1 --> steps
-    l2 --> steps
-    l3 --> steps
-    steps --> pub --> d
-    d -- no --> stop
-    d -- yes --> v1
-    v1 -- incomplete --> stop
-    v1 -- "every RID, matching .sha256, nothing else" --> up --> v2
-    v2 -- incomplete --> stop
-    v2 -- complete --> live
-```
-
-**Why the tag push is the trigger.** With `draft: true` + `force-tag-creation: true` release-please (holding the App's
-token) creates the tag ref through `git.createRef` before it creates the draft release — read in its bundled source
-(`release-please-action` v5.0.0, `dist/index.js`). That ref creation is an ordinary tag push, so `push: tags` fires —
-the event the family's `bugs-v0.3.0` ran on. `release: published` never fires for a draft, and the draft is the point
-(nothing public until every RID's asset is on it, plan §15e #2); `workflow_dispatch` carries no tag, so its attestation would not
-carry the identity `install.sh` pins (`release.yml@refs/tags/daemon-v<version>`). A failed run is re-run, which replays the tag event.
-
-**Permissions** (plan §15e #0): workflow level `contents: read`; the build job alone holds `id-token: write` +
-`attestations: write` (it signs) and nothing that writes the repository, so it hands its archive to the run as an
-artifact instead of to the draft; the publish job alone holds `contents: write`. `release-please.yml`'s job holds only
-`contents: read` — every write there is the App token's.
-
-**The scripts** (`.github/scripts/`, bash): `lib/daemon-assets.sh` is the asset contract in one place — the RIDs
-(`DAEMON_RIDS`), the version pattern (equal to `install.sh`'s `VERSION_PATTERN`) and `daemon_archive_name` (tarball for
-Linux, zip for Windows, an unknown RID refused rather than mapped). `package-daemon.sh` packs one archive with exactly the
-E4.S1 layout (`wsl-care-$V-$RID/` with `wsl-care` 0755, every file of `src_daemon/systemd/` and `config/machine.json`
-0644, folders, owner 0:0, sorted names, `gzip -n`; Windows: the exe alone, zipped with 7-Zip) and writes the `.sha256`
-line itself (`<hash>  <name>`, so Git Bash's binary-mode `*` can never reach it) and prints the archive's path spelled for
-the caller — from `<out-dir>` as given, through `cygpath -m` under Git Bash (E4 review B1). `release-guard.sh` and
-`verify-release-assets.sh` are the two refusals the pipeline rests on; the latter takes optional RIDs to check one leg's
-pair (`ci-daemon.yml`). `smoke-daemon.sh` is ci-daemon.yml's former smoke steps, now one script both workflows call
-(plan §15e #5), six parts since the review added `preview --all --json`. Every one is shellchecked by `ci · workflows`;
-`package-daemon.sh` and `verify-release-assets.sh` run on every pull request leg (all three RIDs, the Windows zip
-included), and the scenario suite runs the scripts too (`PackageFlows` and `ReleaseScriptFlows` on Linux,
-`PackagePathFlows` on every OS — under Git for Windows' bash on Windows, the zip wherever 7-Zip is on `PATH`). The
-smoke itself runs in CI, not in the suite.
-
-**What makes a daemon release** is the package path: release-please hands `src_daemon` only the commits touching a file
-under `src_daemon/`, so a `.github/`- or root-only commit never reaches it. The former `exclude-paths: [".github"]` was
-inert (no exclude path can remove a commit the split never handed over) and was removed by the E4 review;
-`ReleaseConfigTests` holds the package-path rule and the key's absence. Before 1.0.0, `bump-minor-pre-major: true` makes
-a breaking change a MINOR (release-please's default would jump to 1.0.0) and `bump-patch-for-minor-pre-major: false`
-keeps a `feat:` a minor.
-
-**The first version** is 0.1.0 exactly: the manifest says `"src_daemon": "0.0.0"` (release-please backfills a "previous
-release" from the manifest only when it is not 0.0.0) and the package sets `initial-version: 0.1.0` (what
-`buildNewVersion` returns with no previous release; the `simple` strategy does not override it). After the first release
-both files say 0.1.0 and `initial-version` is never read again.
-
-**Owner-applied settings, as files** (GitHub reads none of them; `docs/repo-settings.md` applies them, each with a probe
-that must be refused): `.github/rulesets/tags-daemon.json` (target tag, `refs/tags/daemon-v*`, creation + update +
-deletion, bypass = the release App alone) and `.github/rulesets/branch-main.json` (the default branch: no deletion, no
-force push, linear history, pull requests with resolved conversations, squash or rebase, the six check names a pull
-request reports — pinned to the GitHub Actions app, id 15368 — strict, no bypass). Sonar: `sonarcloud.yml` passes every
-`key=value` of `.github/sonar.properties` to `dotnet-sonarscanner begin` (pinned 11.3.0, with `dotnet-coverage`
-18.11.2 over the three test executables) and skips with a warning when `SONAR_TOKEN` is absent; the settings file is
-deliberately NOT a `sonar-project.properties` — the .NET scanner 11.3.0 fails its `end` step when one sits in the folder
-`begin` ran in (`SonarProjectPropertiesValidator`, read in its source). CodeRabbit: `.coderabbit.yaml` (ru-RU, chill,
-per-path instructions) and `coderabbit-review.yml` (asks for the review once; the App's installation is the owner's).
-
-**Kept equal by tests** (`ReleaseWorkflowTests`, `ReleaseConfigTests`, every OS — the workflows read with a small YAML
-subset reader that refuses what it does not understand): the trigger, the permissions per job across every workflow,
-`publish` needing `guard` + `build` with no `if:`, the release matrix = `DAEMON_RIDS` = ci-daemon.yml's matrix (same
-runner per RID) with Linux on `ubuntu-24.04*`, both workflows calling `smoke-daemon.sh` with no inline copy, the stage
-order inside a leg, the publish order, every `uses:` pinned to a 40-hex commit with its version, a ceiling on every job,
-`persist-credentials: false` on every checkout, no `${{ }}` inside a `run:`, the release-please tag = the release
-trigger = the tag ruleset's pattern, manifest = `version.txt`, and the required checks = the jobs a pull request runs —
-the gating workflows DERIVED (every workflow a `pull_request` / `pull_request_target` triggers, minus the two named
-non-gating ones, `sonarcloud.yml` and `coderabbit-review.yml`), every workflow declaring `permissions:` at the top or on
-every job (a workflow without one would pass the per-job checks vacuously), and every pull-request leg packing the
-archive and opening its path outside bash (E4 review B2, B5, B6).
+- **The installer and the units (E4.S1).** `install.sh` (POSIX `sh`, run as root by `curl … | sudo sh`) is the install
+  trust boundary. The `.sha256` proves integrity only; authenticity is the build-provenance attestation, verified by root
+  from a fetched bundle with no login and pinned to the EXACT identity `release.yml@refs/tags/daemon-v<version>` (gh ≥
+  2.56.0, asked before any download; `--skip-attestation` proceeds only with a banner, the checksum still applied). Every
+  write goes through `run` (`--dry-run` only prints it), every wait but `apt-get install` has a ceiling, a failed step
+  exits 1 naming it, and `--purge` removes the state only while it holds the run lock. Then the units
+  (`wsl-care.service` / `.timer`, `wsl-care-events.service`, `wsl-care-watch.service` / `.timer`,
+  `wsl-care-act@.service`), the hardening decided per action (with the snap-Docker risk kept on purpose), the
+  deliberately empty machine layer and the `InstallWorld` scenario harness.
+- **The release pipeline (E4.S2).** A daemon release is the tag `daemon-v<version>` — created by release-please as an
+  ordinary tag push, the only trigger — plus a GitHub release holding, per RID, an archive, its `.sha256` and a
+  build-provenance attestation signed by `release.yml`. A guard, three per-RID build legs (tests, AOT, smoke, package,
+  attest) and ONE publish job, the only one holding `contents: write`, that verifies the built set, uploads it to the
+  draft, verifies it again from the draft and makes the release public last; a red run leaves an invisible draft (fix
+  forward, never move or delete the tag). Then the shared scripts, what makes a daemon release, the first version, the
+  owner-applied settings as files, and the tests that keep all of it equal.
 
 ## The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)
 
@@ -1726,173 +1467,30 @@ fails when a checked-in file is not what the CLI answers at that commit (naming 
 and when a rule no longer matches anything; `WSL_CARE_WRITE_GOLDENS=1` regenerates them. The set frozen at the tag,
 `contracts/golden/daemon-0.1.0/`, is an E5 live-gate step, not part of E5.S0. The goldens are test data and never ship.
 
-## The extension: client, runner and fake (E5.S1)
+## The extension's E5: client, panel and polling, *Install daemon* and packaging (E5.S1–E5.S3) — in module_vs_code.md
 
-`src_vs_code/` holds the VS Code extension's skeleton: TypeScript (the family's strict set, `noEmitOnError`), built
-in place into `out/` for the tests and bundled by esbuild into ONE file, `dist/extension.js` (CommonJS, `--platform=node
---target=node18` — the Node of VS Code 1.85 —, `vscode` external, no source map). No runtime dependency. E5.S1 wires the
-client; the status bar and the panel are E5.S2's (next section), *Install daemon* and packaging E5.S3's.
+Moved on 2026-10-12 to [module_vs_code.md](module_vs_code.md) § *Story history*, unchanged apart from heading levels and
+the cross-references the move made wrong, to keep this file well under the conventions resolver's 256 KiB per-file
+limit — all of it but **the panel's field map, which stays below**: `fieldMap.test.ts` and `npm run fieldmap:doc` read
+it from this file. In short:
 
-**The process model.** `extensionKind: ["ui"]`: the extension runs in the WINDOWS extension host whether the window is
-local or *Remote – WSL*. It reaches the daemon only by starting `%SystemRoot%\System32\wsl.exe` (absolute; `PATH` holds a
-second, Store-alias `wsl.exe` on this machine, and a bare name searches the current directory first) with argv built in
-one place. The settings `wslCare.distro` (empty = WSL's default, the `*` row of `wsl.exe -l -v`) and
-`wslCare.refreshSeconds` (≥ 30, default 120) are `"scope": "application"`: a cloned repository's `.vscode/settings.json`
-cannot steer either; the extension declares untrusted- and virtual-workspace support.
-
-**Root-free, by construction and by test (plan §15f #5).** The four verbs are the closed set `VERBS` in
-`client/verbs.ts`: `status --json`, `preview --all --json`, `doctor --json`, `--version`. No `-u`, no `act`, no `collect`,
-no `config`. `structure.test.ts` parses the shipped sources and holds: only `process/runner.ts` imports `child_process`;
-only `client/WslCareClient.ts` spells a `wsl.exe` argv word or the daemon's path; only `verbs.ts` spells the verbs' option
-words. `bundleScan.test.ts` parses the SHIPPED bundle and fails on any string carrying `-u`, `--user`, `root`, `--timer`,
-`--confirm`, `--manual` or `config` — each with planted-instance companions.
-
-**The seams.**
-
-- **Runner** (`process/runner.ts`) — `{file, args, timeoutMs, env?}` in, a typed ending out (`exited` with the code as a
-  signed 32-bit value — Windows reports `wsl.exe`'s -1 as 4294967295 —, `signalled`, `timedOut`, `tooMuchOutput`,
-  `failedToStart`); `shell: false`, streams as BYTES, output capped (16 MiB / 1 MiB), the ceiling enforced by
-  `child.kill()` and a 2 s grace. Killing `wsl.exe` ends the Linux process through the relay's hang-up (measured; a
-  process ignoring SIGHUP survives, reparented to PID 1). `nodeScriptRunner(script)` starts `node <script> <args>` in
-  place of the requested file (the strict fake); `closedRunner` starts nothing.
-- **Runner selection** (`process/runnerSelection.ts`) — `extension.ts` passes `context.extensionMode ===
-  ExtensionMode.Test`. Outside Test mode: the real runner, always (no variable is read). In Test mode: the fake named by
-  `WSL_CARE_TEST_FAKE_WSL` (an absolute `.js`), otherwise the CLOSED runner — a test run that forgot the fake spawns
-  nothing.
-- **Client** (`client/WslCareClient.ts`) — per verb: the platform (`win32` only), the launcher, the configured
-  distribution SETTING checked against a strict pattern (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, never a leading `-`) BEFORE any
-  spawn, `--list --quiet` (UTF-16LE), the default from `-l -v` when none is set — a name `wsl.exe` LISTS is taken as it is
-  (argv reaches `wsl.exe` without a shell; only a leading `-` is refused, §15h #4) and an unlisted one is refused naming
-  the listed names and the pattern —, `--list --running --quiet` — and when the
-  distribution is not running (or the question fails) it STOPS: no `-d` call, so polling never starts the VM. Then
-  `-d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <verb>` (`--exec`, never `--`: measured, `--` hands argv to the
-  distro's shell). One call per verb in flight (a second caller shares the first's outcome), and the `--version` the
-  handshake may need is shared the same way — `preview` and `doctor` asked at once with no version known make ONE
-  `--version` call (E5 code round).
-- **Reading the ending** (`client/failures.ts`, `client/handshake.ts`, `wsl/*`) — `wsl.exe`'s own output is decoded from
-  its bytes (UTF-16LE when a BOM leads or a NUL sits at an odd offset; UTF-8 otherwise, which is what `WSL_UTF8=1` and
-  the Linux side produce). `--list --quiet` or `-l -v` failing in any way (a non-zero exit, no answer within 15 s) is a
-  WSL failure with `wsl.exe`'s own sentence; the RUNNING check (`--list --running --quiet`) failing reads as NOT
-  running — *stopped*, and no `-d` call — never as a WSL failure. For a daemon call: exit -1 → `wsl.exe` refused (its sentence from STDOUT); exit 1 with the measured relay
-  signature for OUR path → *not installed* (exit 1 is also the daemon's `RunFailed`, so nothing else reads as not
-  installed); a `GLIBC_… not found` line → *unsupported distribution*; 2 → refused, 70 → a daemon defect, 130 →
-  interrupted, anything else → unknown — each showing only the daemon's `wsl-care:` lines, colour stripped. Exit 0 →
-  the per-verb schema handshake of plan §6: `SUPPORTED_SCHEMA = [1]`; an unknown major blanks THAT verb only ("needs a
-  newer extension"); unknown keys ignored; `verdicts` / `productVersion` optional; the daemon version from
-  `status.productVersion`, else one cached `--version` per distribution; a released daemon below
-  `MIN_DAEMON_FOR_RENDER = 0.1.0` blanks the view, `unknown` and `0.0.0(+sha)` (a build before the first release) render.
-  The client's exit-code names are read back from `ExitCode.cs` by a test.
-- **Per-verb ceilings** above the daemon's own: `status` / `--version` 20 s (no child process), `doctor` 100 s (four
-  `systemctl show` at 15 s + `systemctl --version` 15 s + `docker version` 10 s = 85 s), `preview` 330 s (`docker version`
-  10 s + two `system df` at 2 min + the dangling listing 30 s + one `container inspect` batch 30 s = 310 s); the three WSL
-  questions 15 s each (measured: ~50 ms).
-
-```mermaid
-flowchart LR
-    ext["extension.ts<br/>activate: wires; one status when focused (E5.S2)"]
-    sel["process/runnerSelection.ts<br/>chooseRunner(isTestMode, env)"]
-    run["process/runner.ts<br/>spawnRunner · nodeScriptRunner · closedRunner<br/>the ONLY child_process import"]
-    client["client/WslCareClient.ts<br/>the ONLY argv builder"]
-    verbs["client/verbs.ts<br/>VERBS: status · preview · doctor · --version"]
-    hand["client/handshake.ts<br/>schema 1 · MIN 0.1.0"]
-    fail["client/failures.ts<br/>exit codes · signatures"]
-    wsltext["wsl/*<br/>launcher · UTF-16LE · distros"]
-    wslexe["%SystemRoot%\System32\wsl.exe"]
-    daemon["/opt/wsl-care/bin/wsl-care<br/>inside the distro"]
-    fake["test/fake/fakeWsl.js<br/>strict fake (tests only)"]
-
-    ext --> sel
-    sel -->|"production: real"| run
-    sel -->|"Test mode + fake named"| fake
-    ext --> client
-    client --> verbs
-    client --> hand
-    client --> fail
-    client --> wsltext
-    client -->|"file + args"| run
-    run -->|"spawn, shell false"| wslexe
-    wslexe -->|"--exec, the distro running"| daemon
-    run -.->|"node fakeWsl.js args"| fake
-```
-
-```mermaid
-sequenceDiagram
-    participant C as WslCareClient
-    participant R as runner
-    participant W as wsl.exe
-    participant D as wsl-care (distro)
-    C->>C: distro setting matches the pattern, else refused, nothing started
-    C->>R: --list --quiet
-    R->>W: spawn (shell false, 15 s)
-    W-->>C: UTF-16LE names
-    C->>R: -l -v (only when the setting is empty)
-    W-->>C: the row marked with *
-    C->>R: --list --running --quiet
-    W-->>C: running names
-    alt the distro is not running
-        C-->>C: stopped, and no -d call
-    else running
-        C->>R: -d distro --cd / --exec /opt/wsl-care/bin/wsl-care status --json
-        R->>W: spawn (20 s)
-        W->>D: exec, no shell
-        D-->>C: JSON (UTF-8), exit 0
-        C->>C: schemaVersion in [1], productVersion at least 0.1.0
-    end
-```
-
-**The strict fake** (`src/test/fake/fakeWsl.ts`, never bundled) answers only the shapes the client may send, in the
-measured encodings, and refuses everything else with its own exit codes — `-u`, `--`, any verb outside the four, a `-d`
-to a stopped distribution, a start as anything but `…\System32\wsl.exe`. **No test can reach the real `wsl.exe`**: the
-test runner loads a tripwire into every test process that throws on any start of `wsl` / `wsl.exe`, and a test asserts it
-is armed. Tests, flows and what they do not prove: [module_tests.md](module_tests.md) § *The extension*. The measurements:
-[2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md).
-
-**CI.** `ci-extension.yml` (`ci · extension`), unconditional, on `windows-latest` and `ubuntu-24.04`: setup-node (SHA
-pinned, Node 22), `npm ci`, a clean `tsc`, the linter, `npm test`. Its two job contexts are required in
-`.github/rulesets/branch-main.json` (`ReleaseConfigTests` derives the gating workflows and holds the list equal). Dependabot
-watches `/src_vs_code` weekly, holding `@types/vscode` at 1.85.0 (major and minor ignored), `typescript` on 6.x,
-`@types/node` on 18.x.
-
-## The extension: status bar, read-only panel and polling (E5.S2)
-
-E5.S2 hangs the first visible surface on E5.S1's client: a **status-bar item**, a **read-only panel** (a `WebviewView`
-in its own activity-bar container "AI OS Care"), and the **poller** that decides when the daemon is asked. All three read
-ONE store of the newest outcome per verb, so the bar and the panel can never disagree about what the daemon last said.
-Still read-only and root-free: the same four verbs, the bundle scan unchanged (it caught the shell's first draft —
-`<main id="root">` spells the forbidden word — and the element became `id="panel"`).
-
-| Module | Role |
-|---|---|
-| `state/outcomeStore.ts` | the newest `status` / `preview` / `doctor` outcome and a "checking" flag; listeners |
-| `poll/poller.ts` | WHEN the daemon is asked (below); the only caller of `client.run` |
-| `statusBar/statusBarModel.ts` + `statusBar.ts` | the bar as a pure function of the `status` outcome; thin VS Code wiring |
-| `panel/fieldMap.ts` | THE field map — every row, its section, verb, JSON path, refresh trigger, or the epic it arrives in |
-| `panel/viewModel.ts`, `rowRenderers.ts`, `read.ts`, `jsonPath.ts`, `format.ts` | the view as a pure function of the store's snapshot and the field map |
-| `panel/panelHtml.ts`, `messages.ts`, `panelProvider.ts` | the static shell + CSP + webview options, the closed page→host message set, the `WebviewViewProvider` |
-| `media/panel.js`, `panel.css`, `wsl-care.svg` | the page script (DOM by `createElement` / `textContent` only), its theme-variable styles, the activity-bar icon |
-| `failureText.ts` | the short label and the sentence for every client failure kind, one typed table |
-| `testApi.ts` | what `activate` returns in Test mode only — the extension-host scenarios' handles |
-
-**The status bar** — `WSL RAM <used>% · swap <x>G · <n> containers` from `status --json` (`used` = 100 − `availablePercent`),
-coloured by the worst RELEVANT verdict (§15g B1): the `memory.*` and `kernel.*` verdicts — what the bar shows, plus the
-allocation-failure / OOM alerts — as `statusBarItem.warningBackground` (warn) or `statusBarItem.errorBackground`
-(critical), theme colours; `ok` and `unknown` colour nothing, and the clock / systemd / collector warnings of the head
-golden leave it uncoloured on purpose. A daemon without `verdicts` → uncoloured, the tooltip says "update the daemon to
-see warnings". A figure answered `available: false` is `?`, never 0, with its reason in the tooltip. Failures are their
-short state: "WSL stopped" (no call was made into the distribution), "AI OS Care: daemon not installed", "… unsupported
-distro", "… needs a newer extension", "… Windows + WSL only" (the non-win32 notice — nothing is asked off Windows). A
-click opens the panel (`wslCare.openPanel`).
-
-**The panel** renders the field map below. Each row is, in this order: "arrives in E# — why" for a row the four verbs
-cannot fill; "checking…" before its verb was asked; its verb's failure label (per verb — an unknown `preview` major
-blanks only the `preview` rows, plan §6); "update the daemon to see this" when the answering daemon lacks the path (the
-compatibility rule — never 0); "unavailable — <reason>" for an `available: false` figure; otherwise its renderer. Lists
-(top processes, families, container stats, folders, cleanup rows, kept volumes, hygiene, checks, versions, verdicts)
-render as sub-tables. Slow parts say which full run measured them and how long ago. Since E6.S3 *Cleanup* carries a
-*Clean* and a *Select* per row, *Clean selected (n)*, *Run full check now* and — for a wedged run the daemon can stop —
-*Stop*, and *Last cleanup* the results this window showed and "Docker after" (section *The extension: the cleanup
-buttons*). The panel's header buttons are Refresh, Settings and — only when the distribution is stopped — **Start WSL and
-check**.
+- **Client, runner and fake (E5.S1).** The extension runs in the Windows extension host (`extensionKind: ["ui"]`) and
+  reaches the daemon only by starting the absolute `%SystemRoot%\System32\wsl.exe`, with argv built in ONE module, over
+  a closed set of four read-only verbs — root-free, held by structural and bundle tests. It asks whether the distribution
+  is running first and makes no `-d` call when it is not, so polling never starts the VM. Then the runner and its
+  selection (in Test mode the strict fake, or a closed runner that starts nothing — no test can reach the real
+  `wsl.exe`), the reading of failures and of the schema handshake, the per-verb ceilings and `ci · extension`.
+- **Status bar, read-only panel and polling (E5.S2).** ONE store of the newest outcome per verb feeds both the status bar
+  and a `WebviewView` panel rendered from the field map. The webview rules (a static shell, a nonce CSP, a DOM built by
+  `createElement` / `textContent` only, a closed message set); the polling policy (only the focused window polls, and
+  only `status`; *Start WSL and check* is the one call that may start the distribution; a distribution switch never mixes
+  two distributions — except, stated there as not covered, a WSL default changed mid-round while `wslCare.distro` is
+  empty); its tests.
+- **Install daemon, packaging and its release (E5.S3).** *Install daemon* TYPES a pinned installer command into a
+  terminal and never runs it; the `.vsix` (one `win32-x64` package since E7.S5a) is checked as an artefact — an
+  allowlist, leak checks, the build stamp, the minimum daemon held equal in three places; `release-extension.yml`
+  publishes the GitHub draft first, the Marketplace second, public last, behind a guard; then the client behaviours and
+  fixes of the gate and code rounds, and their tests.
 
 ### The panel's field map (plan §15g B2)
 
@@ -1950,314 +1548,6 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
 | AI agents | AI agents (both sides, Add CLI path) | — | — | — | arrives in E7 — needs the agents list verb (E7) |
 | Last cleanup | Last cleanup | `lastCleanup` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 <!-- field-map:end -->
-
-### Webview rules (§15g M7, m10)
-
-- **A static shell** (`panelShell`): no daemon data in the HTML at all — the data arrives only by `postMessage` as a
-  plain view object (strings, numbers, arrays), so there is nothing to escape and the TypeScript doctrine's
-  `scriptInterpolation` scan stays green with an EMPTY allowlist.
-- **CSP** `default-src 'none'; script-src 'nonce-N'; style-src 'nonce-N'` with a fresh 128-bit nonce per render
-  (`crypto.randomBytes`); one script and one stylesheet, both from `media/`, both carrying the nonce; no inline code, no
-  inline handler, no inline style. The shell refuses a nonce that is not 32 hex characters and a URI with a quote or
-  angle bracket.
-- **Options**: `enableScripts: true`, `enableCommandUris: false`, `localResourceRoots: [media/]`.
-- **The page builds its DOM with `createElement` / `textContent` / `setAttribute('data-…')` only.** Every daemon string
-  is first passed through `safeText` in the host: C0/C1 controls, DEL and the bidi embedding / override / isolate
-  characters become a visible U+FFFD (a process name chosen by any distro process cannot re-order what the panel shows),
-  and anything past 500 characters is clipped with an ellipsis.
-- **A closed message set from the page**, validated EXACTLY in the host (`parsePageMessage`: no extra key, no other
-  type): `ready` (send the current view), `rendered {rows}` (how many rows the page drew — what the extension-host
-  scenarios read), `refresh`, `openSettings`, `startWsl`. E5.S3 adds `installDaemon`. Nothing from the page becomes
-  argv: each message maps to a host action built from the host's own closed verb set.
-- **The Logs page (E6.S4) is the second webview under the SAME rules** — the same shell (page `logs`), CSP, options and
-  stylesheet, its own closed set (`logsPage/logsMessages.ts`) and its own strict-harness tests; one new element is modelled,
-  the date picker's `<input type="date">` with `min` / `max` (never a form). See *The extension: the Logs page (E6.S4)* in [architecture-extension-e6.md](architecture-extension-e6.md).
-
-### The polling policy (§15f #8, §15g M1, m3)
-
-- Only the **focused** window polls (`window.state.focused`): once when it gains focus (and at activation, if
-  focused), then every `wslCare.refreshSeconds` (default 120, schema minimum 30; a non-number reads as 120) while it
-  keeps focus; losing focus disarms the timer, and a timer that fires just after focus was lost asks nothing.
-- A poll asks **`status` only**. `preview` and `doctor` are asked when the panel opens (or becomes visible again) or
-  Refresh is pressed — `status` first; when it ends in a target failure (stopped, not installed, unsupported, WSL
-  missing / failed, distribution refused) the other two are NOT asked and their rows show the same state.
-- Every call goes through the client, which asks `wsl.exe --list --running --quiet` first and makes **no `-d` call**
-  when the distribution is not running — so neither a poll nor opening the panel starts the VM. **Start WSL and check**
-  (`wslCare.startWsl`, the panel's button) is the one call that may: `status` with `startIfStopped`, which keeps every
-  check but lets the `-d` that starts the distribution through, because the user asked for exactly that.
-- **The race, stated:** a distribution that stops between the running check and the `-d` call is started again by
-  that call; the window is the ~50 ms between two `wsl.exe` starts (each answers in 46–59 ms, measured 2026-10-03).
-- **A distribution switch never mixes two distributions** (retro review of PR #9, 2026-10-06). The client reads
-  `wslCare.distro` once per call and shares a call in flight only for the same setting AND verb, so a `preview` asked
-  after the switch never joins the one still running for the previous distribution (its ceiling is 330 s). The poller
-  stamps every round with its target (the same setting) and looks at the setting again at every boundary — a round
-  starting, an answer about to be stored, `status` answered, even an unfocused tick that asks nothing. A changed
-  target clears the store and makes every round started so far obsolete — an obsolete round stores nothing, asks no
-  `preview` / `doctor`, and leaves "checking" to the current round. A round for the SAME target makes nothing
-  obsolete, so a status poll never drops a `preview` in flight (`distroSwitch.test.ts`). The setting is read as
-  whatever settings.json holds and normalised by ONE function, `distroSettingText` (`wsl/distros.ts`), for the client
-  and the poller alike: a non-string (a hand-edited number, `null`, an object) becomes `<not a name: <type>>`, refused
-  as `distroRefused` before any spawn — never a throw out of a timer callback. **Not covered, stated:** with
-  `wslCare.distro` EMPTY the target is "WSL's default", which the client resolves per call; a default changed with
-  `wsl --set-default` in the middle of a panel round can still mix two distributions in that one round (pre-existing,
-  found by the consultant 2026-10-06; binding the resolved distribution to the round is the follow-up).
-- **The churn** this costs the daemon (every `status` run opens one run-log file): measured over a simulated day by
-  the real poller — 721 runs per fully focused day at 120 s, 241 for an 8-hour focused day, 2 881 at the 30 s floor —
-  [2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md). Accepting it or recording a logging-rule
-  exception is the **owner's open M1 decision**.
-
-```mermaid
-flowchart LR
-    focus["window focus<br/>onDidChangeWindowState"]
-    timer["interval<br/>wslCare.refreshSeconds"]
-    panelOpen["panel open / visible<br/>Refresh · Start WSL and check"]
-    poller["poll/poller.ts<br/>focused only · status only"]
-    client["WslCareClient<br/>running check first, no -d when stopped"]
-    store["state/outcomeStore.ts<br/>status · preview · doctor"]
-    barModel["statusBarModel.ts<br/>text · tooltip · level"]
-    bar["status-bar item<br/>theme colours"]
-    vm["panel/viewModel.ts<br/>FIELD_MAP rows"]
-    provider["panelProvider.ts<br/>static shell · nonce · CSP"]
-    page["media/panel.js<br/>createElement · textContent"]
-
-    focus --> poller
-    timer --> poller
-    panelOpen --> poller
-    poller -->|"run(verb)"| client
-    client -->|"outcome"| store
-    store --> barModel --> bar
-    store --> vm --> provider
-    provider -->|"postMessage view"| page
-    page -->|"ready · rendered · refresh · openSettings · startWsl"| provider
-    provider -->|"refresh or startIfStopped"| poller
-```
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant P as Poller
-    participant C as WslCareClient
-    participant W as wsl.exe
-    participant S as Store
-    participant V as Webview page
-    U->>P: opens the panel
-    P->>C: run status
-    C->>W: --list --quiet, --list --running --quiet
-    alt distribution stopped
-        C-->>P: stopped, no -d call
-        P->>S: status, preview, doctor are stopped
-        S-->>V: view with Start WSL and check
-        U->>V: presses Start WSL and check
-        V->>P: startWsl message
-        P->>C: run status with startIfStopped
-        C->>W: -d distro --exec wsl-care status --json
-    else running
-        C->>W: -d distro --exec wsl-care status --json
-        C-->>P: answered
-        P->>C: run preview and run doctor
-        C-->>P: answered
-    end
-    P->>S: outcomes
-    S-->>V: postMessage view, rendered with textContent
-    V-->>P: rendered rows
-```
-
-### Tests (details: [module_tests.md](module_tests.md) § *The extension*)
-
-Unit tests over the goldens for the bar, the view model, the field map (held equal to this document), the poller (a
-manual clock), the shell / CSP / options and the message set; the page script RUN in a ported `node:vm` harness that is
-stricter than a browser (every HTML sink and unmodelled member throws), over every golden set and over hostile process /
-container strings; and `@vscode/test-electron` against **1.85.0 and stable** (`npm run test:host`, two launches per
-version: with the strict fake, and in Test mode without it — which must start nothing), wired into `ci · extension` on
-both legs (xvfb on `ubuntu-24.04`, the downloads cached).
-
-## The extension: Install daemon, packaging and its release (E5.S3)
-
-Three things, none of which runs anything privileged: *Install daemon* TYPES a pinned command for the person; the
-universal `.vsix` is checked as an ARTEFACT before it can ship; and `release-extension.yml` publishes it — the GitHub
-draft first, the Marketplace second, public last — behind a guard that refuses until the minimum daemon is out and was
-seen working. Nothing is released yet (the publisher `remsoftdev` was created on 2026-10-06; the Environment and the tag ruleset are
-the E5 live gate's, `docs/repo-settings.md` steps 9–11).
-
-### *Install daemon* (plan §15g m2, §15f #5)
-
-- **One module builds the command** (`install/installCommand.ts`): `curl -fsSL
-  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v<V>/install.sh | sudo sh -s -- --version <V>`,
-  `V` = the compiled `INSTALL_DAEMON` (0.1.2 since 2026-10-06 — 0.1.0's act unit carries the CollectMode defect), a value
-  of its own never below `MIN_DAEMON_FOR_RENDER` (0.1.0, the oldest daemon the extension renders) nor, since E6.S2,
-  `MIN_DAEMON_FOR_ACTIONS` (0.1.0), checked `x.y.z` when
-  the module loads; never `--skip-attestation`,
-  never `main`, no argument at all. The ref is spelt in full, `refs/tags/…`, so no branch of that name can be served
-  instead (observed 2026-10-04: raw.githubusercontent.com answers 200 for an existing tag in that form, 404 for a missing
-  one). If the installer then stops for want of `gh`, its last-resort `--skip-attestation` line repeats the SAME ref and
-  version (`install.sh`'s `rerun_command`), never main's installer. The prerequisites are TEXT (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0+, `sudo`):
-  `gh --version` is outside the four verbs, and the installer checks each one itself before it changes anything.
-- **The flow** (`install/installDaemon.ts`, collaborators injected): the client's `terminalTarget()` validates the
-  distribution — the setting's pattern before any spawn, then `wsl.exe --list` (no VM start) — and refuses before anything
-  opens; a MODAL (`showWarningMessage({ modal: true })`) shows the command and the prerequisites; on its one confirm button
-  ONE terminal `createTerminal({ shellPath: %SystemRoot%\System32\wsl.exe, shellArgs: ['-d', <distro>, '--cd', '~'] })` —
-  the user's home, not the Windows folder VS Code was started from (observed: `--cd ~` lands in `/home/<user>`) — and
-  `sendText(command, false)` — typed, not run. `terminalTarget` lives in the client so it stays the only module that
-  spells a `wsl.exe` argument.
-- **Its surfaces** — the command `wslCare.installDaemon` and the panel's first button when `status` answers *daemon not
-  installed*; the page sends the BARE message `installDaemon` (any extra key is dropped), so nothing from the page reaches
-  the text. In Test mode the modal and the terminal are RECORDERS (`install/installUi.ts`, chosen like the runner, by the
-  extension mode alone): a real terminal would start the real `wsl.exe`, and a pseudo-terminal is outside the tripwire.
-- **Held by structure** — only `installCommand.ts` spells the installer, its URL or `sudo`; the install modules import
-  neither the runner nor `child_process`; only `installUi.ts` touches `createTerminal`; in the BUNDLE, `sudo` appears only
-  in the command's template part and its prerequisite line, and the forbidden set (`-u`, `--user`, `root`, `--timer`,
-  `--confirm`, `--manual`, `config`) needed no exception.
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant V as panel page / command palette
-    participant H as host (installDaemon)
-    participant C as WslCareClient.terminalTarget
-    participant W as wsl.exe (absolute)
-    participant T as terminal in the distro
-    User->>V: Install daemon
-    V->>H: installDaemon (bare message)
-    H->>C: terminalTarget()
-    C->>C: setting pattern — refused here, nothing started
-    C->>W: --list --quiet (no VM start)
-    W-->>C: listed names
-    C-->>H: shellPath + ['-d', distro, '--cd', '~'], or a refusal (reported, no modal)
-    H->>User: modal — the exact command, the prerequisites
-    User->>H: Open a terminal and type it
-    H->>T: createTerminal(wsl.exe -d distro --cd ~)
-    H->>T: sendText(command, false) — typed, NOT run
-    User->>T: reads it, presses Enter (sudo asks for the password)
-```
-
-### The package and its leak checks (plan §15g M8, §15f #6 / #13)
-
-- **One `.vsix`** — universal up to 0.5.0; since E7.S5a ONE `win32-x64` package carrying the attested Windows daemon
-  ([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)): `bin/wsl-care.exe` is the member of `daemon-v<bundledDaemon>`
-  (a fourth pin in `min-daemon.json`), fetched by THE fetch (`fetch-windows-daemon.sh`: asset set, exact attestation, one zip
-  member), exempt from the text scan by its exact path and digest only, RE-DERIVED by the attest job before it signs
-  (`verify-bundled-exe.sh`, repeated by github-public), and started by `WindowsCareClient` alone (`--version`, the panel's
-  Windows row) (`npm run package` = `vsce package --no-dependencies --target win32-x64`, `@vscode/vsce` 4.0.0 pinned):
-  `vscode:prepublish` runs `scripts/bundle.mjs` — esbuild's API with the CLI's old options (CommonJS, node18, `vscode`
-  external, no source map) plus a **build stamp**: `WSL_CARE_BUILD_STAMP` := `"wsl-care-build <package.json version>"`
-  (`src/buildStamp.ts`; the test API reads it back in the extension host). It also EMITS `dist/min-daemon.json` —
-  `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>", "bundledDaemon": "<x.y.z>" }` — read by RUNNING `src/client/handshake.ts` (esbuild's transform in a bounded
-  `node:vm`), never matched as text; the checked-in `src_vs_code/min-daemon.json` is the copy the release guard reads at
-  the tag with a JSON parser (E5 code round #2/#5), held equal to the constant by `minDaemon.test.ts` on every pull request.
-- **`.vscodeignore` is an ALLOWLIST** (`**`, then `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE`,
-  `dist/extension.js`, `media/**`). `vsix-files.txt` is what `vsce ls --no-dependencies` must print, exactly.
-- **`scripts/check-vsix.mjs`** (logic in `src/test/support/vsixCheck.ts`, a dependency-free ZIP reader in
-  `zipFile.ts`) opens the built `.vsix`: the entry list equals the allowlist under `extension/` (vsce's renames
-  `readme.md`, `changelog.md`, `LICENSE.txt`) plus vsce's two own files; no drive path (`X:\` / `X:/`), `/home/`, `/mnt/`,
-  `\\wsl`; no user name of the machine running the check (derived then — `os.userInfo()`, `USERNAME`, `USER`, the home
-  folder — never stored) nor a word of `vsix-denylist.txt`, as whole words in every entry (the bundle's string LITERALS
-  only: an identifier named `runner` is code). A machine name that is a SERVICE account (`SERVICE_ACCOUNTS`: `runner` /
-  `runneradmin` — the GitHub-hosted images —, `root`, `vscode`, `codespace`, `user`; the same list as
-  `FixturePrivacy.ServiceAccounts`, held equal by `FixturePrivacyTests`) is no person and is left out, and the success line
-  names what was left out: release-please's 0.2.0 CHANGELOG said "the runner seam", and under the runner's own account
-  `runner` both CI legs of PR #47 were red (run 37751902435). The narrowing is stated, not hidden: a person whose login is
-  one of those six is not looked for by name; a `/home/…` or `X:\…` path is still refused whatever the name. No e-mail address; no source map; exactly one build stamp, equal to the
-  `.vsix`'s version; with `--release`, a real publisher; the minimum daemon equal in the compiled constant, the emitted
-  `dist/min-daemon.json` and the checked-in `min-daemon.json` — and, with `--min-daemon <x.y.z>` (the release guard's
-  output), the minimum the guard found published and verified. A denied word is reported by its index, never printed.
-- **Marketplace metadata** — `icon` (`media/icon.png`, 256 px, drawn by `src/test/support/iconPng.ts`: no third-party art,
-  only IHDR/IDAT/IEND, held to its recipe by its pixels), `pricing: Free`, `repository` / `bugs` / `homepage` (https),
-  `categories`, `keywords`, `galleryBanner`, `preview: true`; a README with no images (screenshots are a live-gate item:
-  no synthetic-fixture pipeline exists here); `CHANGELOG.md` written by release-please. The publisher is the
-  owner's `remsoftdev` (2026-10-06), so the Marketplace id is `remsoftdev.ai-os-care`; the guard and `--release`
-  still refuse the placeholder `publisher-tbd`. `vsce package --target win32-x64` writes `<name>-<target>-<version>.vsix` —
-  `ai-os-care-win32-x64-<version>.vsix` since E7.S5a (before it `ai-os-care-<version>.vsix`) — named in ONE function per
-  language (`lib/extension-package.sh` `vsix_name`, `ReleaseFiles.ExtensionVsix`, `check-vsix.mjs --print-default-name`), held
-  equal by `ExtensionPackageNameTests`; a release `.vsix` must carry `TargetPlatform="win32-x64"` in its vsixmanifest, and the
-  Marketplace's served check counts only `win32-x64` entries.
-- **On every pull request** `ci · extension` packages and runs the checks on both legs (job names unchanged); the
-  release's build job runs the same with `--release`.
-
-### `release-extension.yml` (plan §15g M4/M5, §15h #0)
-
-```mermaid
-flowchart TD
-    tag["push: tags extension-v* — the only trigger"]
-    guard["guard · contents: read<br/>release-extension-guard.sh: tag = package.json version · real publisher · on main<br/>min-daemon.json (JSON) → daemon-v&lt;MIN&gt;, daemon-v&lt;ACTIONS&gt; and daemon-v&lt;INSTALL&gt; published non-draft (gh api, read-only token)<br/>POST_DEPLOY.md on origin/main's tip (git show, never the tag's tree) 'Last verified: date · … · daemon x.y.z', x.y.z ≥ INSTALL ≥ ACTIONS ≥ MIN (lib/versions.sh)<br/>root module only above a root-free, published extension-v0.1.0<br/>outputs: version · publisher · min_daemon · min_daemon_actions · install_daemon · root_allowed"]
-    build["build · contents: read ONLY<br/>npm ci → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
-    attest["attest · contents: read + id-token: write + attestations: write<br/>sparse checkout of .github/scripts · NO npm, no node<br/>download artifact → verify the pair → attest-build-provenance(.vsix)"]
-    draft["github-draft · contents: write<br/>verify set → upload only what the DRAFT lacks (never replace; nothing if public)<br/>→ download back → verify + cmp (a difference: re-run FAILED jobs only)"]
-    mkt["publish-marketplace · environment: marketplace · contents: read<br/>npm ci --ignore-scripts → verify set → vsce show: served? (marketplace-served.cjs)<br/>not served → vsce publish --packagePath the attested file (VSCE_PAT)<br/>→ wait-marketplace-served.sh: 90 × 30 s ≈ 45 min, each vsce show bounded 20 s + 5 s kill,<br/>every attempt logged · job limit 100 min, above the wait's 82.5 min worst case"]
-    pub["github-public · contents: write<br/>download the attested artifact → the draft's set + cmp → --draft=false (no-op if public)"]
-    stop["red run: the release stays a draft — re-run FAILED jobs, or fix forward;<br/>never re-run all jobs, never move or delete the tag"]
-    tag --> guard --> build --> attest --> draft --> mkt --> pub
-    guard -. refuses .-> stop
-    build -. fails .-> stop
-    attest -. fails .-> stop
-    draft -. fails .-> stop
-    mkt -. fails .-> stop
-```
-
-- **A file of its own** — `release.yml` is untouched (its triggers are pinned, `install.sh` trusts its identity), and the
-  `VSCE_PAT` Environment secret is named by one job of one workflow (`ReleaseExtensionWorkflowTests`).
-- **The Marketplace wait** (2026-10-09): extension 0.2.0 was published at 15:58:44Z and `vsce show` had still not listed it
-  when the old 20-minute job limit cancelled the job at 16:23:28Z, with no log of what it saw. `wait-marketplace-served.sh`
-  now waits up to 45 minutes, prints one line per attempt (the vsce exit, the newest five versions) and ends with its own
-  `::error::` naming the last answer; each `vsce show` is bounded (`timeout -k 5 20`), and the job limit stays above the
-  worst case, so the script — never the job timeout — ends a slow propagation. The skip step and the wait decide "served"
-  with ONE reader, `marketplace-served.cjs`.
-- **The order** puts the rollback source first: the `.vsix` is on the draft before the Marketplace serves anything, and
-  the release goes public only after it does — compared once more with the attested build immediately before.
-- **The signing scope** (E5 code round #3): the build runs `npm ci` with dependency install scripts, every test and a
-  downloaded VS Code, so it holds `contents: read` only; the ONLY job with `id-token` / `attestations: write` is
-  `attest`, which checks out `.github/scripts` alone, downloads the build's artifact, checks the pair and attests it.
-- **Re-runs** — "Re-run FAILED jobs" only: it reuses the successful build's artifact. "Re-run all jobs" rebuilds a
-  .vsix that is not byte-identical while the Marketplace may already serve the first, so an asset on the release is
-  NEVER replaced (draft or public): the draft upload adds only what is missing, and both GitHub jobs compare the release
-  with this run's build and refuse on a difference, saying to re-run failed jobs only.
-- **The guard's three daemon versions** — the render minimum, the actions minimum (E6.S2) and the release *Install
-  daemon* types — come from
-  `src_vs_code/min-daemon.json` (JSON, `python3`), never from TypeScript with a line
-  pattern, and its comparisons — and POST_DEPLOY item 6's ranking of the versions the Marketplace serves — go through ONE
-  POSIX file, `.github/scripts/lib/versions.sh` (`version_at_least`, `highest_version`, `is_top_version`). Every line the
-  guard prints is a declared output; the build checks its .vsix against `min_daemon`, `min_daemon_actions` and `install_daemon`.
-- **The credential**: none — the owner's decision of 2026-10-06 is a MANUAL upload of the attested `.vsix` (no `VSCE_PAT`,
-  `POST_DEPLOY.md` item 12 accepts `none — manual upload`; `docs/repo-settings.md` step 9). The served check names a
-  version only, so before approving `publish-marketplace` (which then skips) the owner runs
-  `.github/scripts/compare-installed-extension.sh`: the installed extension equals the `.vsix` file by file, apart from
-  VS Code's `.vsixmanifest` and `__metadata`; item 6 runs it again after the release. A PAT (dead on 2026-12-01) or
-  OIDC (`azure/login` + `--azure-credential`) stay the documented ways to automate the publish.
-- **The tag ruleset** `.github/rulesets/tags-extension.json` — `refs/tags/extension-v*`, creation / update / deletion, the
-  release App the only bypass; `tags-daemon.json` is not edited.
-- **release-please** gains the package `src_vs_code` (`extension`, `node`, `initial-version` 0.1.0, manifest 0.0.0,
-  `package.json` 0.0.0): the first extension release is 0.1.0 exactly, by the daemon's bootstrap.
-
-### Two client behaviours added by the gate round (§15h)
-
-- **A crowded preview** — when `preview --all --json` times out and the newest `status` answered more running containers
-  than the ceiling assumes (`PREVIEW_CONTAINER_ASSUMPTION` = one `container inspect` batch, 100), the failure is
-  `previewTooManyContainers` — "too many containers for a quick preview (<n>)" — instead of a bare timeout. The count is
-  running containers, a lower bound of what `preview` inspects.
-- **Listed distribution names** are taken as `wsl.exe --list` reports them (§15h #4); only a leading `-` is refused, and
-  the strict pattern applies to the setting's value only.
-
-### What the E5 code round changed in the extension (2026-10-04)
-
-- **The interval is clamped to a day** — `effectiveSeconds` keeps `wslCare.refreshSeconds` within 30–86 400
-  (`MAX_REFRESH_SECONDS`, also the schema's `maximum`): above 2^31-1 ms `setInterval` overflows and fires every
-  millisecond.
-- **An unavailable PARENT** — a part the daemon could not read (`vm`, `vm.memory`) arrives as `{ available: false,
-  reason }` with no children; `jsonPath.unavailableAncestor` finds the deepest such ancestor of a missing path, so every row
-  under it reads "unavailable — <its reason>" (never "update the daemon to see this") and the bar shows `?` with that
-  reason in its tooltip.
-- **The notice is the page's one live region** — `aria-live="polite"` moved from `<main>` (whose whole tree is rebuilt
-  on every render) to the notice, which is ONE element for the page's life whose text changes only when it differs.
-- **The call log exists in Test mode only** — `clientRunner(testMode, …)` hands the real runner over unwrapped outside it;
-  before, every request of a long-lived window was appended to a list nobody read.
-
-### Tests (details: [module_tests.md](module_tests.md) § *The extension*)
-
-`installDaemon.test.ts`, `vsixCheck.test.ts`, `icon.test.ts`, the new rows of `structure.test.ts`, `bundleScan.test.ts`,
-`manifest.test.ts`, `client.test.ts`, `fakeWsl.test.ts` and `viewModel.test.ts`; since the E5 code round
-`minDaemon.test.ts` and `testApi.test.ts`; the host suite's *Install daemon* scenarios on 1.85.0 and stable; and in C#,
-`ReleaseExtensionWorkflowTests` (the workflow's structure, the attest job, the re-run rule, POST_DEPLOY item 6),
-`ReleaseExtensionScriptFlows` (the guard, `lib/versions.sh` and the asset set, run under bash / sh on Linux) and the
-widened `ReleaseWorkflowTests` / `ReleaseConfigTests`.
 
 ## The daemon: E6 — the read contract, the detached runs
 
@@ -2841,7 +2131,7 @@ FluentAssertions held below 8.x.
 
 The parts that run, and what they talk to (added 2026-10-06 by the retro review of PR #2: the family's
 knowledge-base rule asks for one system-level container diagram; every other diagram in this file is the inside of
-one feature). The detail of each box is in its own section above and in [module_vs_code.md](module_vs_code.md).
+one feature). The detail of each box is in its own section above, in [module_daemon.md](module_daemon.md) (the installer, the units, the daemon's release) and in [module_vs_code.md](module_vs_code.md) (the extension's E5).
 
 ```mermaid
 flowchart LR
@@ -2893,12 +2183,12 @@ flowchart LR
 | daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)), their CPU over the interval since the previous sample (E14 S1, [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) and A19 stopping the idle ones (E14 S2a); the Windows Time guard — which clock is wrong, A16 never stepping to a wrong host (2026-10-08, [module_daemon.md](module_daemon.md) § *The Windows Time guard*); the archive's catalogue blocks, keys and base folder rules, `archive check-base` (E9.S0); the archive in the engine — A13 and the restore button A20, the product's own binary run as the target user (E9.S4, [module_archive.md](module_archive.md)) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3); the status verdicts and the golden contracts' writer and drift test (E5.S0) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
-| installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
-| release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
+| installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges; detail: [module_daemon.md](module_daemon.md) § *The installer and the units (E4.S1)* |
+| release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding; detail: [module_daemon.md](module_daemon.md) § *The release pipeline (E4.S2)* |
 | AI-session archive | `src_daemon/src/WslCare.Core/Archive/`, `Files/IArchiveFiles.cs` (+ `PhysicalFileSystem.Archive.cs`, `BeneathWrites.cs`, `ArchiveSourceRules.cs`), `WslCare.Cli/Commands/ArchiveCommand.cs`, `ArchiveRunCommand.cs` | moves aged AI-agent sessions to a base folder the user chose, as the user, verified before anything is removed — [module_archive.md](module_archive.md) | E9.S0 (blocks, keys, `archive check-base`), E9.S1 (`archive preview`), E9.S2a (the file seam), E9.S2b (`archive run`, `status`, `reconcile --scan`), E9.S3 (`archive restore`, `archive list`), E9.S4 (A13 and A20 in the engine — the product's own binary run as the target user, `archive reach`; A19 is the MCP servers' since E14 S2a), E9.S5 (the Windows side's open-file check: the Restart Manager, the Windows process table) built |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
-| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate; the root boundary (E6.S2), the cleanup buttons and *Last cleanup* (E6.S3) and the Logs page (E6.S4) on `feat/wc-e6-cleanup-logs` ([architecture-extension-e6.md](architecture-extension-e6.md)), merging only after `extension-v0.1.0` is tagged. *Start Windows Time*, one elevated PowerShell (2026-10-08); the Windows Time guard, one SYSTEM scheduled task (2026-10-08, [PLAN_windows_time_task.md](PLAN_windows_time_task.md)); the GPU alert — the extension's own unelevated read of Windows' display adapters, at the top of the panel and on the bar — and *Enable <GPU>* for code 22 through the same launcher, PowerShell 7 elevated by the MSI install or the Store package's resolved path under `Program Files\WindowsApps`, each signature-checked by the extension's own read before the launch (2026-10-10/11, [PLAN_gpu_health.md](PLAN_gpu_health.md)); since 2026-10-11 the launcher and that resolver are shared modules (`src/powershell/`), *Start Windows Time* and the guard's install / remove elevate the same engine — read before their modal and again before the launch — while the guard's SYSTEM task stays on Windows PowerShell 5.1, and the panel names each part's engine ([PLAN_pwsh_engine_windows_time.md](PLAN_pwsh_engine_windows_time.md)). Module overview: [module_vs_code.md](module_vs_code.md) |
-| daemon module overview | [module_daemon.md](module_daemon.md) | the map from the daemon's purpose, entities, entry points and dependencies into this file's epic sections | added by the retro review of PR #7 (2026-10-06) |
+| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate; the root boundary (E6.S2), the cleanup buttons and *Last cleanup* (E6.S3) and the Logs page (E6.S4) on `feat/wc-e6-cleanup-logs` ([architecture-extension-e6.md](architecture-extension-e6.md)), merging only after `extension-v0.1.0` is tagged. *Start Windows Time*, one elevated PowerShell (2026-10-08); the Windows Time guard, one SYSTEM scheduled task (2026-10-08, [PLAN_windows_time_task.md](PLAN_windows_time_task.md)); the GPU alert — the extension's own unelevated read of Windows' display adapters, at the top of the panel and on the bar — and *Enable <GPU>* for code 22 through the same launcher, PowerShell 7 elevated by the MSI install or the Store package's resolved path under `Program Files\WindowsApps`, each signature-checked by the extension's own read before the launch (2026-10-10/11, [PLAN_gpu_health.md](PLAN_gpu_health.md)); since 2026-10-11 the launcher and that resolver are shared modules (`src/powershell/`), *Start Windows Time* and the guard's install / remove elevate the same engine — read before their modal and again before the launch — while the guard's SYSTEM task stays on Windows PowerShell 5.1, and the panel names each part's engine ([PLAN_pwsh_engine_windows_time.md](PLAN_pwsh_engine_windows_time.md)). Module overview and the E5.S1–E5.S3 sections: [module_vs_code.md](module_vs_code.md) |
+| daemon module overview | [module_daemon.md](module_daemon.md) | the map from the daemon's purpose, entities, entry points and dependencies into this file's epic sections; since 2026-10-12 it holds the installer, units and release-pipeline sections (E4.S1, E4.S2) itself | added by the retro review of PR #7 (2026-10-06) |
 
 ## Cross-repository
 
