@@ -34,7 +34,7 @@
    erased everything older than 07:49Z.
 5. **Ranked fixes (§ 5):** F1 (advice only, decided 2026-10-12) leave the clock to WSL's own `chronyd` —
    `timedatectl set-ntp false` in `Ubuntu`, reversible;
-   F2 keep Windows closer to NTP — the guard's existing `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker
+   F2 (YES, the owner 2026-10-12) keep Windows closer to NTP — the guard's existing `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker
    Desktop has no setting for it — upstream issue, stop it when unused, and the daemon names it in its verdicts.
 
 ## 1. Who can set the clock — the inventory (10:09:59Z unless stated)
@@ -175,6 +175,9 @@ here (upstream: 1–2 ms steps are still made).
 - **How wsl_care would apply it:** advice in the `clock.fight` / `clock.reference` reasons, pointing at the setting and the
   guard's existing *Install* button. A direct Windows `SpecialPollInterval` change would be a new elevated action and is
   not proposed.
+- **Decided 2026-10-12 (the owner): F2 is YES.** `wslCare.windowsTime.guard.everyHours` is set to 1 (by the
+  coordinator); it applies once the owner reinstalls the guard with its *Install* button (one UAC prompt). Measure it
+  with § 2c's `w32tm /stripchart` an hour after a guard run and with the guard task's last-run time.
 
 ### F3 — Docker Desktop: no setting, so stop it when unused and name it
 
