@@ -26,10 +26,11 @@
    own VM-level `chronyd` disciplines it to the Hyper-V host clock (`/dev/ptp0`, every 8 s), Ubuntu's `systemd-timesyncd`
    disciplines it to NTP, and **Windows is 0.17–0.19 s ahead of NTP**. Neither wins; Docker resets the result every 30 s.
 3. **The first hour of the boot was worse:** 93 of the Docker steps were followed 32–783 ms later by a SECOND step, and
-   journald logged ≈ 95 *Time jumped backwards* — that is the `clock.fight` 95. After 08:44Z it stopped (3 since).
-4. **Each backward jump rotates the journal, and journald keeps at most 100 files (`SystemMaxFiles`, default 100).** The
-   journal directory holds exactly 100 files of 8 MiB; the oldest are deleted BY COUNT. The daemon read 1.6 days of
-   history at 08:03:54Z and 0.0 days at 10:02:22Z: the first hour's rotations erased everything older than 07:49Z.
+   journald logged ≈ 95 *Time jumped backwards* — that is the `clock.fight` 95. After 08:44Z it nearly stopped (3 lines more by 10:10Z, 2 by 11:23Z).
+4. **journald rotates its file whenever a new entry's wall time is earlier than the last entry's, and keeps at most 100
+   files (`SystemMaxFiles`, default 100).** The journal directory holds exactly 100 files of 8 MiB; the oldest are deleted
+   BY COUNT. The daemon read 1.6 days of history at 08:03:54Z and 0.0 days at 10:02:22Z: the first hour's rotations
+   erased everything older than 07:49Z.
 5. **Ranked fixes (§ 5):** F1 leave the clock to WSL's own `chronyd` — `timedatectl set-ntp false` in `Ubuntu`, reversible;
    F2 keep Windows within milliseconds of NTP — the guard's existing `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker
    Desktop has no setting for it — upstream issue, stop it when unused, and the daemon names it in its verdicts.
@@ -110,10 +111,11 @@ here (upstream: 1–2 ms steps are still made).
 | J1 | systemd-resolved clock changes, 07:49–10:10Z | 380: **285 intervals of 29–31 s** (Docker), **93 second changes 32–783 ms after a Docker step**, all in monotonic 0–3 600 s (≈ 07:43–08:44Z) |
 | J2 | journald *Time jumped backwards, rotating* | 98 (pid 51) and 95 (pid 65); all but 3 in monotonic 0–3 600 s; 3 in 5 400–7 200 s |
 | J3 | the journal directory | **exactly 100 files** (96 `system@`, 3 `user-1000@`, the active ones), 8 MiB each, 367 MB in all; the oldest archive 09:49 local = 07:49Z |
-| J4 | the daemon's own reading | 08:03:54Z: `journal.history` *1.6 days (oldest entry 2026-10-10 07:48Z)*; 10:02:22Z: *0.0 days (oldest entry 2026-10-12 07:49Z)* |
+| J4 | the daemon's own reading | 08:03:54Z: `journal.history` *1.6 days (oldest entry 2026-10-10 07:48Z)*; 10:02:22Z: *0.0 days (oldest entry 2026-10-12 07:49Z)*. The days are counted from the run's window start (`HealthSample.Since`, the previous run's start), not from the run itself — `ThresholdRules.cs:238` `health.Since - oldest` — which is why 08:03:54Z minus 10-10 07:48Z (2.0 days) printed 1.6 (§ 8) |
 | J5 | this boot's own start | the VM 07:43:23Z, timesyncd started 07:44:23Z — yet the oldest entry is 07:49:22Z: even the boot's first six minutes are gone |
 
-- **Measured mechanism of the loss:** journald rotates its files at every backward jump
+- **Measured mechanism of the loss:** journald rotates its files when the wall clock jumped backwards RELATIVE TO ITS LAST
+  ENTRY — a step back smaller than the time since that entry rotates nothing
   ([v255 `journald-server.c`](https://github.com/systemd/systemd/blob/v255/src/journal/journald-server.c)), and
   `SystemMaxFiles=` "defaults to 100" ([journald.conf(5)](https://www.freedesktop.org/software/systemd/man/255/journald.conf.html));
   ≈ 95 rotations of the system file, plus the user file's, in one hour pushed every older file out by COUNT, not by size.
@@ -177,8 +179,10 @@ here (upstream: 1–2 ms steps are still made).
   lasts as long as Docker Desktop runs.
 - **How wsl_care would apply it:** advice only. The product change belongs to the verdicts: `clock.jumps` should say
   *"Docker Desktop's `/initd` steps the clock every 30 s while it runs (docker/for-win#15000)"* when the `docker-desktop`
-  distro is running, and report the steps' SIZE (a short realtime − monotonic watcher) rather than only their count —
-  ≈ 480 tiny steps are harmless to the journal, 480 steps of 0.12 s are not.
+  distro is running, and report the steps' SIZE (a short realtime − monotonic watcher) beside their count. What the
+  journal loses is judged by the rotations themselves (`clock.fight`) and `journal.history`, never inferred from the
+  step size: measured here, the 0.12-s steps of 08:44–11:23Z left 5 rotation lines in ≈ 2.7 h, and steps of a few ms are
+  predicted to leave fewer — a prediction for § 6, not a measurement.
 
 ### Not recommended
 
@@ -193,7 +197,7 @@ here (upstream: 1–2 ms steps are still made).
 
 | Metric | Now | After F1 (predicted) | After F1 + F2 (predicted) | Without Docker Desktop |
 |---|---|---|---|---|
-| `clock.fight` (journald backward jumps, last 4 h of the boot) | 95 at 10:02Z, 3 in the last 2 h | ≤ 1 | ≤ 1 | ≤ 1 |
+| `clock.fight` (journald backward jumps, last 4 h of the boot) | 95 at 10:02Z; 5 lines (pids 51, 65) over 08:44–11:23Z | ≤ 1 | ≤ 1 | ≤ 1 |
 | step size (realtime − monotonic watcher, 200 s) | −0.11 to −0.13 s | ≤ 5 ms (upstream: 1–2 ms) | ≤ 5 ms | no steps |
 | `clock.jumps` | 638 per 4 h; ≈ 480 per 4 h in steady state | ≈ 480 per 4 h — UNCHANGED, Docker's floor | ≈ 480 | ≈ 0 |
 | `journal.history` | 0.0 days | grows ≈ 1 day per day, `ok` after `thresholds.journalHistoryWarnDays` (7) | same | same |
@@ -215,6 +219,9 @@ Re-measure with the same read-only scripts (§ 2a, 2b) and the daemon's next ful
   host-side writers are K1 (continuous) and K3 (the 30-s step); the reason should name the ones present.
 - `clock.jumps`' warn line (100 per 4 h) is below Docker's floor, so it warns on every run while Docker Desktop runs, about
   something the owner cannot change from wsl_care (F3).
+- `journal.history` counts its days from `HealthSample.Since` (the previous run's start, `ThresholdRules.cs:238`), not
+  from the sample's own instant, so it under-reads by the time since the last run (1.6 instead of 2.0 days at 08:03:54Z).
+  The golden contract's description says "now minus the captured oldest journal entry".
 - `journal.history`'s reason ("clock jumps erase it") can name the mechanism: rotation per backward jump, deletion by file
   count (`SystemMaxFiles` 100).
 - The shared rules resolver (`.agents/conventions/tools/rules.mjs check`) reports instruction loading INCOMPLETE on `main`:
