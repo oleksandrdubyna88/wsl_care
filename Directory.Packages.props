@@ -24,7 +24,7 @@
          self-contained runner executable. There is no VSTest testhost here, so `dotnet test`
          aborts — run the executable (.agents/conventions/common/testing.md).
          Apache-2.0, .NET Foundation; 4.0.1 published 2026-09-12, the version the family pins. -->
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
 
     <!-- 7.2.2 = the last Apache-2.0 release; 8.x moved to the Xceed Community License
          (non-commercial only). Do NOT bump. -->
