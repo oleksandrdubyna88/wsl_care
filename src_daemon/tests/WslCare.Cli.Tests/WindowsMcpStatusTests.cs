@@ -122,6 +122,7 @@ public sealed class WindowsMcpStatusTests
         exit.Should().Be((int)ExitCode.Ok, stderr);
         WindowsMcp(stdout).CpuBaseline!.Recorded.Should().BeFalse();
         File.Exists(paths.Rules.Join(paths.StateDirectory, McpCpuLedger.FileName)).Should().BeFalse("an elevated status never writes the user's ledger");
+        File.Exists(((McpCpuLedgerPlace.WindowsState)McpCpuLedgerPlace.ForWindowsStatus(paths, elevated: true)).LockFile).Should().BeFalse("an elevated status takes no ledger lock (WR-D4)");
     }
 
     /// <summary>WR-D4 (PLAN_windows_runner.md §3.9): the Windows status takes the SAME ledger lock as the Windows watch; while the watch

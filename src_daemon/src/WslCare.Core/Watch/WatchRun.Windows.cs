@@ -22,7 +22,8 @@ public static partial class WatchRun
 {
     /// <summary>THE A22 HOOK (S7b.3 of PLAN_twenty_sessions_all_day.md; WR-D4 of PLAN_windows_runner.md §3.11's boundary table): the
     /// Windows actions the watch's <c>--timer</c> branch lets act, in this order — EMPTY until S7b.3 builds A22. S7b.3 adds A22 here
-    /// and its recorded act in <see cref="WindowsTimerBranch"/>, after the gates; nothing else of the Windows watch changes.</summary>
+    /// and its recorded act where <see cref="WindowsTimerBranch"/> answers an EMPTY reason — empty means every gate is open: act.
+    /// Nothing else of the Windows watch changes.</summary>
     internal static IReadOnlyList<ActionId> WindowsActing { get; } = [];
 
     public const string NoTimerOnWindows = "without --timer the Windows watch records the evidence only; a Windows action would act from the \\wsl-care\\watch task (tasks run watch)";
@@ -38,7 +39,7 @@ public static partial class WatchRun
         {
             case ExclusiveLock.Busy busy:
                 var why = $"another run holds the run lock (another watch or an act): {busy.Reason}";
-                return new WatchResult(WatchOutcome.Busy, why, McpCpuBaseline.NotRecorded(string.Empty, busy.Reason), why);
+                return new WatchResult(WatchOutcome.Busy, why, McpCpuBaseline.NotRecorded(string.Empty, busy.Reason), NoAgentHistory);
             case ExclusiveLock.Held held:
                 WatchResult sampled;
                 using (held.Handle)
@@ -63,7 +64,8 @@ public static partial class WatchRun
         return new WatchResult(WatchOutcome.Sampled, string.Empty, ledger, NoAgentHistory) { Swept = [swept] };
     }
 
-    /// <summary>The <c>--timer</c> branch's gates, in order, and the A22 hook behind them. A watch with nothing to act on stops before
+    /// <summary>The <c>--timer</c> branch's gates, in order: the first that is closed says why; EMPTY when every gate is open (the A22
+    /// act's place, unreachable while <see cref="WindowsActing"/> is empty). A watch with nothing to act on stops before
     /// the dry-run decision, so it never starts the dry-run week (<see cref="DryRunWindow.Decide"/> writes its stamp): the week stays a
     /// week of a Windows action's own decisions, as the distro's watch keeps it.</summary>
     private static string WindowsTimerBranch(WatchContext c) => c switch
@@ -71,7 +73,7 @@ public static partial class WatchRun
         { Timer: false } => NoTimerOnWindows,
         { Loaded.IsObserveOnly: true } => ActionEngine.ObserveOnlyReason,
         _ when WindowsActing.Count == 0 => NoWindowsAct,
-        _ => WindowsDryReason(c) is { Length: > 0 } dry ? dry : NoWindowsAct,
+        _ => WindowsDryReason(c),
     };
 
     /// <summary>The timer's dry-run decision on the Windows paths (its own first-week stamp under <c>%LOCALAPPDATA%\wsl-care</c>);

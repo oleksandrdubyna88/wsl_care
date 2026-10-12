@@ -6,6 +6,8 @@ using WslCare.Core.Actions;
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
+using WslCare.Core.Files;
+using WslCare.Core.Files.Deletion;
 using WslCare.Core.Hosting;
 using WslCare.Core.Json;
 using WslCare.Core.Mcp;
@@ -56,11 +58,12 @@ public sealed class WindowsWatchRunTests : IDisposable
 
     private string LedgerFile => _sandbox.Paths.Rules.Join(_sandbox.Paths.StateDirectory, McpCpuLedger.FileName);
 
-    private Task<WatchResult> Watch(bool timer = true)
+    private Task<WatchResult> Watch(bool timer = true, IFileSystem? through = null)
     {
         var clock = new FixedTimeProvider(Now);
-        var context = new WatchContext(_sandbox.Paths, _sandbox.Files, new RecordingCommandRunner(), clock, new FakeProbe(HostSide.Windows, clock),
-            ConfigLoader.Load(_sandbox.Paths, _sandbox.Files), new FakeProcessTable(), 4242, ActionRegistry.Product, timer)
+        var files = through ?? _sandbox.Files;
+        var context = new WatchContext(_sandbox.Paths, files, new RecordingCommandRunner(), clock, new FakeProbe(HostSide.Windows, clock),
+            ConfigLoader.Load(_sandbox.Paths, files), new FakeProcessTable(), 4242, ActionRegistry.Product, timer)
         {
             WindowsProcesses = new ScriptedTable(),
             WindowsBoot = _boot,
@@ -104,6 +107,30 @@ public sealed class WindowsWatchRunTests : IDisposable
         File.Exists(RunDetailStore.Absolute(_sandbox.Paths, aged)).Should().BeFalse("the aged run's detail went with its line");
         File.Exists(RunDetailStore.Absolute(_sandbox.Paths, young)).Should().BeTrue();
         History().Select(r => r.DetailPath).Should().Equal(young);
+    }
+
+    /// <summary>The real file system, except that rewriting the history (the retention sweep's first step) throws.</summary>
+    private sealed class FailingRewrite(IFileSystem inner, Exception failure) : DelegatingFileSystem(inner)
+    {
+        public override DeletionVerdict RewriteLines(string path, Func<IReadOnlyList<string>, IReadOnlyList<string>> keep, DeletionScope scope, TimeSpan lockTimeout) =>
+            throw failure;
+    }
+
+    /// <summary>The second own reviewer's item 6: a sweep that fails costs the sample nothing — the ledger is recorded and the
+    /// failure is a problem in the sweep's report.</summary>
+    [Theory]
+    [InlineData("io")]
+    [InlineData("timeout")]
+    public async Task A_failing_retention_sweep_keeps_the_sample_and_reports_the_problem(string kind)
+    {
+        OnWindowsOnly();
+        Exception failure = kind == "io" ? new IOException("the history is held") : new TimeoutException("the history lock was not free in time");
+
+        var result = await Watch(through: new FailingRewrite(_sandbox.Files, failure));
+
+        result.Outcome.Should().Be(WatchOutcome.Sampled, result.Reason);
+        result.Ledger.Recorded.Should().BeTrue(result.Ledger.Reason);
+        result.Swept.Single().Problems.Should().ContainSingle().Which.Should().Contain("run retention failed").And.Contain(failure.Message);
     }
 
     [Theory]

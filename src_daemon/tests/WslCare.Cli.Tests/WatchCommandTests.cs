@@ -121,6 +121,7 @@ public sealed class WatchCommandTests : IDisposable
         var report = JsonSerializer.Deserialize(busy.Stdout, WslCareJsonContext.Default.WatchReport)!;
         report.Outcome.Should().Be("busy", "another run holds the lock: a normal answer, try at the next period");
         report.LedgerRecorded.Should().BeFalse();
+        report.HistoryReason.Should().Be(WatchRun.NoAgentHistory, "Windows keeps no agents' CPU history, busy or not; the busy reason is the Reason (own review m4)");
         File.Exists(paths.Rules.Join(paths.StateDirectory, Core.Mcp.McpCpuLedger.FileName)).Should().BeFalse("nothing was sampled");
     }
 }

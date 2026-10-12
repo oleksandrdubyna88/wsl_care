@@ -163,6 +163,7 @@ public sealed partial class WindowsMcpCollectorTests
 
         elevated.Baseline.Recorded.Should().BeFalse();
         h.LedgerExists.Should().BeFalse("an elevated status never writes the user's ledger");
+        File.Exists(h.LockFile).Should().BeFalse("a status that writes nothing takes no ledger lock (WR-D4): the lock's open would create its file");
 
         await h.Sample(OneServer(10));
         h.Boot.Milliseconds += 300_000;

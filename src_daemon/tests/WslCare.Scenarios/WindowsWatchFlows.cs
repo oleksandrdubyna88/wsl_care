@@ -23,12 +23,20 @@ public sealed class WindowsWatchFlows
     /// <summary>This test runner's program name (<c>WslCare.Scenarios</c> when run as its executable).</summary>
     private static string Runner => Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty);
 
-    /// <summary>The Windows legs, unelevated, run as the test executable — or skipped, naming why.</summary>
-    internal static void OnTheWindowsLegs()
+    /// <summary>The Windows legs, run as the test executable — or skipped, naming why.</summary>
+    internal static void OnWindowsAsTheTestExecutable()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "the Windows binary's watch: the Windows legs");
-        Assert.SkipWhen(Environment.IsPrivilegedProcess, "an elevated test run starts an elevated CLI, which the Windows watch refuses (exit 81)");
         Assert.SkipWhen(Runner is "" or "dotnet", "the flow counts this runner's own process as the MCP server; run the test executable");
+    }
+
+    /// <summary>The same, unelevated: skipped when the runner is elevated (CI's Windows runner is), because an elevated test run
+    /// starts an elevated CLI, which the Windows watch refuses (81) — what <see cref="An_elevated_windows_watch_is_refused_with_81_and_writes_nothing"/>
+    /// and <c>WindowsTasksRunFlows</c>' elevated leg prove there instead.</summary>
+    internal static void OnTheWindowsLegs()
+    {
+        OnWindowsAsTheTestExecutable();
+        Assert.SkipWhen(Environment.IsPrivilegedProcess, "skipped when the runner is elevated (CI): an elevated CLI's Windows watch is refused with 81, which the elevated flows prove");
     }
 
     /// <summary>A sandbox whose user layer has the Windows watch count this test runner as an MCP server.</summary>

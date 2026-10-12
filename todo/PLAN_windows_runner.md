@@ -326,6 +326,9 @@ cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout
 - **`IgnoreNew` hides a stuck run**: a worker past its deadline is ended by the job; a supervisor itself stuck is ended by `ExecutionTimeLimit`.
 - **The interactive-token task does not run logged out** — by design (§3.4); said in the modal.
 - **The SID in the XML** ties the task to this account; a renamed or migrated profile needs *Install* again (the panel reads "install again").
+- **"Elevated" is the token's elevation flag** (`Environment.IsPrivilegedProcess`). With UAC off (`EnableLUA=0`) or on the
+  built-in Administrator account every process reports elevated, so the Windows `watch` exits 81 every period and the task never
+  samples — a known limitation shared with the archive verbs (WR-D4 own review m3). WR-E3's modal must say it.
 - **The unelevated registration under pwsh 7 from the Store** is unmeasured (the elevated one worked, 2026-10-11); 5.1 is the resolver's own fallback when pwsh 7 is absent, not when it fails — a refusal is shown with its text.
 
 ## 11. Plan round (coai session `8138f140`, 2026-10-11)
@@ -605,4 +608,21 @@ in [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b.3. Dec
 - **No new key and no new exit code**: 81 and 75 exist, the cadence and the retention are existing keys.
 - **The built-binary flows count the test runner itself as the MCP server** (the sandbox's user layer lists its program name in
   `mcpServers.programs`), so a reading exists on any machine; the real process table is only read, and every write lands under
-  `WSL_CARE_ROOT`. The flows skip on the Linux legs, when the test run is elevated, or when the runner is `dotnet`.
+  `WSL_CARE_ROOT`. They skip on the Linux legs or when the runner is `dotnet`. The sampling flows are **skipped when the runner is
+  elevated (CI's Windows runner is)**; there the elevated legs prove the rest: the 81 refusal in `WindowsWatchFlows`, and the
+  elevated leg of `WindowsTasksRunFlows` — the REAL supervisor over the built binary, the worker refused with 81 and passed through
+  (`the worker exited 81`), nothing written — so CI keeps running the supervisor end to end. A second supervisor test forces that leg
+  on any Windows run through the sandbox's privilege claim.
+
+**The own reviews of WR-D4 (2026-10-12)**: no blocking issue; every item accepted and fixed in the same story.
+
+- **M1** — CI's Windows runner is elevated: the elevated leg above (`WindowsTasksRunFlows`).
+- **m1** — the last arm of `WindowsTimerBranch` is the dry reason itself: EMPTY means every gate is open, the place of A22's act.
+- **m2** — the CLI's retention log is one method (`LogRetention(log, result.Swept)`).
+- **m3** — the elevation limit is in §10 (open risks).
+- **m4** — a busy Windows watch's `historyReason` is `NoAgentHistory` (it carried the busy reason, a false warning); RED first.
+- **The second reviewer**: a failing retention sweep (`IOException`, `TimeoutException`) is now tested — the ledger recorded, the
+  problem in `Swept`; an elevated status is asserted to create no `mcp-cpu.lock`.
+- **Notes, no change in this story:** the ledger lock file is opened without a reparse check, the same as the run lock beside it
+  (pre-existing); `RunLock.TakeAsync` does not catch `UnauthorizedAccessException` (pre-existing); the retention runs on the wall
+  clock, as `collect`'s does; S7b.3 must decide whether `auto.A22` needs a `UserLayerUnread`-style gate (the distro's watch has one).

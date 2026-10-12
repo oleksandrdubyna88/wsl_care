@@ -93,19 +93,20 @@ internal static class WatchCommand
             log.Warning("the agents' CPU history was not recorded: {Reason}", history);
         }
 
-        foreach (var swept in result.Swept)
-        {
-            LogRetention(log, swept);
-        }
+        LogRetention(log, result.Swept);
     }
 
-    /// <summary>The run records' retention sweep (the Windows watch): what it removed, and every problem as a warning.</summary>
-    private static void LogRetention(ILogger log, RetentionReport swept)
+    /// <summary>The run records' retention sweep (the Windows watch; none on the distro): what it removed, and every problem as a
+    /// warning.</summary>
+    private static void LogRetention(ILogger log, IReadOnlyList<RetentionReport> sweeps)
     {
-        log.Information("run retention: {Lines} history line(s) and {Details} detail(s) removed", swept.HistoryLinesRemoved, swept.DetailsRemoved.Count);
-        foreach (var problem in swept.Problems)
+        foreach (var swept in sweeps)
         {
-            log.Warning("run retention: {Problem}", problem);
+            log.Information("run retention: {Lines} history line(s) and {Details} detail(s) removed", swept.HistoryLinesRemoved, swept.DetailsRemoved.Count);
+            foreach (var problem in swept.Problems)
+            {
+                log.Warning("run retention: {Problem}", problem);
+            }
         }
     }
 
