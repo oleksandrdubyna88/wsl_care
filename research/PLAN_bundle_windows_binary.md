@@ -16,8 +16,8 @@
 > - [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md), **E7.S5a** at `:2463` — the row this plan details. The coordinator calls it
 >   "E7.S3". E7.S3 itself is the tag check of `:2500-2502`. Finding #13 is at `:810`; the S5 test is at `:2487`.
 > - [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md) § S7b — design item 1, the owner's decision.
-> - [module_vs_code.md](module_vs_code.md) and [architecture.md](architecture.md) § *The package and its
->   leak checks*, § *`release-extension.yml`*.
+> - [module_vs_code.md](module_vs_code.md) § *The package and its leak checks*, § *`release-extension.yml`* (moved
+>   there from [architecture.md](architecture.md) on 2026-10-12).
 > - The measurement: [2026-10-10_windows_binary_bundle_facts.md](2026-10-10_windows_binary_bundle_facts.md).
 
 ## 1. Goal and why now
