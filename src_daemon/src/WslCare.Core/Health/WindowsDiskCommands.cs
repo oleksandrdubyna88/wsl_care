@@ -121,6 +121,10 @@ public static class WindowsDiskCommands
             Summary = "pwsh.exe (the Windows disk script, under the MSI PowerShell 7)",
         };
 
+    /// <summary>The command for <paramref name="engine"/> (E15.S1b): <see cref="WindowsDiskUnderPwsh"/> for the verified MSI pwsh,
+    /// <see cref="WindowsDisk"/> for everything else.</summary>
+    public static ToolCommand Under(InteropEngine engine) => engine.Kind == InteropEngineKind.Msi ? WindowsDiskUnderPwsh : WindowsDisk;
+
     /// <summary>The script for <paramref name="sinceDays"/> and <paramref name="maxRead"/>, each clamped to its key's range and
     /// written as an invariant integer — the only values that vary.</summary>
     public static string ScriptFor(int sinceDays, int maxRead, int groupsMax)

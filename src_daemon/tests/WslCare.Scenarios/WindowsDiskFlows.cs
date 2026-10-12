@@ -23,10 +23,14 @@ public sealed class WindowsDiskFlows
 {
     private const string PowerShell = "powershell";
 
+    private const string Pwsh = "pwsh";
+
     private static CollectReport Report(ChildResult result) =>
         JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.CollectReport) ?? throw new InvalidOperationException($"collect printed no report: {result.Stderr}");
 
     private static bool IsDiskScript(FakeCall call) => call.Tool == PowerShell && call.Argv.SequenceEqual(WindowsDiskCommands.WindowsDisk.Arguments);
+
+    private static bool IsDiskScriptUnderPwsh(FakeCall call) => call.Tool == Pwsh && call.Argv.SequenceEqual(WindowsDiskCommands.WindowsDiskUnderPwsh.Arguments);
 
     private static bool IsClockProbe(FakeCall call) => call.Tool == PowerShell && call.Argv.SequenceEqual(HealthCommands.WindowsClock.Arguments);
 
@@ -59,6 +63,10 @@ public sealed class WindowsDiskFlows
             disk.CommitBytes!.Bytes.Should().Be(110_976_245_760);
             disk.Identity!.MachineGuid.Value.Should().Be("00000000-0000-4000-8000-000000000002");
             disk.Adapters!.Adapters!.Select(a => a.ProblemCode.Value).Should().Equal(0, 22);
+            // E15.S1b: the captured probe is from before the pwsh tags, so the script ran under Windows PowerShell 5.1 and says why.
+            disk.Engine!.Program.Should().Be(HealthCommands.PowerShell);
+            disk.Engine.Reason.Should().Contain("did not verify pwsh");
+            home.Calls.Should().NotContain(c => c.Tool == Pwsh, "the probe verified no MSI pwsh");
             var powershell = home.Calls.Where(c => c.Tool == PowerShell).ToList();
             powershell.Count(IsDiskScript).Should().Be(1, "once per full run");
             powershell.FindIndex(IsDiskScript).Should().BeGreaterThan(powershell.FindIndex(IsClockProbe), "after the clock probe");
@@ -70,13 +78,51 @@ public sealed class WindowsDiskFlows
             disk!.Available.Should().BeFalse();
             disk.Reason.Should().Be(HealthCollector.WindowsDiskIsTheDistros);
             home.Calls.Should().NotContain(c => IsDiskScript(c), "the Windows binary never runs the disk script");
+            disk.Engine.Should().BeNull("the Windows binary chooses no engine");
         }
 
         var calls = home.Calls.Count;
         var status = await home.RunAsync("status", "--json");
 
         status.Exit.Should().Be((int)ExitCode.Ok, status.Stderr);
-        home.Calls.Skip(calls).Should().NotContain(c => c.Tool == PowerShell, "status starts no PowerShell — the disk script is the full run's only");
+        home.Calls.Skip(calls).Should().NotContain(c => c.Tool == PowerShell || c.Tool == Pwsh, "status starts no PowerShell — the disk script is the full run's only");
+    }
+
+    /// <summary>
+    /// E15.S1b S4 over the BUILT CLI: a clock probe that VERIFIED the MSI pwsh (the 2026-10-12 capture with the two verdict lines
+    /// a machine with the MSI build prints — derived, <see cref="PwshEngineFixture.Verified"/>) makes <c>collect</c> start the
+    /// disk script ONCE under the fake <c>pwsh</c>, never under the fake <c>powershell</c>, and the detail names the file the
+    /// judgement verified; the clock probe itself stays on <c>powershell</c>; <c>status</c> starts neither.
+    /// </summary>
+    [Fact]
+    public async Task A_probe_that_verified_the_msi_pwsh_makes_collect_run_the_disk_script_under_pwsh_and_the_detail_names_it()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "the disk script runs in the distro: the Linux legs");
+        using var home = CollectFlows.Captured("collect-windows-disk-pwsh", first: h =>
+        {
+            h.Answer(new FakeAnswer(PowerShell, HealthCommands.WindowsClock.Arguments, 0, h.WriteFile("powershell-clock-verified.out", PwshEngineFixture.Verified), string.Empty));
+            h.Script(Pwsh, WindowsDiskCommands.WindowsDiskUnderPwsh.Arguments, 0, $"health/{WindowsDiskFixture.Name}/{WindowsDiskFixture.AnswerFile}");
+        });
+
+        var result = await home.RunAsync("collect", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var disk = Report(result).Detail!.Health.WindowsDisk!;
+        disk.Available.Should().BeTrue(disk.Reason);
+        disk.Volumes!.Volumes!.Select(v => v.Letter).Should().Equal("E", "D", "C", "F");
+        disk.Engine!.Program.Should().Be("/mnt/c/Program Files/PowerShell/7/pwsh.exe");
+        disk.Engine.Reason.Should().Contain("verified");
+        home.Calls.Count(IsDiskScriptUnderPwsh).Should().Be(1, "once per full run, under pwsh");
+        home.Calls.Should().NotContain(c => IsDiskScript(c), "never also under powershell");
+        home.Calls.Should().Contain(c => IsClockProbe(c), "the clock probe always runs under Windows PowerShell 5.1");
+        home.Calls.Should().NotContain(c => c.Tool == Pwsh && !IsDiskScriptUnderPwsh(c), "pwsh runs the disk script and nothing else");
+        home.Calls.Should().OnlyContain(c => CollectFlows.IsReadCommand(c));
+
+        var calls = home.Calls.Count;
+        var status = await home.RunAsync("status", "--json");
+
+        status.Exit.Should().Be((int)ExitCode.Ok, status.Stderr);
+        home.Calls.Skip(calls).Should().NotContain(c => c.Tool == PowerShell || c.Tool == Pwsh, "status starts neither PowerShell");
     }
 
     [Fact]

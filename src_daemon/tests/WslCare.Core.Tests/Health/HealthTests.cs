@@ -19,6 +19,9 @@ public sealed class HealthTests : IDisposable
 
     public void Dispose() => _root.Dispose();
 
+    /// <summary>Windows PowerShell 5.1, as the judgement answers it for a probe that verified nothing.</summary>
+    private static readonly InteropEngine WindowsPowerShell = new(InteropEngineKind.WindowsPowerShell, HealthCommands.PowerShell, "a test that is not about the engine");
+
     private static T Value<T>(Reading<T> reading)
     {
         reading.Should().BeOfType<Reading<T>.Available>(reading.ReasonOrEmpty);
@@ -153,10 +156,72 @@ public sealed class HealthTests : IDisposable
         var runner = new RecordingCommandRunner().Script(WindowsDiskCommands.WindowsDisk.Argv,
             new CommandOutcome.Exited(0, new CapturedText(WindowsDiskFixture.Answer, false), CapturedText.Empty, TimeSpan.FromMilliseconds(3316)));
 
-        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(WindowsDiskFixture.CapturedAt), TestContext.Current.CancellationToken);
+        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(WindowsDiskFixture.CapturedAt), WindowsPowerShell, TestContext.Current.CancellationToken);
 
         Value(sample.Elapsed).Should().Be(TimeSpan.FromMilliseconds(3316));
         Value(sample.Facts).MalformedLines.Should().Be(0);
+    }
+
+    /// <summary>E15.S1b S4: a full run whose clock probe VERIFIED the MSI pwsh (the capture's answer with the two verdict lines a
+    /// machine with the MSI build prints, derived) starts the disk script ONCE under the bare <c>pwsh.exe</c>, never under
+    /// <c>powershell.exe</c>, after the clock probe — and the sample names the file it judged.</summary>
+    [Fact]
+    public async Task A_verified_probe_starts_the_disk_script_under_pwsh_and_the_sample_names_its_path()
+    {
+        var (health, argv) = await CollectWithClockAsync(RecordingCommandRunner.Exited(0, PwshEngineFixture.Verified), WindowsDiskCommands.WindowsDiskUnderPwsh);
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv)).Should().Be(1, "once per full run, under pwsh");
+        argv.Should().NotContain(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv), "never also under powershell.exe");
+        argv.FindIndex(a => a.SequenceEqual(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv)).Should().BeGreaterThan(argv.FindIndex(a => a.SequenceEqual(HealthCommands.WindowsClock.Argv)));
+        var engine = Value(health.WindowsDisk.Engine);
+        engine.Kind.Should().Be(InteropEngineKind.Msi);
+        engine.Program.Should().Be("/mnt/c/Program Files/PowerShell/7/pwsh.exe");
+        Value(health.WindowsDisk.Facts).MalformedLines.Should().Be(0, "the scripted answer was read");
+    }
+
+    [Fact]
+    public async Task The_captured_probe_without_an_msi_pwsh_starts_the_disk_script_under_powershell_with_the_reason()
+    {
+        var (health, argv) = await CollectWithClockAsync(RecordingCommandRunner.Exited(0, PwshEngineFixture.Answer), WindowsDiskCommands.WindowsDisk);
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1);
+        argv.Should().NotContain(a => a[0] == HealthCommands.Pwsh, "the probe saw no MSI pwsh");
+        var engine = Value(health.WindowsDisk.Engine);
+        engine.Should().Match<InteropEngine>(e => e.Kind == InteropEngineKind.WindowsPowerShell && e.Program == HealthCommands.PowerShell);
+        engine.Reason.Should().Contain("absent");
+    }
+
+    [Fact]
+    public async Task A_failed_clock_probe_still_runs_the_disk_script_under_powershell_and_says_pwsh_was_not_verified()
+    {
+        var (health, argv) = await CollectWithClockAsync(RecordingCommandRunner.Exited(1, stderr: "interop is off"), WindowsDiskCommands.WindowsDisk);
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "one failure never ends a run (plan §5)");
+        Value(health.WindowsDisk.Engine).Reason.Should().Contain("did not verify");
+    }
+
+    [Fact]
+    public async Task The_msi_pwsh_is_named_under_the_automount_root_wsl_conf_sets()
+    {
+        _root.File("etc/wsl.conf", "[automount]\nroot = /win/\n");
+
+        var (health, _) = await CollectWithClockAsync(RecordingCommandRunner.Exited(0, PwshEngineFixture.Verified), WindowsDiskCommands.WindowsDiskUnderPwsh);
+
+        Value(health.WindowsDisk.Engine).Program.Should().Be("/win/c/Program Files/PowerShell/7/pwsh.exe");
+    }
+
+    /// <summary>A full run over the sandbox whose clock probe answers <paramref name="clock"/> and whose <paramref name="disk"/>
+    /// command answers the captured disk facts; every argv asked for, in order.</summary>
+    private async Task<(HealthSample Health, List<IReadOnlyList<string>> Argv)> CollectWithClockAsync(CommandOutcome clock, ToolCommand disk)
+    {
+        var paths = new LinuxHostPaths(LinuxEnvironment.Sandboxed(_root.Path));
+        var runner = HealthFixture.Script(new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("not scripted") })
+            .Script(HealthCommands.WindowsClock.Argv, clock)
+            .Script(disk.Argv, 0, WindowsDiskFixture.Answer);
+
+        var health = await new HealthCollector(runner, new PhysicalFileSystem(paths), paths, new FixedTimeProvider(PwshEngineFixture.CapturedAt)).CollectAsync(PwshEngineFixture.CapturedAt.AddHours(-4), TestContext.Current.CancellationToken);
+
+        return (health, [.. runner.Requests.Select(r => r.Argv)]);
     }
 
     public static TheoryData<string, CommandOutcome, string> FailedDiskScripts() => new()
@@ -174,7 +239,7 @@ public sealed class HealthTests : IDisposable
     {
         var runner = new RecordingCommandRunner().Script(WindowsDiskCommands.WindowsDisk.Argv, outcome);
 
-        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(), TestContext.Current.CancellationToken);
+        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(), WindowsPowerShell, TestContext.Current.CancellationToken);
 
         sample.Facts.IsAvailable.Should().BeFalse(what);
         sample.Facts.ReasonOrEmpty.Should().Contain(reason, what);

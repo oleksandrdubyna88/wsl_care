@@ -29,14 +29,16 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// The Windows disk facts (E15.S1): the second fixed interop script, once, under its own ceiling — its tree killed past it by
     /// the runner — parsed by tag. A script that could not start, timed out, exited non-zero, was refused or printed a cut
     /// answer leaves the WHOLE sample unavailable with that reason; its run time is kept only for an answer that was read.
+    /// E15.S1b: the script runs under <paramref name="engine"/> (<see cref="WindowsDiskCommands.Under"/>), and the sample keeps
+    /// the engine — chosen before the run, so it is kept also when the script failed.
     /// </summary>
-    public static async Task<WindowsDiskSample> MeasureWindowsDiskAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken)
+    public static async Task<WindowsDiskSample> MeasureWindowsDiskAsync(ICommandRunner runner, TimeProvider clock, InteropEngine engine, CancellationToken cancellationToken)
     {
-        var command = WindowsDiskCommands.WindowsDisk;
+        var command = WindowsDiskCommands.Under(engine);
         var at = clock.GetUtcNow();
         var outcome = await runner.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false);
         var facts = ToolAnswers.Read(command, outcome).Bind(stdout => WindowsDiskParsers.Parse(stdout, WindowsDiskCommands.EventsMaxRead, WindowsDiskCommands.EventsSinceDays));
-        return new WindowsDiskSample(at, Elapsed(outcome, facts), facts);
+        return new WindowsDiskSample(at, Elapsed(outcome, facts), facts) { Engine = Reading.Of(engine) };
     }
 
     private static Reading<TimeSpan> Elapsed(CommandOutcome outcome, Reading<WindowsDiskFacts> facts) =>
@@ -64,8 +66,10 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         var mark = ClockMark.Now(clock);
         var (clockSample, profile) = await WindowsClockAsync(linux, cancellationToken).ConfigureAwait(false);
         var reference = await ClockReferences.MeasureAsync(commands, clock, mark, cancellationToken).ConfigureAwait(false);
-        // E15.S1: after the clock probe and its reference, so its seconds never sit between the two clocks' readings.
-        var disk = await MeasureWindowsDiskAsync(commands, clock, cancellationToken).ConfigureAwait(false);
+        // E15.S1: after the clock probe and its reference, so its seconds never sit between the two clocks' readings. E15.S1b: under
+        // the engine the clock probe's look chose (PwshEngine), the MSI pwsh placed under this distro's automount root.
+        var engine = PwshEngine.Choose(clockSample, WindowsProfiles.AutomountRoot(linux, files));
+        var disk = await MeasureWindowsDiskAsync(commands, clock, engine, cancellationToken).ConfigureAwait(false);
         var uptime = ProcText.Read(files, $"{linux.ProcRoot}/uptime").Bind(HealthParsers.Uptime);
         var jumpsBack = await TimeJumpsBackAsync(uptime, cancellationToken).ConfigureAwait(false);
         var failedUnits = (await RunAsync(SystemdCommands.FailedUnits, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.FailedUnits);

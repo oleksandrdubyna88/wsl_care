@@ -47,6 +47,10 @@ public sealed record DisplayAdapterReport(string Name, string PnpDeviceId, Count
 
 public sealed record DisplayAdaptersReport(bool Available, string? Reason, IReadOnlyList<DisplayAdapterReport>? Adapters);
 
+/// <summary>The PowerShell the Windows disk script ran under (E15.S1b): the program the daemon started — <c>powershell.exe</c>, or the
+/// MSI pwsh as the distro sees it — and the sentence the choice rested on.</summary>
+public sealed record InteropEngineReport(string Program, string Reason);
+
 /// <summary>The Windows disk facts one full run read through the second fixed script (E15.S1).</summary>
 /// <param name="ElapsedSeconds">How long the script ran — present only for an answer that was read.</param>
 /// <param name="MalformedLines">Lines the parser counted and skipped.</param>
@@ -66,12 +70,23 @@ public sealed record WindowsDiskReport(
     ByteFigure? CommitLimitBytes,
     ByteFigure? CompressionBytes,
     WindowsIdentityReport? Identity,
-    DisplayAdaptersReport? Adapters);
+    DisplayAdaptersReport? Adapters)
+{
+    /// <summary>The PowerShell the script ran under, and why (E15.S1b); absent on the Windows binary and on a detail written
+    /// before the story.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public InteropEngineReport? Engine { get; init; }
+}
 
 /// <summary>The domain sample turned into its wire shape — the one place it becomes available + value or reason.</summary>
 public static class WindowsDiskReports
 {
-    public static WindowsDiskReport From(WindowsDiskSample sample)
+    public static WindowsDiskReport From(WindowsDiskSample sample) => Facts(sample) with { Engine = Engine(sample.Engine) };
+
+    private static InteropEngineReport? Engine(Reading<InteropEngine> engine) =>
+        engine is Reading<InteropEngine>.Available { Value: var e } ? new(e.Program, e.Reason) : null;
+
+    private static WindowsDiskReport Facts(WindowsDiskSample sample)
     {
         var elapsed = StatusReports.Number(sample.Elapsed.Map(e => Math.Round(e.TotalSeconds, 3)));
         return sample.Facts is Reading<WindowsDiskFacts>.Available { Value: var f }
