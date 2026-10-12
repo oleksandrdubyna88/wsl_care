@@ -213,8 +213,8 @@ public sealed class ActionEngine(EngineContext c)
     }
 
     /// <summary>The history's lines for <see cref="IdleDeferrals"/> — read once per run, only when an action that declares
-    /// <see cref="ICleanupAction.MaxDeferHours"/> is deferred for the load; an unreadable history is no evidence of a wait.</summary>
-    private IReadOnlyList<RunRecord> ReadHistory() => RunHistory.Read(c.Paths, c.Files) is { Problem.Length: 0 } read ? read.Records : [];
+    /// <see cref="ICleanupAction.MaxDeferHours"/> is deferred for the load; an unreadable history is no evidence of a wait (and says so).</summary>
+    private HistoryRead ReadHistory() => RunHistory.Read(c.Paths, c.Files);
 
     /// <summary>The idle check of plan §5, read once per run and only when an action needs it — again after a budgeted action (C-6).</summary>
     private IdleVerdict SampleIdle()
@@ -314,8 +314,8 @@ public sealed class ActionEngine(EngineContext c)
             return held;
         }
 
-        // Decided before the run: a budgeted action drops the idle sample (C-6), and the reason is the verdict it ran despite.
-        var despite = IdleWaitOf(action, preview, run).Reason;
+        // The gate's own decision (made once, before the run: a budgeted action drops the idle sample, C-6) — the verdict it ran despite.
+        var despite = IdleWaitOf(action, preview, run) is { Deferred: false } go ? go.Reason : string.Empty;
         var done = await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false);
         run.Acted(action);
         return Ran(action, preview, done, despite);
@@ -323,13 +323,16 @@ public sealed class ActionEngine(EngineContext c)
 
     private ActionOutcome Ran(ICleanupAction action, ActionPreview preview, ActionRun done, string despite) => done switch
     {
-        { Interrupted: true } => Outcome(action, ActionStatus.Interrupted, $"cut off by {c.InterruptCause()} while it ran: {done.Count} confirmed before the signal, the command in flight and the rest are under notRemoved", preview, done),
+        { Interrupted: true } => Outcome(action, ActionStatus.Interrupted, WithDespite($"cut off by {c.InterruptCause()} while it ran: {done.Count} confirmed before the signal, the command in flight and the rest are under notRemoved", despite), preview, done),
         { Succeeded: true } => Outcome(action, ActionStatus.Ran, RanReason(preview, despite), preview, done),
-        _ => Outcome(action, ActionStatus.Failed, done.Failure, preview, done),
+        _ => Outcome(action, ActionStatus.Failed, WithDespite(done.Failure, despite), preview, done),
     };
 
     private static string RanReason(ActionPreview preview, string despite) =>
         preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : despite.Length > 0 ? despite : "ran";
+
+    /// <summary>The code round's #4: a run forced past its limit that fails or is cut off still says it ran despite the load.</summary>
+    private static string WithDespite(string reason, string despite) => despite.Length == 0 ? reason : $"{reason} ({despite})";
 
     /// <summary>A gate's answer: the status and reason that stop the action here, or <c>null</c> to go on.</summary>
     private sealed record Stop(string Status, string Reason);
@@ -395,33 +398,53 @@ public sealed class ActionEngine(EngineContext c)
         IdleWaitOf(action, preview, run) is { Deferred: true } wait ? new Stop(ActionStatus.Deferred, wait.Reason) : null;
 
     /// <summary>What the idle gate decided: deferred with the verdict, or go — with the reason it runs despite a busy load when it does.</summary>
-    private sealed record IdleWait(bool Deferred, string Reason);
+    private sealed record IdleWait(bool Deferred, string Reason)
+    {
+        public static IdleWait Go { get; } = new(false, string.Empty);
+    }
 
-    private IdleWait IdleWaitOf(ICleanupAction action, ActionPreview preview, RunState run)
+    /// <summary>The idle gate's decision for <paramref name="action"/>, made ONCE per run (the own review on Fable, #2): the gate and the
+    /// outcome after the run read the same answer, whatever the clock does between them.</summary>
+    private IdleWait IdleWaitOf(ICleanupAction action, ActionPreview preview, RunState run) =>
+        run.Decided(action.Id, () => DecideIdle(action, preview, run));
+
+    private IdleWait DecideIdle(ICleanupAction action, ActionPreview preview, RunState run)
     {
         if (!IdleGate.Applies(action.Idle, run.Trigger) || preview.Urgent.Length > 0 || run.Idle() is not { Idle: false } busy)
         {
-            return new IdleWait(false, string.Empty);
+            return IdleWait.Go;
         }
 
-        return Overdue(action, busy, run) is { Length: > 0 } despite ? new IdleWait(false, despite) : new IdleWait(true, busy.Reason);
+        return DeferLimit(action, busy, run) is { } limit ? Bounded(action, busy, run, limit) : new IdleWait(true, busy.Reason);
     }
 
-    /// <summary>2026-10-12 (<c>archive.maxDeferHours</c>): on the TIMER, an action that declares a limit and is busy for the LOAD alone runs
-    /// once its live timer deferrals have lasted the limit (<see cref="IdleDeferrals"/>) — the reason it runs despite the load, or empty.</summary>
-    private string Overdue(ICleanupAction action, IdleVerdict busy, RunState run)
+    /// <summary>A limit on how long the timer defers an action, as the config says it.</summary>
+    private sealed record Limit(ConfigKey.IntKey Key, int Hours);
+
+    /// <summary>2026-10-12 (<c>archive.maxDeferHours</c>): the limit applies on the TIMER, to an action that declares one, busy for the LOAD
+    /// alone, with the key above 0 (0: never); <c>null</c> otherwise.</summary>
+    private Limit? DeferLimit(ICleanupAction action, IdleVerdict busy, RunState run) =>
+        run.Trigger == RunTrigger.Timer && busy.LoadOnly && action.MaxDeferHours is { } key && c.Loaded.Config.Int(key) is > 0 and var hours ? new Limit(key, hours) : null;
+
+    /// <summary>Runs despite the load once the live timer deferrals have lasted the limit (<see cref="IdleDeferrals"/>); otherwise defers,
+    /// and the deferral says how the wait stands — counted, starting now, or not counted and why (the own review on Fable, #1).</summary>
+    private IdleWait Bounded(ICleanupAction action, IdleVerdict busy, RunState run, Limit limit)
     {
-        if (run.Trigger != RunTrigger.Timer || !busy.LoadOnly || action.MaxDeferHours is not { } key || c.Loaded.Config.Int(key) is not (> 0 and var limit))
+        var history = run.History();
+        if (history.Problem.Length > 0)
         {
-            return string.Empty;
+            return new IdleWait(true, $"{busy.Reason}; {limit.Key.Name} {limit.Hours}: the wait is not counted — {history.Problem}");
         }
 
-        var since = IdleDeferrals.StreakStart(run.History(), action.Id.Text);
-        var waited = since is { } start ? c.Clock.GetUtcNow() - start : TimeSpan.Zero;
-        return since is { } from && waited >= TimeSpan.FromHours(limit)
-            ? string.Create(CultureInfo.InvariantCulture, $"ran despite the load: {action.Id} waited for idle since {from.UtcDateTime.ToString(StreakFormat, CultureInfo.InvariantCulture)} ({Math.Floor(waited.TotalHours):0} h, {key.Name} {limit}); {busy.Reason}")
-            : string.Empty;
+        var now = c.Clock.GetUtcNow();
+        var since = IdleDeferrals.StreakStart(history.Records, action.Id, now);
+        var waited = since is { } start ? now - start : TimeSpan.Zero;
+        return since is { } from && waited >= TimeSpan.FromHours(limit.Hours)
+            ? new IdleWait(false, string.Create(CultureInfo.InvariantCulture, $"ran despite the load: {action.Id} waited for idle since {Utc(from)} ({Math.Floor(waited.TotalHours):0} h, {limit.Key.Name} {limit.Hours}); {busy.Reason}"))
+            : new IdleWait(true, string.Create(CultureInfo.InvariantCulture, $"{busy.Reason}; {limit.Key.Name} {limit.Hours}: {(since is { } s ? $"waited {Math.Floor(waited.TotalHours):0} h since {Utc(s)}" : "the wait starts now")}"));
     }
+
+    private static string Utc(DateTimeOffset at) => at.UtcDateTime.ToString(StreakFormat, CultureInfo.InvariantCulture);
 
     /// <summary>The streak's start in a run detail: UTC to the second.</summary>
     internal const string StreakFormat = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'";
@@ -628,7 +651,8 @@ public sealed class ActionEngine(EngineContext c)
     private sealed class RunState(RunTrigger trigger, TargetUserResult target, DryRunDecision dry, ActionContext context)
     {
         private IdleVerdict? _idle;
-        private IReadOnlyList<RunRecord>? _history;
+        private HistoryRead? _history;
+        private readonly Dictionary<string, IdleWait> _decided = new(StringComparer.Ordinal);
 
         public RunTrigger Trigger => trigger;
 
@@ -643,9 +667,21 @@ public sealed class ActionEngine(EngineContext c)
         public IdleVerdict Idle() => _idle ??= IdleSource();
 
         /// <summary>The history's lines, read at most once per run (<see cref="IdleDeferrals"/>).</summary>
-        public Func<IReadOnlyList<RunRecord>> HistorySource { get; init; } = static () => [];
+        public Func<HistoryRead> HistorySource { get; init; } = static () => new HistoryRead([], 0, string.Empty);
 
-        public IReadOnlyList<RunRecord> History() => _history ??= HistorySource();
+        public HistoryRead History() => _history ??= HistorySource();
+
+        /// <summary>The idle gate's decision for one action, made once and read again after its run (the own review on Fable, #2).</summary>
+        public IdleWait Decided(ActionId id, Func<IdleWait> decide)
+        {
+            if (!_decided.TryGetValue(id.Text, out var wait))
+            {
+                wait = decide();
+                _decided[id.Text] = wait;
+            }
+
+            return wait;
+        }
 
         /// <summary>After a BUDGETED action ran (A13: it may take most of the run limit), the sample read before it is stale — the next
         /// action that waits for idle reads a fresh one (plan §15r E9.S4 own review round C-6). Any other action leaves it as it was.</summary>

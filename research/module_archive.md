@@ -275,12 +275,14 @@ flowchart TD
   (`ICleanupAction.MaxDeferHours`, A13 alone declares it). The streak is read from `history.jsonl` (`Actions/Engine/IdleDeferrals.cs`:
   newest first, lines not naming A13 ignored, any line naming it that is not a live timer deferral ends it — a dry-run timer run
   too). Only the load is overridden (`IdleVerdict.LoadOnly`): an unknown figure or a running build still defers. The run detail says
-  "ran despite the load: A13 waited for idle since <UTC> (<h> h, archive.maxDeferHours <n>); <the load verdict>". The forced run
-  is the same run at the same priority the timer's every run has, and the same budget. Read on this machine 2026-10-12: the installed unit has `Nice=19` and `IOSchedulingClass=idle`; runuser's PAM stack runs `pam_limits`, and no
-  `limits.conf` line sets a priority, so the child keeps nice 19; every block device's scheduler is `none`, so the idle I/O class
-  has no effect here.
-  `research/2026-10-09_cpu_fairness.md` measured that nice 19 orders the run only inside `system.slice`; nothing further was measured
-  to help, so nothing further is set.
+  "ran despite the load: A13 waited for idle since <UTC> (<h> h, archive.maxDeferHours <n>); <the load verdict>"; a deferral says
+  how the wait stands ("waited <h> h since <UTC>", "the wait starts now", or "the wait is not counted — <why>"). A line dated after
+  now is ignored; a crash's `interrupted` line restarts the wait. On the 4-hour timer with its 5-minute random delay, 24 h means the
+  7th or 8th run after the first deferral. The forced run is the same run at the same priority the timer's every run has, and the
+  same budget. Read on this machine 2026-10-12: the installed unit has `Nice=19` and `IOSchedulingClass=idle`; runuser's PAM stack
+  runs `pam_limits`, and no `limits.conf` line sets a priority, so the child keeps nice 19; every block device's scheduler is `none`,
+  so the idle I/O class has no effect here. `research/2026-10-09_cpu_fairness.md` measured that nice 19 orders the run only inside
+  `system.slice`; nothing further was measured to help, so nothing further is set.
 - **Containment** (risk consult 9/9.4; the S4 own review round S-M1, C-7): EVERY child root starts is recorded — the preview, the
   reach and the list as well as the streamed ones: the launcher at its start, the worker at a stream's first line and right before
   any kill (`CommandRequest.OnKilling`, told while the tree is whole), the record retired at the end. A recorded child of this boot

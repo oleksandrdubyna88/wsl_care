@@ -7,22 +7,25 @@ namespace WslCare.Core.Actions.Engine;
 /// deferrals in <c>history.jsonl</c>.
 /// </summary>
 /// <remarks>
-/// The lines are taken newest first by their start, and a line that does not name the action is ignored. A line continues the
-/// streak only when it is a live timer run (<c>trigger</c> timer, <c>dryRun</c> false) whose status for the action is
-/// <c>deferred</c>; any other line naming the action ends the walk — <c>ran</c> (a button too), <c>failed</c>, <c>refused</c>,
-/// <c>interrupted</c>, <c>skipped</c>, <c>dryRun</c>, a dry-run timer run (the idle gate is asked before the dry-run gate, so a
-/// busy dry-run week writes <c>deferred</c> lines that are no wait the live timer did: the coai consultant's case), and a line
-/// written before <c>status</c> or <c>dryRun</c> existed, which is never evidence.
+/// The lines are taken newest first by their start (a tie by their place in the file, the later line newer), and a line that does
+/// not name the action is ignored — so is a line dated after now (a clock that ran ahead when it was written; it is evidence of
+/// nothing). A line continues the streak only when it is a live timer run (<c>trigger</c> timer, <c>dryRun</c> false) whose status
+/// for the action is <c>deferred</c>; any other line naming the action ends the walk — <c>ran</c> (a button too), <c>failed</c>,
+/// <c>refused</c>, <c>interrupted</c> (the sweep of a crashed run too: a crash restarts the wait, the conservative side),
+/// <c>skipped</c>, <c>dryRun</c>, a dry-run timer run (the idle gate is asked before the dry-run gate, so a busy dry-run week
+/// writes <c>deferred</c> lines that are no wait the live timer did: the coai consultant's case), and a line written before
+/// <c>status</c> or <c>dryRun</c> existed, which is never evidence.
 /// </remarks>
 public static class IdleDeferrals
 {
     /// <summary>When the action's current streak of live timer deferrals began; <c>null</c> when there is none.</summary>
-    public static DateTimeOffset? StreakStart(IReadOnlyList<RunRecord> records, string actionId)
+    public static DateTimeOffset? StreakStart(IReadOnlyList<RunRecord> records, ActionId action, DateTimeOffset now)
     {
         var naming = records
-            .Select(r => (Record: r, Action: r.Actions.FirstOrDefault(a => a.Id == actionId)))
-            .Where(p => p.Action is not null)
-            .OrderByDescending(p => p.Record.StartedAt);
+            .Select((r, index) => (Record: r, Index: index, Action: r.Actions.FirstOrDefault(a => a.Id == action.Text)))
+            .Where(p => p.Action is not null && p.Record.StartedAt <= now)
+            .OrderByDescending(p => p.Record.StartedAt)
+            .ThenByDescending(p => p.Index);
         return naming.TakeWhile(p => IsLiveTimerDeferral(p.Record, p.Action!)).Select(p => (DateTimeOffset?)p.Record.StartedAt).LastOrDefault();
     }
 

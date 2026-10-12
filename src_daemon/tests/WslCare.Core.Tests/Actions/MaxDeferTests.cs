@@ -84,6 +84,24 @@ public sealed class MaxDeferTests : IDisposable
         _journal.Should().Equal("preview A13", "run A13");
     }
 
+    /// <summary>The code round's #4: a forced run that fails or is cut off still says it ran despite the load.</summary>
+    [Fact]
+    public async Task A_forced_run_that_fails_still_says_it_ran_despite_the_load()
+    {
+        History(DeferredEvery3Hours(25, 1));
+        var failing = new ScriptedAction("A13", _journal)
+        {
+            Idle = IdleRule.TimerOnly,
+            MaxDeferHours = ConfigKeys.Archive.MaxDeferHours,
+            OnRun = _ => Task.FromResult(new ActionRun(0, 0, "x", null, null, [], [], "the archive child exited 1")),
+        };
+
+        var outcome = Only(await Engine(failing).ExecuteAsync(Timer(), CancellationToken.None));
+
+        outcome.Status.Should().Be(ActionStatus.Failed);
+        outcome.Reason.Should().StartWith("the archive child exited 1").And.Contain("ran despite the load: A13 waited for idle since 2026-10-01T11:00:00Z");
+    }
+
     [Fact]
     public async Task A_streak_of_exactly_the_limit_runs()
     {
@@ -103,8 +121,18 @@ public sealed class MaxDeferTests : IDisposable
         var outcome = Only(await Engine(Archive()).ExecuteAsync(Timer(), CancellationToken.None));
 
         outcome.Status.Should().Be(ActionStatus.Deferred);
-        outcome.Reason.Should().StartWith("deferred: CPU 97.5 %");
+        outcome.Reason.Should().StartWith("deferred: CPU 97.5 %")
+            .And.EndWith("; archive.maxDeferHours 24: waited 23 h since 2026-10-01T13:00:00Z", "the own review on Fable, #1: the deferral says how the wait stands");
         _journal.Should().Equal("preview A13");
+    }
+
+    [Fact]
+    public async Task The_first_deferral_says_the_wait_starts_now()
+    {
+        var outcome = Only(await Engine(Archive()).ExecuteAsync(Timer(), CancellationToken.None));
+
+        outcome.Status.Should().Be(ActionStatus.Deferred);
+        outcome.Reason.Should().EndWith("; archive.maxDeferHours 24: the wait starts now");
     }
 
     /// <summary>The consultant's contamination case: <c>IdleStop</c> is asked before <c>DryRunStop</c>, so a dry-run week of a busy machine
@@ -123,6 +151,8 @@ public sealed class MaxDeferTests : IDisposable
     [InlineData(ActionStatus.Ran, RunTrigger.Manual)]
     [InlineData(ActionStatus.Skipped, RunTrigger.Timer)]
     [InlineData(ActionStatus.Failed, RunTrigger.Timer)]
+    [InlineData(ActionStatus.Interrupted, RunTrigger.Timer)]
+    [InlineData(ActionStatus.Refused, RunTrigger.Manual)]
     public async Task A_newer_line_of_another_status_ends_the_streak_and_the_wait_counts_from_after_it(string status, RunTrigger trigger)
     {
         History([.. DeferredEvery3Hours(40, 22), Line(20, status, trigger: trigger), .. DeferredEvery3Hours(19, 1)]);
@@ -175,16 +205,18 @@ public sealed class MaxDeferTests : IDisposable
         var outcome = Only(await Engine(Archive()).ExecuteAsync(Timer(), CancellationToken.None));
 
         outcome.Status.Should().Be(ActionStatus.Deferred);
+        outcome.Reason.Should().NotContain("archive.maxDeferHours", "0 is never: there is no wait to count");
     }
 
     [Fact]
-    public async Task An_unreadable_history_is_no_streak()
+    public async Task An_unreadable_history_is_no_streak_and_the_deferral_says_the_wait_is_not_counted()
     {
         Directory.CreateDirectory(RunHistory.File(_sandbox.Paths));
 
         var outcome = Only(await Engine(Archive()).ExecuteAsync(Timer(), CancellationToken.None));
 
         outcome.Status.Should().Be(ActionStatus.Deferred);
+        outcome.Reason.Should().Contain("; archive.maxDeferHours 24: the wait is not counted — ", "the own review on Fable, #1: a broken wait is never silent");
     }
 
     [Fact]

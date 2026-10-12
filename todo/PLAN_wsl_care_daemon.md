@@ -4857,7 +4857,7 @@ here.
 
 ##### A13 waits for idle at most `archive.maxDeferHours` (2026-10-12)
 
-> Status: **plan only, 2026-10-12 — nothing built yet.** Branch `feat/wc-archive-max-defer`, from `main` 00914fd. Daemon only
+> Status: **built 2026-10-12 on `feat/wc-archive-max-defer` — the code round (proceed) and the own review on Fable done; merge next (see *As built* below).** Branch `feat/wc-archive-max-defer`, from `main` 00914fd, rebased onto d79250b. Daemon only
 > (`Actions/Engine/IdleGate.cs`, `Actions/Engine/ActionEngine.cs`, a new `Actions/Engine/IdleDeferrals.cs`, `Actions/ICleanupAction.cs`,
 > `Archive/ArchiveAction.cs`, `Config/ConfigKeys.Archive.cs`, `Config/default.json`, `contracts/config-keys.json`, tests). A13 moves
 > files, so the own review runs on Fable.
@@ -4891,7 +4891,7 @@ detail says why.
    hold: the run is the timer's; the idle verdict's ONLY cause is the load (`IdleVerdict.LoadOnly`, new: the load was read and is
    over the key, the builds were read and none runs — an unknown figure or a running build still defers); the key is not 0; and
    `now − StreakStart ≥ maxDeferHours`. Then the action runs, and its outcome reason is "ran despite the load: A13 waited for idle
-   since <start, UTC> (<h> h ≥ archive.maxDeferHours <n>); <the load verdict>". Every other gate keeps its place: the trigger, the
+   since <start, UTC> (<h> h, archive.maxDeferHours <n>); <the load verdict>". Every other gate keeps its place: the trigger, the
    target user, a refusal before it, the dry run after it — a dry run still runs nothing. The history is read once per run, only when
    such an action is deferred for load. The decision is made once, before `RunAsync`, so the sample `run.Acted` drops after a budgeted
    action is not read again for the reason.
@@ -4917,13 +4917,40 @@ sandbox is what `ArchiveRunGoldens` does too. Break-its on product code only: th
 **Build order:** the RED tests → `IdleVerdict.LoadOnly` → `IdleDeferrals` → the key (C#, `default.json`, `contracts/config-keys.json`,
 the key list of `research/module_archive.md`) → the engine's bypass and reason → A13's declaration → every daemon suite (Windows, and Linux in WSL),
 `dotnet format`, the extension suite (the contract is read there too), the family checks → `research/module_archive.md`,
-`research/module_daemon.md`, `research/module_tests.md` → the code round and the own review (Fable) → merge.
+`research/architecture.md` (the engine's idle gate; the code round's #1), `research/module_tests.md` → the code round and the own review (Fable) → merge.
 
 **DoD:** every new test green and red under its break-it; all suites and checks green; the key documented where every archive key is; the
 run detail of a forced run says why it ran.
 
 **The plan round** (coai session b5e43e7f, `proceed`, codex, 2 gating findings, both accepted): #0 the range is 0–72, below the
 history's retention floor, with a test; #1 the real `ArchiveAction` through the engine (above).
+
+**As built (2026-10-12).** As planned, with what the code round and the own review added:
+- The owner confirmed option (b) on 2026-10-12 ("runs anyway after N hours, at lowered priority"). Lowered priority is what the
+  timer's every run already has, read on this machine: the installed unit has `Nice=19` and `IOSchedulingClass=idle`; runuser's PAM
+  stack runs `pam_limits` and no `limits.conf` line sets a priority, so the archive child keeps nice 19; every block device's
+  scheduler is `none`, so the idle I/O class has no effect here. Nothing further is set (no measurement shows a setting that helps).
+- A first reading for the PSI question (recorded in `todo/PLAN_twenty_sessions_all_day.md` S8): load average 12.17 on 24 CPUs
+  (51 %, a deferral) while `/proc/pressure/cpu` some avg60 read 1.73 % — the load is mostly tasks waiting in the kernel.
+- RED first: the engine tests read "deferred" where they now read "ran despite the load", the streak tests read `null`, `LoadOnly`
+  read false. Break-its M1–M7 on product code (`defer-breakit`): M1 dry-run lines count → 2 red; M2 a build no longer blocks → 2 red;
+  M3 `>` for `≥` → 1 red; M4 0 no longer never → 2 red; M5 the walk never ends → 11 red; M6 A13 declares no limit → 2 red; M7 the
+  reason not carried → 3 red.
+
+**The code round** (coai session b5e43e7f, `proceed`, codex, 3 gating of 5): #0 this status and record; #1
+`research/architecture.md` names the idle gate's one exception; #2 `IdleDeferrals.StreakStart` takes the typed `ActionId`; #4 a forced
+run that fails or is cut off keeps "(ran despite the load: …)" after its own reason — all accepted. #3 (a unit-aware policy type
+instead of hours) rejected: one action declares a limit, its key is in hours like the other archive ages, and a second action would
+bring its own key.
+
+**The own review on Fable** (7 findings, 1 medium): #1 (medium) the deferral now says how the wait stands — "; archive.maxDeferHours
+24: waited 23 h since <UTC>", "the wait starts now", or "the wait is not counted — <the history's problem>" — so a broken wait is never
+silent; #2 the gate decides ONCE per action per run (`RunState.Decided`), and the outcome after the run reads that decision; #3 a
+history line dated after now is ignored (a clock that ran ahead); #7 two lines with one start: the later in the file is the newer;
+#6 the plan's reason format, its build order and a long line in `module_archive.md` corrected — all taken, each with a test. #4 an
+`interrupted` line (the sweep of a crashed run) or a `refused` one still ends the streak: kept, the conservative side — a crash
+restarts the wait; documented and tested at the engine. #5: the timer runs every 4 h with up to 5 min of random delay, so 24 means the
+7th or 8th run after the first deferral — documented.
 
 ##### E10.S2a build notes — the Archive page, browse only
 

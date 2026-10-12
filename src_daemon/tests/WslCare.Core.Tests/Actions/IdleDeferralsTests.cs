@@ -22,7 +22,24 @@ public sealed class IdleDeferralsTests
     private static RunRecord Line(double hoursAgo, string status, string id = "A13", RunTrigger trigger = RunTrigger.Timer, bool? dryRun = false) =>
         MaxDeferTests.Line(hoursAgo, status, id, trigger, dryRun);
 
-    private static DateTimeOffset? Start(params RunRecord[] newestLast) => IdleDeferrals.StreakStart(newestLast, "A13");
+    private static DateTimeOffset? Start(params RunRecord[] newestLast) => IdleDeferrals.StreakStart(newestLast, ActionId.Find("A13")!, Now);
+
+    /// <summary>The own review on Fable, #3: a line dated after now (a clock that ran ahead when it was written) is evidence of nothing —
+    /// a future deferral does not start a streak, a future ran does not end one.</summary>
+    [Fact]
+    public void A_line_dated_after_now_is_ignored()
+    {
+        Start(Line(30, ActionStatus.Deferred), Line(10, ActionStatus.Deferred), Line(-2, ActionStatus.Ran)).Should().Be(Now.AddHours(-30));
+        Start(Line(-2, ActionStatus.Deferred)).Should().BeNull();
+    }
+
+    /// <summary>The own review on Fable, #7: two lines with the same start — the later one in the file is the newer.</summary>
+    [Fact]
+    public void Of_two_lines_with_one_start_the_later_in_the_file_is_the_newer()
+    {
+        Start(Line(30, ActionStatus.Deferred), Line(10, ActionStatus.Deferred), Line(10, ActionStatus.Ran)).Should().BeNull("the ran line is the newer of the two");
+        Start(Line(30, ActionStatus.Deferred), Line(10, ActionStatus.Ran), Line(10, ActionStatus.Deferred)).Should().Be(Now.AddHours(-10));
+    }
 
     [Fact]
     public void The_streak_starts_at_the_earliest_of_the_trailing_live_timer_deferrals()
