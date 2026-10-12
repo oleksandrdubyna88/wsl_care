@@ -32,7 +32,8 @@
    files (`SystemMaxFiles`, default 100).** The journal directory holds exactly 100 files of 8 MiB; the oldest are deleted
    BY COUNT. The daemon read 1.6 days of history at 08:03:54Z and 0.0 days at 10:02:22Z: the first hour's rotations
    erased everything older than 07:49Z.
-5. **Ranked fixes (§ 5):** F1 leave the clock to WSL's own `chronyd` — `timedatectl set-ntp false` in `Ubuntu`, reversible;
+5. **Ranked fixes (§ 5):** F1 (advice only, decided 2026-10-12) leave the clock to WSL's own `chronyd` —
+   `timedatectl set-ntp false` in `Ubuntu`, reversible;
    F2 keep Windows closer to NTP — the guard's existing `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker
    Desktop has no setting for it — upstream issue, stop it when unused, and the daemon names it in its verdicts.
 
@@ -159,6 +160,8 @@ here (upstream: 1–2 ms steps are still made).
   replaced. The POST limit can only come from an after-measurement of the handed-over clock (§ 6 predicts ≤ 5 ms of
   step; the upstream report measured 1–2 ms): take its observed maximum over a day and add a stated margin. Until then
   F1 is advice only.
+- **Decided 2026-10-12 (coordinator): F1 stays ADVICE.** No action and no button is built until both offset limits are
+  measured; the action described above is the design it would follow then, not work that is scheduled.
 
 ### F2 — keep Windows closer to NTP: the guard's resync every hour
 
