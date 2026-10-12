@@ -69,14 +69,21 @@ public sealed class JobSupervisor(IJobControl jobs, IWindowsBoot clock) : IWorke
     {
         using (worker)
         {
-            if (jobs.Assign(job, worker) is { Length: > 0 } notAssigned)
-            {
-                jobs.EndSuspended(worker, EndedExitCode);
-                return new WorkerOutcome.Refused($"the worker (pid {worker.Pid}) could not be put in its job ({notAssigned}); it was ended while still suspended and never ran outside the job");
-            }
-
-            return jobs.Resume(worker) is { Length: > 0 } notResumed ? NotResumed(job, worker, notResumed) : Supervise(job, worker, run);
+            return jobs.Assign(job, worker) is { Length: > 0 } notAssigned ? NotAssigned(worker, notAssigned)
+                : jobs.Resume(worker) is { Length: > 0 } notResumed ? NotResumed(job, worker, notResumed)
+                : Supervise(job, worker, run);
         }
+    }
+
+    /// <summary>The worker is not in the job: it is ended while still suspended — and when even that fails, the refusal says so and
+    /// never claims it ended (m2 of the WR-D3 review). Either way it is never resumed.</summary>
+    private WorkerOutcome NotAssigned(IWorkerProcess worker, string why)
+    {
+        var notEnded = jobs.EndSuspended(worker, EndedExitCode);
+        var after = notEnded.Length == 0
+            ? "it was ended while still suspended and never ran outside the job"
+            : $"ending it while suspended failed too ({notEnded}): it stays suspended, never resumed, and must be ended by hand";
+        return new WorkerOutcome.Refused($"the worker (pid {worker.Pid}) could not be put in its job ({why}); {after}");
     }
 
     private WorkerOutcome NotResumed(IJobHandle job, IWorkerProcess worker, string why)
@@ -89,12 +96,16 @@ public sealed class JobSupervisor(IJobControl jobs, IWindowsBoot clock) : IWorke
     private WorkerOutcome Supervise(IJobHandle job, IWorkerProcess worker, Supervised run) => Remaining(run) switch
     {
         var left when left <= TimeSpan.Zero => End(job, worker, run.Launch.Deadline),
-        var left => jobs.Wait(worker, left, run.Cancellation) switch
-        {
-            WorkerWait.Exited exited => new WorkerOutcome.Exited(exited.Code),
-            WorkerWait.Cancelled => new WorkerOutcome.Cancelled(),
-            _ => Supervise(job, worker, run),
-        },
+        var left => Answered(jobs.Wait(worker, left, run.Cancellation), job, worker, run),
+    };
+
+    /// <summary>What one wait answered: the worker's end, or — on a timeout — another look at the deadline.</summary>
+    private WorkerOutcome Answered(WorkerWait wait, IJobHandle job, IWorkerProcess worker, Supervised run) => wait switch
+    {
+        WorkerWait.Exited exited => new WorkerOutcome.Exited(exited.Code),
+        WorkerWait.Cancelled => new WorkerOutcome.Cancelled(),
+        WorkerWait.Unreadable unreadable => new WorkerOutcome.Refused($"the worker (pid {worker.Pid}) exited, but its exit code could not be read ({unreadable.Reason})"),
+        _ => Supervise(job, worker, run),
     };
 
     /// <summary>What is left of the deadline on the UNBIASED clock; nothing when the clock no longer answers (fail closed).</summary>

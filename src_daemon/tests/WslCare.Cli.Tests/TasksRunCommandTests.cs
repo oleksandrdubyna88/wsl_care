@@ -146,6 +146,45 @@ public sealed class TasksRunCommandTests
         supervisor.Launches.Should().BeEmpty();
     }
 
+    /// <summary>The shutdown path for real (the coai plan round on WR-D3, item 10): the whole program runs <c>tasks run watch</c> over the
+    /// REAL job supervisor, which starts the test's own helper tree (a worker and its grandchild, <see cref="JobHelperTree"/>) in place of
+    /// the product's worker; the run's cancellation token — what <c>ShutdownSignals</c> fires on Ctrl+C or a stop — is cancelled. The
+    /// exit is 130 and both helpers, held by pid AND creation time, are gone: the job was closed, and kill-on-close ended the tree.</summary>
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task A_stopped_run_exits_130_and_its_whole_tree_is_gone()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new World("tasks-run-stop");
+        using var root = new TempRoot("tasks-run-stop-tree");
+        using var tree = new JobHelperTree(Path.Combine(root.Path, "pids.txt"));
+        var supervisor = new HelperTreeSupervisor(new JobSupervisor(new Win32JobControl(), new Core.Mcp.Win32Boot()), tree);
+        using var stop = new CancellationTokenSource();
+
+        var run = Task.Run(() => CliRun.Over(world.Host(supervisor), Serilog.Core.Logger.None, stop.Token, "tasks", "run", "watch", "--json"));
+        var seen = await tree.SeenAsync(TimeSpan.FromSeconds(20));
+        await stop.CancelAsync();
+        var (exit, stdout, stderr) = await run.WaitAsync(TimeSpan.FromSeconds(60), TestContext.Current.CancellationToken);
+
+        seen.Should().BeEmpty("both helpers are held by pid AND creation time while the job holds them");
+        exit.Should().Be((int)ExitCode.Interrupted, stderr);
+        stdout.Should().BeEmpty();
+        supervisor.ProductLaunch.Arguments.Should().Equal("watch", "--timer", "--json");
+        (await tree.AllExitedAsync(TimeSpan.FromSeconds(10))).Should().BeTrue($"the stop closed the job and kill-on-close ended the tree: {tree.Describe()}");
+    }
+
+    /// <summary>The real supervisor, handed the helper tree in place of the launch the product built (which it records).</summary>
+    private sealed class HelperTreeSupervisor(IWorkerSupervisor real, JobHelperTree tree) : IWorkerSupervisor
+    {
+        public WorkerLaunch ProductLaunch { get; private set; } = new(string.Empty, [], TimeSpan.Zero);
+
+        public WorkerOutcome Run(WorkerLaunch launch, CancellationToken cancellationToken)
+        {
+            ProductLaunch = launch;
+            return real.Run(new WorkerLaunch(JobHelperTree.Executable, tree.Arguments, launch.Deadline), cancellationToken);
+        }
+    }
+
     private sealed class RecordingSupervisor(WorkerOutcome outcome) : IWorkerSupervisor
     {
         public List<WorkerLaunch> Launches { get; } = [];

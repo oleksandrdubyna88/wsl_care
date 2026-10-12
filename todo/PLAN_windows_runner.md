@@ -115,7 +115,7 @@ Common: `<Principal><UserId>S-1-5-21-…</UserId><LogonType>InteractiveToken</Lo
 **Daemon keys (the Windows layers; `contracts/config-keys.json` regenerated):**
 - reused: `mcpWatchdog.periodMinutes` (5, 2–15, machine-only; the rule `< cpuIntervalMaxMinutes` at `NumberRules.cs:90–92` holds the cadence under the baseline's maximum), `mcpWatchdog.runLimitMinutes`, `timer.runLimitMinutes`, `timer.firstDryWindowDays`, `dryRun`, `archive.*`, `logging.retentionDays`, `runs.historyRetentionDays`, `records.maxStateFileBytes`;
 - new `windowsTasks.watchLogonDelaySeconds` (60, 0–3600, `SafeDirection.Higher`), `windowsTasks.archiveLogonDelayMinutes` (20, 0–720, Higher; E11's "logon + 20 min"), `windowsTasks.archiveEveryHours` (4, 1–24, Higher). None machine-only (an unelevated runner's user layer is the natural place; Q2).
-- new for the `%TEMP%` cleanup (§3.12): `temp.olderThanDays` (7, 1–365, Higher), `temp.allowGlobs` (a list, default `["coai-*", "wsl-care-test-*"]`; a glob may not contain a path separator and may not match `claude`), `temp.scanMaxNodes` (200000, 1000–10000000, Lower), `temp.scanMaxSeconds` (120, 10–3600, Lower), `temp.maxItemsPerRun` (5000, 1–1000000, Lower), `windowsTasks.cleanupLogonDelayMinutes` (30, 0–720, Higher), `windowsTasks.cleanupEveryHours` (24, 1–168, Higher).
+- new for the `%TEMP%` cleanup (§3.12): `temp.olderThanDays` (7, 1–365, Higher), `temp.allowGlobs` (a list, default `["coai-*", "wsl-care-test-*", "stage-*", "mindex-*", "git-commit-*", "docrag-*", "bge-seed-*"]` — the owner's decision of 2026-10-12, from the patterns measured in research/2026-10-11_windows_temp.md; a glob may not contain a path separator and may not match `claude`), `temp.scanMaxNodes` (200000, 1000–10000000, Lower), `temp.scanMaxSeconds` (120, 10–3600, Lower), `temp.maxItemsPerRun` (5000, 1–1000000, Lower), `windowsTasks.cleanupLogonDelayMinutes` (30, 0–720, Higher), `windowsTasks.cleanupEveryHours` (24, 1–168, Higher).
 
 **Extension settings (`settings/numbers.ts`, held equal to `package.json`):** `wslCare.timeouts.windowsTasksSeconds` (60, 10–600: the unelevated install / remove / run-now PowerShell), `wslCare.timeouts.windowsTasksStageSeconds` (60, 10–600: `tasks stage` and `tasks render`), and the Task Scheduler read reuses `wslCare.timeouts.windowsTimeGuardQuerySeconds` because the read is ONE query (§3.8, Q3).
 
@@ -193,8 +193,10 @@ existing readers, and the dry window of §3.5.
 - **Never:** anything under `%TEMP%\claude\` (the owner's 2026-10-02 rule, a hard-coded guard checked BEFORE any traversal and
   independent of every setting); an entry not owned by the current user's SID; an entry that is or contains a reparse point
   (the walk never follows one, and a tree that holds one is retained as "unknown").
-- **Selection for deletion — an ALLOW-list:** `temp.allowGlobs` (default `["coai-*", "wsl-care-test-*"]`: scratch whose disposal
-  is known — coai's review rounds and tests, and this repo's own tests), each candidate's NEWEST descendant write time (files AND
+- **Selection for deletion — an ALLOW-list:** `temp.allowGlobs` (default `["coai-*", "wsl-care-test-*", "stage-*", "mindex-*",
+  "git-commit-*", "docrag-*", "bge-seed-*"]` — the owner's decision of 2026-10-12, from the patterns measured in
+  [2026-10-11_windows_temp.md](../research/2026-10-11_windows_temp.md): scratch whose disposal is known — coai's review rounds and
+  tests, this repo's own tests, and the measured tool scratch folders), each candidate's NEWEST descendant write time (files AND
   folders) older than `temp.olderThanDays` (7). A tree not scanned to its end within the budget is "unknown — retained".
   Files directly in `%TEMP%` follow the same rules with their own time.
 - **The preview shows MORE than it would delete:** the resolved root, the cutoff and the age rule; eligible / unknown / excluded
@@ -339,7 +341,9 @@ cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout
 The owner asked for a `%TEMP%` cleanup run by this runner: unelevated, a preview and the dry window first, a panel button, the
 age as a setting, only the user's own entries older than the limit, never one in use, never through a reparse point, counts and
 bytes in the run detail, a Fable own reviewer. The default selection was decided with the coai consultant (`f2317bca`, closed
-solved): an ALLOW-list for real deletion (`coai-*`, `wsl-care-test-*`), the broad age view in the preview only, the newest
+solved): an ALLOW-list for real deletion (first `coai-*`, `wsl-care-test-*`; widened by the owner's decision of 2026-10-12, from the
+patterns measured in [2026-10-11_windows_temp.md](../research/2026-10-11_windows_temp.md), to `coai-*`, `wsl-care-test-*`, `stage-*`,
+`mindex-*`, `git-commit-*`, `docrag-*`, `bge-seed-*`), the broad age view in the preview only, the newest
 descendant's time as the age, budgets with a cursor, and "unknown = retained". The consultant's claim that a held file can be
 deleted without a sharing violation was verified on this machine before it changed the design (§3.12). Stories WR-T1–T3.
 
@@ -400,8 +404,8 @@ root kind `taskEnded`); the docs in [module_daemon.md](../research/module_daemon
   body to the closed table. Its deadline key (`timer.runLimitMinutes`) is already `TaskWorkers.DeadlineKey`.
 - **`--json` passes through**: the table gives `watch --timer`, plus `--json` when the supervisor got it (the task's action always
   passes it) — still a closed table of two shapes; a person running `tasks run watch` by hand reads text.
-- **The other exits**: a supervisor that could not start the worker inside a job (no job, no process, a failed assign or resume, an
-  unreadable unbiased clock) exits **1** with the reason as its one stderr line — no new code beyond 84; a signal exits **130**
+- **The other exits**: a supervisor that could not start the worker inside a job (no job, no process, a standard handle that could
+  not be passed, a failed assign or resume, an unreadable unbiased clock) or could not read its exit code exits **1** with the reason as its one stderr line — no new code beyond 84; a signal exits **130**
   after the job is closed; a host whose own path is not absolute starts nothing (2). A configuration in error is NOT refused by
   `tasks run` (the worker reads the same layers and answers for itself).
 - **The cancellation stop is the close**, not `TerminateJobObject`: Ctrl+C / a console close returns the wait and the job's handle is
@@ -409,11 +413,39 @@ root kind `taskEnded`); the docs in [module_daemon.md](../research/module_daemon
   Task Scheduler's *End* terminates the supervisor itself; the OS closes the handle and kill-on-close does the same.
 - **After the deadline** the worker is waited for within `commands.drainGraceMilliseconds` (the child runner's existing grace,
   reused — no new key); a mid-run clock that stops answering counts as past the deadline (fail closed). The standard handles are
-  inherited as inheritable DUPLICATES (closed right after `CreateProcessW`); a missing one is not passed, and with none at all
-  nothing is inherited. The worker starts by `lpApplicationName` = its absolute path (no search).
+  inherited as inheritable DUPLICATES (closed right after `CreateProcessW`); a missing one is not passed, with none at all nothing
+  is inherited, and one that exists but cannot be copied refuses the start (n1 below). The worker starts by `lpApplicationName` = its absolute path (no search).
 - **The WR-D2 seam**: `TasksCommand.SweepStagingAtRunStart(host, paths, config)` is called before the worker starts and does
   nothing yet; WR-D2 calls ITS staging sweep there (§3.10) — no second sweep was written.
-- **The Windows test leg's helper tree** is Windows PowerShell (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, the
-  worker) starting `ping.exe` (the grandchild): the precedent `TestSupport/HoldingChild` uses PowerShell; the FakeTool needs a
-  scenario script. Each pid is opened and held by its handle the moment it is read (pid AND creation time), and a failed test ends
-  what is left through those handles only.
+- **The Windows test leg's helper tree** (`TestSupport/JobHelperTree.cs`, shared by Core.Tests and Cli.Tests) is Windows PowerShell
+  (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, the worker) starting `ping.exe` (the grandchild): the precedent
+  `TestSupport/HoldingChild` uses PowerShell; the FakeTool needs a scenario script. The helper writes both pids AND both creation
+  times (`StartTime.ToFileTimeUtc()`); a pid is held only when the creation time read through the handle just opened equals the
+  recorded one — a gone or reused pid is never held and never ended, and the test fails naming it. The wait for the helper's line
+  (20 s) is shorter than the run's deadline (30 s), so both are read while the job still holds them. A failed test ends what is left
+  through the held handles only.
+
+**The Fable own reviewer's round on WR-D3 (2026-10-12)**: no blocking issue, no product path ends a process it did not start; every
+item fixed in the same story, RED first:
+
+- **M1** — the test could hold, and end, a reused pid: the M1 rules above.
+- **m1** — `Win32JobControl.Resume` accepts ONLY a previous suspend count of exactly 1; anything else answers "the worker was not in
+  its suspended start", and the supervisor ends the job and refuses (exit 1). A real test proves `CREATE_SUSPENDED`: a suspended
+  `cmd /c exit 7` in its own job has not exited after 2 s, and ended while suspended it exits `0xC5A1`.
+- **m2** — `EndSuspended` answers `TerminateProcess`'s error; the refusal then says ending it failed and that it stays suspended,
+  never "ended".
+- **m3** — the job scan also catches `(Nt|Zw)?Terminate(JobObject|Process|Thread)`, as a call and as a quoted entry point.
+- **n1** — a standard handle that exists but cannot be duplicated refuses the start (exit 1, one stderr line) and closes the copies
+  already made (`Win32JobControl.StandardCopies`); a handle this process does not have is still simply not passed.
+- **n2** — an exit code `GetExitCodeProcess` cannot read is a refusal (exit 1) naming the error, never an invented `Exited(-1)`.
+- **n3** — a failed wait (`WAIT_FAILED`) throws from `WaitHandle.WaitAny`; the job's `using` closes the job on the way out and the
+  program's last frame answers **70 `Internal`** — fail closed.
+- **n4** — **WR-D4 must change `Scenarios/WindowsTasksRunFlows.cs` in the same PR**: today that flow relies on the Windows `watch`
+  being refused; once D4 lets it run, the flow would start a real `watch --timer` of the built binary.
+- **n5** — the `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` and `lpApplicationName` (no search) are defence in depth with no test of their
+  own (the job handle's non-inheritance has one; the list's contents and the no-search start are read in the code only).
+- **n7** — exit 1's description in `ExitCode.cs` names `tasks run`'s "no worker could start inside a job".
+- **The coai plan round on WR-D3** (session `ce1d140d`, item 10): the shutdown path for real —
+  `Cli.Tests/TasksRunCommandTests.A_stopped_run_exits_130_and_its_whole_tree_is_gone` runs the whole program over the real
+  supervisor with the helper tree in place of the worker, cancels the run's token (what `ShutdownSignals` fires), and asserts exit
+  130 and both helpers gone.

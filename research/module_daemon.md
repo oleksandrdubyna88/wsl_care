@@ -821,16 +821,23 @@ sequenceDiagram
   with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` alone; `CreateProcessW` with `lpApplicationName` = the absolute path (no search),
   `CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT`, `STARTF_USESTDHANDLES` and a
   `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` of inheritable DUPLICATES of the three standard handles (closed again right after; a
-  missing one is not passed); the command line quoted by `Core/Processes/WindowsCommandLine.cs` (the C runtime's rules, read back
-  through `CommandLineToArgvW` in a test). `AssignProcessToJobObject`, `ResumeThread`, a `WaitHandle` over the process handle
-  (with the run's cancellation), `GetExitCodeProcess`, `TerminateJobObject(job, 0xC5A1)`, `TerminateProcess` of the still
-  suspended worker only. `ArchitectureTests.Only_the_supervisor_ends_a_process_through_a_job_or_by_its_handle` holds this file
-  the only one that spells `TerminateJobObject`, `TerminateProcess`, `AssignProcessToJobObject` or `CreateProcess*`.
+  missing one is not passed; one that exists but cannot be duplicated refuses the start, `StandardCopies`); the command line quoted
+  by `Core/Processes/WindowsCommandLine.cs` (the C runtime's rules, read back through `CommandLineToArgvW` in a test).
+  `AssignProcessToJobObject`; `ResumeThread`, accepted ONLY from the suspended start (a previous suspend count of exactly 1 —
+  anything else is "not in its suspended start", the job is ended and the run refused); a `WaitHandle` over the process handle
+  (with the run's cancellation; a failed wait throws, the job's `using` closes it, and the program answers 70); `GetExitCodeProcess`
+  (unreadable → a refusal, never an invented code); `TerminateJobObject(job, 0xC5A1)`; `TerminateProcess` of the still suspended
+  worker only, whose failure the refusal names (it then stays suspended, never resumed — never reported "ended").
+  `ArchitectureTests.Only_the_supervisor_ends_a_process_through_a_job_or_by_its_handle` holds this file the only one that spells
+  `TerminateJobObject`, `TerminateProcess`, `TerminateThread` (each also as `Nt…`/`Zw…`), `AssignProcessToJobObject` or
+  `CreateProcess*`, as a call or as a quoted entry point.
 - **Its exits**: the worker's own code; **84 `TaskEnded`** (new; `contracts/exit-codes.json`, the extension's `DAEMON_EXIT.taskEnded`
-  and its root kind `taskEnded`) with one stderr line naming the deadline and its key; 1 when no worker could run inside a job
-  (the reason is the line); 130 on a signal. The supervisor writes nothing to stdout — the worker's answer is the stdout.
+  and its root kind `taskEnded`) with one stderr line naming the deadline and its key; 1 when no worker could run inside a job or
+  its exit code could not be read (the reason is the line); 130 on a signal; 70 when a wait itself failed. The supervisor writes
+  nothing to stdout — the worker's answer is the stdout.
 - **Stops**: Ctrl+C / a console close reaches `ShutdownSignals`, the wait returns, the job is closed — kill-on-close ends the tree.
   Task Scheduler's *End* (and `ExecutionTimeLimit`, the deadline + 10 min, the outer net) terminates the supervisor itself; the
   OS then closes the job handle, and kill-on-close ends the tree the same way.
 - **Until WR-D4** the Windows `watch` is still refused (2), so the supervised worker of today exits 2 with its own refusal and
-  the supervisor passes it through — what `Scenarios/WindowsTasksRunFlows` asserts over the built binary.
+  the supervisor passes it through — what `Scenarios/WindowsTasksRunFlows` asserts over the built binary. **WR-D4 must change that
+  flow in the same PR**, or it would start a real `watch --timer` of the built binary.

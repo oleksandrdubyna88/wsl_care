@@ -87,8 +87,9 @@ public interface IJobControl
     /// <summary>Ends every process in the job with <paramref name="exitCode"/>.</summary>
     void EndJob(IJobHandle job, uint exitCode);
 
-    /// <summary>Ends the worker that never left its suspended start (an assign that failed) with <paramref name="exitCode"/>.</summary>
-    void EndSuspended(IWorkerProcess worker, uint exitCode);
+    /// <summary>Ends the worker that never left its suspended start (an assign that failed) with <paramref name="exitCode"/>; empty
+    /// when it was ended, else why not (it then stays suspended — never resumed).</summary>
+    string EndSuspended(IWorkerProcess worker, uint exitCode);
 }
 
 /// <summary>A job's handle; disposing it closes it — and, the job being kill-on-close, ends every process still in it.</summary>
@@ -112,4 +113,7 @@ public abstract record WorkerWait
     public sealed record TimedOut : WorkerWait;
 
     public sealed record Cancelled : WorkerWait;
+
+    /// <summary>The worker exited, but its exit code could not be read: why.</summary>
+    public sealed record Unreadable(string Reason) : WorkerWait;
 }

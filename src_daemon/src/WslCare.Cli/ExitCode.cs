@@ -16,7 +16,9 @@ internal enum ExitCode
 
     /// <summary>The run could not be RECORDED: its detail or its history line failed to write (plan §15b #1), or
     /// <c>events follow</c> was started by a process that may not write the state directory. What was measured is
-    /// still printed.</summary>
+    /// still printed. And <c>tasks run</c> (WR-D3): no worker could start inside a job — no job, no process, a standard handle that
+    /// could not be passed, a failed assign or resume, an unreadable unbiased clock — or the worker's exit code could not be read;
+    /// the one stderr line says which, and nothing ran outside the job.</summary>
     RunFailed = 1,
 
     /// <summary>The arguments could not be read or accepted — an unknown verb, extra words, a value

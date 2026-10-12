@@ -55,35 +55,35 @@ public sealed partial class Win32JobControl : IJobControl
             : Failed<IJobHandle>("SetInformationJobObject(KILL_ON_JOB_CLOSE)", handle);
     }
 
-    public Reading<IWorkerProcess> StartSuspended(string executable, string commandLine)
-    {
-        var standard = StandardHandleIds.Select(InheritableCopyOf).ToArray();
-        try
+    public Reading<IWorkerProcess> StartSuspended(string executable, string commandLine) =>
+        StandardCopies(InheritableCopyOf, CloseCopy) switch
         {
-            return Create(executable, commandLine, standard);
-        }
-        finally
-        {
-            foreach (var copy in standard.Where(h => h != 0))
-            {
-                CloseHandle(copy);
-            }
-        }
-    }
+            Reading<nint[]>.Available standard => CreateClosing(executable, commandLine, standard.Value),
+            Reading<nint[]>.Unavailable refused => Reading.Missing<IWorkerProcess>(refused.Reason),
+            _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
+        };
 
     public string Assign(IJobHandle job, IWorkerProcess worker) =>
         AssignProcessToJobObject(((Job)job).Handle, ((Worker)worker).Exit.SafeWaitHandle) ? string.Empty : Error("AssignProcessToJobObject");
 
-    public string Resume(IWorkerProcess worker) =>
-        ResumeThread(((Worker)worker).Thread) != ResumeFailed ? string.Empty : Error("ResumeThread");
+    /// <summary>Resumes the worker's first thread ONLY from its suspended start: <c>ResumeThread</c> answers the previous suspend count,
+    /// and anything but exactly 1 means the worker was not where the supervisor put it (m1 of the WR-D3 review).</summary>
+    public string Resume(IWorkerProcess worker) => ResumeThread(((Worker)worker).Thread) switch
+    {
+        1 => string.Empty,
+        ResumeFailed => Error("ResumeThread"),
+        var previous => string.Create(CultureInfo.InvariantCulture, $"the worker was not in its suspended start (ResumeThread answered a previous suspend count of {previous}, not 1)"),
+    };
 
+    /// <summary>A failed wait (<c>WAIT_FAILED</c>) is NOT answered here: <see cref="WaitHandle.WaitAny(WaitHandle[], TimeSpan)"/> throws,
+    /// the job's <c>using</c> closes it on the way out, and the program's last frame answers 70 <c>Internal</c> — fail closed.</summary>
     public WorkerWait Wait(IWorkerProcess worker, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var exit = ((Worker)worker).Exit;
         WaitHandle[] handles = cancellationToken.CanBeCanceled ? [exit, cancellationToken.WaitHandle] : [exit];
         return WaitHandle.WaitAny(handles, timeout) switch
         {
-            0 => new WorkerWait.Exited(ExitCodeOf(exit)),
+            0 => ExitOf(exit),
             WaitHandle.WaitTimeout => new WorkerWait.TimedOut(),
             _ => new WorkerWait.Cancelled(),
         };
@@ -93,8 +93,8 @@ public sealed partial class Win32JobControl : IJobControl
         // A failure here is answered by the close that always follows: the job is kill-on-close.
         _ = TerminateJobObject(((Job)job).Handle, exitCode);
 
-    public void EndSuspended(IWorkerProcess worker, uint exitCode) =>
-        _ = TerminateProcess(((Worker)worker).Exit.SafeWaitHandle, exitCode);
+    public string EndSuspended(IWorkerProcess worker, uint exitCode) =>
+        TerminateProcess(((Worker)worker).Exit.SafeWaitHandle, exitCode) ? string.Empty : Error("TerminateProcess");
 
     /// <summary>The job's handle, for the Windows tests that read its limits and its inheritance back.</summary>
     internal sealed class Job(SafeWaitHandle handle) : IJobHandle
@@ -156,15 +156,60 @@ public sealed partial class Win32JobControl : IJobControl
         AttributeList = attributeList,
     };
 
-    /// <summary>An inheritable duplicate of one standard handle; 0 when this process has none (or it cannot be duplicated).</summary>
-    private static nint InheritableCopyOf(int which)
+    /// <summary>An inheritable duplicate of one standard handle; 0 when this process has none — or why it could not be duplicated.</summary>
+    private static Reading<nint> InheritableCopyOf(int which)
     {
         var handle = GetStdHandle(which);
+        if (handle is 0 or -1)
+        {
+            return Reading.Of<nint>(0);
+        }
+
         var self = GetCurrentProcess();
-        return handle is 0 or -1 || !DuplicateHandle(self, handle, self, out var copy, 0, inherit: true, DuplicateSameAccess) ? 0 : copy;
+        return DuplicateHandle(self, handle, self, out var copy, 0, inherit: true, DuplicateSameAccess) ? Reading.Of(copy) : Reading.Missing<nint>(Error("DuplicateHandle"));
     }
 
-    private static int ExitCodeOf(ProcessExit exit) => GetExitCodeProcess(exit.SafeWaitHandle, out var code) ? unchecked((int)code) : -1;
+    /// <summary>The inheritable copies of stdin, stdout and stderr (0 = this process has none, which is simply not passed) — or, when one
+    /// that exists could not be copied, the refusal (n1 of the WR-D3 review: fail closed, never a worker started without a stream it was
+    /// meant to have), with every copy already made closed again through <paramref name="close"/>.</summary>
+    internal static Reading<nint[]> StandardCopies(Func<int, Reading<nint>> copyOf, Action<nint> close)
+    {
+        var copies = StandardHandleIds.Select(copyOf).ToArray();
+        if (copies.OfType<Reading<nint>.Unavailable>().FirstOrDefault() is not { } failed)
+        {
+            return Reading.Of(copies.OfType<Reading<nint>.Available>().Select(c => c.Value).ToArray());
+        }
+
+        foreach (var made in copies.OfType<Reading<nint>.Available>().Where(c => c.Value != 0))
+        {
+            close(made.Value);
+        }
+
+        return Reading.Missing<nint[]>($"a standard handle could not be passed to the worker ({failed.Reason}); nothing was started");
+    }
+
+    private static void CloseCopy(nint copy) => _ = CloseHandle(copy);
+
+    /// <summary>The worker created, then the standard copies closed again — they were only for the worker to inherit.</summary>
+    private static Reading<IWorkerProcess> CreateClosing(string executable, string commandLine, nint[] standard)
+    {
+        try
+        {
+            return Create(executable, commandLine, standard);
+        }
+        finally
+        {
+            foreach (var copy in standard.Where(h => h != 0))
+            {
+                CloseCopy(copy);
+            }
+        }
+    }
+
+    /// <summary>The worker exited: its code — or, when Windows will not say it, why (n2 of the WR-D3 review: a refusal, never a made-up
+    /// code).</summary>
+    private static WorkerWait ExitOf(ProcessExit exit) =>
+        GetExitCodeProcess(exit.SafeWaitHandle, out var code) ? new WorkerWait.Exited(unchecked((int)code)) : new WorkerWait.Unreadable(Error("GetExitCodeProcess"));
 
     private static Reading<T> Failed<T>(string call, SafeHandle handle)
     {

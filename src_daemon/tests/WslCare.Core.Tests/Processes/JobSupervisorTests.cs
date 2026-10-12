@@ -46,6 +46,30 @@ public sealed class JobSupervisorTests
     }
 
     [Fact]
+    public void A_suspended_worker_that_cannot_be_ended_is_named_and_never_claimed_ended()
+    {
+        var jobs = new RecordingJobs { AssignAnswer = "AssignProcessToJobObject failed: error 5", EndSuspendedAnswer = "TerminateProcess failed: error 5 (Access is denied.)" };
+
+        var outcome = new JobSupervisor(jobs, new ScriptedClock(0)).Run(Launch(), CancellationToken.None);
+
+        var reason = outcome.Should().BeOfType<WorkerOutcome.Refused>().Subject.Reason;
+        reason.Should().Contain("TerminateProcess failed: error 5").And.Contain("pid 4242").And.Contain("never resumed");
+        reason.Should().NotContain("was ended", "a worker the supervisor could not end is never reported as ended");
+        jobs.Calls.Should().NotContain(c => c.StartsWith("resume", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_exit_code_that_cannot_be_read_is_a_refusal_not_an_exit()
+    {
+        var jobs = new RecordingJobs { Waits = [new WorkerWait.Unreadable("GetExitCodeProcess failed: error 6 (The handle is invalid.)"), new WorkerWait.Exited(0)] };
+
+        var outcome = new JobSupervisor(jobs, new ScriptedClock(0)).Run(Launch(), CancellationToken.None);
+
+        outcome.Should().BeOfType<WorkerOutcome.Refused>().Which.Reason.Should().Contain("exit code could not be read").And.Contain("error 6");
+        jobs.Calls.Count(c => c.StartsWith("wait", StringComparison.Ordinal)).Should().Be(1, "an unreadable exit is an answer, not a reason to wait again");
+    }
+
+    [Fact]
     public void The_deadline_counts_unbiased_time()
     {
         // The first wait timed out after the whole deadline of WALL time, but the unbiased clock moved only half of it: the host slept
@@ -153,6 +177,8 @@ public sealed class JobSupervisorTests
 
         public string AssignAnswer { get; init; } = string.Empty;
 
+        public string EndSuspendedAnswer { get; init; } = string.Empty;
+
         public IReadOnlyList<WorkerWait> Waits { get; init; } = [];
 
         public Reading<IJobHandle> CreateJob()
@@ -188,7 +214,11 @@ public sealed class JobSupervisorTests
 
         public void EndJob(IJobHandle job, uint exitCode) => Calls.Add($"end-job 0x{exitCode:X}");
 
-        public void EndSuspended(IWorkerProcess worker, uint exitCode) => Calls.Add($"end-suspended {worker.Pid} 0x{exitCode:X}");
+        public string EndSuspended(IWorkerProcess worker, uint exitCode)
+        {
+            Calls.Add($"end-suspended {worker.Pid} 0x{exitCode:X}");
+            return EndSuspendedAnswer;
+        }
 
         private sealed class Handle(Action closed) : IJobHandle
         {

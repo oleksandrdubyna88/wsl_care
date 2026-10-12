@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 using FluentAssertions;
@@ -15,7 +14,7 @@ namespace WslCare.Core.Tests.Processes;
 /// <summary>
 /// WR-D3 on the Windows legs (PLAN_windows_runner.md §3.3, §6): the real job, read back through Win32 — its handle is not inheritable,
 /// it is kill-on-close with no breakaway — and the real supervisor over the test's OWN helper tree: a Windows PowerShell worker that
-/// starts a <c>ping.exe</c> grandchild and writes both pids. After the deadline (and after a cancellation) both processes, held by
+/// starts a <c>ping.exe</c> grandchild and writes both pids and creation times (<see cref="JobHelperTree"/>). After the deadline (and after a cancellation) both processes, held by
 /// their own handles from the moment they were seen — pid AND creation time — must have exited. Nothing else is started, signalled or
 /// looked up: whatever is still alive at the end of a test is one of these two, ended through the handle the test holds.
 /// </summary>
@@ -57,15 +56,16 @@ public sealed partial class Win32JobControlTests
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         using var root = new TempRoot("job-deadline");
-        using var tree = new HelperTree(Path.Combine(root.Path, "pids.txt"));
+        using var tree = new JobHelperTree(Path.Combine(root.Path, "pids.txt"));
         var supervisor = new JobSupervisor(new Win32JobControl(), new Win32Boot());
 
-        var run = Task.Run(() => supervisor.Run(tree.Launch(TimeSpan.FromSeconds(20)), CancellationToken.None));
-        await tree.SeenAsync();
-        var outcome = await run.WaitAsync(TimeSpan.FromSeconds(60), TestContext.Current.CancellationToken);
+        var run = Task.Run(() => supervisor.Run(Launch(tree, TreeDeadline), CancellationToken.None));
+        var seen = await tree.SeenAsync(SeenCeiling);
+        var outcome = await run.WaitAsync(TimeSpan.FromSeconds(90), TestContext.Current.CancellationToken);
 
-        outcome.Should().Be(new WorkerOutcome.DeadlinePassed(TimeSpan.FromSeconds(20)));
-        (await tree.AllExitedAsync()).Should().BeTrue($"the worker and its grandchild are gone after the deadline: {tree.Describe()}");
+        seen.Should().BeEmpty("both helpers are held by pid AND creation time while the job still holds them");
+        outcome.Should().Be(new WorkerOutcome.DeadlinePassed(TreeDeadline));
+        (await tree.AllExitedAsync(TimeSpan.FromSeconds(10))).Should().BeTrue($"the worker and its grandchild are gone after the deadline: {tree.Describe()}");
         tree.ExitCodes().Should().AllBeEquivalentTo(unchecked((int)JobSupervisor.EndedExitCode), "both were ended by the job, not by themselves");
     }
 
@@ -74,83 +74,109 @@ public sealed partial class Win32JobControlTests
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         using var root = new TempRoot("job-cancel");
-        using var tree = new HelperTree(Path.Combine(root.Path, "pids.txt"));
+        using var tree = new JobHelperTree(Path.Combine(root.Path, "pids.txt"));
         using var cancel = new CancellationTokenSource();
         var supervisor = new JobSupervisor(new Win32JobControl(), new Win32Boot());
 
-        var run = Task.Run(() => supervisor.Run(tree.Launch(TimeSpan.FromMinutes(5)), cancel.Token));
-        await tree.SeenAsync();
+        var run = Task.Run(() => supervisor.Run(Launch(tree, TimeSpan.FromMinutes(5)), cancel.Token));
+        var seen = await tree.SeenAsync(SeenCeiling);
         await cancel.CancelAsync();
         var outcome = await run.WaitAsync(TimeSpan.FromSeconds(60), TestContext.Current.CancellationToken);
 
+        seen.Should().BeEmpty("both helpers are held by pid AND creation time");
         outcome.Should().Be(new WorkerOutcome.Cancelled());
-        (await tree.AllExitedAsync()).Should().BeTrue($"closing the kill-on-close job ends the worker and its grandchild: {tree.Describe()}");
+        (await tree.AllExitedAsync(TimeSpan.FromSeconds(10))).Should().BeTrue($"closing the kill-on-close job ends the worker and its grandchild: {tree.Describe()}");
     }
 
     [Fact]
     public void A_worker_that_exits_by_itself_answers_its_own_code()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
-        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
 
-        var outcome = new JobSupervisor(new Win32JobControl(), new Win32Boot()).Run(new WorkerLaunch(cmd, ["/d", "/c", "exit 7"], TimeSpan.FromSeconds(60)), CancellationToken.None);
+        var outcome = new JobSupervisor(new Win32JobControl(), new Win32Boot()).Run(new WorkerLaunch(Cmd, ["/d", "/c", "exit 7"], TimeSpan.FromSeconds(60)), CancellationToken.None);
 
         outcome.Should().Be(new WorkerOutcome.Exited(7));
     }
 
+    /// <summary>The worker really is created suspended: a <c>cmd /c exit 7</c> created by <see cref="Win32JobControl.StartSuspended"/>
+    /// and put in its own job has NOT exited two seconds later; ended while still suspended, it exits with the supervisor's code.</summary>
+    [Fact]
+    public void A_worker_created_suspended_does_not_run_until_it_is_resumed()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var control = new Win32JobControl();
+        using var job = Created();
+        using var worker = Started(control, job);
+
+        var meanwhile = control.Wait(worker, TimeSpan.FromSeconds(2), CancellationToken.None);
+        var ended = control.EndSuspended(worker, JobSupervisor.EndedExitCode);
+        var after = control.Wait(worker, TimeSpan.FromSeconds(10), CancellationToken.None);
+
+        meanwhile.Should().Be(new WorkerWait.TimedOut(), "a suspended `exit 7` runs no instruction");
+        ended.Should().BeEmpty();
+        after.Should().Be(new WorkerWait.Exited(unchecked((int)JobSupervisor.EndedExitCode)), "it was ended, it did not exit by itself");
+    }
+
+    /// <summary>A resume is accepted only from the suspended start (a previous suspend count of exactly 1): a second resume of the
+    /// same worker answers "not in its suspended start".</summary>
+    [Fact]
+    public void A_resume_outside_the_suspended_start_is_refused()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var control = new Win32JobControl();
+        using var job = Created();
+        using var worker = Started(control, job, "ping -n 30 127.0.0.1 >nul");
+
+        var first = control.Resume(worker);
+        var second = control.Resume(worker);
+
+        first.Should().BeEmpty("the first resume leaves the suspended start");
+        second.Should().Contain("not in its suspended start");
+    }
+
+    /// <summary>n1 of the WR-D3 review: a standard handle that cannot be duplicated refuses the start (fail closed) and closes the copies
+    /// already made, rather than starting the worker without that stream.</summary>
+    [Fact]
+    public void A_standard_handle_that_cannot_be_copied_refuses_the_start_and_closes_the_other_copies()
+    {
+        var closed = new List<nint>();
+        var copies = new Dictionary<int, Reading<nint>> { [-10] = Reading.Of<nint>(11), [-11] = Reading.Missing<nint>("DuplicateHandle failed: error 6 (The handle is invalid.)"), [-12] = Reading.Of<nint>(13) };
+
+        var all = Win32JobControl.StandardCopies(which => copies[which], closed.Add);
+
+        all.Should().BeOfType<Reading<nint[]>.Unavailable>().Which.Reason.Should().Contain("error 6").And.Contain("nothing was started");
+        closed.Should().BeEquivalentTo(new nint[] { 11, 13 });
+    }
+
+    [Fact]
+    public void A_standard_handle_this_process_does_not_have_is_simply_not_passed()
+    {
+        var copies = new Dictionary<int, Reading<nint>> { [-10] = Reading.Of<nint>(0), [-11] = Reading.Of<nint>(21), [-12] = Reading.Of<nint>(22) };
+
+        Win32JobControl.StandardCopies(which => copies[which], _ => throw new InvalidOperationException("nothing is closed on success"))
+            .Should().BeOfType<Reading<nint[]>.Available>().Which.Value.Should().Equal(0, 21, 22);
+    }
+
+    private static readonly TimeSpan TreeDeadline = TimeSpan.FromSeconds(30);
+
+    /// <summary>Shorter than <see cref="TreeDeadline"/> (M1 of the review): the helper's line is read while the job still holds both.</summary>
+    private static readonly TimeSpan SeenCeiling = TimeSpan.FromSeconds(20);
+
+    private static string Cmd => Path.Combine(Environment.SystemDirectory, "cmd.exe");
+
+    private static WorkerLaunch Launch(JobHelperTree tree, TimeSpan deadline) => new(JobHelperTree.Executable, tree.Arguments, deadline);
+
     private static Win32JobControl.Job Created() =>
         new Win32JobControl().CreateJob().Should().BeOfType<Reading<IJobHandle>.Available>().Subject.Value.Should().BeOfType<Win32JobControl.Job>().Subject;
 
-    /// <summary>The test's own helper tree: Windows PowerShell (the worker) starts <c>ping.exe</c> (the grandchild), writes
-    /// "&lt;worker pid&gt; &lt;grandchild pid&gt;" to a file, and sleeps. Each process is OPENED by the test the moment its pid is read and held
-    /// by that handle, with its creation time — so every later check, and the clean-up, is of THAT process, never of a reused pid.</summary>
-    private sealed class HelperTree(string pidFile) : IDisposable
+    /// <summary>A <c>cmd.exe</c> created suspended and put in <paramref name="job"/> — the test's own helper, ended when the job closes.</summary>
+    private static IWorkerProcess Started(Win32JobControl control, IJobHandle job, string command = "exit 7")
     {
-        private readonly List<(Process Process, DateTime Started)> _seen = [];
-
-        public WorkerLaunch Launch(TimeSpan deadline)
-        {
-            var powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
-            var script = "$psi = New-Object System.Diagnostics.ProcessStartInfo 'ping.exe'; $psi.Arguments = '-n 600 127.0.0.1'; "
-                + "$psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; "
-                + "$g = [System.Diagnostics.Process]::Start($psi); "
-                + $"Set-Content -LiteralPath '{pidFile.Replace("'", "''", StringComparison.Ordinal)}' -Value \"$PID $($g.Id)\"; Start-Sleep -Seconds 600";
-            return new WorkerLaunch(powershell, ["-NoProfile", "-NonInteractive", "-Command", script], deadline);
-        }
-
-        public async Task SeenAsync()
-        {
-            (await RunningChild.WaitUntilAsync(() => File.Exists(pidFile) && File.ReadAllText(pidFile).Trim().Split(' ').Length == 2, TimeSpan.FromSeconds(30)))
-                .Should().BeTrue("the helper worker writes its pid and its grandchild's within 30 s");
-            foreach (var pid in File.ReadAllText(pidFile).Trim().Split(' ').Select(int.Parse))
-            {
-                var process = Process.GetProcessById(pid);
-                _ = process.SafeHandle;
-                _seen.Add((process, process.StartTime));
-            }
-        }
-
-        public Task<bool> AllExitedAsync() => RunningChild.WaitUntilAsync(() => _seen.Count == 2 && _seen.All(s => s.Process.HasExited), TimeSpan.FromSeconds(10));
-
-        public IReadOnlyList<int> ExitCodes() => [.. _seen.Select(s => s.Process.ExitCode)];
-
-        public string Describe() => string.Join(", ", _seen.Select(s => $"pid {s.Process.Id} started {s.Started:O} exited {s.Process.HasExited}"));
-
-        /// <summary>Ends what is still alive of THIS tree through the handles held since it was seen — a failed test leaves nothing.</summary>
-        public void Dispose()
-        {
-            foreach (var (process, _) in _seen)
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill();
-                    process.WaitForExit(TimeSpan.FromSeconds(10));
-                }
-
-                process.Dispose();
-            }
-        }
+        var worker = control.StartSuspended(Cmd, WindowsCommandLine.Of(Cmd, ["/d", "/c", command])).Should().BeOfType<Reading<IWorkerProcess>.Available>().Subject.Value;
+        control.Assign(job, worker).Should().BeEmpty();
+        return worker;
     }
+
 
     /// <summary>The test's OWN <c>JOBOBJECT_EXTENDED_LIMIT_INFORMATION</c> (a structure of another assembly is not blittable to the source
     /// generator), field for field: the basic limits, <c>IO_COUNTERS</c>, the four sizes.</summary>
