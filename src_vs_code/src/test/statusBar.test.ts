@@ -20,6 +20,13 @@ function verdict(body: Body, id: string, level: string): Body {
   return body;
 }
 
+/** The Windows binary's own `host.vmmem` verdict added to a body — the distro's status carries none (E15.S5 own review). */
+function withVmmem(body: Body, level: string): Body {
+  (body.verdicts as { id: string; level: string; value: string }[]).push({ id: 'host.vmmem', level, value: '30.00 GiB' });
+
+  return body;
+}
+
 /** The head golden with its one relevant warning (E15.S5: the captured full run's `host.compression`, 9.86 GiB) set to ok — the
  * calm machine the tests below colour one verdict at a time. */
 function calm(): Body {
@@ -52,8 +59,14 @@ test('Windows memory pressure (E15.S5: host.commit, host.compression, host.vmmem
   assert.equal(warn.level, 'warn');
   assert.match(warn.tooltip, /host\.commit: warn — 103\.4 of 145\.6 GiB = 71\.0 %/);
   assert.equal(barView(answered('status', verdict(calm(), 'host.commit', 'critical'))).level, 'critical');
-  assert.equal(barView(answered('status', verdict(calm(), 'host.vmmem', 'warn'))).level, 'warn');
-  assert.equal(barView(answered('status', verdict(calm(), 'host.vmmem', 'unknown'))).level, 'none', 'the full run does not read vmmem: unknown colours nothing');
+  assert.equal(barView(answered('status', withVmmem(calm(), 'warn'))).level, 'warn');
+  assert.equal(barView(answered('status', withVmmem(calm(), 'unknown'))).level, 'none', 'unknown colours nothing');
+});
+
+test('the distro\'s status carries no host.vmmem (E15.S5 own review: the full run does not read vmmem), so the head golden\'s tooltip never lists a host.vmmem it cannot read', () => {
+  const verdicts = headBody('status').verdicts as { id: string }[];
+  assert.doesNotMatch(barView(answered('status', headBody('status'))).tooltip, /host\.vmmem: unknown/);
+  assert.ok(!verdicts.some((v) => v.id === 'host.vmmem'), 'the distro\'s status carries no host.vmmem');
 });
 
 test('only the verdicts about what the bar shows colour it: the head golden carries clock / systemd / collector warnings, and with its host verdict calm it stays uncoloured', () => {
