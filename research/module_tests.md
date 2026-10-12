@@ -3969,6 +3969,31 @@ rules whatever the name.
 `check-vsix.mjs` names in its success line the service accounts it left out (a public account name; a person's name is
 never printed). It runs where it always did — `ci · extension` on both legs and the release build job.
 
+### The clock verdicts after the 2026-10-12 measurement (fix/wc-clock-verdicts)
+
+What [2026-10-12_wsl_clock_fight.md](2026-10-12_wsl_clock_fight.md) § 8 found, each red first against the unfixed code:
+
+- **`journal.history` from the reading's instant** (`ThresholdRulesTests`): the 08:03:54Z reading with the previous run at
+  10-11 22:10Z and the oldest entry at 10-10 07:48Z reads "2.0 days" — red: *Expected … to start with "2.0 days" … but
+  "1.6 days (oldest entry 2026-10-10 07:48Z)" differs near "1.6"*; a sample without `JournalReadAt` is `unknown` (red: the
+  old code printed a value); the collector stamps `JournalReadAt` from its clock (`HealthTests`, red: *… <0001-01-01> does
+  not*).
+- **`clock.jumps` and Docker Desktop's floor** (`ThresholdRulesTests`, 6 edges + 3): 100/0 ok, 480/3 ok, 600/10 ok, 480/11
+  warn, 601/0 warn, 638/95 warn; above the limit with the rotations unread still warns; the reasons name Docker
+  Desktop's `/initd` and `clock.fight`, the limit both settings; `thresholds.clockJumpsStepperFloorPer4h` 400 moves the edge.
+  Red: 480/3 and 600/10 *found Level.Warn*; *"warn > 100 per 4 h" to contain "400"*. The key's shape
+  (`NumbersAreConfigurationTests`, red: *found <null>*), `contracts/config-keys.json` and the seven status goldens
+  (regenerated in WSL from a `/tmp` copy, `WSL_CARE_WRITE_GOLDENS=1`: `clock.jumps`' limit and reason, `journal.history`'s
+  reason).
+- **`clock.fight` names the three writers** (`ClockGuardTests`): Docker Desktop's `/initd` every 30 s, WSL's own chronyd,
+  timesyncd, journald rotating, `clock.reference` — red: the old "two time-keepers disagree" sentence.
+- **End to end** (`Scenarios/ClockStepperFlows`, 2, the built CLI on Linux): over the journal answers CAPTURED on 2026-10-12
+  15:27Z with Docker Desktop running (`fixtures/health/clock-stepper-2026-10-12`: 476 clock changes in 4 h, 2 backward
+  jumps) `clock.jumps` is ok as a periodic stepper and `clock.fight` ok "2 in 4 h"; the same clock changes beside the 28
+  backward jumps captured 2026-10-08 warn on both. Red in WSL against the base product: *clock.jumps … to match (Level ==
+  Ok) … "periodic stepper"*, *clock.fight … to contain "Docker Desktop's /initd"*. On Windows only the ids are checked
+  (the distro's health is the distro's to read).
+
 ### What the extension's tests do not prove
 
 - **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of
@@ -4072,6 +4097,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care preview --all [--json]` as text, and `preview` without `--all` refused with exit 2 and one `wsl-care:` message | covered | `PreviewFlows.Preview_without_json_prints_the_rows_and_preview_without_all_is_refused`; also `CommandLineTests` |
 | `wsl-care collect [--timer or --detach] [--json]` over the captured Docker AND health answers (and, on Linux, the procfs tree): exit 0, `recording: recorded`, ONE history line naming the detail file that exists, the A4 row of the captured Docker, the clock-jump count of the capture (875, Linux), the `wslconfig.memory` verdict naming `memory=36GB`; every fake call a read command — then `status --json` returns `docker stats` (and on Linux the Windows clock, launch latency subtracted) from THAT run with its age | covered | `CollectFlows.Collect_records_detail_then_history_and_status_shows_its_slow_parts_with_their_age`; write order in-process: `CollectRunTests.The_detail_is_written_first_then_the_history_line_that_names_it`; `FullRunCommandTests.Collect_json_records_the_run_and_status_then_reads_its_slow_parts_back_with_their_age` |
 | `wsl-care collect [--timer or --detach] [--json]` with the state directory unwritable (`AccessDenial`; on Linux the system log directory too): exit 0, `recording: readOnly`, the `wsl-care: read-only: run as root to record` message, no history line, no `runs/`, no first sighting — and on Linux the run log under `$XDG_STATE_HOME/wsl-care/logs` | covered | `CollectFlows.An_unwritable_state_directory_makes_collect_measure_print_and_record_nothing`; in-process: `CollectRunTests.An_unprivileged_run_measures_and_reports_but_writes_nothing_and_says_read_only`, `FullRunCommandTests.An_unprivileged_collect_…`, `FullRunCommandTests.A_run_that_may_not_write_the_system_log_directory_logs_to_the_users_own` |
+| `wsl-care collect [--timer or --detach] [--json]` over the journal answers captured 2026-10-12 with Docker Desktop's 30-s steps: `clock.jumps` ok as a periodic stepper while `clock.fight` counts no journal damage; with the 2026-10-08 backward jumps both warn, `clock.fight` naming Docker Desktop's `/initd` (Linux; ids only on Windows) | covered | `ClockStepperFlows.Docker_desktop_s_30_second_steps_without_journal_damage_do_not_warn`, `ClockStepperFlows.The_same_steps_while_journald_rotates_its_file_warn_on_both_verdicts`; in-process: `ThresholdRulesTests.Clock_jumps_*`, `ThresholdRulesTests.Journal_history_*`, `ClockGuardTests.The_fight_names_the_three_measured_writers_of_the_shared_clock` |
 | Under an INHERITED `INVOCATION_ID` (every scenario sets one, as every descendant of a systemd unit carries it — a CI runner job, a VS Code Server user service): `collect` without `--timer` is a `cli` run with no timer pass, and an `act` is `cli` / `manual`, never `timer` — only `--timer`, which the timer unit passes in its `ExecStart`, makes the run the timer's | covered | `LogsFlows.A_collect_under_an_inherited_INVOCATION_ID_without_timer_is_a_cli_run_and_acts_on_nothing` — red first: `…TimerPass to be <null> … but found …TimerPass`; the four `ActCommandTests` that failed on the GitHub runners (CI run 37129452377: `Trigger … Manual … but found Timer`, `DryRun … False … but found True`) pass with `INVOCATION_ID` set; the timer's own run: `LogsFlows.The_timers_full_run_…` with `collect --timer` |
 | `wsl-care collect [--timer or --detach] [--json]` when a record cannot be written (exit 1, `recording: failed`, the reason) and while another run holds `run.lock` (exit 75, nothing measured) | covered (in-process) | `FullRunCommandTests.A_collect_whose_history_line_cannot_be_written_…`, `FullRunCommandTests.A_collect_while_another_holds_the_run_lock_…`, `CollectRunTests`; not staged against the built binary: a failing disk cannot be made to fail on cue there |
 | `wsl-care collect [--timer or --detach] [--json]` reads the Windows disk facts (E15.S1): the fake PowerShell answers the second fixed script with the capture of 2026-10-10; the detail's `health.windowsDisk` carries the three distros' disks, Docker's data disk, four volumes with their disk numbers, the refused reliability counters, 63 events (all disk 11 on Harddisk1), commit, the machine id and the adapters' codes 0 and 22, and is written to the detail file; the script ran once, after the clock probe; every call a read command; the following `status` starts no PowerShell; on the Windows binary no script runs and the detail names the distro as the reader | covered (the facts on the Linux legs; the Windows binary's refusal on win-x64) | `WindowsDiskFlows.Collect_reads_the_windows_disk_facts_through_the_second_fixed_script_and_the_detail_records_them` |

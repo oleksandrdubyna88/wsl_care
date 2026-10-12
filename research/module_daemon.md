@@ -235,11 +235,19 @@ flowchart TB
 - **The fix is the extension's** (*Start Windows Time*, [module_vs_code.md](module_vs_code.md)); the SYSTEM scheduled task
   that would restart the service by itself is the plan's story 2, not built.
 - **Who else sets the clock** (measured 2026-10-12, [2026-10-12_wsl_clock_fight.md](2026-10-12_wsl_clock_fight.md)): the
-  verdicts' "Hyper-V's time sync vs timesyncd" is incomplete. All distros share one kernel clock, and on the owner's
+  verdicts used to say "Hyper-V's time sync vs timesyncd". All distros share one kernel clock, and on the owner's
   machine it has three writers besides Hyper-V's TimeSync driver: WSL's own VM-level `chronyd` (the host's PTP clock,
   every 8 s), Ubuntu's `systemd-timesyncd` (NTP), and Docker Desktop's `/initd`, which steps it every 30 s while Docker
   Desktop runs — every clock change counted in the window both logs cover was one of its steps. That record names the
-  journal's loss mechanism (`SystemMaxFiles` 100) and the ranked fixes; the verdict texts are unchanged.
+  journal's loss mechanism (`SystemMaxFiles` 100) and the ranked fixes. Since then (fix/wc-clock-verdicts):
+  - `clock.fight`'s warning names the three writers and says journald rotated its file at each backward jump.
+  - `clock.jumps` warns above `thresholds.clockJumpsWarnPer4h` (100 per 4 h) EXCEPT up to
+    `thresholds.clockJumpsStepperFloorPer4h` (600: Docker's measured 480 per 4 h + 25 %) while `clock.fight`'s backward-jump
+    count (`HealthSample.TimeJumpsBack`) stays within `thresholds.timeJumpsBackWarnPer4h` — the journal's damage is judged
+    by its rotations, not by the count of steps; an unread rotation count applies no floor.
+  - `journal.history` counts its days from `HealthSample.JournalReadAt` (the injected clock right after `journalctl
+    --list-boots` answered), no longer from `HealthSample.Since` (the previous run's start); a sample without that instant
+    is `unknown`.
 
 ## Failed units that are not failures (2026-10-12)
 

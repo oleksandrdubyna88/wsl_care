@@ -60,6 +60,10 @@ public sealed record HealthSample(
     /// <summary>journald's "Time jumped backwards" in the last 4 h of this boot, counted on the monotonic clock (D4).</summary>
     public Reading<int> TimeJumpsBack { get; init; } = Reading.Missing<int>("not read");
 
+    /// <summary>The instant <see cref="JournalOldestEntry"/> was read (UTC, the injected clock right after <c>journalctl
+    /// --list-boots</c> answered) — what <c>journal.history</c> counts its days from; the default when it was not recorded.</summary>
+    public DateTimeOffset JournalReadAt { get; init; }
+
     /// <summary>The Windows disk facts the second fixed interop script read (E15.S1) — the full run's only; no verdict judges
     /// them yet, the run detail records them.</summary>
     public WindowsDiskSample WindowsDisk { get; init; } = WindowsDiskSample.Unavailable(DateTimeOffset.UnixEpoch, "not read");

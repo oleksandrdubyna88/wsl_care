@@ -255,7 +255,7 @@
       "id": "clock.jumps",
       "level": "unknown",
       "value": "",
-      "limit": "warn > 100 per 4 h",
+      "limit": "warn > 100 per 4 h (thresholds.clockJumpsWarnPer4h), except up to 600 per 4 h (thresholds.clockJumpsStepperFloorPer4h) while clock.fight counts at most 10 backward jumps",
       "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
       "basis": {
         "source": "fullRun"

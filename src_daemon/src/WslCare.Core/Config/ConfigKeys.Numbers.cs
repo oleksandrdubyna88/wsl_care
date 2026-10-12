@@ -47,6 +47,7 @@ public static partial class ConfigKeys
         Journal.MaxGb,
         Thresholds.JournalHistoryWarnDays,
         Thresholds.ClockJumpsWarnPer4h,
+        Thresholds.ClockJumpsStepperFloorPer4h,
         Thresholds.TimeJumpsBackWarnPer4h,
         Thresholds.CollectorFreshMinutes,
         WslConfig.RecommendedMemoryGb,

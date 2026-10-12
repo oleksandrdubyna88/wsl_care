@@ -311,10 +311,18 @@ public sealed class ClockGuardTests
     [Fact]
     public void The_fight_warns_above_its_threshold_in_four_hours()
     {
-        ClockVerdicts.Fight(Reading.Of(11)).Should().Match<Verdict>(v => v.Level == Level.Warn && v.Reason.Contains("two time-keepers disagree"));
+        ClockVerdicts.Fight(Reading.Of(11)).Should().Match<Verdict>(v => v.Level == Level.Warn && v.Reason.Contains("journald rotated"));
         ClockVerdicts.Fight(Reading.Of(10)).Level.Should().Be(Level.Ok);
         ClockVerdicts.Fight(Reading.Missing<int>("journal unread")).Level.Should().Be(Level.Unknown);
     }
+
+    /// <summary>research/2026-10-12_wsl_clock_fight.md: the one clock every WSL distro shares has three writers, measured.</summary>
+    [Fact]
+    public void The_fight_names_the_three_measured_writers_of_the_shared_clock() =>
+        ClockVerdicts.Fight(Reading.Of(95)).Reason.Should()
+            .Contain("Docker Desktop's /initd").And.Contain("every 30 s")
+            .And.Contain("WSL's own chronyd").And.Contain("timesyncd")
+            .And.Contain("journald rotated its file").And.Contain("clock.reference");
 
     // ---- D5: doctor ----
 

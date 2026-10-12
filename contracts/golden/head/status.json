@@ -2104,7 +2104,7 @@
       "level": "warn",
       "value": "0.8 days (oldest entry 2026-10-01 22:10Z)",
       "limit": "warn when the oldest entry is less than 7 days old",
-      "reason": "how far back the journal reaches (clock jumps erase it, plan finding 4)",
+      "reason": "how far back the journal reaches: journald rotates its file at every backward clock jump past its last entry and keeps at most SystemMaxFiles (100 by default) files, so the jumps erase it by file count (clock.fight counts them)",
       "basis": {
         "source": "fullRun",
         "runId": "20000101T000000Z-1",
@@ -2116,8 +2116,8 @@
       "id": "clock.jumps",
       "level": "warn",
       "value": "875 in 4.0 h (875 per 4 h)",
-      "limit": "warn > 100 per 4 h",
-      "reason": "systemd-resolved's \"Clock change detected\" since the last run",
+      "limit": "warn > 100 per 4 h (thresholds.clockJumpsWarnPer4h), except up to 600 per 4 h (thresholds.clockJumpsStepperFloorPer4h) while clock.fight counts at most 10 backward jumps",
+      "reason": "above the ordinary limit, and the journal's backward jumps were not read (clock.fight says why), so no floor applies: Docker Desktop's /initd steps the clock all WSL distros share every 30 s while it runs (≈ 480 per 4 h); WSL's own chronyd and timesyncd adjust it between steps; clock.fight judges the journal's damage",
       "basis": {
         "source": "fullRun",
         "runId": "20000101T000000Z-1",

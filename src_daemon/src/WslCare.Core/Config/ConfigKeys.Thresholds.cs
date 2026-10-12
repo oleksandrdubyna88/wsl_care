@@ -54,6 +54,11 @@ public static partial class ConfigKeys
         /// <summary>Clock jumps warn above this many in 4 hours. Default 100.</summary>
         public static readonly ConfigKey.IntKey ClockJumpsWarnPer4h = new("thresholds.clockJumpsWarnPer4h", 0, 1000000) { Trust = KeyTrust.Display };
 
+        /// <summary>Clock jumps up to this many in 4 hours are the rate of a periodic stepper, not a warning by themselves, while
+        /// journald counts no more backward jumps than <see cref="TimeJumpsBackWarnPer4h"/> (no journal damage): Docker Desktop's
+        /// <c>/initd</c> steps the clock every 30 s, 480 per 4 h (research/2026-10-12_wsl_clock_fight.md). Default 600 (480 + 25 %).</summary>
+        public static readonly ConfigKey.IntKey ClockJumpsStepperFloorPer4h = new("thresholds.clockJumpsStepperFloorPer4h", 0, 1000000) { Trust = KeyTrust.Display };
+
         /// <summary>journald's "Time jumped backwards" warn above this many in the last 4 hours of this boot (the clock fight,
         /// PLAN_windows_time_guard.md D4; ≈ 436 per 4 h in the incident of 2026-10-08, none on a quiet day). Default 10.</summary>
         public static readonly ConfigKey.IntKey TimeJumpsBackWarnPer4h = new("thresholds.timeJumpsBackWarnPer4h", 0, 1000000) { Trust = KeyTrust.Display };

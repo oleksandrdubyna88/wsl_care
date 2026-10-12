@@ -1407,6 +1407,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "thresholds.clockJumpsStepperFloorPer4h",
+      "shape": "int",
+      "min": 0,
+      "max": 1000000,
+      "default": 600,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "thresholds.timeJumpsBackWarnPer4h",
       "shape": "int",
       "min": 0,
