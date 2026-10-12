@@ -33,7 +33,10 @@ public static class StatusVerdicts
     /// Windows profile the clock probe prints, a slow process <c>status</c> never starts (plan §15b #5).</summary>
     public const string WslConfigReadByFullRun = "status does not read it; the full run (collect) does";
 
-    public static IReadOnlyList<Verdict> From(ProbeSample sample, Reading<RecordedVerdicts> fullRun, EffectiveConfig config, DateTimeOffset now)
+    public static IReadOnlyList<Verdict> From(ProbeSample sample, Reading<RecordedVerdicts> fullRun, EffectiveConfig config, DateTimeOffset now) =>
+        From(sample, fullRun, config, now, Reading.Missing<WslConfigAudit>(WslConfigReadByFullRun));
+
+    public static IReadOnlyList<Verdict> From(ProbeSample sample, Reading<RecordedVerdicts> fullRun, EffectiveConfig config, DateTimeOffset now, Reading<WslConfigAudit> hostWslConfig)
     {
         var basis = new VerdictBasis(VerdictSource.Sample, null, sample.SampledAt, 0);
         var fromSample = ThresholdRules.FromSample(
@@ -41,8 +44,24 @@ public static class StatusVerdicts
             sample.Vm.Bind(vm => vm.RootVolume),
             Reading.Missing<WslConfigAudit>(WslConfigReadByFullRun),
             config);
-        return [.. fromSample.Select(v => v with { Basis = basis }), .. ThresholdRules.UnreadFullRun(config).Select(unread => Carried(unread, fullRun, now))];
+        var carried = ThresholdRules.UnreadFullRun(config).Select(unread => Carried(unread, fullRun, now)).ToList();
+        var sampledHost = SampledHost(sample.Host, hostWslConfig, config).Select(v => v with { Basis = basis }).ToList();
+        return [.. fromSample.Select(v => v with { Basis = basis }), .. Replaced(carried, sampledHost)];
     }
+
+    /// <summary>E15.S5: the Windows binary judges its OWN host sample by the full run's rule (<see cref="HostRules"/>); the distro's
+    /// binary has no host sample and judges nothing here, so it keeps the carried verdicts.</summary>
+    private static IReadOnlyList<Verdict> SampledHost(Reading<HostSample> host, Reading<WslConfigAudit> wslConfig, EffectiveConfig config) => host switch
+    {
+        Reading<HostSample>.Available { Value: var h } => HostRules.Verdicts(HostMemoryFacts.FromProbe(h, wslConfig), config),
+        _ => [],
+    };
+
+    /// <summary>E15.S5: a SAMPLED verdict replaces the carried full-run verdict of the same id, in that verdict's place — the newer,
+    /// direct reading wins, the order stays the full run's, and no id is listed twice. A sampled id the full run does not judge is
+    /// added after them.</summary>
+    public static IReadOnlyList<Verdict> Replaced(IReadOnlyList<Verdict> carried, IReadOnlyList<Verdict> sampled) =>
+        [.. carried.Select(c => sampled.FirstOrDefault(s => s.Id == c.Id) ?? c), .. sampled.Where(s => carried.All(c => c.Id != s.Id))];
 
     /// <summary>Verdicts evaluated over THIS answer's own sample (the MCP servers', plan §15q E7.S2d), with the sample's basis.</summary>
     public static IReadOnlyList<Verdict> Sampled(IReadOnlyList<Verdict> verdicts, DateTimeOffset sampledAt) =>

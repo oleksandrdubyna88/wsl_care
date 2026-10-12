@@ -20,13 +20,18 @@ public static class VmmemAdvice
 
     /// <summary>The advice; empty when <c>vmmemWSL</c> was not read or holds no more than <paramref name="adviceGb"/> GiB.</summary>
     public static string For(Reading<long> vmmem, Reading<HostMemory> host, Reading<WslConfigAudit> wslConfig, int adviceGb) =>
+        For(vmmem, host.Map(h => h.TotalBytes), wslConfig, adviceGb);
+
+    /// <summary>The same advice over the host's RAM alone — what E15.S5's <c>host.vmmem</c> verdict gives as its reason, so the
+    /// advice and the verdict cannot disagree.</summary>
+    public static string For(Reading<long> vmmem, Reading<long> hostTotalBytes, Reading<WslConfigAudit> wslConfig, int adviceGb) =>
         vmmem is Reading<long>.Available { Value: var bytes } && bytes > adviceGb * BytesPerGibibyte
-            ? Holds(bytes, host) + ReclaimAdvice(wslConfig) + Shutdown
+            ? Holds(bytes, hostTotalBytes) + ReclaimAdvice(wslConfig) + Shutdown
             : string.Empty;
 
-    private static string Holds(long bytes, Reading<HostMemory> host) => host switch
+    private static string Holds(long bytes, Reading<long> hostTotalBytes) => hostTotalBytes switch
     {
-        Reading<HostMemory>.Available { Value: var h } => Invariant($"vmmemWSL holds {bytes / BytesPerGibibyte:0.0} GiB of the host's {h.TotalBytes / BytesPerGibibyte:0.0} GiB."),
+        Reading<long>.Available { Value: var total } => Invariant($"vmmemWSL holds {bytes / BytesPerGibibyte:0.0} GiB of the host's {total / BytesPerGibibyte:0.0} GiB."),
         _ => Invariant($"vmmemWSL holds {bytes / BytesPerGibibyte:0.0} GiB."),
     };
 

@@ -92,7 +92,10 @@
     "clockJumpsStepperFloorPer4h": 600,
     "timeJumpsBackWarnPer4h": 10,
     "collectorFreshMinutes": 30,
-    "wslMemoryCriticalPercent": 90
+    "wslMemoryCriticalPercent": 90,
+    "hostCommitWarnPercent": 80,
+    "hostCommitCriticalPercent": 90,
+    "hostCompressionWarnGb": 8
   },
   "aiAgents": {
     "warnGb": 5,

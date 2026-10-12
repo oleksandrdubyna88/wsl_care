@@ -147,6 +147,7 @@ public static class ThresholdRules
         Collector("collectors.atop", inputs.Health.Atop, inputs.Health.Since),
         Discard(inputs.Health),
         .. DiskRules.Evaluate(inputs.Disk, config),
+        .. HostRules.Verdicts(HostMemoryFacts.FromWindowsDisk(inputs.Health.WindowsDisk, inputs.Health.WslConfig), config),
         DockerVolumes(inputs.Rows, config),
         Above("docker.A6Unused", RowBytes(inputs.Rows, "A6Unused"), config.Int(ConfigKeys.Images.UnusedMaxGb) * Gb, Gb, "GB", "unused tagged images reclaimable (images.unusedMaxGb)"),
         Above("docker.buildCache", inputs.BuildCacheBytes, config.Int(ConfigKeys.BuildCache.MaxGb) * Gb, Gb, "GB", "build cache (buildCache.maxGb, A7's cap)"),

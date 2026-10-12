@@ -1498,6 +1498,45 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "thresholds.hostCommitWarnPercent",
+      "shape": "int",
+      "min": 50,
+      "max": 99,
+      "default": 80,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "thresholds.hostCommitCriticalPercent",
+      "shape": "int",
+      "min": 51,
+      "max": 100,
+      "default": 90,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "thresholds.hostCompressionWarnGb",
+      "shape": "int",
+      "min": 1,
+      "max": 256,
+      "default": 8,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "processes.topCount",
       "shape": "int",
       "min": 0,

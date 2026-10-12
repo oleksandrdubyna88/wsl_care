@@ -41,7 +41,7 @@ public sealed class WindowsMcpStatusTests
         using var root = new TempRoot("windows-mcp-text");
         var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
         var clock = new FixedTimeProvider(Now);
-        var host = new HostSample(Reading.Of(new HostMemory(92 * Gib, 40 * Gib)), Reading.Missing<VolumeUsage>("not measured"), Reading.Of(34 * Gib));
+        var host = new HostSample(Reading.Of(new HostMemory(92 * Gib, 40 * Gib)), Reading.Missing<VolumeUsage>("not measured"), Reading.Of(34 * Gib), Reading.Missing<HostCommit>("not read"), Reading.Missing<long>("not read"));
         var cli = new CliHost(paths, new Core.Files.PhysicalFileSystem(paths), clock, new RecordingCommandRunner())
         {
             Probe = new FakeProbe(HostSide.Windows, clock) { Host = Reading.Of(host) },
@@ -146,5 +146,40 @@ public sealed class WindowsMcpStatusTests
         baseline.Recorded.Should().BeFalse();
         baseline.Reason.Should().Contain("ledger lock");
         File.Exists(place.File).Should().BeFalse("a status that does not hold the lock writes nothing");
+    }
+
+    /// <summary>E15.S5 through the CLI: the Windows binary judges its OWN host sample — <c>host.commit</c> once, with
+    /// <c>basis: sample</c> — and <c>host.vmmem</c>'s reason is the very advice the answer shows as <c>host.vmmemAdvice</c>.</summary>
+    [Fact]
+    public void The_windows_status_judges_its_own_host_sample_and_the_vmmem_verdict_says_the_advice()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "a CliHost over a Windows layout is built on Windows only");
+        using var root = new TempRoot("windows-host-verdicts");
+        var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
+        var clock = new FixedTimeProvider(Now);
+        var host = new HostSample(
+            Reading.Of(new HostMemory(92 * Gib, 40 * Gib)),
+            Reading.Missing<VolumeUsage>("not measured"),
+            Reading.Of(34 * Gib),
+            Reading.Of(new HostCommit(86 * Gib, 100 * Gib)),
+            Reading.Of(6 * Gib));
+        var cli = new CliHost(paths, new Core.Files.PhysicalFileSystem(paths), clock, new RecordingCommandRunner())
+        {
+            Probe = new FakeProbe(HostSide.Windows, clock) { Host = Reading.Of(host) },
+            WindowsProcesses = new ScriptedTable(),
+            Wait = (_, _) => Task.CompletedTask,
+        };
+
+        var (exit, stdout, stderr) = CliRun.Over(cli, "status", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var report = System.Text.Json.JsonSerializer.Deserialize(stdout, Core.Json.WslCareJsonContext.Default.StatusReport)!;
+        var verdicts = report.Verdicts!;
+        verdicts.Where(v => v.Id == "host.commit").Should().ContainSingle()
+            .Which.Should().Match<Core.Thresholds.Verdict>(v => v.Level == Core.Thresholds.Level.Warn && v.Basis!.Source == Core.Thresholds.VerdictSource.Sample);
+        verdicts.Single(v => v.Id == "host.compression").Level.Should().Be(Core.Thresholds.Level.Ok);
+        var vmmem = verdicts.Single(v => v.Id == "host.vmmem");
+        vmmem.Level.Should().Be(Core.Thresholds.Level.Warn);
+        vmmem.Reason.Should().Be(report.Host.VmmemAdvice).And.StartWith("vmmemWSL holds 34.0 GiB");
     }
 }

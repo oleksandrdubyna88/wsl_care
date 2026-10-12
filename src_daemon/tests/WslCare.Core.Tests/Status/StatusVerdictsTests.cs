@@ -70,6 +70,20 @@ public sealed class StatusVerdictsTests : IDisposable
 
     private static Verdict Find(IReadOnlyList<Verdict> verdicts, string id) => verdicts.Single(v => v.Id == id);
 
+    /// <summary>The Windows binary's sample (E15.S5): no VM, and the host read by its own counters.</summary>
+    private static ProbeSample WindowsSample(long chargeGib, long compressionGib = 2) =>
+        new(
+            HostSide.Windows,
+            Now,
+            TimeSpan.FromMilliseconds(40),
+            Reading.Missing<VmSample>(WindowsProbe.VmIsTheOtherBinary),
+            Reading.Of(new HostSample(
+                Reading.Of(new HostMemory(92 * Gib, 40 * Gib)),
+                Reading.Missing<VolumeUsage>("not measured"),
+                Reading.Of(10 * Gib),
+                Reading.Of(new HostCommit(chargeGib * Gib, 100 * Gib)),
+                Reading.Of(compressionGib * Gib))));
+
     private static readonly Reading<RecordedVerdicts> NoFullRun = Reading.Missing<RecordedVerdicts>(LastFullRun.NoFullRunYet);
 
     [Fact]
@@ -185,5 +199,41 @@ public sealed class StatusVerdictsTests : IDisposable
         npm.Level.Should().Be(Level.Unknown);
         npm.Reason.Should().Contain(runId.Text).And.Contain("npm.cache");
         npm.Basis.Should().Be(new VerdictBasis(VerdictSource.FullRun, runId.Text, Now.AddHours(-1), 3600));
+    }
+
+    /// <summary>E15.S5: on the Windows binary a SAMPLED host verdict replaces the carried full-run verdict of the same id — the
+    /// newer, direct reading wins, in the carried one's place — so a status never lists an id twice.</summary>
+    [Fact]
+    public void The_windows_status_lists_host_commit_once_from_its_own_sample_even_when_a_full_run_carries_one()
+    {
+        var runId = RunId.New(Now.AddHours(-2), 99);
+        var carried = new Verdict("host.commit", Level.Ok, "60.0 of 100.0 GiB = 60.0 %", "warn > 80 %", "recorded two hours ago");
+        var recorded = Reading.Of(new RecordedVerdicts(runId, Now.AddHours(-2), [carried]));
+        var config = Config();
+
+        var verdicts = StatusVerdicts.From(WindowsSample(chargeGib: 86), recorded, config, Now);
+
+        verdicts.Where(v => v.Id == "host.commit").Should().ContainSingle()
+            .Which.Should().Match<Verdict>(v => v.Level == Level.Warn && v.Value == "86.0 of 100.0 GiB = 86.0 %" && v.Basis == new VerdictBasis(VerdictSource.Sample, null, Now, 0));
+        verdicts.Select(v => v.Id).Should().OnlyHaveUniqueItems();
+        verdicts.Select(v => v.Id).Should().Equal(StatusVerdicts.From(Sample(Memory(60)), NoFullRun, config, Now).Select(v => v.Id), "the replacement keeps the full run's order");
+        Find(verdicts, "host.compression").Basis!.Source.Should().Be(VerdictSource.Sample);
+    }
+
+    /// <summary>E15.S5: the distro's binary has no host sample, so it carries the full run's host verdicts with their run and age.</summary>
+    [Fact]
+    public void The_distro_status_carries_the_full_run_host_verdicts()
+    {
+        var runId = RunId.New(Now.AddHours(-1), 5);
+        var commit = new Verdict("host.commit", Level.Ok, "103.4 of 145.6 GiB = 71.0 %", "warn > 80 %, critical > 90 %", "Windows' commit charge");
+        var compression = new Verdict("host.compression", Level.Warn, "9.86 GiB", "warn > 8 GiB", "Memory Compression");
+        var recorded = Reading.Of(new RecordedVerdicts(runId, Now.AddHours(-1), [commit, compression]));
+
+        var verdicts = StatusVerdicts.From(Sample(Memory(60)), recorded, Config(), Now);
+
+        var basis = new VerdictBasis(VerdictSource.FullRun, runId.Text, Now.AddHours(-1), 3600);
+        Find(verdicts, "host.commit").Should().Be(commit with { Basis = basis });
+        Find(verdicts, "host.compression").Should().Be(compression with { Basis = basis });
+        Find(verdicts, "host.vmmem").Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Basis!.Source == VerdictSource.FullRun);
     }
 }
