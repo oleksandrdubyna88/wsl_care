@@ -1,12 +1,27 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>systemd.*</c> number keys (E7.S2c), in their own file: one file per key group, split from
-/// <c>ConfigKeys.Numbers.cs</c> (the doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other
-/// number key.</summary>
+/// <summary>The <c>systemd.*</c> keys: the number keys (E7.S2c), which join <c>NumberKeys()</c> like every other number key, and
+/// the failed units the verdict does not count (2026-10-12). One file per key group, split from <c>ConfigKeys.Numbers.cs</c> (the
+/// doctrine caps a file at 800 lines).</summary>
 public static partial class ConfigKeys
 {
     public static class Systemd
     {
+        /// <summary>At most this many units in <see cref="IgnoredFailedUnits"/> — a schema limit, part of the contract other tools write
+        /// against (<c>contracts/config-keys.json</c>).</summary>
+        public const int MaxIgnoredFailedUnits = 32;
+
+        /// <summary>The failed units <c>systemd.failedUnits</c> does NOT count — each a systemd unit name (letters, digits and
+        /// <c>@ : _ . - \</c>, then a unit type), never a pattern. Default <c>getty@tty1.service</c>: WSL has no tty1, so that unit hits
+        /// its start limit on every boot (the first live full run, 2026-10-12). The verdict's reason still names an ignored unit. A
+        /// user key: it only quiets a warning, it changes no action.</summary>
+        public static readonly ConfigKey.TextListKey IgnoredFailedUnits = new(
+            "systemd.ignoredFailedUnits",
+            [],
+            new TextRule.SystemdUnitName(),
+            MaxIgnoredFailedUnits)
+        { Trust = KeyTrust.Display };
+
         /// <summary>systemctl / journalctl / timedatectl reads. Default 15.</summary>
         public static readonly ConfigKey.IntKey TimeoutSeconds = new("systemd.timeoutSeconds", 1, 15) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 

@@ -250,6 +250,9 @@
     "maxDaemonJsonBytes": 1048576
   },
   "systemd": {
+    "ignoredFailedUnits": [
+      "getty@tty1.service"
+    ],
     "timeoutSeconds": 15,
     "searchTimeoutSeconds": 30,
     "outputCapBytes": 1048576,

@@ -2179,10 +2179,10 @@
     },
     {
       "id": "systemd.failedUnits",
-      "level": "warn",
-      "value": "1",
-      "limit": "warn at 1 or more",
-      "reason": "failed units",
+      "level": "ok",
+      "value": "0",
+      "limit": "warn at 1 or more failed units not in systemd.ignoredFailedUnits",
+      "reason": "no failed unit that counts; ignored (systemd.ignoredFailedUnits): getty@tty1.service",
       "basis": {
         "source": "fullRun",
         "runId": "20000101T000000Z-1",

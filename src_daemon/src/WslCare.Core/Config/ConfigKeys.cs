@@ -143,6 +143,7 @@ public static partial class ConfigKeys
         Thresholds.MemAvailableWarnPercent, Thresholds.MemAvailableActPercent, Thresholds.SwapWarnGb,
         AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
         McpServers.Watched, McpServers.Programs,
+        Systemd.IgnoredFailedUnits,
         Archive.OlderThanDays, Archive.WindowsIdleDays, Archive.ClockSkewMinutes, Archive.BaseFolder, Archive.Agents,
         Idle.CpuPercent, Idle.Minutes,
         Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,

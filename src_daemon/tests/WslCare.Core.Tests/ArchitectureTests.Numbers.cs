@@ -61,6 +61,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Agents/AgentWalk.cs: Take(5)"] = "the wire shape: a report's 'largest' list holds five sessions (contracts/agents.schema.json)",
         ["WslCare.Core/Agents/AgentsReport.cs: Mb"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Agents/AgentsReport.cs: Gb"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
+        ["WslCare.Core/Config/ConfigKeys.Systemd.cs: MaxIgnoredFailedUnits"] = "the ignored-failed-units schema limit, part of the contract other tools write against (contracts/config-keys.json)",
         ["WslCare.Core/Agents/ExtraAgent.cs: MaxEntries"] = "the extra-agent schema limit, part of the contract other tools write against (contracts/config-keys.json)",
         ["WslCare.Core/Agents/ExtraAgent.cs: MaxFolders"] = "the extra-agent schema limit, part of the contract other tools write against (contracts/config-keys.json)",
         ["WslCare.Core/Agents/ExtraAgent.cs: MaxPathLength"] = "the extra-agent schema limit, part of the contract other tools write against (contracts/config-keys.json)",

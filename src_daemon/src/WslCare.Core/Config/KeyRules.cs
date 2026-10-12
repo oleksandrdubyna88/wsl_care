@@ -99,6 +99,18 @@ public abstract record TextRule
 
         public override string Outdated(string value) => Mcp.McpUserPrograms.Outdated(value);
     }
+
+    /// <summary>A systemd unit name (<c>systemd.ignoredFailedUnits</c>, 2026-10-12): letters, digits and <c>@ : _ . - \</c>, then one of
+    /// systemd's unit types — a NAME compared ordinally, never a pattern (no <c>*</c>), so it can only quiet the unit it names.</summary>
+    public sealed record SystemdUnitName : TextRule
+    {
+        private static readonly Matching Shape =
+            new(@"^[A-Za-z0-9@:_.\\-]{1,240}\.(service|socket|target|mount|automount|swap|timer|path|slice|scope|device)$", "a systemd unit name such as getty@tty1.service");
+
+        public override string Describe => Shape.Describe;
+
+        public override string Problem(string value) => Shape.Problem(value);
+    }
 }
 
 /// <summary>Which direction of change of a key is the SAFE one for a root run (plan §15q R1.2): the value a user layer may
