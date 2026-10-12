@@ -3,8 +3,8 @@
 > Status: **plan only, 2026-10-09 (aligned with the coai and CredsForDevs plans 2026-10-10, § 8), nothing implemented yet.** Scope: `.github/workflows/release-extension.yml`'s
 > `publish-marketplace` job, `docs/repo-settings.md` step 9, `POST_DEPLOY.md` item 12, the release workflow tests.
 >
-> Related docs: [docs/repo-settings.md](../docs/repo-settings.md) step 9, [architecture.md](../research/architecture.md)
-> § *The extension: Install daemon, packaging and its release*.
+> Related docs: [docs/repo-settings.md](../docs/repo-settings.md) step 9, [module_vs_code.md](../research/module_vs_code.md)
+> § *The extension: Install daemon, packaging and its release* (moved there from `architecture.md` on 2026-10-12).
 
 ## 1. Symptom and goal
 

@@ -4,7 +4,7 @@
 > concerns). These three sections were moved here unchanged on 2026-10-06 because `architecture.md` had outgrown the
 > 256 KiB the conventions resolver (`.agents/conventions/tools/rules.mjs`) accepts for a required source;
 > `.agents/PROJECT.md` requires each of the split files; the daemon's half of E6 is [architecture-daemon-e6.md](architecture-daemon-e6.md). The extension's E5 sections (client, status bar and panel, *Install daemon*
-> and its release) are still in [architecture.md](architecture.md). Since 2026-10-10 the Archive page of E10.S2a is here too, beside the
+> and its release) are in [module_vs_code.md](module_vs_code.md) § *Story history* since 2026-10-12; the panel's field map stays in [architecture.md](architecture.md). Since 2026-10-10 the Archive page of E10.S2a is here too, beside the
 > Logs page whose shape it copies.
 
 ## The extension: the root boundary (E6.S2)
