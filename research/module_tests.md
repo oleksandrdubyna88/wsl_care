@@ -3090,6 +3090,7 @@ refusal test); the principal's SID dropped from the summary; the watch repeating
 | a worker the verify does not find in its job is ended (through the job, then by its own handle, still suspended) and the run refused — never a resume outside the job | `…A_worker_not_in_its_job_is_ended_and_never_resumed` |
 | the real worker is inside its job from its suspended start — `IsProcessInJob` (the test's own read) says so BEFORE any resume, and the product's verify agrees (the coai code round, finding 1: no window outside the job) | `Win32JobControlTests.A_worker_is_inside_its_job_from_its_suspended_start` |
 | the deadline's duration and its key come from ONE entry of the closed table; the start line names the argv, the deadline and that key; ONE terminal line per run (exited N, the deadline, refused, stopped) | `TaskWorkersTests.The_watch_worker_is_…` (`launch.DeadlineKey`), `Cli.Tests/TasksRunCommandTests.The_worker_is_this_binary_s_own_watch_timer_and_its_code_is_the_exit` (the two lines exactly), `…A_worker_past_its_deadline_exits_84_…`, `…A_refused_supervisor_exits_1_…` |
+| a launch owns its arguments: changing the caller's list after construction changes nothing (the second coai code round, finding 2) | `Core.Tests/Processes/WorkerLaunchTests.Changing_the_source_list_after_construction_does_not_change_the_arguments` |
 | the deadline is counted on the UNBIASED clock: a wait that timed out while the host slept waits again for what is left; awake time past the deadline ends the whole job with `0xC5A1`; a clock that stops answering mid-run ends it too (fail closed) | `…The_deadline_counts_unbiased_time`, `…Awake_time_past_the_deadline_ends_the_whole_job_with_the_supervisor_s_code`, `…A_clock_that_stops_answering_mid_run_ends_the_job_rather_than_waiting_unbounded` |
 | a cancelled run closes the job (kill-on-close is the stop); an unreadable clock, a job that cannot be made, a worker that cannot be created start nothing and close what was made | `…A_cancelled_run_closes_the_job_which_ends_its_tree`, `…An_unreadable_clock_or_a_job_that_cannot_be_made_starts_nothing`, `…A_worker_that_cannot_be_created_closes_the_job_and_starts_nothing` |
 | the real job (Windows legs): its handle is not inheritable (`GetHandleInformation`); its limits are `KILL_ON_JOB_CLOSE` alone, no breakaway (`QueryInformationJobObject`) | `Core.Tests/Processes/Win32JobControlTests.The_job_handle_is_not_inheritable`, `…The_job_is_kill_on_close_and_lets_no_child_break_away` |
@@ -3141,6 +3142,12 @@ tests held through the renamed seam and passed at once. **Teeth:** `PROC_THREAD_
 the helper was ended still suspended by the test); a failed verify ignored (both not-in-job fake tests red: the worker was resumed and
 waited on); the timeout key read from another entry (`TaskWorkersTests` and two `TasksRunCommandTests` red: `… deadline 10 min
 (timer.runLimitMinutes)`); the start line removed (two `TasksRunCommandTests` red).
+
+**The second coai code round on WR-D3, red first:** `WorkerLaunchTests` — `Expected launch.Arguments to be equal to {"watch",
+"--timer"} … but {"act", "--timer", "--confirm"} contains 1 item(s) too many` before the constructor copied its input. The clock seam
+(`IUnbiasedClock`) and the loop that replaced the recursive re-check are refactors held by the existing tests (all green). **Teeth:**
+the copy removed (`WorkerLaunchTests` red, the same message); the loop not reading the clock again (`The_deadline_counts_unbiased_time`
+— `{"wait 4242 00:10:00", "wait 4242 00:10:00"} differs at index 1` — and `Awake_time_past_the_deadline…` red).
 
 ## The extension (`src_vs_code/`)
 

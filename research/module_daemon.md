@@ -530,9 +530,13 @@ sequenceDiagram
   a signal` (then the program's `interrupted.`). The worker's own stderr lines come in between.
 - **The supervisor** (`Core/Processes/JobSupervisor.cs`, behind `IWorkerSupervisor`; `CliHost.Supervisor`, wired only in
   `CliHost.ForThisMachine` on Windows — every host a test builds holds a `RefusingWorkerSupervisor`): the ORDER of the calls is
-  the rule set, so it is written once over the `IJobControl` seam and read by a fake that records every call. The job is closed
-  in a `using` whatever happens; the worker's handles too. A clock that stops answering mid-run counts as past the deadline
-  (fail closed). After `EndJob` the worker is waited for within `commands.drainGraceMilliseconds` (the child runner's grace).
+  the rule set, so it is written once over the `IJobControl` seam and read by a fake that records every call. Its clock is its own
+  seam, `IUnbiasedClock` (`Core/Processes/IUnbiasedClock.cs`; `Win32Boot` implements it — `IWindowsBoot` extends it with the
+  ledger's boot id), not the MCP ledger's `IWindowsBoot`. The wait is a LOOP: each timed-out wait reads the unbiased clock again and
+  waits for what is left. The job is closed in a `using` whatever happens; the worker's handles too. A clock that stops answering
+  mid-run counts as past the deadline (fail closed). After `EndJob` the worker is waited for within
+  `commands.drainGraceMilliseconds` (the child runner's grace). `WorkerLaunch.Arguments` is an immutable COPY made by the
+  constructor (`{ get; init; } = []`), so no caller's list can change what is started.
 - **The Win32 half** (`Core/Processes/JobSupervisor.Win32.cs`, `Win32JobControl`, `LibraryImport` only, Native AOT):
   `CreateJobObjectW` with an explicit non-inheritable `SECURITY_ATTRIBUTES`; `SetInformationJobObject(JobObjectExtendedLimitInformation)`
   with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` alone; `CreateProcessW` with `lpApplicationName` = the absolute path (no search),

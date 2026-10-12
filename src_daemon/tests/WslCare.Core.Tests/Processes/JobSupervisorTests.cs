@@ -1,7 +1,6 @@
 using FluentAssertions;
 
 using WslCare.Core.Collectors;
-using WslCare.Core.Mcp;
 using WslCare.Core.Processes;
 
 namespace WslCare.Core.Tests.Processes;
@@ -148,13 +147,11 @@ public sealed class JobSupervisorTests
         new("C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\" + new string('a', 64) + "\\wsl-care.exe", ["watch", "--timer", "--json"], Deadline, "mcpWatchdog.runLimitMinutes");
 
     /// <summary>The unbiased clock, one scripted reading per call (the last repeats); <see cref="MissingAfter"/> readings, then none.</summary>
-    private sealed class ScriptedClock(params long[] readings) : IWindowsBoot
+    private sealed class ScriptedClock(params long[] readings) : IUnbiasedClock
     {
         private int _calls;
 
         public int MissingAfter { get; init; } = int.MaxValue;
-
-        public Reading<string> BootId() => Reading.Of("windows-1");
 
         public Reading<long> UnbiasedMilliseconds()
         {

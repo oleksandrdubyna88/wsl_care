@@ -469,3 +469,14 @@ item fixed in the same story, RED first:
 - **Minor — two stderr lines per run**: `tasks run <task>: starting <argv> in a kill-on-close job, deadline N min (<key>)` before the
   worker starts, and ONE terminal line: `the worker exited N`, the deadline line, `refused: <why>`, or `stopped by a signal` (then the
   program's `interrupted.`). So "one stderr line on timeout" (§3.3 point 5) is now the terminal line of two.
+
+**The second coai code round on WR-D3** (session `ce1d140d`): proceed, four findings, all accepted and fixed:
+
+- **Blocking — the cross-module record**: `research/architecture.md` § *Exit codes* now names 84 `TaskEnded` and how the extension
+  reads it (`contracts/exit-codes.json` → `DAEMON_EXIT.taskEnded` → the root kind `taskEnded`; no systemd unit reaches it).
+- **Major — the public contract owns its data**: `WorkerLaunch.Arguments` is `{ get; init; } = []` and the constructor copies its
+  input (`[.. arguments]`), so no caller's list can change what is started; RED first (`WorkerLaunchTests`).
+- **Minor — the clock seam**: `JobSupervisor` takes `IUnbiasedClock` (`Core/Processes/IUnbiasedClock.cs`), not the MCP ledger's
+  `IWindowsBoot`; `IWindowsBoot` extends it, so `Win32Boot` serves both.
+- **Minor — a loop**: the recursive timeout re-check is a loop; behaviour unchanged, the unbiased-time tests green (and red when the
+  loop stops re-reading the clock).

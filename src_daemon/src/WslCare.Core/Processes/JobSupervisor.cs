@@ -1,6 +1,5 @@
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
-using WslCare.Core.Mcp;
 
 namespace WslCare.Core.Processes;
 
@@ -18,14 +17,14 @@ namespace WslCare.Core.Processes;
 /// <item>Its membership is verified; a worker not in the job is ended (through the job, then by its own handle, still suspended) and
 /// the run is refused — fail closed, never resumed outside the job. Only then is its thread resumed.</item>
 /// <item>The wait is on the worker's process with the deadline; each time the wait times out the elapsed time is read again on the
-/// UNBIASED clock (<see cref="IWindowsBoot.UnbiasedMilliseconds"/>, which stops while the host sleeps), so a sleep is not run time.
+/// UNBIASED clock (<see cref="IUnbiasedClock.UnbiasedMilliseconds"/>, which stops while the host sleeps), so a sleep is not run time.
 /// Past the deadline the whole job is ended with <see cref="EndedExitCode"/> — the caller exits 84 <c>TaskEnded</c>. A clock that
 /// stops answering mid-run counts as past the deadline (fail closed: the run stays bounded).</item>
 /// <item>The job's handle is closed ALWAYS (the <c>using</c>): kill-on-close is the net under the net — a cancelled run (Ctrl+C, a
 /// stop) and a supervisor that dies take the whole tree with them, and so does a worker that exits leaving a grandchild.</item>
 /// </list>
 /// </remarks>
-public sealed class JobSupervisor(IJobControl jobs, IWindowsBoot clock) : IWorkerSupervisor
+public sealed class JobSupervisor(IJobControl jobs, IUnbiasedClock clock) : IWorkerSupervisor
 {
     /// <summary>The exit code every process of an ended job gets — <c>0xC5A1</c>, the plan's mark of a supervisor's deadline.</summary>
     public const uint EndedExitCode = 0xC5A1;
@@ -95,20 +94,29 @@ public sealed class JobSupervisor(IJobControl jobs, IWindowsBoot clock) : IWorke
         return new WorkerOutcome.Refused($"the worker (pid {worker.Pid}) could not be resumed ({why}); its job was ended");
     }
 
-    /// <summary>Wait for the worker until its deadline: a wait that times out is only a reason to read the unbiased clock again.</summary>
-    private WorkerOutcome Supervise(IJobHandle job, IWorkerProcess worker, Supervised run) => Remaining(run) switch
+    /// <summary>Wait for the worker until its deadline — a loop (the second coai code round on WR-D3, finding 4): a wait that timed out is
+    /// only a reason to read the unbiased clock again, and the next wait is for what is left of the deadline.</summary>
+    private WorkerOutcome Supervise(IJobHandle job, IWorkerProcess worker, Supervised run)
     {
-        var left when left <= TimeSpan.Zero => End(job, worker, run.Launch.Deadline),
-        var left => Answered(jobs.Wait(worker, left, run.Cancellation), job, worker, run),
-    };
+        for (var left = Remaining(run); left > TimeSpan.Zero; left = Remaining(run))
+        {
+            var wait = jobs.Wait(worker, left, run.Cancellation);
+            if (wait is not WorkerWait.TimedOut)
+            {
+                return Answered(wait, worker);
+            }
+        }
 
-    /// <summary>What one wait answered: the worker's end, or — on a timeout — another look at the deadline.</summary>
-    private WorkerOutcome Answered(WorkerWait wait, IJobHandle job, IWorkerProcess worker, Supervised run) => wait switch
+        return End(job, worker, run.Launch.Deadline);
+    }
+
+    /// <summary>What a wait that did not time out answered: the worker's end, a stop, or an exit nobody can read.</summary>
+    private static WorkerOutcome Answered(WorkerWait wait, IWorkerProcess worker) => wait switch
     {
         WorkerWait.Exited exited => new WorkerOutcome.Exited(exited.Code),
         WorkerWait.Cancelled => new WorkerOutcome.Cancelled(),
         WorkerWait.Unreadable unreadable => new WorkerOutcome.Refused($"the worker (pid {worker.Pid}) exited, but its exit code could not be read ({unreadable.Reason})"),
-        _ => Supervise(job, worker, run),
+        _ => throw new System.Diagnostics.UnreachableException("a timed-out wait is not an answer; the loop reads the deadline again"),
     };
 
     /// <summary>What is left of the deadline on the UNBIASED clock; nothing when the clock no longer answers (fail closed).</summary>

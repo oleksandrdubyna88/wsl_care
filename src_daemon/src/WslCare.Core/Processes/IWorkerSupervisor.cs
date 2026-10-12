@@ -22,7 +22,8 @@ public sealed record WorkerLaunch
     internal WorkerLaunch(string executable, IReadOnlyList<string> arguments, TimeSpan deadline, string deadlineKey)
     {
         Executable = executable;
-        Arguments = arguments;
+        // A copy, never the caller's list: nothing a caller does to its list later changes what the supervisor starts.
+        Arguments = [.. arguments];
         Deadline = deadline;
         DeadlineKey = deadlineKey;
     }
@@ -30,8 +31,9 @@ public sealed record WorkerLaunch
     /// <summary>The worker's executable, by its absolute path (never looked up on <c>PATH</c>).</summary>
     public string Executable { get; }
 
-    /// <summary>The worker's arguments, each one argument (quoted for the Windows command line by <see cref="WindowsCommandLine"/>).</summary>
-    public IReadOnlyList<string> Arguments { get; }
+    /// <summary>The worker's arguments, each one argument (quoted for the Windows command line by <see cref="WindowsCommandLine"/>) — an
+    /// immutable copy made by the constructor.</summary>
+    public IReadOnlyList<string> Arguments { get; init; } = [];
 
     /// <summary>How long the worker may run, counted on the unbiased clock (a host sleep is not run time).</summary>
     public TimeSpan Deadline { get; }
