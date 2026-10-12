@@ -4857,7 +4857,7 @@ here.
 
 ##### A13 waits for idle at most `archive.maxDeferHours` (2026-10-12)
 
-> Status: **built 2026-10-12 on `feat/wc-archive-max-defer` — the code round (proceed) and the own review on Fable done; merge next (see *As built* below).** Branch `feat/wc-archive-max-defer`, from `main` 00914fd, rebased onto d79250b. Daemon only
+> Status: **merged 2026-10-12, #134 (squash ac70fa6) — the code round (proceed) and the own review on Fable done, every CI suite green (see *As built* below).** Branch `feat/wc-archive-max-defer`, from `main` 00914fd, rebased onto d79250b. Daemon only
 > (`Actions/Engine/IdleGate.cs`, `Actions/Engine/ActionEngine.cs`, a new `Actions/Engine/IdleDeferrals.cs`, `Actions/ICleanupAction.cs`,
 > `Archive/ArchiveAction.cs`, `Config/ConfigKeys.Archive.cs`, `Config/default.json`, `contracts/config-keys.json`, tests). A13 moves
 > files, so the own review runs on Fable.

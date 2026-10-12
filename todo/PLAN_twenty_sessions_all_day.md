@@ -1824,6 +1824,7 @@ present and the pipes-vs-sockets question cannot be measured yet. Both wait for 
 > that way: on 2026-10-12, with the usual sessions running, `/proc/loadavg` read 12.17 12.25 10.58 on 24 CPUs (51 %, a deferral
 > at `idle.cpuPercent` 20) while `/proc/pressure/cpu` read some avg10 1.31, avg60 1.73, avg300 2.72 — the CPU was hardly contended;
 > the load is mostly tasks waiting in the kernel, not for a CPU.
+> **Decision (coordinator, 2026-10-12):** A13's idle gate moves to PSI only if this S8 measurement shows it should — measurements decide, not the first reading.
 
 **What is sampled, every `soak.periodMinutes` (10):** `wsl-care status --json` (the S1 MCP block, S5/S6 verdicts, memory,
 PSI), `wsl-care busy --json`, the count of Claude Code "connection timed out after 30000ms" lines since the previous sample
