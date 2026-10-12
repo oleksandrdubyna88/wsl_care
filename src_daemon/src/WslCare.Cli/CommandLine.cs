@@ -109,6 +109,10 @@ internal abstract record Request
     /// worker from the CLOSED table (<see cref="Core.Scheduler.TaskWorkers"/>) in a kill-on-close job, bounded by its deadline.</summary>
     internal sealed record TasksRun(Core.Scheduler.WindowsTask Task, bool Json) : Request;
 
+    /// <summary><c>tasks stage [--remove] [--json]</c> (WR-D2 of PLAN_windows_runner.md §3.2): the Windows binary copies its own exe
+    /// into <c>%LOCALAPPDATA%\wsl-care\bin\&lt;digest&gt;\</c> and sweeps the older copies; <c>--remove</c> removes every copy.</summary>
+    internal sealed record TasksStage(bool Remove, bool Json) : Request;
+
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
 
@@ -252,6 +256,7 @@ internal static class CommandLine
     private const string DetachFlag = "--detach";
     private const string RequestFlag = "--request";
     private const string StopFlag = "--stop";
+    private const string RemoveFlag = "--remove";
     private const string StdinMarker = "-";
     private const string MeasureFlag = "--measure";
     internal const string AgentFlag = "--agent";
@@ -294,6 +299,8 @@ internal static class CommandLine
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["tasks", "render"]], "tasks render <task> [--json]", "the Windows binary's: the XML of one per-user scheduled task, <task> watch or archive (\\wsl-care\\watch, \\wsl-care\\archive), from the configuration, this process's own path and the current user's SID; the numbers it used, the summary lines Task Scheduler's read-back must print, whether it may be registered (only a verified staged copy under %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\ is), and the Windows dry-run state (read-only: nothing is registered, nothing is written)", ["tasks", "render", "watch", "--json"], ParseTasksRender),
         new([["tasks", "run"]], "tasks run <task> [--json]", "the Windows binary's supervisor, what each per-user task's action runs: <task> watch (this binary's own watch --timer) or archive (not built in this version), started suspended inside a kill-on-close job, resumed only inside it, and ended with its whole tree at its deadline (mcpWatchdog.runLimitMinutes, timer.runLimitMinutes; counted on the unbiased clock, so a sleep is not run time): exit 84 then, else the worker's own exit code; the worker's answer is this process's stdout", ["tasks", "run", "watch", "--json"], ParseTasksRun),
+
+        new([["tasks", "stage"]], "tasks stage [--remove] [--json]", "the Windows binary's, run from the extension folder's exe: copy this exe to %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\wsl-care.exe with an exclusive create (an existing folder is reused only when its copy verifies, never written over), read it back, record stage.json, then sweep the other <digest> folders (one whose exe still runs is kept and named); --remove removes every <digest> folder and the folder itself when empty; a folder that is not a <digest> is never touched", ["tasks", "stage", "--json"], ParseTasksStage),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
@@ -694,6 +701,12 @@ internal static class CommandLine
         [var name, JsonFlag] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRun(task, true),
         _ => new Request.Failed($"\"{BinaryName} tasks run\" takes exactly one task ({string.Join(", ", Core.Scheduler.WindowsTask.All)}) and optionally {JsonFlag}, nothing else: {BinaryName} tasks run <task> [{JsonFlag}]."),
     };
+
+    /// <summary><c>tasks stage [--remove] [--json]</c>: each switch at most once, in any order.</summary>
+    private static Request ParseTasksStage(IReadOnlyList<string> rest) =>
+        rest.All(f => f is RemoveFlag or JsonFlag) && rest.Distinct(StringComparer.Ordinal).Count() == rest.Count
+            ? new Request.TasksStage(rest.Contains(RemoveFlag), rest.Contains(JsonFlag))
+            : new Request.Failed($"\"{BinaryName} tasks stage\" takes {RemoveFlag} and {JsonFlag}, each once; got \"{Printable(string.Join(' ', rest))}\".");
 
     private static Request ParseRunsShow(IReadOnlyList<string> rest) =>
         RunIdVerb("runs show", rest, takesJson: true, (runId, json) => new Request.RunsShow(runId, json));

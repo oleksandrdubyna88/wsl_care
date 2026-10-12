@@ -77,6 +77,8 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Watch.WatchReport))]
 [JsonSerializable(typeof(Scheduler.TasksRenderReport))]
 [JsonSerializable(typeof(Scheduler.StageRecord))]
+[JsonSerializable(typeof(Scheduler.StageReport))]
+[JsonSerializable(typeof(Scheduler.StageRemoveReport))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {
     public static readonly WslCareJsonContext Compact = new(new JsonSerializerOptions
