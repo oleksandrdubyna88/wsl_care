@@ -883,6 +883,19 @@ flows skipped); Linux (WSL `Ubuntu`, a copy under `/tmp`) Scenarios 550 (0 faile
 4. **`--uninstall --distro-name ''` is refused too** (the design said "refuses the argument"; `--set-default-user ''` is still
    let through by the older check, which tests the value, not the argument).
 
+**The story's code round** (coai, 2026-10-12, `proceed`, 4 of 4 reviewers — codex): three findings.
+- **Accepted (two reviewers):** an explicitly EMPTY `--distro-name ''` now starts the first run WITHOUT an inherited
+  `WSL_DISTRO_NAME` (`(unset WSL_DISTRO_NAME; …)`, POSIX), because the person asked for "no name".
+- **Rejected, for the case where the argument is OMITTED:** the run keeps the environment as it is. Root entered through
+  `wsl.exe -u root` carries the value WSL set for this distro — the same trust as any root collect through `wsl.exe`, which E15.S2
+  already records. The documented one-liner goes through sudo, which removes it. A flow now holds this.
+- **Accepted:** the empty-value message no longer claims why the value is empty.
+
+The fix landed before its tests ran, so it was proven by revert on Linux (`/tmp/wc-e15s2b-r1-20261012T080620Z`): the fix
+reverted in the copy → 2 red (*Expected File.Exists(…) to be False … but found True*; the message still contained "was not
+set"); restored → 12 of 12 green. In the same full Linux run, 2 timing-sensitive scenarios outside this story failed (a 3 s
+status budget at 4.6 s under load; a pid reused in the umask flow). Both passed alone on a rerun.
+
 **Open — the extension's follow-up (design point 3).** `INSTALL_COMMAND` (`src_vs_code/src/install/installCommand.ts:44`)
 pins the `install.sh` of a RELEASED tag, and a released `install.sh` refuses an unknown argument. So the extension adds
 `--distro-name "$WSL_DISTRO_NAME"` only after a daemon release ships this change. Not changed here.

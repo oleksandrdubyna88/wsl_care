@@ -125,7 +125,36 @@ public sealed class InstallDistroNameFlows
 
         Succeeded(result);
         result.Stdout.Should().Contain("--distro-name is empty").And.Contain("no distro name is recorded").And.Contain("wsl.exe");
+        result.Stdout.Should().NotContain("was not set", "the installer knows only that the argument is empty, not why (code round)");
         File.Exists(DistroIdentity.File(home.Paths)).Should().BeFalse("an empty value is no name");
+    }
+
+    [Fact]
+    public async Task An_empty_distro_name_records_nothing_even_when_root_inherited_the_variable()
+    {
+        Linux();
+        using var world = new InstallWorld("distro-name-empty-inherited");
+        using var home = RealFirstRun(world, "install-distro-name-empty-inherited");
+        world.Variables[DistroIdentity.Variable] = "Ubuntu";
+
+        var result = await world.RunAsync("--distro-name", string.Empty);
+
+        Succeeded(result);
+        File.Exists(DistroIdentity.File(home.Paths)).Should().BeFalse("an explicitly empty --distro-name means no name, so the first run drops an inherited WSL_DISTRO_NAME (code round)");
+    }
+
+    [Fact]
+    public async Task Without_the_argument_a_root_shell_from_wsl_exe_records_the_name_wsl_set()
+    {
+        Linux();
+        using var world = new InstallWorld("distro-name-inherited");
+        using var home = RealFirstRun(world, "install-distro-name-inherited");
+        world.Variables[DistroIdentity.Variable] = "Ubuntu";
+
+        var result = await world.RunAsync();
+
+        Succeeded(result);
+        RecordedName(home).Should().Be("Ubuntu", "root entered through wsl.exe -u root carries the variable WSL set for this distro — the same trust as any root collect through wsl.exe (code round, a reasoned rejection)");
     }
 
     [Fact]

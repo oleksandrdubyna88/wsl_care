@@ -1081,15 +1081,19 @@ distro_name_said() {
   elif [ -n "$DISTRO_NAME" ]; then
     say "recording the distro name $DISTRO_NAME (through the first full run, as WSL_DISTRO_NAME)"
   elif [ "$DISTRO_NAME_GIVEN" = 1 ]; then
-    say "--distro-name is empty (\$WSL_DISTRO_NAME was not set where the command was typed): no distro name is recorded now; a root"
+    say "--distro-name is empty: no distro name is recorded now; a root"
     say "collect started through wsl.exe records it later (the panel's Run full check now does)"
   fi
 }
 
-# Runs "$@" with WSL_DISTRO_NAME set to the validated --distro-name, or as it is when there is none.
+# Runs "$@" with WSL_DISTRO_NAME set to the validated --distro-name; WITHOUT it when the argument was given empty (an explicit
+# "no name" — an inherited value is dropped, code round); and as it is when the argument was not given (root entered through
+# wsl.exe -u root carries the value WSL set for this distro, the same trust as any root collect through wsl.exe; sudo removes it).
 with_distro_name() {
   if [ -n "$DISTRO_NAME" ]; then
     env WSL_DISTRO_NAME="$DISTRO_NAME" "$@"
+  elif [ "$DISTRO_NAME_GIVEN" = 1 ]; then
+    (unset WSL_DISTRO_NAME; "$@")
   else
     "$@"
   fi
