@@ -71,6 +71,27 @@ public sealed class FailedUnitsVerdictTests : IDisposable
     }
 
     [Fact]
+    public void Only_the_exact_name_is_ignored_so_a_near_match_still_counts()
+    {
+        var verdict = Evaluate(Health("getty@tty2.service"));
+
+        verdict.Level.Should().Be(Level.Warn, "getty@tty1.service is ignored, getty@tty2.service is a different unit — no prefix, no pattern (plan round)");
+        verdict.Value.Should().Be("1");
+    }
+
+    [Fact]
+    public void The_run_detail_keeps_every_failed_unit_the_verdict_ignored()
+    {
+        var health = Health("getty@tty1.service", "docker.service");
+
+        var report = WslCare.Core.Collect.HealthReports.From(health).FailedUnits;
+
+        Evaluate(health).Value.Should().Be("1", "the verdict counts only docker.service");
+        report.Count.Should().Be(2, "the detail is the record of what failed; the ignore list only quiets the verdict (plan round)");
+        report.Units!.Select(u => u.Unit).Should().Equal("getty@tty1.service", "docker.service");
+    }
+
+    [Fact]
     public void Emptying_the_list_makes_the_getty_unit_count_again()
     {
         var verdict = Evaluate(Health("getty@tty1.service"), """{ "systemd": { "ignoredFailedUnits": [] } }""");
