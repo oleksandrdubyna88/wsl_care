@@ -124,6 +124,7 @@ has none.
 | configuration trust, AI agents, A18, numbers | *The configuration trust (E7.S0, 2026-10-05, plan §15q R1)*, *The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)* with its *Manual agents and `agents probe` (E7.S2, 2026-10-05, plan §15q D4, R2)*, *A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)*, *Numbers are configuration (standing convention, owner rule 2026-10-05)* |
 | the MCP server instances of the AI agents (`Core/Mcp/`, `status --json` `mcpServers`) | [module_mcp_servers.md](module_mcp_servers.md) (E7.S2d, 2026-10-06/07); architecture.md *MCP server instances of the AI agents* points there |
 | the watch (`Core/Watch/WatchRun.cs`, `wsl-care watch [--timer]`, `wsl-care-watch.timer` / `.service`) and A19's busy half | [module_mcp_servers.md](module_mcp_servers.md) § *The busy half and the watch* (E14 S2b, 2026-10-09) |
+| the Windows watch and the Windows ledger lock (`Core/Watch/WatchRun.Windows.cs`, `Core/Mcp/McpCpuLedgerLock.cs`; `wsl-care.exe watch [--timer]`, run by `tasks run watch`) | § *The Windows watch and the ledger lock* below (WR-D4, 2026-10-12) |
 | A21, the client-gone interop relays (`Actions/Suspects/InteropRelayStop.cs`, `Collectors/Procfs/InteropRelays.cs` / `StdioHolders.cs`, SIGTERM only through `IProcessSignals.TerminateOnlyAsync`; the watch's `[A19, A21]` act; `status --json` `interopRelays`) | [module_mcp_servers.md](module_mcp_servers.md) § *A21 — ending client-gone interop relays* (E14 S7b.2, 2026-10-10) |
 | the Windows side's MCP servers and the vmmem advice (`Core/Mcp/WindowsMcp*`, `Win32ProcessTable`, `Health/VmmemAdvice`; the Windows `status --json` `windowsMcpServers` and `host.vmmemAdvice`, read-only) | [module_mcp_servers.md](module_mcp_servers.md) § *The Windows side* (E14 S7a, 2026-10-09) |
 | tests and the harness | [module_tests.md](module_tests.md), architecture.md *The scenario harness (E1.S3)* |
@@ -579,9 +580,65 @@ sequenceDiagram
 - **Stops**: Ctrl+C / a console close reaches `ShutdownSignals`, the wait returns, the job is closed — kill-on-close ends the tree.
   Task Scheduler's *End* (and `ExecutionTimeLimit`, the deadline + 10 min, the outer net) terminates the supervisor itself; the
   OS then closes the job handle, and kill-on-close ends the tree the same way.
-- **Until WR-D4** the Windows `watch` is still refused (2), so the supervised worker of today exits 2 with its own refusal and
-  the supervisor passes it through — what `Scenarios/WindowsTasksRunFlows` asserts over the built binary. **WR-D4 must change that
-  flow in the same PR**, or it would start a real `watch --timer` of the built binary.
+- **Since WR-D4** the supervised worker is the Windows watch (next section): `Scenarios/WindowsTasksRunFlows` runs `tasks run watch`
+  over the built binary in a `ScenarioHome`, so the worker inherits `WSL_CARE_ROOT` and samples into the SANDBOXED ledger; the flow
+  asserts exit 0, the worker's JSON answer on stdout, the ledger written and no history line. No flow starts a watch outside the sandbox.
+
+## The Windows watch and the ledger lock (WR-D4 of PLAN_windows_runner.md, 2026-10-12)
+
+What `tasks run watch` supervises every `mcpWatchdog.periodMinutes`: `wsl-care.exe watch --timer --json`. Until WR-D4 the Windows
+binary refused `watch` (2). It now samples the Windows MCP servers into this user's CPU ledger and sweeps the run records' retention.
+Nothing acts yet: A22 (S7b.3 of [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) plugs into its `--timer`
+branch later.
+
+```mermaid
+flowchart TD
+    argv["wsl-care.exe watch [--timer] [--json]"] --> elev{"elevated?"}
+    elev -- yes --> r81["exit 81 NotAsRoot<br/>nothing touched"]
+    elev -- no --> lock{"run lock<br/>TryLockExclusive, no wait"}
+    lock -- busy --> r75["exit 75 Busy (normal)<br/>nothing sampled"]
+    lock -- held --> sample["WindowsMcpCollector over<br/>ForWindowsStatus(windows, elevated: false)"]
+    sample --> llock{"ledger lock mcp-cpu.lock<br/>TryLockExclusive, no wait"}
+    llock -- held --> rmw["read mcp-cpu.json AFTER the lock,<br/>measure, write atomically"]
+    llock -- busy --> window["no ledger: window only,<br/>records nothing, says why"]
+    rmw --> sweep["RunRetention.TrySweep<br/>history.jsonl + runs/"]
+    window --> sweep
+    sweep --> release["run lock released"]
+    release --> timer{"--timer? not observe-only?"}
+    timer -- no --> done0["exit 0: sampled, the reason"]
+    timer -- yes --> hook{"WindowsActing (A22 hook)<br/>empty until S7b.3"}
+    hook -- empty --> done0
+    hook -- "S7b.3" --> dry["DryRunWindow.Decide(Timer)<br/>on the Windows paths, then A22's act"]
+```
+
+- **The verb** (`Cli/Commands/WatchCommand.cs`): on the Windows binary an ELEVATED process is refused whole, before the lock or any
+  state (exit **81 `NotAsRoot`**, `WatchCommand.ElevatedRefusal`, the wording of `ArchiveRunCommand.ElevatedRefusal`) — the opposite
+  of the distro's root check (77). The sandbox's privilege claim (`WSL_CARE_SANDBOX_PRIVILEGED=1`) counts as elevated there, which
+  is how the built-binary flow proves the refusal. The context gains the Windows seams `WatchContext.WindowsProcesses` and
+  `WindowsBoot` (`CliHost`'s; a context a test builds reads neither unless it scripts them).
+- **The run** (`Core/Watch/WatchRun.Windows.cs`; `WatchRun.RunAsync` dispatches on the layout — the distro's path is unchanged):
+  THE run lock (`%LOCALAPPDATA%\wsl-care\wsl-care.lock`) without waiting — busy is exit **75**, a normal answer (the next period
+  samples). Under it: `WindowsMcpCollector` with `McpCpuLedgerPlace.ForWindowsStatus(windows, elevated: false)` — the user's own
+  `mcp-cpu.json`, so the ledger advances every period, the interval basis every A22 decision needs — then
+  `RunRetention.TrySweep` (`RunRetention.Sweep` guarded: a failing sweep is a problem in its report, never a crash; until now only
+  `collect` swept, and nothing swept `runs/` on Windows). The lock is released before the `--timer` branch, as the distro's watch
+  releases it before its act (an engine act takes the lock itself).
+- **The `--timer` branch and the A22 hook**: without `--timer` → `WatchRun.NoTimerOnWindows`; observe-only → the engine's reason;
+  then `WatchRun.WindowsActing`, the Windows actions the branch lets act — **empty until S7b.3** → `WatchRun.NoWindowsAct`. Only
+  behind a non-empty list does `DryRunWindow.Decide(RunTrigger.Timer, …)` run on the Windows paths, so a watch with nothing to act
+  on never writes `first-timer-run.json`: the dry-run week is not started before a Windows action can use it (the distro's watch
+  keeps the same order: its switches before the dry decision).
+- **What it records**: the ledger only. **No history line, no run detail** (S2b's rule: a watch that acts on nothing writes no
+  run). `WatchResult.History` is `WatchRun.NoAgentHistory` (the agents' CPU history is the distro's evidence; the CLI does not
+  warn about it). `WatchResult.Swept` / `watch --json`'s new `retention` member (absent on the distro) carry the sweep's
+  `historyLinesRemoved`, `detailsRemoved`, `problems`; the run log has one line for it and one warning per problem.
+- **The ledger lock** (`Core/Mcp/McpCpuLedgerLock.cs`; coai plan round `8138f140`, finding 1): every Windows ledger WRITER — the
+  Windows watch AND the Windows `status`, both through `WindowsMcpCollector` — does its read-modify-write under `mcp-cpu.lock`
+  beside the ledger (`McpCpuLedgerPlace.WindowsState.LockFile`), taken with `IFileSystem.TryLockExclusive` and never waited on. The
+  lease (`LedgerLease`) is taken BEFORE the ledger is read and released after it is written. Held elsewhere, the sample keeps no
+  ledger (`WindowsCpuLedger.None`): it answers from the window and records nothing, its `cpuBaseline.reason` naming the held lock
+  — so no write ever replaces a sample it did not read. A lost sample only makes the next interval longer. An elevated `status`
+  (it writes nothing) takes no lock. There is one ledger; the lock file stays on disk, empty, like the run lock's.
 
 ## Story history (moved from architecture.md, 2026-10-12)
 

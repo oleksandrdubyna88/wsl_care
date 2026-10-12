@@ -14,15 +14,21 @@ using WslCare.Core.Watch;
 namespace WslCare.Cli.Commands;
 
 /// <summary>
-/// <c>watch [--timer] [--json]</c> (plan E14 S2b): the watch timer's run — <see cref="WatchRun"/>. As root only (it writes root's
-/// state), the distro's binary only.
+/// <c>watch [--timer] [--json]</c> (plan E14 S2b): the watch timer's run — <see cref="WatchRun"/>. On the distro's binary as root only
+/// (it writes root's state); on the Windows binary (WR-D4 of PLAN_windows_runner.md) as the user only, NOT elevated (it writes the
+/// user's own CPU ledger).
 /// </summary>
 /// <remarks>Exit codes: 0 sampled or acted — an action that fails is in the act's record and the log, and does not change the exit
-/// (as a full run's pass); 1 the act ran and could not be recorded; 2 the Windows binary (the watch is the distro's); 75 another run
-/// holds the lock; 77 not root. <c>--timer</c> is the watch unit's own mark in its <c>ExecStart</c>, never inferred.</remarks>
+/// (as a full run's pass); 1 the act ran and could not be recorded; 75 another run holds the lock (a normal answer: the next period
+/// samples); 77 not root (the distro's binary); 81 elevated (the Windows binary). <c>--timer</c> is the watch unit's own mark in its
+/// <c>ExecStart</c> — on Windows the <c>tasks run watch</c> supervisor's — never inferred.</remarks>
 internal static class WatchCommand
 {
     public const string NeedsRootText = "needs root: the watch writes root's CPU ledger and history under the state directory, and A19 is root's (plan 15c #0)";
+
+    /// <summary>The Windows binary's refusal of an elevated process — the wording of <see cref="ArchiveRunCommand.ElevatedRefusal"/>.</summary>
+    public const string ElevatedRefusal =
+        "watch runs in this user's own, NOT elevated process — an elevated (administrator) one is refused (PLAN_windows_runner.md §3.2): the Windows watch writes this user's own CPU ledger; run it from a terminal that is not elevated. Nothing was touched.";
 
     public static int Run(Request.Watch request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, ILogger logger, CancellationToken cancellationToken)
     {
@@ -38,6 +44,8 @@ internal static class WatchCommand
             Signals = host.Signals,
             Wait = host.Wait,
             InterruptCause = host.InterruptCause,
+            WindowsProcesses = host.WindowsProcesses,
+            WindowsBoot = host.WindowsBoot,
         };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = WatchRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult();
@@ -46,10 +54,11 @@ internal static class WatchCommand
         return Exit(result, stderr);
     }
 
-    /// <summary>Why the watch does not run at all here — the Windows binary, or not root.</summary>
+    /// <summary>Why the watch does not run at all here — an elevated Windows process, or a distro process that is not root.</summary>
     private static (ExitCode Exit, string Text)? Refusal(CliHost host) => host switch
     {
-        { Paths: not LinuxHostPaths } => (ExitCode.Usage, $"\"{CommandLine.BinaryName} watch\" is the distro's: {WatchRun.NotTheDistro}"),
+        { Paths: WindowsHostPaths, Privilege.IsRoot: true } => (ExitCode.NotAsRoot, ElevatedRefusal),
+        { Paths: WindowsHostPaths } => null,
         { Privilege.IsRoot: false } => (ExitCode.NeedsRoot, $"{NeedsRootText}; {host.Privilege.Basis}; nothing was done"),
         _ => null,
     };
@@ -76,12 +85,27 @@ internal static class WatchCommand
         log.Information("watch {Outcome}: {Reason}", result.Outcome, result.Reason);
         if (!result.Ledger.Recorded)
         {
-            log.Warning("root's MCP CPU ledger was not recorded: {Reason}", result.Ledger.Reason);
+            log.Warning("the MCP CPU ledger was not recorded: {Reason}", result.Ledger.Reason);
         }
 
-        if (result.History.Length > 0)
+        if (result.History is { Length: > 0 } history && history != WatchRun.NoAgentHistory)
         {
-            log.Warning("the agents' CPU history was not recorded: {Reason}", result.History);
+            log.Warning("the agents' CPU history was not recorded: {Reason}", history);
+        }
+
+        foreach (var swept in result.Swept)
+        {
+            LogRetention(log, swept);
+        }
+    }
+
+    /// <summary>The run records' retention sweep (the Windows watch): what it removed, and every problem as a warning.</summary>
+    private static void LogRetention(ILogger log, RetentionReport swept)
+    {
+        log.Information("run retention: {Lines} history line(s) and {Details} detail(s) removed", swept.HistoryLinesRemoved, swept.DetailsRemoved.Count);
+        foreach (var problem in swept.Problems)
+        {
+            log.Warning("run retention: {Problem}", problem);
         }
     }
 

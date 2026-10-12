@@ -123,4 +123,27 @@ public sealed class WindowsMcpStatusTests
         WindowsMcp(stdout).CpuBaseline!.Recorded.Should().BeFalse();
         File.Exists(paths.Rules.Join(paths.StateDirectory, McpCpuLedger.FileName)).Should().BeFalse("an elevated status never writes the user's ledger");
     }
+
+    /// <summary>WR-D4 (PLAN_windows_runner.md §3.9): the Windows status takes the SAME ledger lock as the Windows watch; while the watch
+    /// holds it, the status answers from the window and records nothing, naming why.</summary>
+    [Fact]
+    public void A_windows_status_while_the_ledger_lock_is_held_records_nothing_and_says_why()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "a CliHost over a Windows layout is built on Windows only");
+        using var root = new TempRoot("windows-mcp-locked");
+        var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
+        var place = (McpCpuLedgerPlace.WindowsState)McpCpuLedgerPlace.ForWindowsStatus(paths, elevated: false);
+        var held = new Core.Files.PhysicalFileSystem(paths).TryLockExclusive(place.LockFile).Should().BeOfType<Core.Files.ExclusiveLock.Held>().Subject;
+        (int Exit, string Stdout, string Stderr) status;
+        using (held.Handle)
+        {
+            status = CliRun.Over(WindowsHost(paths, new ScriptedBoot(), [], elevated: false), "status", "--json");
+        }
+
+        status.Exit.Should().Be((int)ExitCode.Ok, status.Stderr);
+        var baseline = WindowsMcp(status.Stdout).CpuBaseline!;
+        baseline.Recorded.Should().BeFalse();
+        baseline.Reason.Should().Contain("ledger lock");
+        File.Exists(place.File).Should().BeFalse("a status that does not hold the lock writes nothing");
+    }
 }

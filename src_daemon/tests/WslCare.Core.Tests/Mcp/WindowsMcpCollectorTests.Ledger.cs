@@ -1,6 +1,7 @@
 using FluentAssertions;
 
 using WslCare.Core.Collectors;
+using WslCare.Core.Files;
 using WslCare.Core.Mcp;
 using WslCare.Core.Status;
 using WslCare.Core.Tests.Collectors;
@@ -45,9 +46,15 @@ public sealed partial class WindowsMcpCollectorTests
 
         public string File => _tree.Paths.Rules.Join(Directory, McpCpuLedger.FileName);
 
-        public WindowsCpuLedger Ledger(bool writes = true) => new WindowsCpuLedger.Kept(_tree.Files, new McpCpuLedgerPlace.WindowsState(Directory, File, writes), Boot);
+        /// <summary>The real file system over the sandbox — what every sample goes through unless a test hands it another.</summary>
+        public IFileSystem Files => _tree.Files;
 
-        public async Task<WindowsMcpSample> Sample(FakeTable table, bool writes = true)
+        /// <summary>The ledger lock beside the ledger (WR-D4).</summary>
+        public string LockFile => _tree.Paths.Rules.Join(Directory, McpCpuLedgerLock.FileName);
+
+        public WindowsCpuLedger Ledger(bool writes = true, IFileSystem? through = null) => new WindowsCpuLedger.Kept(through ?? _tree.Files, new McpCpuLedgerPlace.WindowsState(Directory, File, writes), Boot);
+
+        public async Task<WindowsMcpSample> Sample(FakeTable table, bool writes = true, IFileSystem? through = null)
         {
             var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
             var reading = await new WindowsMcpCollector(table, clock, (window, _) =>
@@ -56,7 +63,7 @@ public sealed partial class WindowsMcpCollectorTests
                 table.SecondRead = true;
                 clock.Advance(window);
                 return Task.CompletedTask;
-            }, Ledger(writes)).SampleAsync(Defaults(), CancellationToken.None);
+            }, Ledger(writes, through)).SampleAsync(Defaults(), CancellationToken.None);
             return reading.Should().BeOfType<Reading<WindowsMcpSample>.Available>().Subject.Value;
         }
 

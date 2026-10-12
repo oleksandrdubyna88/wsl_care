@@ -1,6 +1,6 @@
 # PLAN — the Windows runner: two per-user scheduled tasks run the staged `wsl-care.exe` under one bounded supervisor
 
-> Status: **in progress, 2026-10-12 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 onward not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
+> Status: **in progress, 2026-10-12 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 onward not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
 >
 > Related: [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b (A22 = S7b.3, the Windows stop; S7b.1 the ledger; S2b the watch), [PLAN_windows_care.md](PLAN_windows_care.md) §2 and W-A15 (E11), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) D9 (:3010–3017), [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md), [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a, §4 and its forward note), [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the task-registration precedent), [PLAN_pwsh_engine_windows_time.md](../research/PLAN_pwsh_engine_windows_time.md) (the engine rule, F1/F2), [2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md).
 >
@@ -571,3 +571,38 @@ Deviations and decisions the plan did not spell out:
   - *Finding 3 (minor)*: `tasks run` writes one stderr line when its sweep was skipped (the run lock held) and one naming the folders it
     could not remove; nothing when the sweep did nothing (the existing "retired" line stays).
   - *Rejected*: a sweep status line on every run — noise on an unattended five-minute task; after finding 2 the common sweep is free.
+
+**WR-D4 as built (2026-10-12).** `Core/Watch/WatchRun.Windows.cs` (`WatchRun` became `partial`; `RunAsync` dispatches on the
+layout, the distro's path unchanged), `Core/Mcp/McpCpuLedgerLock.cs` (`McpCpuLedgerLock`, `LedgerLease`),
+`McpCpuLedgerPlace.WindowsState.LockFile`, `WindowsMcpCollector` (the lease around read → window → write),
+`RunRetention.TrySweep`, `Cli/Commands/WatchCommand.cs` (the elevated refusal, the Windows seams, the log), the `watch` help text;
+`Scenarios/WindowsWatchFlows` (new) and `Scenarios/WindowsTasksRunFlows` (changed, the WR-D3 review's n4); the docs in
+[module_daemon.md](../research/module_daemon.md) § *The Windows watch and the ledger lock*,
+[module_mcp_servers.md](../research/module_mcp_servers.md), [module_tests.md](../research/module_tests.md), and the A22 hook's place
+in [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b.3. Decisions the plan did not spell out:
+
+- **The elevated refusal is the verb's**, before the lock or any state (as the distro's root check is): exit 81 with
+  `WatchCommand.ElevatedRefusal`, a sentence in `ArchiveRunCommand.ElevatedRefusal`'s words naming the watch. The sandbox's
+  privilege claim (`WSL_CARE_SANDBOX_PRIVILEGED=1`) counts as elevated, so the built-binary flow proves it.
+- **The ledger lock lives in `WindowsMcpCollector`**, the one road both Windows writers take (the watch and `status`), so neither
+  can skip it. It is held from BEFORE the ledger read, across the CPU window, to after the write; a writer that comes meanwhile
+  records nothing. Held elsewhere (or unopenable: `UnauthorizedAccessException`), the sample keeps no ledger
+  (`WindowsCpuLedger.None`): `cpuBaseline.file` is then empty and `cpuBaseline.reason` names the held lock. An ELEVATED status
+  writes nothing and takes no lock. The lock path is derived from the ledger path (same folder, same separator). The distro's
+  ledgers take no ledger lock: root's is written under the run lock; the unprivileged distro `status` (`OwnState`) can still race
+  another one — out of this story, named as open.
+- **The `--timer` branch runs after the run lock is released**, as the distro's watch's act does (an engine act takes the lock).
+- **Until A22, `DryRunWindow.Decide` is not reached.** The gates run `--timer` → not observe-only → `WatchRun.WindowsActing`
+  (the A22 hook, EMPTY) → `Decide`. `Decide` writes the first-week stamp, so a watch with nothing to act on would start the Windows
+  dry-run week before any Windows action could use it; the order keeps the week for A22's own decisions (the distro's watch also
+  checks its switches before the dry decision). A test holds it (`Without_A22_…`: no `first-timer-run.json`).
+- **The sweep is under the run lock** (as `collect`'s), through a new guarded `RunRetention.TrySweep`: a failing sweep is a problem
+  in its report, never a lost sample. `collect` keeps its own guard (it could adopt `TrySweep`; not changed here).
+- **The answer:** `watch --json` gains `retention` (`historyLinesRemoved`, `detailsRemoved`, `problems`; absent on the distro);
+  `historyReason` is `WatchRun.NoAgentHistory` on Windows (the agents' CPU history is the distro's evidence) and the CLI does not
+  warn about it. The busy answer names "another watch or an act". `WatchRun.NotTheDistro` is gone; an unknown layout answers
+  `WatchRun.NoSide`.
+- **No new key and no new exit code**: 81 and 75 exist, the cadence and the retention are existing keys.
+- **The built-binary flows count the test runner itself as the MCP server** (the sandbox's user layer lists its program name in
+  `mcpServers.programs`), so a reading exists on any machine; the real process table is only read, and every write lands under
+  `WSL_CARE_ROOT`. The flows skip on the Linux legs, when the test run is elevated, or when the runner is `dotnet`.

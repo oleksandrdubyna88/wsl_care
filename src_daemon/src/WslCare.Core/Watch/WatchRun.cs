@@ -39,6 +39,13 @@ public sealed record WatchContext(
 
     /// <summary>What cancelled the run, in words.</summary>
     public Func<string> InterruptCause { get; init; } = static () => "a signal";
+
+    /// <summary>The Windows binary's process table (WR-D4 of PLAN_windows_runner.md): what the Windows watch samples the MCP servers from —
+    /// READ-ONLY. The distro's watch never reads it.</summary>
+    public IWindowsProcessTable WindowsProcesses { get; init; } = new UnreadWindowsProcessTable("a watch built by a test reads no Windows process table");
+
+    /// <summary>Windows' boot counter and unbiased clock (WR-D4): what keys the Windows CPU ledger. The distro's watch never reads it.</summary>
+    public IWindowsBoot WindowsBoot { get; init; } = new UnreadWindowsBoot("a watch built by a test reads no Windows boot counter");
 }
 
 /// <summary>How one watch run ended.</summary>
@@ -63,10 +70,14 @@ public sealed record WatchResult(WatchOutcome Outcome, string Reason, McpCpuBase
 
     /// <summary>The act run, when A19 ran (one) — none otherwise.</summary>
     public IReadOnlyList<ActResult> Acts { get; init; } = [];
+
+    /// <summary>The run records' retention sweep, when this watch ran one (one: the Windows watch, WR-D4) — none otherwise.</summary>
+    public IReadOnlyList<RetentionReport> Swept { get; init; } = [];
 }
 
 /// <summary>
-/// The watch timer's run (plan E14 S2b; <c>wsl-care watch --timer</c>, every <c>mcpWatchdog.periodMinutes</c>). Under THE run lock,
+/// The watch timer's run (plan E14 S2b; <c>wsl-care watch --timer</c>, every <c>mcpWatchdog.periodMinutes</c>) — the distro's, below; the
+/// Windows binary's is <c>WatchRun.Windows.cs</c> (WR-D4 of PLAN_windows_runner.md). Under THE run lock,
 /// taken without waiting: one probe sample, root's MCP CPU ledger written (A19's busy evidence: an interval reading every few
 /// minutes, which the 4-hour timer never gives) and the agents' CPU history recorded (A19's, A18's and A3's idle evidence). Then —
 /// only from the timer, not observe-only, <c>auto.A19</c> on and the timer's dry-run decision real — A19's live preview; the targets
@@ -74,7 +85,7 @@ public sealed record WatchResult(WatchOutcome Outcome, string Reason, McpCpuBase
 /// <c>act</c> bound to exactly them. A watch that stops nothing writes no history line; during a dry run it only samples, and the
 /// full run's pass keeps recording what A19 would do.
 /// </summary>
-public static class WatchRun
+public static partial class WatchRun
 {
     private static readonly ActionId A19 = ActionId.Find("A19") ?? throw new InvalidOperationException("this build holds no A19");
 
@@ -83,17 +94,21 @@ public static class WatchRun
     private static readonly IReadOnlyList<ActionId> Acting =
         [A19, ActionId.Find("A21") ?? throw new InvalidOperationException("this build holds no A21")];
 
-    public const string NotTheDistro = "the watch is the distro's: the Windows binary keeps no MCP CPU ledger";
+    /// <summary>A layout that is neither the distro's nor Windows' (no such host is built): nothing is sampled.</summary>
+    public const string NoSide = "the watch runs on the distro's binary or the Windows binary; this host's layout is neither";
 
     public const string NoTimer = "without --timer the watch records the evidence only; A19 acts from the watch timer (wsl-care-watch.timer)";
 
-    public static async Task<WatchResult> RunAsync(WatchContext c, CancellationToken cancellationToken)
+    /// <summary>One watch run: the distro's (below) or the Windows binary's (<c>WatchRun.Windows.cs</c>, WR-D4).</summary>
+    public static async Task<WatchResult> RunAsync(WatchContext c, CancellationToken cancellationToken) => c.Paths switch
     {
-        if (c.Paths is not LinuxHostPaths linux)
-        {
-            return new WatchResult(WatchOutcome.Sampled, NotTheDistro, McpCpuBaseline.NotRecorded(string.Empty, NotTheDistro), NotTheDistro);
-        }
+        LinuxHostPaths linux => await RunInTheDistroAsync(c, linux, cancellationToken).ConfigureAwait(false),
+        WindowsHostPaths windows => await RunOnWindowsAsync(c, windows, cancellationToken).ConfigureAwait(false),
+        _ => new WatchResult(WatchOutcome.Sampled, NoSide, McpCpuBaseline.NotRecorded(string.Empty, NoSide), NoSide),
+    };
 
+    private static async Task<WatchResult> RunInTheDistroAsync(WatchContext c, LinuxHostPaths linux, CancellationToken cancellationToken)
+    {
         var sampled = await SampleUnderLockAsync(c, linux, cancellationToken).ConfigureAwait(false);
         return sampled.Busy.Length > 0
             ? new WatchResult(WatchOutcome.Busy, sampled.Busy, McpCpuBaseline.NotRecorded(string.Empty, sampled.Busy), sampled.Busy)
@@ -301,7 +316,9 @@ public static class WatchTries
 /// <param name="LedgerReason">Why root's CPU ledger was not recorded; absent when it was.</param>
 /// <param name="HistoryReason">Why the agents' CPU history was not recorded; absent when it was.</param>
 /// <param name="Act">The act run A19 made, as <c>act --json</c> answers it; absent when it did not act.</param>
-public sealed record WatchReport(int SchemaVersion, string Outcome, string Reason, bool LedgerRecorded, string? LedgerReason, string? HistoryReason, IReadOnlyList<string> Tried, ActReport? Act)
+/// <param name="Retention">The run records' retention sweep (the Windows watch, WR-D4): lines and details removed, problems; absent
+/// when the watch swept nothing (the distro's, whose full run sweeps).</param>
+public sealed record WatchReport(int SchemaVersion, string Outcome, string Reason, bool LedgerRecorded, string? LedgerReason, string? HistoryReason, IReadOnlyList<string> Tried, ActReport? Act, RetentionReport? Retention = null)
 {
     public static WatchReport From(WatchResult result) => new(
         Core.SchemaVersion.Current,
@@ -316,5 +333,6 @@ public sealed record WatchReport(int SchemaVersion, string Outcome, string Reaso
         result.Ledger.Recorded ? null : result.Ledger.Reason,
         result.History.Length == 0 ? null : result.History,
         result.Tried,
-        result.Acts.Count == 0 ? null : ActReport.From(result.Acts[0]));
+        result.Acts.Count == 0 ? null : ActReport.From(result.Acts[0]),
+        result.Swept.Count == 0 ? null : result.Swept[0]);
 }
