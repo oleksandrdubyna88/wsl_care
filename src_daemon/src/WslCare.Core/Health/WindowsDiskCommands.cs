@@ -18,16 +18,21 @@ namespace WslCare.Core.Health;
 /// <para>Only <c>collect</c> starts it (never <c>status</c>, never the watch), after the clock probe, under its own ceiling
 /// (<c>health.windowsDiskTimeoutSeconds</c>); the runner kills its tree past it. It is one line of ASCII with no double quote
 /// and no control character (the never-list refuses one), and it names none of the never-list's forbidden words.</para>
-/// <para>Which PowerShell: Windows PowerShell 5.1 (<see cref="HealthCommands.PowerShell"/>), found as the clock probe's is — on
-/// PATH or in its one fixed, administrator-only folder on the system drive. The owner's <c>pwsh</c> 7 preference is NOT wired
-/// here: the Store build is an app-execution alias under the USER's profile, a file the Windows user can replace, and admitting
-/// it would let the root daemon start a user-writable program — a hole in the system drive's closed list, not a setting
-/// (E15.S1 as built, PLAN_disk_health.md).</para>
+/// <para>Which PowerShell (E15.S1b): the engine <see cref="PwshEngine"/> chose from the clock probe's look — the MSI
+/// PowerShell 7 (<see cref="WindowsDiskUnderPwsh"/>, the bare <see cref="HealthCommands.Pwsh"/>, found in
+/// <c>Program Files/PowerShell/7</c> on the system drive) when the probe verified it, else Windows PowerShell 5.1
+/// (<see cref="WindowsDisk"/>, <see cref="HealthCommands.PowerShell"/>), found as the clock probe's is. Both run the SAME
+/// arguments. Never the Store build: it is an app-execution alias under the USER's profile, a file the Windows user can
+/// replace, and admitting it would let the root daemon start a user-writable program (E15.S1 as built,
+/// PLAN_disk_health.md).</para>
 /// </remarks>
 public static class WindowsDiskCommands
 {
     /// <summary>The fixture and log name of the command.</summary>
     public const string Name = "powershell-windows-disk";
+
+    /// <summary>The log name of the same script under the MSI PowerShell 7 (E15.S1b).</summary>
+    public const string PwshName = "pwsh-windows-disk";
 
     public const string DistroTag = "distro=";
     public const string DistrosErrorTag = "distros.error=";
@@ -102,6 +107,20 @@ public static class WindowsDiskCommands
             Summary = "powershell.exe (the Windows disk script)",
         };
 
+    /// <summary>
+    /// The SAME command under the MSI PowerShell 7 (E15.S1b): <see cref="WindowsDisk"/> with only the program, the name and the
+    /// summary changed — its <see cref="ToolCommand.Arguments"/> are the very list <see cref="WindowsDisk"/> built, so the two can
+    /// never run different scripts. The program is the BARE <see cref="HealthCommands.Pwsh"/>, which the policy judges and the
+    /// resolver finds in its one fixed folder on the system drive (<c>Program Files/PowerShell/7</c>).
+    /// </summary>
+    public static ToolCommand WindowsDiskUnderPwsh =>
+        WindowsDisk with
+        {
+            Executable = HealthCommands.Pwsh,
+            Name = PwshName,
+            Summary = "pwsh.exe (the Windows disk script, under the MSI PowerShell 7)",
+        };
+
     /// <summary>The script for <paramref name="sinceDays"/> and <paramref name="maxRead"/>, each clamped to its key's range and
     /// written as an invariant integer — the only values that vary.</summary>
     public static string ScriptFor(int sinceDays, int maxRead, int groupsMax)
@@ -118,11 +137,26 @@ public static class WindowsDiskCommands
 
     private static string Numbers(IEnumerable<int> values) => string.Join(',', values.Select(v => v.ToString(CultureInfo.InvariantCulture)));
 
+    /// <summary>
+    /// The Storage module (<c>Get-Volume</c>, <c>Get-Partition</c>, <c>Get-PhysicalDisk</c>, <c>Get-StorageReliabilityCounter</c>)
+    /// imported by its ABSOLUTE System32 path — <c>[Environment]::SystemDirectory</c> is GetSystemDirectory, not a variable the
+    /// caller sets — the extension's road for <c>PnpDevice</c> (research G6), joined with <c>[IO.Path]::Combine</c> as the rest of
+    /// this script joins paths (<c>Join-Path</c> resolves the drive and throws on an unmounted letter). E15.S1b, measured 2026-10-12: with the module path
+    /// pinned to <c>$PSHOME\Modules</c>, pwsh 7 has no Storage module of its own and every Storage section failed with
+    /// <c>CommandNotFoundException</c>; under Windows PowerShell 5.1 it is the same module the pinned path already names. A
+    /// failed import is not fatal and has no line of its own: each section that needs Storage then fails inside its own
+    /// <c>try</c> and prints its own error line (<c>volumes.error=CommandNotFoundException</c>), so the other sections still
+    /// answer.
+    /// </summary>
+    private const string StorageImport =
+        @"try { Import-Module -Name ([IO.Path]::Combine([Environment]::SystemDirectory,'WindowsPowerShell\v1.0\Modules\Storage')) -ErrorAction Stop } catch { }";
+
     /// <summary>The module path pinned FIRST (<see cref="HealthCommands.ModulePathPin"/>: no cmdlet may autoload a module from a
-    /// user's Documents), no progress bar, every error terminating inside its try, the output list, and the file helper: size,
-    /// sparse bit, last write (UTC), path — or three empty fields and the path when the file is not there.</summary>
+    /// user's Documents), then the Storage import (<see cref="StorageImport"/>), no progress bar, every error terminating inside
+    /// its try, the output list, and the file helper: size, sparse bit, last write (UTC), path — or three empty fields and the
+    /// path when the file is not there.</summary>
     private static readonly string Prelude =
-        HealthCommands.ModulePathPin + "; " + $$"""$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; $o=New-Object System.Collections.Generic.List[string]; function V([string]$f){ $t=''; if($f -match '^[A-Za-z]:\\'){ $t=[string]([IO.DriveInfo]::new($f.Substring(0,1))).DriveType }; if($t -ne 'Fixed'){ return '{{NotLocalMark}}|||'+$f }; $i=Get-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; if($i){ [string]$i.Length+'|'+[string][int](($i.Attributes -band {{SparseAttribute}}) -ne 0)+'|'+$i.LastWriteTimeUtc.ToString('o')+'|'+$f } else { '|||'+$f } }""";
+        HealthCommands.ModulePathPin + "; " + StorageImport + "; " + $$"""$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; $o=New-Object System.Collections.Generic.List[string]; function V([string]$f){ $t=''; if($f -match '^[A-Za-z]:\\'){ $t=[string]([IO.DriveInfo]::new($f.Substring(0,1))).DriveType }; if($t -ne 'Fixed'){ return '{{NotLocalMark}}|||'+$f }; $i=Get-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; if($i){ [string]$i.Length+'|'+[string][int](($i.Attributes -band {{SparseAttribute}}) -ne 0)+'|'+$i.LastWriteTimeUtc.ToString('o')+'|'+$f } else { '|||'+$f } }""";
 
     /// <summary>Every registered distro from <c>HKCU\…\Lxss</c>: its virtual disk's file (<c>BasePath</c> without the <c>\\?\</c>
     /// prefix, <c>VhdFileName</c> or <c>ext4.vhdx</c>) and its name, LAST (a free-text field takes the rest of the line).</summary>

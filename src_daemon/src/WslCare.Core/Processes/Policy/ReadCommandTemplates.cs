@@ -73,13 +73,12 @@ public static class ReadCommandTemplates
     /// integers are configuration. Its ceiling is <c>health.windowsDiskTimeoutSeconds</c>, its cap the health probes'. The
     /// never-list's closed set says the same thing first (<see cref="HealthCommands.FixedScripts"/>). Declared BEFORE <see cref="All"/>.
     /// </summary>
-    public static CommandTemplate WindowsDisk { get; } = new(
-        WindowsDiskCommands.Name,
-        CommandScope.Machine,
-        HealthCommands.PowerShell,
-        [L("-NoProfile"), L("-NonInteractive"), L("-Command"), S("script", new SlotKind.WindowsDiskScript())],
-        ConfigKeys.Health.WindowsDiskTimeoutSeconds,
-        ConfigKeys.Health.OutputCapBytes);
+    public static CommandTemplate WindowsDisk { get; } = DiskScript(WindowsDiskCommands.Name, HealthCommands.PowerShell);
+
+    /// <summary>The SAME script under the bare <c>pwsh.exe</c>, the MSI PowerShell 7 (E15.S1b,
+    /// <see cref="WindowsDiskCommands.WindowsDiskUnderPwsh"/>) — the same words, the same one-value slot, the same ceiling and
+    /// cap. The clock probe has no pwsh template. Declared BEFORE <see cref="All"/>.</summary>
+    public static CommandTemplate WindowsDiskUnderPwsh { get; } = DiskScript(WindowsDiskCommands.PwshName, HealthCommands.Pwsh);
 
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
@@ -94,6 +93,7 @@ public static class ReadCommandTemplates
         TimesyncStatus,
         TimeJumpsBack,
         WindowsDisk,
+        WindowsDiskUnderPwsh,
         ContainerInspect,
         Machine(
             "events",
@@ -111,6 +111,15 @@ public static class ReadCommandTemplates
 
     private static CommandTemplate Machine(string name, string executable, IReadOnlyList<ArgPart> parts, ConfigKey.IntKey timeoutSeconds) =>
         new(name, CommandScope.Machine, executable, parts, timeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
+
+    /// <summary>The disk script's template under <paramref name="executable"/>: three fixed words and the one-value script slot.</summary>
+    private static CommandTemplate DiskScript(string name, string executable) => new(
+        name,
+        CommandScope.Machine,
+        executable,
+        [L("-NoProfile"), L("-NonInteractive"), L("-Command"), S("script", new SlotKind.WindowsDiskScript())],
+        ConfigKeys.Health.WindowsDiskTimeoutSeconds,
+        ConfigKeys.Health.OutputCapBytes);
 
     private static ArgPart.Literal L(string text) => new(text);
 

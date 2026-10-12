@@ -107,12 +107,14 @@ public static class HealthCommands
         };
 
     /// <summary>
-    /// The CLOSED set of PowerShell commands the product starts (PLAN_disk_health.md §3.1, E15.S1): the clock probe and the
-    /// Windows disk script, each a fixed argv with no slot. The never-list refuses every PowerShell argv that is not EXACTLY one
-    /// of these (program and arguments), so a third script, a variant of one of these, or <c>-File</c> never runs. Built from the
-    /// configuration in force, as the commands themselves are.
+    /// The CLOSED set of PowerShell commands the product starts (PLAN_disk_health.md §3.1, E15.S1; E15.S1b): the clock probe
+    /// (always Windows PowerShell 5.1), the Windows disk script under 5.1, and the SAME disk script under the bare
+    /// <see cref="Pwsh"/> (the MSI PowerShell 7) — each a fixed argv with no slot. The never-list refuses every PowerShell argv
+    /// that is not EXACTLY one of these (program and arguments), so a third script, a variant of one of these, the clock probe
+    /// under pwsh, pwsh by another spelling or path, or <c>-File</c> never runs. Built from the configuration in force, as the
+    /// commands themselves are.
     /// </summary>
-    public static IReadOnlyList<ToolCommand> FixedScripts => [WindowsClock, WindowsDiskCommands.WindowsDisk];
+    public static IReadOnlyList<ToolCommand> FixedScripts => [WindowsClock, WindowsDiskCommands.WindowsDisk, WindowsDiskCommands.WindowsDiskUnderPwsh];
 
     public static ToolCommand SnapList => new(Snap, "snap-list-all", ["list", "--all"], SnapCeiling, Cap);
 

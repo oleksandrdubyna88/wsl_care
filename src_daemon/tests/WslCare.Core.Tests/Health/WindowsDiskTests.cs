@@ -367,6 +367,23 @@ public sealed class WindowsDiskTests
         script.Should().Contain("$ProgressPreference='SilentlyContinue'");
     }
 
+    /// <summary>E15.S1b, measured 2026-10-12 (the Store pwsh 7.6.6, read-only): with the module path pinned to
+    /// <c>$PSHOME\Modules</c>, pwsh 7 finds no <c>Get-Volume</c>, <c>Get-Partition</c>, <c>Get-PhysicalDisk</c> or
+    /// <c>Get-StorageReliabilityCounter</c> — Storage is not in pwsh's own folder. So the script imports Storage by its ABSOLUTE
+    /// System32 path (GetSystemDirectory, not a variable) right after the pin — the extension's G6 road for PnpDevice — and
+    /// before any Storage cmdlet. Under 5.1 it is the same module the pinned path already names.</summary>
+    [Fact]
+    public void The_storage_module_is_imported_by_its_absolute_system32_path_right_after_the_pin()
+    {
+        var script = WindowsDiskCommands.Script;
+        const string import = @"try { Import-Module -Name ([IO.Path]::Combine([Environment]::SystemDirectory,'WindowsPowerShell\v1.0\Modules\Storage')) -ErrorAction Stop } catch { }";
+
+        script.Should().StartWith(HealthCommands.ModulePathPin + "; " + import + "; ", "the pin first, the import second, before any cmdlet");
+        script.IndexOf(import, StringComparison.Ordinal).Should().BeLessThan(script.IndexOf("Get-Volume", StringComparison.Ordinal))
+            .And.BeLessThan(script.IndexOf("Get-PhysicalDisk", StringComparison.Ordinal));
+        script.Should().NotContain("$env:SystemRoot", "System32 comes from GetSystemDirectory, never from a variable the caller sets");
+    }
+
     [Fact]
     public void Every_tag_the_parser_reads_is_printed_by_the_script()
     {
