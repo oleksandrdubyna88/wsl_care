@@ -1076,5 +1076,11 @@ name as a user name; with another folder name both are green, 57 of 57); the ext
 1 skipped, 2 failed: two `fakeWsl.test` cases that timed out at 15 s under load and pass alone, 49 of 49); lint, format and
 plan-lifecycle clean.
 
+**After the rebase onto `origin/main` (90b36369)**, everything again: Windows — Core 2749 (2668 passed, 81 skipped), CLI 410
+(408, 2 skipped), Scenarios 616 (332 passed, 284 skipped), 0 failed; Linux (the same folder) — the goldens unchanged
+(`GoldenContractTests` green without a write), Core 2749 (1 failed: the same `ClockGuardTests` case, green alone, 45 of 45), CLI
+410 (391 passed, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the extension 1250 (1249 passed, 1 skipped); lint,
+format and plan-lifecycle clean.
+
 **Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
 that script. The three defaults are provisional until the full runs' records calibrate them.
