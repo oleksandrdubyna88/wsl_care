@@ -26,13 +26,14 @@
    own VM-level `chronyd` disciplines it to the Hyper-V host clock (`/dev/ptp0`, every 8 s), Ubuntu's `systemd-timesyncd`
    disciplines it to NTP, and **Windows is 0.17–0.19 s ahead of NTP**. Neither wins; Docker resets the result every 30 s.
 3. **The first hour of the boot was worse:** 93 of the Docker steps were followed 32–783 ms later by a SECOND step, and
-   journald logged ≈ 95 *Time jumped backwards* — that is the `clock.fight` 95. After 08:44Z it nearly stopped (3 lines more by 10:10Z, 2 by 11:23Z).
+   journald logged ≈ 95 *Time jumped backwards* — that is the `clock.fight` 95. After 08:44Z it nearly stopped (3 lines
+   more by 10:10Z, 2 by 11:23Z).
 4. **journald rotates its file whenever a new entry's wall time is earlier than the last entry's, and keeps at most 100
    files (`SystemMaxFiles`, default 100).** The journal directory holds exactly 100 files of 8 MiB; the oldest are deleted
    BY COUNT. The daemon read 1.6 days of history at 08:03:54Z and 0.0 days at 10:02:22Z: the first hour's rotations
    erased everything older than 07:49Z.
 5. **Ranked fixes (§ 5):** F1 leave the clock to WSL's own `chronyd` — `timedatectl set-ntp false` in `Ubuntu`, reversible;
-   F2 keep Windows within milliseconds of NTP — the guard's existing `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker
+   F2 keep Windows closer to NTP — the guard's existing `wslCare.windowsTime.guard.everyHours` 4 → 1; F3 Docker
    Desktop has no setting for it — upstream issue, stop it when unused, and the daemon names it in its verdicts.
 
 ## 1. Who can set the clock — the inventory (10:09:59Z unless stated)
@@ -110,8 +111,8 @@ here (upstream: 1–2 ms steps are still made).
 |---|---|---|
 | J1 | systemd-resolved clock changes, 07:49–10:10Z | 380: **285 intervals of 29–31 s** (Docker), **93 second changes 32–783 ms after a Docker step**, all in monotonic 0–3 600 s (≈ 07:43–08:44Z) |
 | J2 | journald *Time jumped backwards, rotating* | 98 (pid 51) and 95 (pid 65); all but 3 in monotonic 0–3 600 s; 3 in 5 400–7 200 s |
-| J3 | the journal directory | **exactly 100 files** (96 `system@`, 3 `user-1000@`, the active ones), 8 MiB each, 367 MB in all; the oldest archive 09:49 local = 07:49Z |
-| J4 | the daemon's own reading | 08:03:54Z: `journal.history` *1.6 days (oldest entry 2026-10-10 07:48Z)*; 10:02:22Z: *0.0 days (oldest entry 2026-10-12 07:49Z)*. The days are counted from the run's window start (`HealthSample.Since`, the previous run's start), not from the run itself — `ThresholdRules.cs:238` `health.Since - oldest` — which is why 08:03:54Z minus 10-10 07:48Z (2.0 days) printed 1.6 (§ 8) |
+| J3 | the journal directory | **exactly 100 files** (96 archived `system@…`, the active `system.journal`, and 3 `user-1000` files, one of them active), 8 MiB each, 367 MB in all; the oldest archive 09:49 local = 07:49Z |
+| J4 | the daemon's own reading | 08:03:54Z: `journal.history` *1.6 days (oldest entry 2026-10-10 07:48Z)*; 10:02:22Z: *0.0 days (oldest entry 2026-10-12 07:49Z)*. The days are counted from the run's window start (`HealthSample.Since`, the previous run's start), not from the run itself — `src_daemon/src/WslCare.Core/Thresholds/ThresholdRules.cs:238` `health.Since - oldest` — which is why 08:03:54Z minus 10-10 07:48Z (2.0 days) printed 1.6 (§ 8) |
 | J5 | this boot's own start | the VM 07:43:23Z, timesyncd started 07:44:23Z — yet the oldest entry is 07:49:22Z: even the boot's first six minutes are gone |
 
 - **Measured mechanism of the loss:** journald rotates its files when the wall clock jumped backwards RELATIVE TO ITS LAST
@@ -138,7 +139,7 @@ here (upstream: 1–2 ms steps are still made).
   way inside WSL (its chronyd is `-x`, § 1), and Microsoft's own init runs `chronyd` precisely "to keep guest clock in sync
   with the host".
 - **Risk:** the distro then keeps **Windows' accuracy, not NTP's** — today 0.17–0.19 s (§ 2c), on 2026-10-08 two hours.
-  That is already what K1, K3 and K4 enforce every 8–30 s; timesyncd only fights it. A Windows clock that is wrong stays
+  That is already what K1 (every 8 s) and K3 (every 30 s) enforce; timesyncd only fights it. A Windows clock that is wrong stays
   visible through `clock.reference`. Second risk: K1 is invisible from the distro, so "it runs" cannot be read directly —
   hence the live check below. Third: `timedatectl`'s `NTPSynchronized` comes from the kernel's `STA_UNSYNC`, which K1
   clears (status 0, S4); predicted to stay `yes` — and A16's first skip depends on it, so it must be re-read after F1.
@@ -159,12 +160,12 @@ here (upstream: 1–2 ms steps are still made).
   step; the upstream report measured 1–2 ms): take its observed maximum over a day and add a stated margin. Until then
   F1 is advice only.
 
-### F2 — keep Windows within milliseconds of NTP: the guard's resync every hour
+### F2 — keep Windows closer to NTP: the guard's resync every hour
 
 - **What it changes:** `wslCare.windowsTime.guard.everyHours` 4 → 1 (an existing setting, 1–168; applies when the guard is
   reinstalled, one UAC prompt). Windows' own poll is `SpecialPollInterval` 16 384 s (4.55 h); it had not synced since the
-  guard's 08:00:05Z resync (3.5 h at 11:28Z), reported *only stale time data* at 10:15Z, and was 0.19 s ahead by then. The fight's step size (§ 2) is
-  set by exactly that offset, and after F1 the distro inherits it.
+  guard's 08:00:05Z resync (3.5 h at 11:28Z), reported *only stale time data* at 10:15Z, and was 0.19 s ahead by then.
+  The fight's step size (§ 2) is set by exactly that offset, and after F1 the distro inherits it.
 - **Risk:** low — the same task, run more often; four times as many SYSTEM-task runs a day. Not measured: how far Windows
   drifts in one hour (predicted: under 0.08 s — the observed drift was 0.076 s per hour over 08:00–10:15Z and 0.016 s per
   hour over 10:15–11:28Z).
@@ -219,8 +220,9 @@ Re-measure with the same read-only scripts (§ 2a, 2b) and the daemon's next ful
   host-side writers are K1 (continuous) and K3 (the 30-s step); the reason should name the ones present.
 - `clock.jumps`' warn line (100 per 4 h) is below Docker's floor, so it warns on every run while Docker Desktop runs, about
   something the owner cannot change from wsl_care (F3).
-- `journal.history` counts its days from `HealthSample.Since` (the previous run's start, `ThresholdRules.cs:238`), not
-  from the sample's own instant, so it under-reads by the time since the last run (1.6 instead of 2.0 days at 08:03:54Z).
+- `journal.history` counts its days from `HealthSample.Since` (the previous run's start,
+  `src_daemon/src/WslCare.Core/Thresholds/ThresholdRules.cs:238`), not from the sample's own instant, so it under-reads
+  by the time since the last run (1.6 instead of 2.0 days at 08:03:54Z).
   The golden contract's description says "now minus the captured oldest journal entry".
 - `journal.history`'s reason ("clock jumps erase it") can name the mechanism: rotation per backward jump, deletion by file
   count (`SystemMaxFiles` 100).
