@@ -19,7 +19,7 @@ namespace WslCare.Cli.Commands;
 /// <remarks>Exit codes: 0 answered (registrable or not — the answer says which and why); 2 the distro's binary (the tasks are the
 /// Windows binary's, as <c>watch</c> is the distro's); 78 a configuration layer in error — no task is rendered from a configuration
 /// the daemon itself refuses (the <c>units dropin</c> rule).</remarks>
-internal static class TasksCommand
+internal static partial class TasksCommand
 {
     public static int Render(Request.TasksRender request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr)
     {

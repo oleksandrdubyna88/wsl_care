@@ -105,6 +105,10 @@ internal abstract record Request
     /// XML from its configuration, its own path and the user's SID, whether it may be registered, and the Windows dry state.</summary>
     internal sealed record TasksRender(Core.Scheduler.WindowsTask Task, bool Json) : Request;
 
+    /// <summary><c>tasks run &lt;watch|archive&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): the supervisor — the task's
+    /// worker from the CLOSED table (<see cref="Core.Scheduler.TaskWorkers"/>) in a kill-on-close job, bounded by its deadline.</summary>
+    internal sealed record TasksRun(Core.Scheduler.WindowsTask Task, bool Json) : Request;
+
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
 
@@ -289,6 +293,7 @@ internal static class CommandLine
         new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ArchiveArguments.ParseArchiveReconcile),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["tasks", "render"]], "tasks render <task> [--json]", "the Windows binary's: the XML of one per-user scheduled task, <task> watch or archive (\\wsl-care\\watch, \\wsl-care\\archive), from the configuration, this process's own path and the current user's SID; the numbers it used, the summary lines Task Scheduler's read-back must print, whether it may be registered (only a verified staged copy under %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\ is), and the Windows dry-run state (read-only: nothing is registered, nothing is written)", ["tasks", "render", "watch", "--json"], ParseTasksRender),
+        new([["tasks", "run"]], "tasks run <task> [--json]", "the Windows binary's supervisor, what each per-user task's action runs: <task> watch (this binary's own watch --timer) or archive (not built in this version), started suspended inside a kill-on-close job, resumed only inside it, and ended with its whole tree at its deadline (mcpWatchdog.runLimitMinutes, timer.runLimitMinutes; counted on the unbiased clock, so a sleep is not run time): exit 84 then, else the worker's own exit code; the worker's answer is this process's stdout", ["tasks", "run", "watch", "--json"], ParseTasksRun),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
@@ -679,6 +684,15 @@ internal static class CommandLine
         [var name] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRender(task, false),
         [var name, JsonFlag] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRender(task, true),
         _ => new Request.Failed($"\"{BinaryName} tasks render\" takes exactly one task ({string.Join(", ", Core.Scheduler.WindowsTask.All)}) and optionally {JsonFlag}: {BinaryName} tasks render <task> [{JsonFlag}]."),
+    };
+
+    /// <summary><c>tasks run &lt;watch|archive&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c> — nothing
+    /// else, so no word a person or a task types reaches the worker (§4: never free argv through the supervisor).</summary>
+    private static Request ParseTasksRun(IReadOnlyList<string> rest) => rest switch
+    {
+        [var name] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRun(task, false),
+        [var name, JsonFlag] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRun(task, true),
+        _ => new Request.Failed($"\"{BinaryName} tasks run\" takes exactly one task ({string.Join(", ", Core.Scheduler.WindowsTask.All)}) and optionally {JsonFlag}, nothing else: {BinaryName} tasks run <task> [{JsonFlag}]."),
     };
 
     private static Request ParseRunsShow(IReadOnlyList<string> rest) =>

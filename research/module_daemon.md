@@ -76,6 +76,7 @@ flowchart TB
 | `RunningFile`, `FirstTimerRun` | `Core/Actions/Engine` | `running.json` (pid + start + heartbeat) and the start of the timer's 7-day dry run |
 | `DryRunPeek` / `DryWeek` | `Core/Actions/Engine` | what a timer run NOW would decide about the dry run, read without writing the stamp (`DryRunWindow.Peek`, WR-D1; section below) |
 | `WindowsTask`, `TaskIdentity`, `WindowsTaskDefinition`, `TasksRenderReport` | `Core/Scheduler` | the Windows runner's two tasks (a closed set), who a task runs as and what it starts, the rendered XML with its numbers and summary, the `tasks render --json` answer (section below) |
+| `IWorkerSupervisor`, `JobSupervisor`, `IJobControl` / `Win32JobControl`, `WorkerLaunch`, `WorkerOutcome`, `TaskWorkers` | `Core/Processes`, `Core/Scheduler` | the Windows runner's supervisor (WR-D3): one kill-on-close job per `tasks run`, the worker from a closed table, its deadline on the unbiased clock (section below) |
 | `StageRecord` / `StageRead`, `StagedCheck` | `Core/Scheduler` | `stage.json` beside a staged copy and its strict reader; whether this process is a verified staged copy (`registrable`) |
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 | `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
@@ -100,7 +101,8 @@ Read: `/proc`, cgroup v2, `/etc/passwd`, `/etc/wsl.conf`, `docker` (read verbs, 
 `journalctl`, `timedatectl` (`show`, `timesync-status`), `powershell.exe` (a closed set of two fixed scripts: the Windows
 clock and the Windows Time service; since E15.S1 the Windows disk facts, full run only), `curl` (one HEAD for the clock reference's `Date`, a slotted template; since 2026-10-08). Act: `docker` prunes and removals,
 `sysctl -w` (two literal keys), `runuser -u <user> --` for user-scoped tools, `npm` / `pnpm` / `uv` / `pip` / `dotnet
-nuget`, `snap`, `fstrim`, `chronyc` / `hwclock`, pidfd signals (A11, A18). Packages: Serilog only (CLI); `WslCare.Core`
+nuget`, `snap`, `fstrim`, `chronyc` / `hwclock`, pidfd signals (A11, A18); on Windows, the Job Object of `tasks run` (kernel32:
+`CreateJobObjectW`, `CreateProcessW` of its own binary, `TerminateJobObject`; WR-D3). Packages: Serilog only (CLI); `WslCare.Core`
 has none.
 
 ## Where the detail is
@@ -127,6 +129,7 @@ has none.
 | the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
 | the Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) §3.1, the measurement [2026-10-10_disk.md](2026-10-10_disk.md) |
 | the Windows runner's render: `tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek` (WR-D1, 2026-10-11) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2–§3.7 |
+| the Windows runner's supervisor: `tasks run`, the Job Object, exit 84 (WR-D3, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.3 |
 
 ## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
 
@@ -471,6 +474,98 @@ flowchart LR
   `windowsTasks.archiveLogonDelayMinutes` (20, 0–720), `windowsTasks.archiveEveryHours` (4, 1–24) — all `SafeDirection.Higher`,
   none machine-only (an unelevated runner's own user layer is the natural place, the plan's Q2). No new coupled rule: the
   existing `mcpWatchdog.periodMinutes < mcpServers.cpuIntervalMaxMinutes` holds the watch cadence under the baseline's maximum.
+
+## The Windows runner's supervisor (WR-D3 of PLAN_windows_runner.md, 2026-10-12)
+
+What each per-user task's action runs: `wsl-care.exe tasks run <watch|archive> [--json]`. It starts the task's worker — this
+binary's OWN executable, with arguments from a closed table — inside ONE kill-on-close Job Object and ends the worker's whole tree
+at its deadline. Nothing else in the product ends a process this way.
+
+```mermaid
+sequenceDiagram
+    participant TS as Task Scheduler / a person
+    participant SV as tasks run (supervisor)
+    participant JC as Win32JobControl
+    participant W as worker (self watch --timer)
+    TS->>SV: tasks run watch --json
+    SV->>SV: Windows layout? task in the closed table? own path absolute?
+    SV->>SV: [seam] SweepStagingAtRunStart (WR-D2 fills it)
+    SV->>JC: CreateJob: KILL_ON_JOB_CLOSE, no breakaway, handle NOT inheritable
+    SV-->>TS: stderr: starting (argv), deadline N min (its key)
+    SV->>JC: StartSuspended(job, self, "watch --timer --json"): CREATE_SUSPENDED | CREATE_NO_WINDOW, JOB_LIST = the job, HANDLE_LIST = the 3 std handles
+    SV->>JC: InJob(job, worker): IsProcessInJob
+    alt not in the job
+        SV->>JC: EndJob(job, 0xC5A1), then EndSuspended(worker, 0xC5A1)
+        SV-->>TS: exit 1, stderr: refused (never resumed outside the job)
+    else in the job from its creation
+        SV->>JC: Resume(worker)
+        W-->>TS: its answer on the inherited stdout / stderr
+        loop until the unbiased deadline
+            SV->>JC: Wait(worker, what is left)
+            SV->>SV: on a timeout: elapsed again on QueryUnbiasedInterruptTime
+        end
+        alt worker exited
+            SV-->>TS: the worker's own exit code, stderr: the worker exited N
+        else deadline passed
+            SV->>JC: EndJob(job, 0xC5A1), worker waited within commands.drainGraceMilliseconds
+            SV-->>TS: exit 84 TaskEnded, stderr: ended at its deadline (its key)
+        else Ctrl+C / a stop
+            SV-->>TS: exit 130, stderr: stopped by a signal
+        end
+    end
+    SV->>JC: close the job handle ALWAYS (kill-on-close ends whatever is left)
+```
+
+- **The verb** (`Cli/Commands/TasksCommand.Run.cs`, `CommandLine.cs`: `tasks run <task> [--json]`, exactly one task of
+  `WindowsTask.All` and optionally `--json`, nothing else). The distro's binary refuses it (2). `archive` is refused (2) as not
+  built: its body (dry → `archive preview`, real → `archive run`, §3.5) is WR-D5's. A host whose own path is not absolute starts
+  nothing (2). A configuration in error is NOT refused here: the worker reads the same layers and answers for itself.
+- **The closed table** (`Core/Scheduler/TaskWorkers.cs`): `watch` → `<self> watch --timer` (+ `--json` when the supervisor got
+  it; the task's action always passes it), deadline `mcpWatchdog.runLimitMinutes` (10). Each entry holds the task, its arguments
+  and its deadline KEY together; the launch carries both the duration and `DeadlineKey` from that one entry, so no line can name
+  another key. The supervisor spells `--timer`; the extension never does. `WorkerLaunch`'s constructor is internal, so the product
+  builds a launch only here.
+- **Its stderr lines**: ONE when supervision starts (`tasks run watch: starting <argv> in a kill-on-close job, deadline 10 min
+  (mcpWatchdog.runLimitMinutes)`) and ONE terminal line — `the worker exited N`, the deadline line, `refused: <why>`, or `stopped by
+  a signal` (then the program's `interrupted.`). The worker's own stderr lines come in between.
+- **The supervisor** (`Core/Processes/JobSupervisor.cs`, behind `IWorkerSupervisor`; `CliHost.Supervisor`, wired only in
+  `CliHost.ForThisMachine` on Windows — every host a test builds holds a `RefusingWorkerSupervisor`): the ORDER of the calls is
+  the rule set, so it is written once over the `IJobControl` seam and read by a fake that records every call. Its clock is its own
+  seam, `IUnbiasedClock` (`Core/Processes/IUnbiasedClock.cs`; `Win32Boot` implements it — `IWindowsBoot` extends it with the
+  ledger's boot id), not the MCP ledger's `IWindowsBoot`. The wait is a LOOP: each timed-out wait reads the unbiased clock again and
+  waits for what is left. The job is closed in a `using` whatever happens; the worker's handles too. A clock that stops answering
+  mid-run counts as past the deadline (fail closed). After `EndJob` the worker is waited for within
+  `commands.drainGraceMilliseconds` (the child runner's grace). `WorkerLaunch.Arguments` is an immutable COPY made by the
+  constructor (`{ get; init; } = []`), so no caller's list can change what is started.
+- **The Win32 half** (`Core/Processes/JobSupervisor.Win32.cs`, `Win32JobControl`, `LibraryImport` only, Native AOT):
+  `CreateJobObjectW` with an explicit non-inheritable `SECURITY_ATTRIBUTES`; `SetInformationJobObject(JobObjectExtendedLimitInformation)`
+  with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` alone; `CreateProcessW` with `lpApplicationName` = the absolute path (no search),
+  `CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT`, a `PROC_THREAD_ATTRIBUTE_JOB_LIST` naming the job — the
+  worker is CREATED INSIDE it, so there is no moment between its creation and an assign in which a supervisor that dies would
+  leave a suspended worker outside the kill-on-close job (the coai code round, finding 1; Windows 10+; a refused nesting fails
+  `CreateProcessW`, nothing started) — then `IsProcessInJob` verifies the membership before the resume (not in the job → the job
+  ended, the worker ended by its own handle, refused), `STARTF_USESTDHANDLES` and a
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` of inheritable DUPLICATES of the three standard handles (closed again right after; a
+  missing one is not passed; one that exists but cannot be duplicated refuses the start, `StandardCopies`); the command line quoted
+  by `Core/Processes/WindowsCommandLine.cs` (the C runtime's rules, read back through `CommandLineToArgvW` in a test).
+  No `AssignProcessToJobObject` any more; `ResumeThread`, accepted ONLY from the suspended start (a previous suspend count of exactly 1 —
+  anything else is "not in its suspended start", the job is ended and the run refused); a `WaitHandle` over the process handle
+  (with the run's cancellation; a failed wait throws, the job's `using` closes it, and the program answers 70); `GetExitCodeProcess`
+  (unreadable → a refusal, never an invented code); `TerminateJobObject(job, 0xC5A1)`; `TerminateProcess` of the still suspended
+  worker only, whose failure the refusal names (it then stays suspended, never resumed — never reported "ended").
+  `ArchitectureTests.Only_the_supervisor_ends_a_process_through_a_job_or_by_its_handle` holds this file the only one that spells
+  `TerminateJobObject`, `TerminateProcess`, `TerminateThread` (each also as `Nt…`/`Zw…`), `AssignProcessToJobObject` (still
+  scanned, though the seam no longer calls it) or `CreateProcess*`, as a call or as a quoted entry point.
+- **Its exits**: the worker's own code; **84 `TaskEnded`** (new; `contracts/exit-codes.json`, the extension's `DAEMON_EXIT.taskEnded`
+  and its root kind `taskEnded`) with its terminal line naming the deadline and its key; 1 when no worker could run inside a job or
+  its exit code could not be read (the reason is the line); 130 on a signal; 70 when a wait itself failed. The supervisor writes
+  nothing to stdout — the worker's answer is the stdout.
+- **Stops**: Ctrl+C / a console close reaches `ShutdownSignals`, the wait returns, the job is closed — kill-on-close ends the tree.
+  Task Scheduler's *End* (and `ExecutionTimeLimit`, the deadline + 10 min, the outer net) terminates the supervisor itself; the
+  OS then closes the job handle, and kill-on-close ends the tree the same way.
+- **Until WR-D4** the Windows `watch` is still refused (2), so the supervised worker of today exits 2 with its own refusal and
+  the supervisor passes it through — what `Scenarios/WindowsTasksRunFlows` asserts over the built binary. **WR-D4 must change that
+  flow in the same PR**, or it would start a real `watch --timer` of the built binary.
 
 ## Story history (moved from architecture.md, 2026-10-12)
 

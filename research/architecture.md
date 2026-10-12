@@ -788,7 +788,16 @@ without a writable state directory · 2 usage · 70 a defect · 75 busy (another
 130 interrupted. Since E3.S1 also, for `act`: 3 an action failed · 76 wedged · 77 needs root · 78 observe-only (§ *The action
 engine, the command policy and `act`*); since 2026-10-03 · 79 `running.json` unreadable after retries (gate finding #7). Since
 E3.S3, for `logs` / `runs`: 4 the history exists but cannot be read. The detached runs' codes (69, 71, 73, 80, 81, and 82 an
-unusable request recorded refused) and which of them each unit counts as success: `architecture-daemon-e6.md`.
+unusable request recorded refused) and which of them each unit counts as success: `architecture-daemon-e6.md`. Since E14 S6, 83
+machine busy (`busy` only). Since WR-D3 (PLAN_windows_runner.md, 2026-10-12), **84 `TaskEnded`** — the Windows binary's `tasks run`
+only: the supervised worker was ended at its deadline with its whole tree (its job terminated); otherwise `tasks run` exits with the
+worker's own code, 1 when no worker could start inside a job, 130 when stopped. No systemd unit runs that verb, so no unit counts
+84 (`UnitSuccessExitTests`: not reachable). **Across to the extension:** `contracts/exit-codes.json` (written from `ExitCode` by
+`ContractFilesTests`) carries `taskEnded: 84`; the extension names it `DAEMON_EXIT.taskEnded` (`src_vs_code/src/client/exitCodes.ts`,
+held equal to the contract both ways by `exitCodes.test.ts`) and reads it as its own root kind `taskEnded` — label *ended at its
+deadline*, a sentence naming the run and the daemon's lines (`root/rootOutcome.ts`, `rootFailures.ts`, `rootFailureText.ts`;
+`rootFailures.test.ts` holds every non-zero contract code to a distinct kind). The Task Scheduler run buttons that will meet it
+are WR-E3/E4's (they read Task Scheduler's `lastResult`, which for a task run is this exit code).
 
 ### Deviations from the plan recorded in E2.S3
 

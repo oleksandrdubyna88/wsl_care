@@ -72,6 +72,8 @@ export type RootFailure =
   | { readonly kind: 'requestUnusable'; readonly messages: readonly string[] }
   /** 83 (E14 S6): the machine is too busy to start heavy work — `busy` only, never a root path's answer. */
   | { readonly kind: 'machineBusy'; readonly messages: readonly string[] }
+  /** 84 (WR-D3): a Windows task's worker was ended at its deadline with its whole tree — `tasks run` only, never a root path's answer. */
+  | { readonly kind: 'taskEnded'; readonly messages: readonly string[] }
   /** 3: an action failed. */
   | { readonly kind: 'actionFailed'; readonly messages: readonly string[] }
   /** 4: the records cannot be read. */

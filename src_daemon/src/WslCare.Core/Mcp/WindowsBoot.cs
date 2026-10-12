@@ -7,14 +7,12 @@ namespace WslCare.Core.Mcp;
 /// Windows' boot identity and monotonic clock for the CPU ledger (E14 S7b.1) — a seam: the real one is <see cref="Win32Boot"/>, a test
 /// scripts its own. READ-ONLY by construction: it reads one registry value and one clock.
 /// </summary>
-public interface IWindowsBoot
+/// <remarks>The clock half is <see cref="Processes.IUnbiasedClock"/> (the ledger's denominator), which the Windows tasks' job supervisor
+/// takes on its own.</remarks>
+public interface IWindowsBoot : Processes.IUnbiasedClock
 {
     /// <summary>This boot's identity as the ledger names it (<c>windows-&lt;BootId&gt;</c>), or why it cannot be read.</summary>
     Reading<string> BootId();
-
-    /// <summary>Milliseconds since boot that do NOT advance while the host sleeps — the ledger's denominator, as Linux's
-    /// <c>CLOCK_MONOTONIC</c> is in the distro — or why it could not be read (never 0 for "unread", coai code round 1bc694ea).</summary>
-    Reading<long> UnbiasedMilliseconds();
 }
 
 /// <summary>A boot that reads nothing — what every host off Windows and a host built by a test hold: without a boot id the ledger

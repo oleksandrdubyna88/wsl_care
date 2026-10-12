@@ -101,6 +101,8 @@ public sealed class UnitSuccessExitTests
         [ExitCode.RequestUnusable] = (UnitAnswer.Answer, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
         // E14 S6: only the busy verb returns it, and neither unit runs that verb.
         [ExitCode.MachineBusy] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        // WR-D3: only the Windows binary's tasks run returns it, and no systemd unit runs that verb.
+        [ExitCode.TaskEnded] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
         [ExitCode.Interrupted] = (UnitAnswer.Answer, UnitAnswer.Answer, UnitAnswer.Answer),
     };
 

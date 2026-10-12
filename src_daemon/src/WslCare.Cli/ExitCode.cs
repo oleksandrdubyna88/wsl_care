@@ -16,7 +16,9 @@ internal enum ExitCode
 
     /// <summary>The run could not be RECORDED: its detail or its history line failed to write (plan §15b #1), or
     /// <c>events follow</c> was started by a process that may not write the state directory. What was measured is
-    /// still printed.</summary>
+    /// still printed. And <c>tasks run</c> (WR-D3): no worker could start inside a job — no job, no process, a standard handle that
+    /// could not be passed, a failed assign or resume, an unreadable unbiased clock — or the worker's exit code could not be read;
+    /// the one stderr line says which, and nothing ran outside the job.</summary>
     RunFailed = 1,
 
     /// <summary>The arguments could not be read or accepted — an unknown verb, extra words, a value
@@ -87,6 +89,11 @@ internal enum ExitCode
     /// the answer names which. Advice to an agent that asked, never an error: wait with a bounded backoff, then go. (Not
     /// <see cref="Busy"/>, 75, which means another run holds the run lock.)</summary>
     MachineBusy = 83,
+
+    /// <summary><c>tasks run &lt;task&gt;</c> (WR-D3 of PLAN_windows_runner.md §3.3): the supervised worker was ended at its deadline (counted
+    /// on the unbiased clock, so a host sleep is not run time); its whole tree is gone — the job it ran in was terminated. One line on
+    /// stderr names the deadline and its key; every other run of the supervisor exits with the worker's own code.</summary>
+    TaskEnded = 84,
 
     /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention). Under a unit the only signal
     /// is systemd's SIGTERM - a stop someone asked for (<c>act --stop</c>, <c>systemctl stop</c>, a shutdown) - and the run records
