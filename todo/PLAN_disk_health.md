@@ -1217,3 +1217,80 @@ every full run, and the latency it measures is calibrated for 5.1.
   PowerShell 7 at that path. This is the evidence that the selection is safe to ship.
 
 Break-its on the judgement and on the closed set. Docs: module_daemon (the engine), README, module_tests, the as-built section.
+
+### E15.S1b stories (the split, 2026-10-12 — decided by a Fable model, as the gate operator asked)
+
+Five stories, built in this order on the one branch, one commit each, no gate between them. Each is complete on its own:
+after S1 the probe prints facts nobody reads yet; after S2 the judgement exists and is tested but nothing runs under it;
+after S3 the policy admits the run that S4 then makes; S5 records it. Measured before the split (2026-10-12, the Store
+`pwsh` 7.6.6 on the owner's machine, read-only): with the module path pinned to `$PSHOME\Modules`, `pwsh` 7 finds NO
+`Get-Volume`, `Get-Partition`, `Get-PhysicalDisk` or `Get-StorageReliabilityCounter` — the Storage module is not in pwsh's
+own `Modules` folder — while `Get-WinEvent`, `Get-CimInstance` and `Get-AuthenticodeSignature` are there. After
+`Import-Module` of `[Environment]::SystemDirectory\WindowsPowerShell\v1.0\Modules\Storage` (the extension's own G6 road for
+`PnpDevice`) all four answer. So the disk script must import Storage by that absolute path, or the real-pwsh test of S3
+fails on CI. That is S3's work, not a new story.
+
+1. **S1 — The clock probe verifies the MSI pwsh; the parser reads its tags.**
+   *What:* `HealthCommands.ClockScript` prints, AFTER the two instants and the w32time lines, `pwsh.knownFolder=`,
+   `pwsh.envProgramFiles=`, `pwsh.msi=` (`absent` | `link` | `empty` | `file`) and `pwsh.signature=` (`signed` |
+   `unsigned:<status>|<subject>`), by `elevatedEngine.ts`'s rules, inside its own `try { } catch { }` so a fault there
+   leaves the tags empty and never ends the probe. `HealthParsers.WindowsClock` treats the new tags as TAGGED (never a
+   position); `ClockParsers.PwshProbe` reads them into `PwshProbe`; `WindowsClockAnswer.Pwsh` and `WindowsClockSample.Pwsh`
+   carry it (not written to the history line).
+   *Files:* `Health/HealthCommands.cs`, `Health/HealthParsers.cs`, `Health/ClockParsers.cs`, `Health/PwshProbe.cs` (new),
+   `Records/SlowParts.cs`; a live capture under 5.1, anonymised: `tests/fixtures/health/pwsh-engine-2026-10-12/`,
+   `TestSupport/PwshEngineFixture.cs`.
+   *Tests:* `Health/PwshProbeTests` (new): the capture reads `absent` with both folders `C:\Program Files`; the 2026-10-08
+   answer (before the tags) says no pwsh line; an empty value is an empty value; the tags never shift the three positional
+   lines; in the script both instants and the service query come BEFORE the pwsh look, and the look sits in `try { } catch`;
+   `ClockGuardTests`, `HealthTests`, `InteropModulePathTests` stay green; the probe run live under 5.1 (read-only).
+2. **S2 — The judgement is pure; `pwsh.exe` joins the resolver's closed list.**
+   *What:* `Health/PwshEngine.cs`: `InteropEngine(Kind, Program, Reason)`; `PwshEngine.Choose(sample, automountRoot)` answers
+   `msi` with `<automountRoot>c/Program Files/PowerShell/7/pwsh.exe` ONLY when the known folder is exactly `C:\Program Files`,
+   the environment's `ProgramFiles` equals it (case-insensitive), `pwsh.msi` is `file` and `pwsh.signature` is `signed`;
+   else `windowsPowerShell` (`powershell.exe`) with the reason; an unmeasured probe or one without the tags: "the clock probe
+   did not verify pwsh: …". `HealthCommands.Pwsh = "pwsh.exe"`; `WindowsSystemDrive.Programs` gains `pwsh.exe` →
+   `Program Files/PowerShell/7`.
+   *Files:* `Health/PwshEngine.cs` (new), `Health/HealthCommands.cs`, `Processes/WindowsSystemDrive.cs`.
+   *Tests:* `Health/PwshEngineTests` (new): the spoofed environment, another known folder, `absent` / `link` / `empty`,
+   `unsigned:NotSigned`, `unsigned:HashMismatch`, a Valid signature of another publisher, a failed probe, a probe without
+   the tags — each 5.1 with its reason; everything verified → the path, under `/mnt/` and under another automount root; never
+   a `WindowsApps` path. `SystemDriveResolverTests`: `pwsh.exe` under the service's PATH resolves in its folder on the drive and
+   is refused by the same checks.
+3. **S3 — The closed set admits pwsh with the disk script alone; the script runs under pwsh 7.**
+   *What:* `WindowsDiskCommands.WindowsDiskUnderPwsh` — `WindowsDisk` with `Executable = HealthCommands.Pwsh`, its own name
+   and summary, the SAME `Arguments` instance (one source); `HealthCommands.FixedScripts` = the clock probe, the disk script,
+   the disk script under pwsh; the read template `ReadCommandTemplates.WindowsDiskUnderPwsh`; the never-list's words; the
+   disk script's prelude imports Storage by its absolute System32 path right after the pin (measured above; the same module
+   under 5.1).
+   *Files:* `Health/WindowsDiskCommands.cs`, `Health/HealthCommands.cs`, `Processes/Policy/ReadCommandTemplates.cs`,
+   `Processes/Policy/NeverList.cs`.
+   *Tests:* `PowerShellClosedSetTests`: the set is three and names its programs; `pwsh.exe` passes with the disk script's exact
+   arguments and the policy allows it; `pwsh.exe` with the clock arguments, with a one-word variant, with another
+   configuration's script, `pwsh` without `.exe` and an absolute `pwsh.exe` are refused; `InteropModulePathTests` covers the
+   third member; `WindowsDiskTests`: the Storage import follows the pin and names `SystemDirectory`;
+   `Health/RealPwshDiskScriptTests` (new, Windows only): the ACTUAL script under `C:\Program Files\PowerShell\7\pwsh.exe` —
+   skipped without it (the owner's machine), run on CI's `windows-latest` — ends with `end=1`, 0 malformed lines, the
+   volumes with `C:`, the physical disks, the events, the identity; Lxss may say why. The script run live under the Store
+   `pwsh` 7 and under 5.1 on the owner's machine (read-only) as the local evidence.
+4. **S4 — The full run starts the disk script under the chosen engine; the detail names it.**
+   *What:* `HealthCollector.CollectAsync` chooses the engine from the clock sample and the automount root, after the clock
+   probe and its reference as before; `MeasureWindowsDiskAsync(runner, clock, engine, token)` runs
+   `WindowsDiskCommands.Under(engine)`; `WindowsDiskSample.Engine` (a `Reading`); the run detail's
+   `health.windowsDisk.engine {program, reason}` (absent on the Windows binary and on older details); the scenario harness
+   installs a fake `pwsh` too.
+   *Files:* `Health/HealthCollector.cs`, `Health/WindowsDiskSample.cs`, `Health/WindowsDiskCommands.cs`,
+   `Collect/WindowsDiskReport.cs`, `tests/WslCare.FakeTool/FakeToolProtocol.cs`, `Scenarios/CollectFlows.cs`,
+   `Scenarios/WindowsDiskFlows.cs`.
+   *Tests:* `HealthTests`: a verified probe answer starts `pwsh.exe` with the disk arguments and the sample's engine names the
+   path; the capture (`absent`) starts `powershell.exe` with the reason; a failed probe → 5.1 "did not verify"; the disk
+   script still runs after the clock probe. `WindowsDiskTests`: the report carries `engine`; no Health type on the wire.
+   `WindowsDiskFlows` (the built CLI): a probe answer derived from the capture with the four tags verified makes `collect`
+   start the fake `pwsh` once with the disk arguments, never the fake `powershell` for it, and the detail says
+   `/mnt/c/Program Files/PowerShell/7/pwsh.exe`; the captured flow keeps `powershell`; `status` starts neither. The goldens
+   re-checked on Linux.
+5. **S5 — The record.**
+   *What:* module_daemon (the engine choice, the closed set of three, the Storage import), README (which PowerShell the
+   daemon uses), module_tests (E15.S1b: the checks, the RED messages, the break-its), *E15.S1b as built* and the status line.
+   *Files:* `research/module_daemon.md`, `README.md`, `research/module_tests.md`, `todo/PLAN_disk_health.md`.
+   *Tests:* `plan-lifecycle.mjs`; every suite green; `dotnet format --verify-no-changes`.
