@@ -203,20 +203,41 @@ public static partial class Staging
         };
 
     /// <summary>The bytes written and flushed, the folder flushed, the copy read back and compared with the digest, then
-    /// <c>stage.json</c> written — the first that fails removes THIS stage's own copy (by its identity), and nothing is recorded.</summary>
+    /// <c>stage.json</c> written — the first that fails removes THIS stage's own copy (by its identity), and nothing is recorded; the
+    /// answer says whether that removal held (the coai code round on WR-D2, finding 1: never "removed" when it was not).</summary>
     private static CopyResult Verified(StageInput input, string digest, BeneathFolder folder, ExclusiveFile.Created created)
     {
-        var problem = Written(input, created) is { Length: > 0 } unwritten ? unwritten
-            : ReadBackProblem(input, digest, folder) is { Length: > 0 } differs ? differs
-            : RecordProblem(input, digest);
-        if (problem.Length == 0)
-        {
-            return new CopyResult.Done();
-        }
-
-        _ = input.Archive.RemoveOwnCopy(folder, StagedCopies.ExeName, created.Identity, Scope(input.Place));
-        return new CopyResult.Failed(problem);
+        var problem = CopyProblem(input, digest, folder, created);
+        return problem.Length == 0
+            ? new CopyResult.Done()
+            : new CopyResult.Failed($"{problem}; {Undone(input, digest, input.Archive.RemoveOwnCopy(folder, StagedCopies.ExeName, created.Identity, Scope(input.Place)))}");
     }
+
+    /// <summary>The first step of the copy that failed, in order; empty when every one held.</summary>
+    private static string CopyProblem(StageInput input, string digest, BeneathFolder folder, ExclusiveFile.Created created) =>
+        Written(input, created) is { Length: > 0 } unwritten ? unwritten
+        : FlushProblem(input, digest, folder) is { Length: > 0 } unflushed ? unflushed
+        : ReadBackProblem(input, digest, folder) is { Length: > 0 } differs ? differs
+        : RecordProblem(input, digest);
+
+    /// <summary>What became of this stage's own copy after a failure — removed, gone, or still there (named, with why).</summary>
+    private static string Undone(StageInput input, string digest, VerifiedRemoval removal) => removal switch
+    {
+        VerifiedRemoval.Removed => $"the copy was removed and no {StageRecord.FileName} written",
+        VerifiedRemoval.Gone => $"the copy is gone and no {StageRecord.FileName} written",
+        VerifiedRemoval.Kept kept => $"the copy could NOT be removed ({kept.Why}): it stays at {ExeOf(input, digest)} with no {StageRecord.FileName}, and the next stage replaces it",
+        VerifiedRemoval.Refused refused => $"the copy could NOT be removed ({refused.Why}): it stays at {ExeOf(input, digest)} with no {StageRecord.FileName}, and the next stage replaces it",
+        _ => $"the copy could NOT be removed: it stays at {ExeOf(input, digest)} with no {StageRecord.FileName}",
+    };
+
+    /// <summary>Empty when the folder flush held — a name created in a folder that did not flush may not survive a crash, so such a copy
+    /// is never recorded (finding 1).</summary>
+    private static string FlushProblem(StageInput input, string digest, BeneathFolder folder) => input.Archive.FlushFolder(folder) switch
+    {
+        FolderFlush.Done => string.Empty,
+        FolderFlush.Failed failed => $"{FolderOf(input, digest)} could not be flushed ({failed.Why}); a copy whose name may not survive a crash is not recorded",
+        _ => $"{FolderOf(input, digest)} could not be flushed",
+    };
 
     private static string Written(StageInput input, ExclusiveFile.Created created)
     {
@@ -250,11 +271,10 @@ public static partial class Staging
     private static string ReadBackProblem(StageInput input, string digest, BeneathFolder folder)
     {
         var exe = ExeOf(input, digest);
-        _ = input.Archive.FlushFolder(folder);
         return input.Archive.ReadBack(folder, StagedCopies.ExeName) switch
         {
             FileHash.Hashed { Sha256: var sha } when sha == digest => string.Empty,
-            FileHash.Hashed { Sha256: var sha } => $"{exe} read back as {sha}, not the source's digest {digest}; the copy was removed and no {StageRecord.FileName} written",
+            FileHash.Hashed { Sha256: var sha } => $"{exe} read back as {sha}, not the source's digest {digest}",
             FileHash.Unreadable unreadable => $"{exe} could not be read back: {unreadable.Why}",
             FileHash.Untrusted untrusted => $"{exe} could not be read back from the disk: {untrusted.Why}",
             _ => $"{exe} was not there when read back",

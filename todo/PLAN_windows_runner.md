@@ -553,3 +553,18 @@ Deviations and decisions the plan did not spell out:
   (a copy alone fails: "The application to execute does not exist: …\wsl-care.dll", exit 154). The flow tests what the built CLI
   can: the stage, the reuse, the sweep, the removal with a held copy (`Scenarios/WindowsTasksStageFlows`). The shipped Native AOT
   exe is one file.
+- **The coai code round on WR-D2** (session `01e5e611`): three findings accepted, one rejected.
+  - *Finding 1 (major), the results of the undo steps*: the folder flush after the copy is now checked — a failed flush refuses the
+    stage (a name that may not survive a crash is never recorded), its own copy removed, no `stage.json`; and the removal of the
+    stage's own copy after any failure is reported as it went — "the copy was removed", "the copy is gone", or "the copy could NOT be
+    removed (…): it stays at <exe> with no stage.json, and the next stage replaces it" — never "removed" when it was not.
+  - *Finding 2 (major), hashing in the run-start sweep* (~27 MB read every 5 minutes otherwise): the run-start sweep keeps its OWN
+    folder when its `stage.json` agrees, UNHASHED (the render verified that copy at registration); it walks the other folders with an
+    agreeing `stage.json` newest first (the clamped `stagedAtUtc`) and hashes only until one verifies — that one is kept; every other
+    folder is retired without hashing (its description comes from its `stage.json`: "an older copy by its stage.json (…; not hashed)").
+    From the newest copy — the usual case — it hashes nothing. The stage-time sweep and `--remove` (rare) keep the full verification
+    of every folder. The keep rule's "only VERIFIED folders are protected" holds at a run start in this lighter form for the run's
+    own folder: protected only when its `stage.json` agrees (an executing image is kept anyway by the exe-first removal).
+  - *Finding 3 (minor)*: `tasks run` writes one stderr line when its sweep was skipped (the run lock held) and one naming the folders it
+    could not remove; nothing when the sweep did nothing (the existing "retired" line stays).
+  - *Rejected*: a sweep status line on every run — noise on an unattended five-minute task; after finding 2 the common sweep is free.

@@ -62,11 +62,23 @@ internal static partial class TasksCommand
         }
     }
 
+    /// <summary>One line per thing worth saying, none when the sweep did nothing (the coai code round on WR-D2: finding 3 asked for the
+    /// skipped and the kept lines; a line on every run was rejected as noise on an unattended five-minute task).</summary>
     private static void SaySwept(StagingSweep sweep, TextWriter stderr)
     {
+        if (sweep.Busy.Length > 0)
+        {
+            Output.Note(stderr, $"tasks run: the staging sweep was skipped: {sweep.Busy}; the next run retries");
+        }
+
         if (sweep.Swept.Count > 0)
         {
             Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run: retired {sweep.Swept.Count} older staged copy folder(s): {string.Join(", ", sweep.Swept.Select(f => f.Digest))}"));
+        }
+
+        if (sweep.Kept.Count > 0)
+        {
+            Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run: the staging sweep could not remove {sweep.Kept.Count} folder(s): {string.Join("; ", sweep.Kept.Select(f => $"{f.Path} ({f.Why})"))}"));
         }
     }
 

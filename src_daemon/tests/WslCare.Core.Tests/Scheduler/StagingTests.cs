@@ -415,10 +415,85 @@ public sealed class StagingTests
         var report = Staging.Stage(world.Input() with { Archive = new LyingReadBack(world.Files) });
 
         report.Outcome.Should().Be(StageOutcomes.Refused);
-        report.Reason.Should().Contain("read back").And.Contain(LyingReadBack.Digest);
+        report.Reason.Should().Contain("read back").And.Contain(LyingReadBack.Digest).And.Contain("the copy was removed");
         File.Exists(world.StageJson(ExeDigest)).Should().BeFalse("no stage.json for a copy that did not read back equal");
         Directory.Exists(Path.Combine(world.Place.Root, ExeDigest)).Should().BeFalse("the copy this stage made is removed again, and its folder");
         Directory.Exists(Path.GetDirectoryName(older)).Should().BeTrue("a refused stage sweeps nothing");
+    }
+
+    /// <summary>The coai code round on WR-D2 (session 01e5e611), finding 1: a folder flush that fails refuses the stage — a copy whose
+    /// name may not survive a crash is never recorded; the copy is removed, no stage.json.</summary>
+    [Fact]
+    public void A_failed_folder_flush_refuses_the_stage_and_writes_no_stage_json()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new StagingWorld("stage-flush-failed");
+
+        var report = Staging.Stage(world.Input() with { Archive = new FailingFlush(world.Files) });
+
+        report.Outcome.Should().Be(StageOutcomes.Refused);
+        report.Reason.Should().Contain("could not be flushed").And.Contain(FailingFlush.Why).And.Contain("the copy was removed");
+        File.Exists(world.StageJson(ExeDigest)).Should().BeFalse("a copy whose folder did not flush is never recorded");
+        Directory.Exists(Path.Combine(world.Place.Root, ExeDigest)).Should().BeFalse("the copy and its new folder are removed again");
+    }
+
+    /// <summary>Finding 1: when the stage's own copy cannot be removed after a failure, the refusal says so — never "the copy was
+    /// removed" — and names where it stays (the next stage replaces it as unverified).</summary>
+    [Fact]
+    public void A_copy_that_cannot_be_removed_after_a_failure_is_named_and_never_called_removed()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new StagingWorld("stage-unremovable");
+
+        var report = Staging.Stage(world.Input() with { Archive = new UnremovableCopy(world.Files) });
+
+        report.Outcome.Should().Be(StageOutcomes.Refused);
+        report.Reason.Should().Contain("could NOT be removed").And.Contain(UnremovableCopy.Why).And.Contain(Path.Combine(world.Place.Root, ExeDigest, StagedCopies.ExeName))
+            .And.NotContain("the copy was removed");
+        File.Exists(world.StageJson(ExeDigest)).Should().BeFalse();
+    }
+
+    /// <summary>Finding 2: the run-start sweep runs every 5 minutes; from the newest copy it hashes NOTHING — its own folder is kept
+    /// unhashed (its stage.json agrees; the render verified it at registration) and the older folders are retired unhashed.</summary>
+    [Fact]
+    public void The_run_start_sweep_hashes_nothing_when_it_runs_from_the_newest_copy()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new StagingWorld("sweep-no-hash");
+        var own = world.PlantVerified("the newest copy, the one this run comes from", Release, new DateTimeOffset(2026, 10, 12, 8, 0, 0, TimeSpan.Zero));
+        var older = world.PlantVerified("an older copy", "0.3.9", new DateTimeOffset(2026, 10, 5, 8, 0, 0, TimeSpan.Zero));
+        var oldest = world.PlantVerified("the oldest copy", "0.3.8", new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero));
+        var counting = new CountingOpens(world.Files);
+
+        var sweep = Staging.Sweep(world.Access with { Archive = counting }, own);
+
+        counting.Opens.Should().Be(0, "nothing is hashed when the sweep runs from the newest copy");
+        sweep.Swept.Select(f => f.Digest).Should().BeEquivalentTo([older, oldest]);
+        sweep.Retained.Should().BeEmpty();
+        Directory.Exists(Path.Combine(world.Place.Root, own)).Should().BeTrue();
+    }
+
+    /// <summary>Finding 2: from an OLDER copy the sweep walks the others newest first (by stagedAtUtc) and hashes only until one
+    /// verifies — that one is kept; a newer one that does not verify is retired; older ones are retired unhashed.</summary>
+    [Fact]
+    public void The_run_start_sweep_hashes_only_the_newest_other_copy_until_one_verifies()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new StagingWorld("sweep-walk");
+        var own = world.PlantVerified("the old copy the tasks still run", "0.3.7", new DateTimeOffset(2026, 9, 20, 8, 0, 0, TimeSpan.Zero));
+        var broken = new string('b', 64);
+        world.Plant(broken, Encoding.UTF8.GetBytes("bytes that do not hash to the name"), Record(broken, Release, new DateTimeOffset(2026, 10, 12, 8, 0, 0, TimeSpan.Zero)));
+        var good = world.PlantVerified("the newest copy that verifies", "0.3.9", new DateTimeOffset(2026, 10, 10, 8, 0, 0, TimeSpan.Zero));
+        var older = world.PlantVerified("an older copy", "0.3.8", new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero));
+        var counting = new CountingOpens(world.Files);
+
+        var sweep = Staging.Sweep(world.Access with { Archive = counting }, own);
+
+        counting.Opens.Should().Be(2, "the broken newest one and the next, which verifies — nothing else");
+        sweep.Retained.Select(f => f.Digest).Should().Equal([good]);
+        sweep.Swept.Select(f => f.Digest).Should().BeEquivalentTo([broken, older]);
+        sweep.Swept.Single(f => f.Digest == broken).Why.Should().StartWith("unverified");
+        Directory.Exists(Path.Combine(world.Place.Root, own)).Should().BeTrue();
     }
 
     [Fact]
@@ -532,12 +607,12 @@ public sealed class StagingTests
     /// sharing violation until the handle is released.</summary>
     private static FileStream Executing(string exe) => new(exe, FileMode.Open, FileAccess.Read, FileShare.Read);
 
-    /// <summary>Every call of the real seam, but the read-back answers another digest — a disk that does not keep what it is given.</summary>
-    private sealed class LyingReadBack(IArchiveFiles inner) : IArchiveFiles
+    /// <summary>Every call of the real seam, each one overridable — the base of the fault seams below.</summary>
+    private class SeamOver(IArchiveFiles inner) : IArchiveFiles
     {
-        public static readonly string Digest = new('e', 64);
+        protected IArchiveFiles Inner => inner;
 
-        public SourceOpen OpenSource(string layoutRoot, string path) => inner.OpenSource(layoutRoot, path);
+        public virtual SourceOpen OpenSource(string layoutRoot, string path) => inner.OpenSource(layoutRoot, path);
 
         public FolderBeneath OpenFolderBeneath(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope) => inner.OpenFolderBeneath(baseFolder, levels, scope);
 
@@ -551,11 +626,11 @@ public sealed class StagingTests
 
         public ExclusiveFile CreateExclusive(BeneathFolder folder, string name, DeletionScope scope) => inner.CreateExclusive(folder, name, scope);
 
-        public FileHash ReadBack(BeneathFolder folder, string name) => new FileHash.Hashed(Digest, ExeBytes.Length);
+        public virtual FileHash ReadBack(BeneathFolder folder, string name) => inner.ReadBack(folder, name);
 
-        public VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, FileIdentity created, DeletionScope scope) => inner.RemoveOwnCopy(folder, name, created, scope);
+        public virtual VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, FileIdentity created, DeletionScope scope) => inner.RemoveOwnCopy(folder, name, created, scope);
 
-        public FolderFlush FlushFolder(BeneathFolder folder) => inner.FlushFolder(folder);
+        public virtual FolderFlush FlushFolder(BeneathFolder folder) => inner.FlushFolder(folder);
 
         public NoReplaceRename QuarantineRename(string layoutRoot, string path, string quarantinedName, DeletionScope scope) => inner.QuarantineRename(layoutRoot, path, quarantinedName, scope);
 
@@ -566,6 +641,42 @@ public sealed class StagingTests
         public VerifiedRemoval RemoveVerified(string layoutRoot, string path, string expectedSha256, string archivedCopy, DeletionScope scope) => inner.RemoveVerified(layoutRoot, path, expectedSha256, archivedCopy, scope);
 
         public VerifiedRemoval RemoveEmptyFolder(string layoutRoot, string folder, DeletionScope scope) => inner.RemoveEmptyFolder(layoutRoot, folder, scope);
+    }
+
+    /// <summary>The read-back answers another digest — a disk that does not keep what it is given.</summary>
+    private class LyingReadBack(IArchiveFiles inner) : SeamOver(inner)
+    {
+        public static readonly string Digest = new('e', 64);
+
+        public override FileHash ReadBack(BeneathFolder folder, string name) => new FileHash.Hashed(Digest, ExeBytes.Length);
+    }
+
+    /// <summary>The folder flush fails — a new name that may not survive a crash.</summary>
+    private sealed class FailingFlush(IArchiveFiles inner) : SeamOver(inner)
+    {
+        public const string Why = "the folder could not be flushed (a test says so)";
+
+        public override FolderFlush FlushFolder(BeneathFolder folder) => new FolderFlush.Failed(Why);
+    }
+
+    /// <summary>The read-back lies AND the stage's own copy cannot be removed afterwards.</summary>
+    private sealed class UnremovableCopy(IArchiveFiles inner) : LyingReadBack(inner)
+    {
+        public const string Why = "the copy is held (a test says so)";
+
+        public override VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, FileIdentity created, DeletionScope scope) => new VerifiedRemoval.Kept(Why);
+    }
+
+    /// <summary>Counts every no-link open — each one a file read to be hashed.</summary>
+    private sealed class CountingOpens(IArchiveFiles inner) : SeamOver(inner)
+    {
+        public int Opens { get; private set; }
+
+        public override SourceOpen OpenSource(string layoutRoot, string path)
+        {
+            Opens++;
+            return Inner.OpenSource(layoutRoot, path);
+        }
     }
 
     /// <summary>A Windows layout under a temporary root, the product's file system over it, and a source exe outside the staging root

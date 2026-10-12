@@ -214,6 +214,55 @@ public sealed class TasksRunCommandTests
         Directory.Exists(newest).Should().BeTrue("the newest verified copy is kept: the tasks may be registered to it already");
     }
 
+    /// <summary>The coai code round on WR-D2, finding 3: a run-start sweep skipped because the run lock is held is said in ONE stderr
+    /// line naming why; the run goes on.</summary>
+    [Fact]
+    public void A_sweep_skipped_as_busy_is_said_in_one_stderr_line()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new World("tasks-run-sweep-busy");
+        var older = world.PlantVerified("an older copy", TimeSpan.FromDays(3));
+        var running = world.PlantVerified("the copy this run comes from", TimeSpan.FromDays(1));
+        var host = world.Host(new RecordingSupervisor(new WorkerOutcome.Exited(0)), Path.Combine(running, Core.Scheduler.StagedCopies.ExeName));
+
+        int exit;
+        string stderr;
+        using (host.Files.TryLockExclusive(host.Paths.RunLockFile) is Core.Files.ExclusiveLock.Held held ? held.Handle : throw new InvalidOperationException("the test could not take the lock"))
+        {
+            (exit, _, stderr) = CliRun.Over(host, "tasks", "run", "watch");
+        }
+
+        exit.Should().Be(0, stderr);
+        Lines(stderr).Where(l => l.Contains("staging sweep", StringComparison.Ordinal)).Should().ContainSingle()
+            .Which.Should().Contain("skipped").And.Contain("run lock");
+        Directory.Exists(older).Should().BeTrue("a skipped sweep removes nothing");
+    }
+
+    /// <summary>Finding 3: a folder the run-start sweep could not remove (its exe still executing) is named in ONE stderr line.</summary>
+    [Fact]
+    public void A_folder_the_sweep_could_not_remove_is_named_in_one_stderr_line()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new World("tasks-run-sweep-kept");
+        var older = world.PlantVerified("an older copy a task still runs", TimeSpan.FromDays(3));
+        var running = world.PlantVerified("the copy this run comes from", TimeSpan.FromDays(1));
+        var host = world.Host(new RecordingSupervisor(new WorkerOutcome.Exited(0)), Path.Combine(running, Core.Scheduler.StagedCopies.ExeName));
+
+        int exit;
+        string stderr;
+        using (new FileStream(Path.Combine(older, Core.Scheduler.StagedCopies.ExeName), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            (exit, _, stderr) = CliRun.Over(host, "tasks", "run", "watch");
+        }
+
+        exit.Should().Be(0, stderr);
+        Lines(stderr).Where(l => l.Contains("staging sweep", StringComparison.Ordinal)).Should().ContainSingle()
+            .Which.Should().Contain("could not remove").And.Contain(Path.GetFileName(older)).And.Contain("in use");
+        Directory.Exists(older).Should().BeTrue();
+    }
+
+    private static IReadOnlyList<string> Lines(string text) => [.. text.TrimEnd().Split('\n').Select(l => l.TrimEnd('\r'))];
+
     private sealed class RecordingSupervisor(WorkerOutcome outcome, Action? onRun = null) : IWorkerSupervisor
     {
         public List<WorkerLaunch> Launches { get; } = [];

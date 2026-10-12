@@ -69,45 +69,93 @@ public static partial class Staging
     /// nothing at all when <paramref name="Keeps"/> is false.</summary>
     private sealed record KeepRule(string Own, bool KeepAllVerified, bool Keeps);
 
+    /// <summary>What a sweep decided before it removes anything: the digests it keeps, the verified ones it names as retained (besides
+    /// its own), and what every other digest folder was.</summary>
+    private sealed record Judgement(IReadOnlySet<string> Keep, IReadOnlyList<StagedCheck> Retained, IReadOnlyDictionary<string, string> What);
+
     private static StagingSweep Swept(StagingAccess access, KeepRule rule)
     {
         var place = access.Place;
         var entries = access.Files.ListEntries(place.Root);
-        var checks = entries.Where(IsDigestFolder).ToDictionary(e => e.Name, e => StagedCopies.Verify(place.Root, e.Name, access.Files, access.Archive, access.MaxStageBytes), StringComparer.Ordinal);
-        var retained = rule.Keeps ? Retained(checks, rule, access.Now) : [];
-        var keep = retained.Select(c => c.Digest).Append(Verified(checks, rule.Own) ? rule.Own : string.Empty).ToHashSet(StringComparer.Ordinal);
+        var digests = entries.Where(IsDigestFolder).Select(e => e.Name).ToList();
+        var judged = rule.Keeps && !rule.KeepAllVerified ? AtRunStart(access, digests, rule.Own) : Fully(access, digests, rule);
         var removals = entries
-            .Where(e => IsDigestFolder(e) && !keep.Contains(e.Name))
+            .Where(e => IsDigestFolder(e) && !judged.Keep.Contains(e.Name))
             .OrderBy(e => e.LastWriteUtc)
             .ThenBy(e => e.Name, StringComparer.Ordinal)
-            .Select(e => Removed(place, e.Name, access.Files, WhatItWas(checks[e.Name])))
+            .Select(e => Removed(place, e.Name, access.Files, judged.What[e.Name]))
             .ToList();
         return new StagingSweep(
             [.. removals.Where(r => r.Gone).Select(r => r.Folder)],
             [.. removals.Where(r => !r.Gone).Select(r => r.Folder)],
-            [.. retained.Select(c => new StagingFolder(c.Digest, PathRules.Windows.Join(place.Root, c.Digest), RetainedWhy(c, rule)))],
+            [.. judged.Retained.Select(c => new StagingFolder(c.Digest, PathRules.Windows.Join(place.Root, c.Digest), RetainedWhy(c, rule)))],
             [.. entries.Where(e => !IsDigestFolder(e)).Select(e => PathRules.Windows.Join(place.Root, e.Name))],
             string.Empty);
     }
 
-    private static bool Verified(IReadOnlyDictionary<string, StagedCheck> checks, string digest) => checks.TryGetValue(digest, out var check) && check.Registrable;
-
-    /// <summary>The verified folders the rule keeps besides the sweeper's own: every one at stage time, the newest one at a run start.</summary>
-    private static List<StagedCheck> Retained(IReadOnlyDictionary<string, StagedCheck> checks, KeepRule rule, DateTimeOffset now)
+    /// <summary>The stage's sweep and <c>--remove</c> (both rare): every folder hashed (<see cref="StagedCopies.Verify"/>); the stage keeps
+    /// every verified one, the removal none.</summary>
+    private static Judgement Fully(StagingAccess access, IReadOnlyList<string> digests, KeepRule rule)
     {
-        var others = checks.Values.Where(c => c.Registrable);
-        var kept = rule.KeepAllVerified ? others : NewestOf(others, now);
-        return [.. kept.Where(c => c.Digest != rule.Own).OrderBy(c => c.Digest, StringComparer.Ordinal)];
+        var checks = digests.ToDictionary(d => d, d => StagedCopies.Verify(access.Place.Root, d, access.Files, access.Archive, access.MaxStageBytes), StringComparer.Ordinal);
+        List<StagedCheck> retained = rule.Keeps ? [.. checks.Values.Where(c => c.Registrable && c.Digest != rule.Own).OrderBy(c => c.Digest, StringComparer.Ordinal)] : [];
+        var ownKept = rule.Keeps && checks.TryGetValue(rule.Own, out var own) && own.Registrable;
+        var keep = retained.Select(c => c.Digest).Concat(ownKept ? [rule.Own] : []).ToHashSet(StringComparer.Ordinal);
+        return new Judgement(keep, retained, checks.ToDictionary(c => c.Key, c => WhatItWas(c.Value), StringComparer.Ordinal));
     }
 
-    /// <summary>The newest by <c>stagedAtUtc</c> clamped to <paramref name="now"/> (a future stamp counts as now), a genuine stamp first
-    /// on a tie, then by name — or none.</summary>
-    private static IEnumerable<StagedCheck> NewestOf(IEnumerable<StagedCheck> folders, DateTimeOffset now) =>
-        folders
-            .OrderByDescending(c => c.StagedAtUtc > now ? now : c.StagedAtUtc)
-            .ThenBy(c => c.StagedAtUtc > now)
-            .ThenBy(c => c.Digest, StringComparer.Ordinal)
-            .Take(1);
+    /// <summary>The run-start sweep (every 5 minutes once the watch task runs — the coai code round on WR-D2, finding 2): its OWN folder
+    /// is kept when its <c>stage.json</c> agrees, unhashed (the render verified it at registration); the others with an agreeing
+    /// <c>stage.json</c> are walked newest first and hashed only until one verifies — that one is kept; every other folder is retired
+    /// unhashed. Running from the newest copy, it hashes nothing.</summary>
+    private static Judgement AtRunStart(StagingAccess access, IReadOnlyList<string> digests, string own)
+    {
+        var reads = digests.ToDictionary(d => d, d => StageRecords.Read(access.Files, PathRules.Windows.Join(access.Place.Root, d, StageRecord.FileName), access.MaxStageBytes), StringComparer.Ordinal);
+        var agreeing = reads.SelectMany(r => r.Value is StageRead.Found { Record: var record } && record.Sha256 == r.Key ? [record] : Array.Empty<StageRecord>()).ToList();
+        var walked = Walked(NewestFirst(agreeing, access.Now).Select(r => r.Sha256), own, access);
+        List<StagedCheck> retained = [.. walked.Where(c => c.Registrable)];
+        var ownKept = agreeing.Any(r => r.Sha256 == own);
+        var keep = retained.Select(c => c.Digest).Concat(ownKept ? [own] : []).ToHashSet(StringComparer.Ordinal);
+        var what = reads.ToDictionary(r => r.Key, r => walked.FirstOrDefault(c => c.Digest == r.Key) is { } hashed ? WhatItWas(hashed) : Unhashed(r.Value, r.Key), StringComparer.Ordinal);
+        return new Judgement(keep, retained, what);
+    }
+
+    /// <summary>The digests hashed, newest first, until one verifies or the walk reaches the sweeper's own (then the newest is its own and
+    /// nothing else is kept).</summary>
+    private static List<StagedCheck> Walked(IEnumerable<string> newestFirst, string own, StagingAccess access)
+    {
+        var hashed = new List<StagedCheck>();
+        foreach (var digest in newestFirst.TakeWhile(d => d != own))
+        {
+            var check = StagedCopies.Verify(access.Place.Root, digest, access.Files, access.Archive, access.MaxStageBytes);
+            hashed.Add(check);
+            if (check.Registrable)
+            {
+                break;
+            }
+        }
+
+        return hashed;
+    }
+
+    /// <summary>Newest first by <c>stagedAtUtc</c> clamped to <paramref name="now"/> (a future stamp counts as now), a genuine stamp first
+    /// on a tie, then by name.</summary>
+    private static IEnumerable<StageRecord> NewestFirst(IEnumerable<StageRecord> records, DateTimeOffset now) =>
+        records
+            .OrderByDescending(r => r.StagedAtUtc > now ? now : r.StagedAtUtc)
+            .ThenBy(r => r.StagedAtUtc > now)
+            .ThenBy(r => r.Sha256, StringComparer.Ordinal);
+
+    /// <summary>What a folder the run-start sweep retires without hashing was, from its <c>stage.json</c> alone.</summary>
+    private static string Unhashed(StageRead read, string digest) => read switch
+    {
+        StageRead.Found { Record: var record } when record.Sha256 == digest =>
+            string.Create(CultureInfo.InvariantCulture, $"an older copy by its {StageRecord.FileName} (release {record.Version}, staged {record.StagedAtUtc:u}; not hashed: a run-start sweep retires it unread)"),
+        StageRead.Found { Record.Sha256: var other } => $"unverified: its {StageRecord.FileName} names digest {other}",
+        StageRead.Missing => $"unverified: no {StageRecord.FileName} (a copy that never finished)",
+        StageRead.Refused refused => $"unverified: {refused.Why}",
+        _ => "unverified",
+    };
 
     private static string RetainedWhy(StagedCheck check, KeepRule rule) =>
         string.Create(CultureInfo.InvariantCulture, $"{(rule.KeepAllVerified ? "a verified copy" : "the newest verified copy")} (release {check.Version}, staged {check.StagedAtUtc:u}): a registered task may still name it; a tasks run from the newest copy retires it");

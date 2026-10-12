@@ -915,9 +915,11 @@ flowchart TB
   sandbox file). It is opened through the archive's no-link open and hashed first: the digest names the folder.
 - **The copy** (`Core/Scheduler/Staging.cs`) uses only the archive's file seam (`IArchiveFiles`): the digest folder opened (made
   when missing) and HELD under the staging root (`OpenFolderBeneath`), `wsl-care.exe` made by the exclusive no-replace create
-  (`CreateExclusive`), the bytes streamed from a second no-link open and flushed to the disk, the folder flushed, the copy read
-  back past the cache (`ReadBack`) and compared with the digest. Any failure removes THIS stage's own copy by its identity
-  (`RemoveOwnCopy`) and its new folder only when empty (`RemoveEmptyFolder`, never recursive) — no `stage.json`, nothing swept.
+  (`CreateExclusive`), the bytes streamed from a second no-link open and flushed to the disk, the folder flushed (a failed flush
+  refuses the stage: a name that may not survive a crash is never recorded), the copy read back past the cache (`ReadBack`) and
+  compared with the digest. Any failure removes THIS stage's own copy by its identity (`RemoveOwnCopy`) and its new folder only
+  when empty (`RemoveEmptyFolder`, never recursive) — no `stage.json`, nothing swept; the refusal says how that removal went ("the
+  copy was removed", or "could NOT be removed (…): it stays at <exe>", which the next stage replaces as unverified).
   Then `stage.json` (`{ version: the release, sha256, stagedAtUtc, source }`) is written with `IFileSystem.WriteFileAtomically`.
   Every create and write is judged by the deletion policy inside the staging root (action `tasks-stage`).
 - **What is at the digest name** (by its ORDINAL name in the root's listing): a real folder is judged as an existing copy; a LINK
@@ -938,6 +940,13 @@ flowchart TB
   from the new copy it retires the older verified copies; from an old copy whose re-registration failed it keeps the new one. The
   newest is chosen with a clamp: a future `stagedAtUtc` counts as now and loses a tie to a genuine stamp. The folders kept by the
   rule besides the sweeper's own are answered as `retained`. So the staging bound (plan §3.10) rests on runs happening.
+- **What each sweep hashes** (the coai code round on WR-D2, finding 2): the stage-time sweep and `--remove` (rare) hash every digest
+  folder. The run-start sweep (every 5 minutes once the watch task runs) keeps its OWN folder when its `stage.json` agrees, UNHASHED
+  (the render verified that copy at registration); it walks the other folders with an agreeing `stage.json` newest first and hashes
+  only until one verifies — that one is kept — and retires every other folder unhashed, described from its `stage.json`. Running
+  from the newest copy, the usual case, it hashes nothing.
+- **Said on the run** (`TasksCommand.Run.cs`, finding 3): one stderr line when the run-start sweep was skipped (the run lock held),
+  one when it retired folders, one naming the folders it could not remove; nothing when it did nothing.
 - **The sweep** (`Core/Scheduler/Staging.Sweep.cs`): every entry of the staging root that is a FOLDER named with 64 lower-case hex
   digits, other than those the keep rule keeps, oldest first. Anything else — a person's folder, a file, a link (never
   followed), an upper-case or short name — is never touched and is listed as `untouched`. A folder goes **exe first**
@@ -945,8 +954,9 @@ flowchart TB
   held open without delete sharing), so the folder is KEPT WHOLE, `stage.json` too, and named with the reason; the next stage,
   remove or `tasks run` start retries. Only then the rest of the folder (`IFileSystem.DeleteDirectory`, judged inside the root).
   A sharing violation, or access denied on the exe (a running image), reads "in use"; any other failure "could not be
-  removed (…)". Each folder says what it was from its `StagedCopies.Verify` check: "an older copy (release …)" or "unverified: …"
-  with the check's reason — a half-copied folder, or one whose bytes disagree with its `stage.json`, is swept as unverified.
+  removed (…)". Each folder says what it was: from its `StagedCopies.Verify` check when it was hashed — "an older copy (release …)"
+  or "unverified: …" with the check's reason (a half copy, bytes that disagree with `stage.json`) — and from its `stage.json` alone
+  when a run-start sweep retires it unhashed ("an older copy by its stage.json (…; not hashed)").
 - **The removal** (`Staging.Remove`): the sweep keeping none, then the staging root itself through `RemoveEmptyFolder` (judged
   inside the state directory, which is never removed) only when nothing is kept and nothing is untouched.
 - **The answers**: `StageReport {schemaVersion, outcome (staged, reused, refused, busy), reason, digest, path, version, source,
