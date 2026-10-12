@@ -32,7 +32,7 @@ public sealed class NumbersAreConfigurationTests
         "events.topImages", "events.segmentMinutes", "thresholds.pageCacheWarnGib", "thresholds.pageCacheActGib",
         "thresholds.pageCacheActAvailablePercent", "thresholds.inactiveAnonWarnGib", "thresholds.order7WarnBlocks",
         "thresholds.memoryPressureWarn", "thresholds.rootUsedWarnPercent", "journal.maxGb", "thresholds.journalHistoryWarnDays",
-        "thresholds.clockJumpsWarnPer4h", "thresholds.collectorFreshMinutes", "wslConfig.recommendedMemoryGb",
+        "thresholds.clockJumpsWarnPer4h", "thresholds.clockJumpsStepperFloorPer4h", "thresholds.collectorFreshMinutes", "wslConfig.recommendedMemoryGb",
         "thresholds.wslMemoryCriticalPercent", "processes.topCount",
         "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.maxDeferHours", "archive.minFreeGb",
         "archive.copyBufferKib", "disk.eventsSinceDays", "disk.vhdxGapWarnGib", "disk.vhdxGrowthWarnGibPerDay", "disk.hostFreeWarnGib",

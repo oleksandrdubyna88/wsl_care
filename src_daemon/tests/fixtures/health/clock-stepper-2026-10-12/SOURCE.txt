@@ -1,0 +1,24 @@
+journalctl answers for the clock verdicts with Docker Desktop's 30-second step - CAPTURED, not synthetic.
+
+Source:   WSL distro "Ubuntu" (24.04, systemd 255) on the owner's machine, as root (read-only), on 2026-10-12 at
+          15:27:39Z, with Docker Desktop 4.81.0 running in the same WSL VM (research/2026-10-12_wsl_clock_fight.md).
+          Read-only commands only, run by an agent from one script file (`wsl.exe -d Ubuntu -u root -- sh <absolute
+          path>`), each the exact argv the product builds (WslCare.Core.Systemd.SystemdCommands.TimeJumpsBackThisBoot and
+          SystemdCommands.Search(now - 4 h, Unit("systemd-resolved"), "Clock change detected")).
+
+Files:
+  journalctl-search-clock.out   journalctl --since @<now - 4 h> --no-pager --quiet --output=cat --unit=systemd-resolved
+                                --grep=Clock change detected   (476 lines in 4 h: Docker Desktop's /initd steps the
+                                clock every 30 s; the VM had restarted at about 12:18Z, so the window spans two boots)
+  journalctl-time-jumps.out     journalctl --boot --no-pager --quiet --output=short-monotonic --unit=systemd-journald
+                                --grep=Time jumped backwards   (2 lines, monotonic 183.9 s and 4252.2 s: no journal damage)
+  proc-uptime.txt               /proc/uptime at the capture (11358.58 s)
+  captured-at.txt               the distro's clock at the capture
+
+Redacted, by hand, and nothing else changed:
+  - journalctl-time-jumps.out: the host name -> "host"
+
+DERIVED, said so:
+  proc-uptime-5h.txt            /proc/uptime of 18000 s - the capture's own uptime (11358.58 s) is shorter than the
+                                4-h window because the VM had restarted, so a scenario that needs the backward jumps to
+                                cover the whole window uses this one; with it only the jump at 4252.2 s is in the window

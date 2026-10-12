@@ -89,6 +89,7 @@
     "rootUsedWarnPercent": 80,
     "journalHistoryWarnDays": 7,
     "clockJumpsWarnPer4h": 100,
+    "clockJumpsStepperFloorPer4h": 600,
     "timeJumpsBackWarnPer4h": 10,
     "collectorFreshMinutes": 30,
     "wslMemoryCriticalPercent": 90

@@ -220,7 +220,12 @@ Re-measure with the same read-only scripts (§ 2a, 2b) and the daemon's next ful
 - Whether WSL releases before 2.5.8 started K1 (closed source).
 - F1 and F2 are untested on this machine; § 6 is a prediction.
 
-## 8. Found on the way — for the product (proposals, not done here)
+## 8. Found on the way — for the product
+
+> **Done 2026-10-12 (fix/wc-clock-verdicts)** for the first four items: `clock.fight` names the three writers;
+> `clock.jumps` has the setting `thresholds.clockJumpsStepperFloorPer4h` (600) and judges the journal by `clock.fight`'s
+> rotations; `journal.history` counts from the instant the journal was read and names the `SystemMaxFiles` mechanism
+> ([module_daemon.md](module_daemon.md) *The Windows Time guard*). The fifth was fixed by #129 (architecture.md split).
 
 - `clock.fight`'s reason names *"Hyper-V's time sync sets the host's clock, timesyncd sets NTP's"*: on this machine the
   host-side writers are K1 (continuous) and K3 (the 30-s step); the reason should name the ones present.

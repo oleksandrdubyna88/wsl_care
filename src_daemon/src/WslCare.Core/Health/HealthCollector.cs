@@ -68,11 +68,16 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         var disk = await MeasureWindowsDiskAsync(commands, clock, cancellationToken).ConfigureAwait(false);
         var uptime = ProcText.Read(files, $"{linux.ProcRoot}/uptime").Bind(HealthParsers.Uptime);
         var jumpsBack = await TimeJumpsBackAsync(uptime, cancellationToken).ConfigureAwait(false);
+        var failedUnits = (await RunAsync(SystemdCommands.FailedUnits, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.FailedUnits);
+        var journalBytes = (await RunAsync(SystemdCommands.JournalDiskUsage, cancellationToken).ConfigureAwait(false)).Bind(JournalDiskUsage.Parse);
+        var oldestEntry = (await RunAsync(SystemdCommands.ListBoots, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.OldestJournalEntry);
+        // journal.history counts from HERE, the instant the journal answered — not from `since` (research/2026-10-12_wsl_clock_fight.md).
+        var journalReadAt = clock.GetUtcNow();
         return new HealthSample(
             since,
-            (await RunAsync(SystemdCommands.FailedUnits, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.FailedUnits),
-            (await RunAsync(SystemdCommands.JournalDiskUsage, cancellationToken).ConfigureAwait(false)).Bind(JournalDiskUsage.Parse),
-            (await RunAsync(SystemdCommands.ListBoots, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.OldestJournalEntry),
+            failedUnits,
+            journalBytes,
+            oldestEntry,
             (await SearchAsync(since, new JournalScope.Unit("systemd-resolved"), ClockChange, cancellationToken).ConfigureAwait(false)).Map(lines => lines.Count),
             (await SearchAsync(since, new JournalScope.Kernel(), $"{AllocationFailure}|{OomKiller}", cancellationToken).ConfigureAwait(false)).Map(Kernel),
             (await RunAsync(SystemdCommands.TimeSync, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.TimeSync),
@@ -91,6 +96,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             ClockJudgement = ClockStandings.Judge(clockSample, reference, ClockReferences.ToleranceSeconds),
             TimeJumpsBack = jumpsBack,
             WindowsDisk = disk,
+            JournalReadAt = Reading.Of(journalReadAt),
         };
     }
 

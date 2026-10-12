@@ -138,7 +138,7 @@ public static class ThresholdRules
         AtLeastOne("kernel.oomKills", inputs.Health.Kernel.Map(k => k.OomKills), Level.Critical, "OOM kills since the last run"),
         Above("journal.size", inputs.Health.JournalBytes, JournalWarnGib * Gib, Gib, "GiB", "journal on disk (A10 vacuums it)"),
         JournalHistory(inputs.Health),
-        ClockJumps(inputs.Health.ClockJumps, inputs.SinceLastRun),
+        ClockJumps(inputs.Health, inputs.SinceLastRun, config),
         ClockDrift(inputs.Health.WindowsClock, inputs.PreviousClock, inputs.Health.TimeSync, config),
         .. ClockVerdicts.Evaluate(inputs.Health, config),
         FailedUnitsVerdict.Evaluate(inputs.Health.FailedUnits, config),
@@ -230,39 +230,85 @@ public static class ThresholdRules
 
     private static string RootDiskLimit => Invariant($"warn > {RootUsedWarnPercent:0} %");
 
+    /// <summary>The journal's reach, counted from the instant the journal was READ (<see cref="HealthSample.JournalReadAt"/>) —
+    /// never from <see cref="HealthSample.Since"/>, the previous run's start, which under-read it by the time since that run
+    /// (1.6 instead of 2.0 days, research/2026-10-12_wsl_clock_fight.md § 8). A reading without its instant is unknown,
+    /// with the reason the instant is missing.</summary>
     private static Verdict JournalHistory(HealthSample health)
     {
         var limit = Invariant($"warn when the oldest entry is less than {JournalHistoryWarnDays} days old");
-        return health.JournalOldestEntry switch
+        return Reading.Combine(health.JournalOldestEntry, health.JournalReadAt, (oldest, readAt) => (oldest, span: readAt - oldest)) switch
         {
-            Reading<DateTimeOffset>.Available { Value: var oldest } => (health.Since - oldest) switch
-            {
-                var span => new(
-                    "journal.history",
-                    span < TimeSpan.FromDays(JournalHistoryWarnDays) ? Level.Warn : Level.Ok,
-                    Invariant($"{span.TotalDays:0.0} days (oldest entry {oldest.UtcDateTime:yyyy-MM-dd HH:mm}Z)"),
-                    limit,
-                    "how far back the journal reaches (clock jumps erase it, plan finding 4)"),
-            },
+            Reading<(DateTimeOffset Oldest, TimeSpan Span)>.Available { Value: var (oldest, span) } => new(
+                "journal.history",
+                span < TimeSpan.FromDays(JournalHistoryWarnDays) ? Level.Warn : Level.Ok,
+                Invariant($"{span.TotalDays:0.0} days (oldest entry {oldest.UtcDateTime:yyyy-MM-dd HH:mm}Z)"),
+                limit,
+                "how far back the journal reaches: journald rotates its file at every backward clock jump past its last entry and keeps at most SystemMaxFiles (100 by default) files, so the jumps erase it by file count (clock.fight counts them)"),
             var unknown => Unknown("journal.history", limit, unknown.ReasonOrEmpty),
         };
     }
 
-    private static Verdict ClockJumps(Reading<int> jumps, TimeSpan since)
+    /// <summary>
+    /// systemd-resolved's clock changes per 4 h (research/2026-10-12_wsl_clock_fight.md). Up to
+    /// <c>thresholds.clockJumpsWarnPer4h</c> is ok. Above it, a rate up to <c>thresholds.clockJumpsStepperFloorPer4h</c> is
+    /// the floor of a periodic stepper — ok WHILE journald's measured backward jumps (<see cref="HealthSample.TimeJumpsBack"/>)
+    /// stay within <c>thresholds.timeJumpsBackWarnPer4h</c>: the journal's damage is judged by its rotations, not by the
+    /// count of steps. The floor needs that count to cover the SAME window (<see cref="RotationsOverTheWindow"/>); an unread
+    /// or partial count is no proof of none, so it falls back to warning above the ordinary limit.
+    /// </summary>
+    private static Verdict ClockJumps(HealthSample health, TimeSpan since, EffectiveConfig config)
     {
-        var limit = Invariant($"warn > {ClockJumpsWarnPer4h:0} per 4 h");
+        var warnAbove = config.Int(ConfigKeys.Thresholds.ClockJumpsWarnPer4h);
+        var floor = config.Int(ConfigKeys.Thresholds.ClockJumpsStepperFloorPer4h);
+        var rotationLimit = config.Int(ConfigKeys.Thresholds.TimeJumpsBackWarnPer4h);
+        var limit = Invariant($"warn > {warnAbove} per 4 h (thresholds.clockJumpsWarnPer4h), except up to {floor} per 4 h (thresholds.clockJumpsStepperFloorPer4h) while clock.fight counts at most {rotationLimit} backward jumps over the same window");
         var hours = Math.Max(since.TotalHours, 1.0 / 60);
-        return jumps switch
+        var rotations = RotationsOverTheWindow(health.TimeJumpsBack, health.Uptime, since, rotationLimit);
+        return health.ClockJumps switch
         {
-            Reading<int>.Available { Value: var n } => new(
-                "clock.jumps",
-                n * 4 / hours > ClockJumpsWarnPer4h ? Level.Warn : Level.Ok,
-                Invariant($"{n} in {since.TotalHours:0.0} h ({n * 4 / hours:0} per 4 h)"),
-                limit,
-                "systemd-resolved's \"Clock change detected\" since the last run"),
+            Reading<int>.Available { Value: var n } => JudgedJumps(n * 4 / hours, rotations, warnAbove, floor, rotationLimit) switch
+            {
+                var (level, reason) => new("clock.jumps", level, Invariant($"{n} in {since.TotalHours:0.0} h ({n * 4 / hours:0} per 4 h)"), limit, reason),
+            },
             var unknown => Unknown("clock.jumps", limit, unknown.ReasonOrEmpty),
         };
     }
+
+    /// <summary>The backward-jump count as evidence about the clock changes' window — only when it covers all of it: it counts
+    /// the last <see cref="ClockReferences.FightWindow"/> of THIS boot, while the clock changes count since the last run, which
+    /// may reach into an earlier boot (coai code round: a VM restart would otherwise hide the earlier boot's rotations). A
+    /// count above <paramref name="rotationLimit"/> is kept whatever it covers: damage seen is damage.</summary>
+    private static Reading<int> RotationsOverTheWindow(Reading<int> rotations, Reading<TimeSpan> uptime, TimeSpan since, int rotationLimit) => rotations switch
+    {
+        Reading<int>.Available { Value: var r } when r > rotationLimit || Covers(uptime, since) => rotations,
+        Reading<int>.Available => Reading.Missing<int>(uptime.IsAvailable
+            ? "the backward jumps do not cover the whole window — they count this boot's last 4 h, the clock changes reach further (a reboot, or a longer gap since the last run)"
+            : "the backward jumps do not cover the whole window — this boot's uptime was not read"),
+        _ => Reading.Missing<int>("the journal's backward jumps were not read (clock.fight says why)"),
+    };
+
+    /// <summary>Whether this boot's last <see cref="ClockReferences.FightWindow"/> spans the whole <paramref name="since"/> window.</summary>
+    private static bool Covers(Reading<TimeSpan> uptime, TimeSpan since) =>
+        uptime is Reading<TimeSpan>.Available { Value: var up } && since <= up && since <= ClockReferences.FightWindow;
+
+    /// <summary>Journal damage first — a rotation count above its limit warns at ANY rate (code round 2: an ordinary rate must
+    /// not hide it) — then the rate.</summary>
+    private static (Level Level, string Reason) JudgedJumps(double perFourHours, Reading<int> rotations, int warnAbove, int floor, int rotationLimit) => rotations switch
+    {
+        Reading<int>.Available { Value: var r } when r > rotationLimit => (Level.Warn, Invariant($"the journal is being rotated: clock.fight counts {r} backward jumps in 4 h, above its limit; {ClockVerdicts.SharedClockWriters}")),
+        _ when perFourHours <= warnAbove => (Level.Ok, $"systemd-resolved's \"Clock change detected\" since the last run; {ClockVerdicts.SharedClockWriters}"),
+        _ => AboveTheOrdinaryLimit(perFourHours, rotations, floor),
+    };
+
+    /// <summary>Above <c>thresholds.clockJumpsWarnPer4h</c> with no journal damage seen: ok up to the stepper floor while the
+    /// rotation count covers the window; warn above the floor, or when no count can prove the journal undamaged.</summary>
+    private static (Level Level, string Reason) AboveTheOrdinaryLimit(double perFourHours, Reading<int> rotations, int floor) => rotations switch
+    {
+        Reading<int>.Available { Value: var r } when perFourHours <= floor => (Level.Ok, Invariant($"the rate of a periodic stepper, not journal damage: {ClockVerdicts.SharedClockWriters}; clock.fight counts {r} backward jumps in 4 h, within its limit; systemd-resolved flushes its DNS cache at each step")),
+        Reading<int>.Available => (Level.Warn, $"more clock steps than a periodic stepper explains (above thresholds.clockJumpsStepperFloorPer4h): {ClockVerdicts.SharedClockWriters}"),
+        var unproven => (Level.Warn, $"above the ordinary limit, and no floor applies: {unproven.ReasonOrEmpty}; {ClockVerdicts.SharedClockWriters}; clock.fight judges the journal's damage"),
+    };
 
     /// <summary>Plan §4.5 with §15 #10: a drift is reported only on TWO observations above the threshold at least
     /// 5 minutes apart — this run's and the previous full run's — and never as more than a warning (A16 corrects it,

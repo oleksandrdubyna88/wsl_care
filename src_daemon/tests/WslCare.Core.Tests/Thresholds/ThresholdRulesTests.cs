@@ -180,6 +180,93 @@ public sealed class ThresholdRulesTests : IDisposable
         Find(Evaluate(Reading.Of(Memory(50)), rows: [rows[0] with { Figures = Reading.Of(new RowFigures(100, 1, 0, [])) }]), "docker.A4").Level.Should().Be(Level.Ok);
     }
 
+    // ---- research/2026-10-12_wsl_clock_fight.md: journal.history from the reading's instant; clock.jumps and Docker's floor ----
+
+    /// <summary>The 2026-10-12 08:03:54Z reading: the previous run started 10-11 22:10Z, the oldest entry is 10-10 07:48Z.</summary>
+    private static HealthSample Journal(DateTimeOffset since, DateTimeOffset readAt, DateTimeOffset oldest) =>
+        Health() with { Since = since, JournalOldestEntry = Reading.Of(oldest), JournalReadAt = Reading.Of(readAt) };
+
+    /// <summary>A sample whose boot is <paramref name="uptimeHours"/> old — 10 h by default, so the 4-h rotation count covers
+    /// the whole 4-h window <see cref="Evaluate"/> judges the clock changes over.</summary>
+    private static HealthSample Steps(int clockChanges, Reading<int> rotations, double uptimeHours = 10) =>
+        Health() with { ClockJumps = Reading.Of(clockChanges), TimeJumpsBack = rotations, Uptime = Reading.Of(TimeSpan.FromHours(uptimeHours)) };
+
+    [Fact]
+    public void A_window_that_spans_a_reboot_applies_no_floor_because_the_rotations_cover_only_this_boot()
+    {
+        var spanning = Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(2), uptimeHours: 3.15)), "clock.jumps");
+
+        spanning.Level.Should().Be(Level.Warn, "the 2026-10-12 capture: a VM restarted 3.15 h ago, the clock changes counted over 4 h, the backward jumps over this boot only");
+        spanning.Reason.Should().Contain("do not cover");
+        Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(2), uptimeHours: 4)), "clock.jumps").Level.Should().Be(Level.Ok, "a boot exactly as old as the window covers it");
+        Find(Evaluate(Reading.Of(Memory(50)), Health() with { ClockJumps = Reading.Of(480), TimeJumpsBack = Reading.Of(2) }), "clock.jumps").Level
+            .Should().Be(Level.Warn, "an unread uptime cannot show the rotations cover the window");
+        Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(11), uptimeHours: 1)), "clock.jumps").Reason
+            .Should().Contain("clock.fight counts 11", "damage seen in part of the window is damage");
+    }
+
+    [Fact]
+    public void Journal_history_counts_its_days_from_the_moment_the_journal_was_read_not_from_the_window_start()
+    {
+        var at = new DateTimeOffset(2026, 10, 12, 8, 3, 54, TimeSpan.Zero);
+        var health = Journal(new DateTimeOffset(2026, 10, 11, 22, 10, 0, TimeSpan.Zero), at, new DateTimeOffset(2026, 10, 10, 7, 48, 0, TimeSpan.Zero));
+
+        Find(Evaluate(Reading.Of(Memory(50)), health), "journal.history").Value.Should().StartWith("2.0 days", "08:03:54Z minus 10-10 07:48Z is 2.01 days; the previous run's start gave 1.6");
+    }
+
+    [Fact]
+    public void Clock_fight_and_clock_jumps_judge_the_backward_jumps_by_the_same_effective_limit()
+    {
+        var verdicts = Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(7)), config: """{ "thresholds": { "timeJumpsBackWarnPer4h": 5 } }""");
+
+        Find(verdicts, "clock.jumps").Level.Should().Be(Level.Warn, "7 backward jumps are above the effective limit of 5");
+        Find(verdicts, "clock.fight").Level.Should().Be(Level.Warn, "the same 7 against the same effective limit (code round 2: it read the process's tuning instead)");
+    }
+
+    [Fact]
+    public void Journal_history_without_the_instant_it_was_read_is_unknown_never_a_value_from_another_instant()
+    {
+        var health = Health() with { JournalOldestEntry = Reading.Of(Now.AddDays(-9)) };
+
+        Find(Evaluate(Reading.Of(Memory(50)), health), "journal.history").Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Value.Length == 0 && v.Reason.Contains("instant"));
+    }
+
+    [Theory]
+    [InlineData(100, 0, Level.Ok)] // at the ordinary limit
+    [InlineData(480, 3, Level.Ok)] // Docker Desktop's 30-s step, no journal damage (the measured 2026-10-12 steady state)
+    [InlineData(600, 10, Level.Ok)] // at both edges: the floor and thresholds.timeJumpsBackWarnPer4h
+    [InlineData(480, 11, Level.Warn)] // the journal is being rotated
+    [InlineData(601, 0, Level.Warn)] // above the floor
+    [InlineData(638, 95, Level.Warn)] // the 2026-10-12 10:02Z run
+    [InlineData(100, 11, Level.Warn)] // within the ordinary limit, but the journal is being rotated (code round 2)
+    public void Clock_jumps_at_the_rate_of_a_periodic_stepper_warn_only_with_journal_damage_or_above_the_floor(int perFourHours, int rotations, Level expected) =>
+        Find(Evaluate(Reading.Of(Memory(50)), Steps(perFourHours, Reading.Of(rotations))), "clock.jumps").Level.Should().Be(expected);
+
+    [Fact]
+    public void Clock_jumps_above_the_limit_with_the_rotations_unread_still_warn() =>
+        Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Missing<int>("journal unread"))), "clock.jumps").Level
+            .Should().Be(Level.Warn, "no journal-damage reading is no proof of none");
+
+    [Fact]
+    public void Clock_jumps_name_docker_desktop_s_step_and_both_settings()
+    {
+        var floor = Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(3))), "clock.jumps");
+        var warn = Find(Evaluate(Reading.Of(Memory(50)), Steps(638, Reading.Of(95))), "clock.jumps");
+
+        floor.Reason.Should().Contain("Docker Desktop's /initd").And.Contain("clock.fight");
+        warn.Reason.Should().Contain("Docker Desktop's /initd").And.Contain("clock.fight");
+        floor.Limit.Should().Contain("thresholds.clockJumpsWarnPer4h").And.Contain("thresholds.clockJumpsStepperFloorPer4h").And.Contain("600");
+    }
+
+    [Fact]
+    public void The_stepper_floor_is_a_setting()
+    {
+        var verdict = Find(Evaluate(Reading.Of(Memory(50)), Steps(480, Reading.Of(0)), config: """{ "thresholds": { "clockJumpsStepperFloorPer4h": 400 } }"""), "clock.jumps");
+
+        verdict.Level.Should().Be(Level.Warn);
+        verdict.Limit.Should().Contain("400");
+    }
+
     [Fact]
     public void Every_threshold_has_one_verdict_under_its_own_id()
     {
