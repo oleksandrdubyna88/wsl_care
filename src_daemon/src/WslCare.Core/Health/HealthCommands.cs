@@ -14,6 +14,10 @@ public static class HealthCommands
     /// <summary>The name WSL interop reaches PowerShell by from inside the distro; on Windows the same file name.</summary>
     public const string PowerShell = "powershell.exe";
 
+    /// <summary>The MSI PowerShell 7's file name (E15.S1b) — a bare name the policy judges; the resolver finds it on PATH or in its
+    /// one fixed folder on the system drive (<c>WindowsSystemDrive.Programs</c>), never under a user's profile.</summary>
+    public const string Pwsh = "pwsh.exe";
+
     public const string Snap = "snap";
 
     public const string Curl = "curl";

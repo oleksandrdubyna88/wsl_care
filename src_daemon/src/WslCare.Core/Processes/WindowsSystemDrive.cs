@@ -75,6 +75,10 @@ public static class WindowsSystemDrive
         // Where Windows installs Windows PowerShell 5.1 (%SystemRoot%\System32\WindowsPowerShell\v1.0) — the folder WSL's
         // own interop PATH names for it.
         [HealthCommands.PowerShell] = "Windows/System32/WindowsPowerShell/v1.0",
+        // E15.S1b: where the MSI installs PowerShell 7 (%ProgramFiles%\PowerShell\7) — administrator-only, like System32; the
+        // clock probe verifies the file's signature there before the daemon asks for it (PwshEngine). Never the Store package's
+        // folder, never the alias under a user's profile.
+        [HealthCommands.Pwsh] = "Program Files/PowerShell/7",
     };
 
     /// <summary>The system drive's letter — <see cref="Drive"/>'s first character.</summary>
