@@ -141,7 +141,7 @@ public static class ThresholdRules
         ClockJumps(inputs.Health.ClockJumps, inputs.SinceLastRun),
         ClockDrift(inputs.Health.WindowsClock, inputs.PreviousClock, inputs.Health.TimeSync, config),
         .. ClockVerdicts.Evaluate(inputs.Health, config),
-        AtLeastOne("systemd.failedUnits", inputs.Health.FailedUnits.Map(u => u.Count), Level.Warn, "failed units"),
+        FailedUnitsVerdict.Evaluate(inputs.Health.FailedUnits, config),
         WslPro(inputs.Health.WslPro),
         Collector("collectors.sysstat", inputs.Health.Sysstat, inputs.Health.Since),
         Collector("collectors.atop", inputs.Health.Atop, inputs.Health.Since),

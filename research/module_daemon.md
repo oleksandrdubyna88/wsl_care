@@ -238,6 +238,20 @@ flowchart TB
   Desktop runs — every clock change counted in the window both logs cover was one of its steps. That record names the
   journal's loss mechanism (`SystemMaxFiles` 100) and the ranked fixes; the verdict texts are unchanged.
 
+## Failed units that are not failures (2026-10-12)
+
+The first LIVE full run (2026-10-12 10:01Z, `dryRun` false) warned `systemd.failedUnits` for `getty@tty1.service`
+(start-limit-hit). WSL has no tty1, so that unit fails on every boot; the warning said nothing real.
+
+- **The verdict** (`Thresholds/FailedUnitsVerdict.cs`, PURE) counts only the failed units that are NOT in
+  `systemd.ignoredFailedUnits`. It warns at 1 or more. The reason names the counted units, and it still names every ignored
+  unit, so nothing is hidden. The run detail's `health.failedUnits` keeps every unit.
+- **The key** `systemd.ignoredFailedUnits` is an OPEN list (the second, after `mcpServers.programs`), at most 32 members. Each
+  member passes the reviewed rule `TextRule.SystemdUnitName`: letters, digits and `@ : _ . - \`, then a unit type. It is a name
+  compared ordinally, never a pattern, so it can only quiet the unit it names. The default is `["getty@tty1.service"]`. It is a
+  user (display) key: it quiets a warning and changes no action. `ConfigKeyShapeTests` holds the list shape, and the cap is an
+  allow-listed schema limit.
+
 ## The Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10)
 
 The first story of [PLAN_disk_health.md](../todo/PLAN_disk_health.md) (§3.1, Road 1): the full run reads the SLOW Windows facts
