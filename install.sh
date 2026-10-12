@@ -2,8 +2,8 @@
 # Install wsl-care — the daemon that keeps a WSL distro from degrading over the working day — into the
 # WSL distro this runs in.
 #
-#   curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh
-#   curl -fsSL …/install.sh | sudo sh -s -- --dry-run                   # every step printed, nothing changed
+#   curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh -s -- --distro-name "$WSL_DISTRO_NAME"
+#   curl -fsSL …/install.sh | sudo sh -s -- --dry-run                  # every step printed, nothing changed
 #   curl -fsSL …/install.sh | sudo sh -s -- --uninstall [--purge]
 #
 # WHAT IT CHANGES ON THIS MACHINE, and nothing else:
@@ -24,7 +24,11 @@
 #                                               names no default user yet: `[user] default=<name>` is added
 # Then it runs one full `collect` (it measures and records, it never cleans), and verifies every side
 # effect: sar and atop on PATH, both units active, `wsl-care doctor --json` healthy. A failed step exits
-# non-zero naming the step.
+# non-zero naming the step. With --distro-name <name> (E15.S2b) that first run gets the name as WSL_DISTRO_NAME,
+# and the root collect records it in /var/lib/wsl-care/distro-name.json — the installer never writes that file
+# itself: the daemon is its one writer. The timer's runs have no WSL_DISTRO_NAME; the file is how they find this
+# distro's own virtual disk. The installing user's shell expands "$WSL_DISTRO_NAME" BEFORE sudo, whose default
+# env_reset would drop the variable.
 #
 # WHAT IT NEVER DOES, whatever the arguments (plan §3, Phase 0 — those stay with the owner, by hand):
 # touch .wslconfig, wsl-pro.service, the clock services, snapd, any worktree; run `git worktree prune`,
@@ -211,6 +215,11 @@ Install wsl-care into this WSL distro (run as root).
   --set-default-user <name>   add `[user] default=<name>` to /etc/wsl.conf, only when it names no default
                               user yet — the user wsl-care's per-user cleanups act for (WSL also logs in
                               as that user from the next distro start)
+  --distro-name <name>        this distro's WSL name: the first full run records it, so the timer's runs find
+                              this distro's own virtual disk. Pass "$WSL_DISTRO_NAME" — your shell expands it
+                              before sudo, which drops the variable. WSL's rule: a letter or digit, then up to
+                              63 letters, digits, '.', '_' or '-'; any other name is refused. An empty value
+                              records nothing (and says so)
   --dry-run                   print every step and change nothing (downloads and verifies into a temporary
                               folder that is removed); root is not needed
   --uninstall                 stop and remove the units, the binary and its link; KEEP the history
@@ -241,7 +250,18 @@ SKIP_ATTESTATION=0
 UNINSTALL=0
 PURGE=0
 DEFAULT_USER=""
-ARGS_SHOWN=$(printable "$*")
+DISTRO_NAME=""
+DISTRO_NAME_GIVEN=0
+# The arguments as the re-run line prints them. An empty argument is shown as '': "$*" would drop it, and a pasted
+# `--distro-name` without its (empty) value is a usage error (E15.S2b own review).
+ARGS_SHOWN=""
+for arg in "$@"; do
+  case "$arg" in
+    '') ARGS_SHOWN="$ARGS_SHOWN ''" ;;
+    *) ARGS_SHOWN="$ARGS_SHOWN $(printable "$arg")" ;;
+  esac
+done
+ARGS_SHOWN=${ARGS_SHOWN# }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -256,6 +276,13 @@ while [ $# -gt 0 ]; do
     --set-default-user)
       [ $# -ge 2 ] || usage_fail "--set-default-user needs a user name"
       DEFAULT_USER=$2
+      shift 2
+      ;;
+    --distro-name)
+      # An EMPTY operand is a value (the one-liner run outside WSL, where "$WSL_DISTRO_NAME" expands to nothing); NO operand is not.
+      [ $# -ge 2 ] || usage_fail "--distro-name needs a value (pass \"\$WSL_DISTRO_NAME\"; an empty one records no name)"
+      DISTRO_NAME=$2
+      DISTRO_NAME_GIVEN=1
       shift 2
       ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -275,12 +302,18 @@ matches() {
 
 readonly VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
 readonly USER_PATTERN='^[a-z_][a-z0-9_-]{0,31}$'
+# WSL's rule for a distribution name — the SAME body as the daemon's DistroIdentity.NamePatternText and the extension's DISTRO_NAME,
+# held equal by ArchitectureTests.The_installer_and_the_daemon_share_one_distro_name_rule (E15.S2b).
+readonly DISTRO_NAME_PATTERN='^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
 
 if [ "$PURGE" = 1 ] && [ "$UNINSTALL" = 0 ]; then
   usage_fail "--purge goes with --uninstall"
 fi
-if [ "$UNINSTALL" = 1 ] && { [ -n "$VERSION" ] || [ "$SKIP_ATTESTATION" = 1 ] || [ -n "$DEFAULT_USER" ]; }; then
+if [ "$UNINSTALL" = 1 ] && { [ -n "$VERSION" ] || [ "$SKIP_ATTESTATION" = 1 ] || [ -n "$DEFAULT_USER" ] || [ "$DISTRO_NAME_GIVEN" = 1 ]; }; then
   usage_fail "--uninstall takes only --purge and --dry-run"
+fi
+if [ -n "$DISTRO_NAME" ] && ! matches "$DISTRO_NAME" "$DISTRO_NAME_PATTERN"; then
+  usage_fail "--distro-name takes a WSL distribution name: a letter or digit, then up to 63 letters, digits, '.', '_' or '-' (got \"$(printable "$DISTRO_NAME")\")"
 fi
 if [ -n "$VERSION" ] && ! matches "$VERSION" "$VERSION_PATTERN"; then
   usage_fail "--version must look like 1.2.3 (got \"$(printable "$VERSION")\")"
@@ -1039,18 +1072,46 @@ enable_units() {
   systemctl_job enable-units enable --now sysstat.service atop.service
 }
 
+# E15.S2b: what the first full run does with --distro-name — it records the validated name (a ROOT collect records WSL_DISTRO_NAME
+# through DistroIdentity.Record, the one writer of distro-name.json), or, for an empty value, nothing, which is said with how the
+# name becomes known later. Without the argument nothing is said.
+distro_name_said() {
+  if [ -n "$DISTRO_NAME" ] && [ "$DRY_RUN" = 1 ]; then
+    say "would record the distro name $DISTRO_NAME (through the first full run)"
+  elif [ -n "$DISTRO_NAME" ]; then
+    say "recording the distro name $DISTRO_NAME (through the first full run, as WSL_DISTRO_NAME)"
+  elif [ "$DISTRO_NAME_GIVEN" = 1 ]; then
+    say "--distro-name is empty: no distro name is recorded now; a root"
+    say "collect started through wsl.exe records it later (the panel's Run full check now does)"
+  fi
+}
+
+# Runs "$@" with WSL_DISTRO_NAME set to the validated --distro-name; WITHOUT it when the argument was given empty (an explicit
+# "no name" — an inherited value is dropped, code round); and as it is when the argument was not given (root entered through
+# wsl.exe -u root carries the value WSL set for this distro, the same trust as any root collect through wsl.exe; sudo removes it).
+with_distro_name() {
+  if [ -n "$DISTRO_NAME" ]; then
+    env WSL_DISTRO_NAME="$DISTRO_NAME" "$@"
+  elif [ "$DISTRO_NAME_GIVEN" = 1 ]; then
+    (unset WSL_DISTRO_NAME; "$@")
+  else
+    "$@"
+  fi
+}
+
 # Starting is not working: the installed binary records one full run, by its absolute path, as root. A
 # collect started outside the timer measures and records; it never cleans. 75 = another run holds the lock
 # (the timer fired first), which records just the same. Said BEFORE it starts (retro review of PR #8, G3): a full run takes
 # minutes, and a terminal silent for that long reads as a hang.
 first_run() {
+  distro_name_said
   if [ "$DRY_RUN" = 1 ]; then
     say "would run: $BIN_PATH collect (one full run: measure and record, no cleanup)"
     return 0
   fi
   say "recording the first full run ($BIN_PATH collect: it measures and records, it never cleans); this may take several minutes — at most ${FIRST_RUN_SECONDS}s"
   code=0
-  timeout -k "$COLLECT_KILL_GRACE_SECONDS" "$FIRST_RUN_SECONDS" "$ROOT$BIN_PATH" collect > /dev/null || code=$?
+  with_distro_name timeout -k "$COLLECT_KILL_GRACE_SECONDS" "$FIRST_RUN_SECONDS" "$ROOT$BIN_PATH" collect > /dev/null || code=$?
   case "$code" in
     0 | 75) say "first full run recorded" ;;
     *) fail first-run "$BIN_PATH collect exited $code" ;;

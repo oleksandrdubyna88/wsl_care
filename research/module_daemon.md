@@ -336,6 +336,17 @@ flowchart LR
   file (read as root's state: owned by root, no link, capped). A name is believed only when it passes WSL's rule (the extension's
   `DISTRO_NAME`: a letter or digit, then up to 63 letters, digits, `.`, `_`, `-`). With neither, no distro is mapped and the
   reason says how the name becomes known; a recorded name the Lxss map does not list maps nothing and is named.
+- **Who records the name** (E15.S2b, 2026-10-11): two root `collect` runs, and only through `DistroIdentity.Record` — the file's
+  ONE writer and ONE format. (1) **Install's first full run**: `install.sh --distro-name <name>` (the documented one-liner passes
+  `"$WSL_DISTRO_NAME"`, which the installing user's shell expands before `sudo`, whose `env_reset` drops the variable) checks the
+  name against the same rule (`DISTRO_NAME_PATTERN`, held equal to `NamePatternText` by
+  `ArchitectureTests.The_installer_and_the_daemon_share_one_distro_name_rule`) and refuses any other name with a usage error
+  before anything changes; then `first_run` starts the installed binary as `env WSL_DISTRO_NAME=<name> … collect`, and that root
+  `collect` records it. The installer never writes the file. An empty value (typed outside WSL) records nothing and says so;
+  without the argument the first run's environment is left as it is. (2) **A root `collect` started through `wsl.exe`** — the
+  panel's *Run full check now* — records it and refreshes a changed name. So the timer's runs map this distro's own disk from the
+  day of the install. The extension's install command (`src_vs_code/src/install/installCommand.ts`) pins a RELEASED
+  `install.sh`, which refuses an unknown argument, so it adds `--distro-name` only after a daemon release ships this.
 - **The facts** (`Health/VirtualDisks.cs`, PURE → `Health/VirtualDiskFacts.cs`): per disk the name, path, size, sparse bit, the
   hosting volume's letter (from the path), `mappedBy` (`mount` = this distro's own `/`: guest used = `UsedBytes`, possible growth
   = the filesystem's size − the file; `dockerDf` = Docker's data disk: guest used = the sum of `docker system df`'s sizes, "an

@@ -86,6 +86,21 @@ public sealed class DistroIdentityTests : IDisposable
         DistroIdentity.Resolve(name, Reading.Missing<string>(DistroIdentity.NotKnownYet)).IsAvailable.Should().BeFalse();
     }
 
+    /// <summary>E15.S2b plan round: WSL's rule allows a first character and up to 63 more. The longest name — one that
+    /// <c>install.sh --distro-name</c> must hand on — is recorded and believed; one character more is no name
+    /// (<c>InstallDistroNameFlows</c> runs the same two lengths through install.sh).</summary>
+    [Fact]
+    public void The_longest_name_wsls_rule_allows_64_characters_is_recorded_and_believed_and_65_is_not()
+    {
+        var longest = "U" + new string('b', 63);
+
+        Record(longest, Now).Should().BeEmpty("64 characters is a name");
+        ValueOf(Recorded()).Should().Be(longest);
+
+        Record(longest + "b", Now).Should().Contain("is not a distribution name", "65 characters is not");
+        ValueOf(Recorded()).Should().Be(longest, "a refused name leaves the recorded one");
+    }
+
     [Fact]
     public void A_recorded_file_with_a_bad_name_is_not_believed()
     {

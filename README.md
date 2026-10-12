@@ -19,10 +19,20 @@ extension that shows the state and runs cleanups on demand.
 Inside the WSL distro (Ubuntu 24.04 or newer, systemd running), as root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh -s -- --distro-name "$WSL_DISTRO_NAME"
 curl -fsSL …/install.sh | sudo sh -s -- --dry-run          # print every step, change nothing (root not needed)
 curl -fsSL …/install.sh | sudo sh -s -- --version 0.1.0    # a given release instead of the newest daemon-v*
 ```
+
+**`--distro-name <name>`** gives the installer this distro's WSL name. Your shell expands `"$WSL_DISTRO_NAME"` before
+`sudo` runs (sudo's default `env_reset` drops the variable itself). The installer checks the name against WSL's rule
+(a letter or digit, then up to 63 letters, digits, `.`, `_` or `-`) and refuses any other name before it changes
+anything. It does not write the name itself: it gives the name to its first full run as `WSL_DISTRO_NAME`, and that root
+`collect` records it in `/var/lib/wsl-care/distro-name.json`. The timer's runs have no `WSL_DISTRO_NAME`; this file is
+how they find this distro's own virtual disk for the `disk.*` verdicts. An empty value (the command typed outside WSL)
+records nothing, and the installer says so; then the panel's *Run full check now* records the name later. Without the
+argument nothing is recorded at install. `--distro-name` without a value is a usage error, and `--uninstall` refuses the
+argument. The VS Code extension's install command adds the argument only after a daemon release ships it.
 
 **What it checks before installing anything.** It downloads the newest `daemon-v*` release for this machine
 (`linux-x64` or `linux-arm64`; never `releases/latest`, which is the VS Code extension), and its `.sha256`:
@@ -62,6 +72,7 @@ folder (no `..`, no link) stops it with nothing installed.
 | `/etc/systemd/system/<unit>.d/50-wsl-care-config.conf` | each unit's configured values — the timer's period, the services' `Nice`, `MemoryMax`, `TimeoutStopSec`, the follower's `RestartSec` — rendered from the machine layer by the installed binary (`wsl-care units dropin <unit>`); written on every install, so running the installer again after editing the machine layer applies it; `wsl-care doctor` says when one no longer matches |
 | `/etc/wsl-care/config.json` | the machine configuration layer — written **only when none exists**, and empty (comments only: every value stays the binary's default); an existing one is never overwritten |
 | `/var/lib/wsl-care`, `/var/log/wsl-care` | the state and the run logs, root's, 0755 |
+| `/var/lib/wsl-care/distro-name.json` | **only** with a non-empty `--distro-name <name>`: written by the first full run (the daemon's root `collect`), never by the installer itself |
 | `sysstat`, `atop` | installed with `apt-get` when missing; sysstat's collection switched on through its own debconf setting; both services enabled |
 | `/etc/wsl.conf` | **only** with `--set-default-user <name>`, and only when it names no default user yet: `[user] default=<name>` is added (the user wsl-care's per-user cleanups act for — WSL also logs in as that user from the next distro start). Without the flag nothing is written; the installer says how to name one |
 
