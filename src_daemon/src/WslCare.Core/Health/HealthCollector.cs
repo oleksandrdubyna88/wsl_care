@@ -231,6 +231,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             {
                 WindowsProfile = probe.Profile,
                 TimeService = probe.TimeService is Reading<WindowsTimeService>.Available { Value: var service } ? service : null,
+                Pwsh = probe.Pwsh,
             }
             : new WindowsClockSample(clock.GetUtcNow(), 0, 0, answer.ReasonOrEmpty);
     }

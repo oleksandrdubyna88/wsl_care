@@ -26,6 +26,16 @@ public static class ClockParsers
             : Reading.Of(new WindowsTimeService(status ?? string.Empty, startType ?? string.Empty));
     }
 
+    /// <summary>The probe's four pwsh lines (E15.S1b), wherever they stand; unavailable when it printed none of them (a probe
+    /// from before the story, or a fake that knows five lines). A tag printed empty is an empty value.</summary>
+    public static Reading<PwshProbe> PwshProbe(IReadOnlyList<string> lines)
+    {
+        string?[] values = [Tagged(lines, HealthCommands.PwshKnownFolderTag), Tagged(lines, HealthCommands.PwshEnvProgramFilesTag), Tagged(lines, HealthCommands.PwshMsiTag), Tagged(lines, HealthCommands.PwshSignatureTag)];
+        return values.All(v => v is null)
+            ? Reading.Missing<PwshProbe>(WindowsClockAnswer.NoPwshLine)
+            : Reading.Of(new PwshProbe(values[0] ?? string.Empty, values[1] ?? string.Empty, values[2] ?? string.Empty, values[3] ?? string.Empty));
+    }
+
     private static string? Tagged(IReadOnlyList<string> lines, string tag) =>
         lines.FirstOrDefault(l => l.StartsWith(tag, StringComparison.Ordinal)) is { } line ? line[tag.Length..].Trim() : null;
 
