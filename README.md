@@ -338,7 +338,9 @@ wsl-care collect               # as yourself: the same measurements, printed, NO
 `preview`, `docker stats`, the distro's clock against Windows' (`powershell.exe`, its launch latency subtracted, which also
 prints the Windows Time service's state) and against an independent reference (the HTTP `Date` of `clock.referenceUrl`, one
 `curl --head`, else timesyncd when it is synchronised), the
-health of the distro (failed units, the journal's size and how far back it reaches, clock jumps, the kernel's page
+health of the distro (failed units — `systemd.failedUnits` warns only for a unit NOT in `systemd.ignoredFailedUnits`, a list of
+systemd unit names with the default `getty@tty1.service`, which hits its start limit on every WSL boot because WSL has no tty1; an
+ignored unit is still named in the reason —, the journal's size and how far back it reaches, clock jumps, the kernel's page
 allocation failures and OOM kills since the last run, time sync, `wsl-pro.service`, `discard` / `fstrim.timer`, whether
 sysstat and atop still collect), the `.wslconfig` audit, once a day the folder sizes (`~/.npm`, `/var/cache/apt`,
 disabled snap revisions, `~/git/_wt`, `~/.nuget/packages`, `~/.cache`, `~/.vscode-server`, `bin/` + `obj/` under

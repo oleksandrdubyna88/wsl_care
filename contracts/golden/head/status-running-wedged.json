@@ -305,7 +305,7 @@
       "id": "systemd.failedUnits",
       "level": "unknown",
       "value": "",
-      "limit": "warn at 1 or more",
+      "limit": "warn at 1 or more failed units not in systemd.ignoredFailedUnits",
       "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
       "basis": {
         "source": "fullRun"
