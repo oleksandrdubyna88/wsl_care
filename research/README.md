@@ -4,7 +4,8 @@
 |---|---|
 | [architecture.md](architecture.md) | what exists today and the module map |
 | [module_tests.md](module_tests.md) | the test harness, the flow catalogue, what it does not prove |
-| [module_vs_code.md](module_vs_code.md) | the VS Code extension (AI OS Care): purpose, diagram, entities, entry points, dependencies — a map into architecture.md's extension sections |
+| [module_daemon.md](module_daemon.md) | the `wsl-care` daemon / CLI: purpose, diagram, entities, entry points, dependencies, a map into architecture.md's epic sections; holds the installer, the units and the release pipeline (E4) since 2026-10-12 |
+| [module_vs_code.md](module_vs_code.md) | the VS Code extension (AI OS Care): purpose, diagram, entities, entry points, dependencies — a map into the extension's sections; holds E5.S1–E5.S3 (client, panel and polling, *Install daemon*, packaging and release) since 2026-10-12 |
 | [module_mcp_servers.md](module_mcp_servers.md) | the MCP server instances of the AI agents (E7.S2d): purpose, diagram, entities, flows, keys, dependencies, residuals |
 | [module_archive.md](module_archive.md) | the AI-session archive (E9): purpose, how its parts fit, the file seam's guarantees, entities, verbs, dependencies |
 | [2026-10-02_wsl_resource_baseline.md](2026-10-02_wsl_resource_baseline.md) | the WSL VM measured: memory exhaustion by evening, Docker leftovers, clock jumps, AI-agent folders |
