@@ -56,6 +56,7 @@ public sealed class FetchWindowsDaemonFlows
               "release download")
                 n=$(cat "$FAKE_GH_LOG.downloads" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE_GH_LOG.downloads"
                 if [ "$n" -le "$FAKE_GH_DOWNLOAD_FAILS" ]; then echo "release not found" >&2; exit 1; fi
+                if [ "$n" -le "$FAKE_GH_DOWNLOAD_HANGS" ]; then sleep 120; fi
                 dir=""; prev=""
                 for arg in "$@"; do [ "$prev" = "--dir" ] && dir="$arg"; prev="$arg"; done
                 prev=""
@@ -81,6 +82,7 @@ public sealed class FetchWindowsDaemonFlows
             ["FAKE_GH_ASSETS"] = assets,
             ["FAKE_GH_ATTEST"] = attestExit.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["FAKE_GH_DOWNLOAD_FAILS"] = downloadFails.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["FAKE_GH_DOWNLOAD_HANGS"] = "0",
             // The flows never wait between attempts; the attempt count stays the script's default unless a test sets it.
             ["WSL_CARE_FETCH_BACKOFF_SECONDS"] = "0",
         };
@@ -204,6 +206,7 @@ public sealed class FetchWindowsDaemonFlows
         result.Exit.Should().Be(1, result.Stdout + result.Stderr);
         NothingIn(world);
         File.ReadAllText(world.Log).Should().NotContain("attestation verify");
+        Downloads(world).Should().Be(1, "a wrong checksum is not transient: only the download is ever retried");
     }
 
     [Fact]
@@ -233,6 +236,7 @@ public sealed class FetchWindowsDaemonFlows
         result.Exit.Should().Be(1, result.Stdout + result.Stderr);
         result.Stdout.Should().Contain("carries no attestation by release.yml at daemon-v0.3.0");
         NothingIn(world);
+        Downloads(world).Should().Be(1, "a refused attestation is not transient: only the download is ever retried");
     }
 
     [Fact]
@@ -303,7 +307,32 @@ public sealed class FetchWindowsDaemonFlows
         NothingIn(world);
     }
 
+    /// <summary>The coai plan round: a download that HANGS (a network stall) must still end its attempt — each attempt is bounded by
+    /// <c>timeout</c>, as <c>wait-marketplace-served.sh</c> bounds its own — and the next attempt goes on.</summary>
+    [Fact]
+    public async Task A_download_that_hangs_is_ended_at_its_attempt_limit_and_the_next_attempt_goes_on()
+    {
+        Runnable();
+        using var root = new TempRoot("fetch-retry-hang");
+        var world = Make(root);
+        Publish(world, SevenZipShape());
+        world.Env["FAKE_GH_DOWNLOAD_HANGS"] = "1";
+        world.Env["WSL_CARE_FETCH_ATTEMPTS"] = "2";
+        world.Env["WSL_CARE_FETCH_ATTEMPT_SECONDS"] = "2";
+        world.Env["WSL_CARE_FETCH_KILL_GRACE_SECONDS"] = "1";
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await FetchAsync(world);
+
+        result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+        clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "the hung attempt was ended near its 2 s limit, not after the fake's 120 s sleep");
+        Downloads(world).Should().Be(2);
+        result.Stderr.Should().Contain("download attempt 1 of 2 failed (exit 124)", "timeout's own code names the ended attempt");
+    }
+
     [Theory]
+    [InlineData("WSL_CARE_FETCH_ATTEMPT_SECONDS", "0")]
+    [InlineData("WSL_CARE_FETCH_KILL_GRACE_SECONDS", "0")]
     [InlineData("WSL_CARE_FETCH_ATTEMPTS", "0")]
     [InlineData("WSL_CARE_FETCH_ATTEMPTS", "eleven")]
     [InlineData("WSL_CARE_FETCH_ATTEMPTS", "11")]
