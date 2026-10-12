@@ -971,7 +971,10 @@ Reading<long> CompressionBytes, Reading<long> VmmemBytes, Reading<long> HostTota
 
 The Windows sample gains `HostSample.Commit` (from `TotalPageFile` / `AvailablePageFile`) and `HostSample.CompressionBytes`
 (`Process.GetProcessesByName("Memory Compression")` from the kernel's snapshot, as `vmmemWSL` is read: nothing is started, and
-no handle is opened). `IWindowsCounters` gains the two readers, and its test fakes follow.
+no handle is opened). `IWindowsCounters` gains the two readers, and its test fakes follow. Each reader fails ALONE (plan
+round): a `GlobalMemoryStatusEx` failure makes only `Commit` unknown. For Memory Compression, no process, a process that exits
+between the listing and the read, or a refused read makes only `CompressionBytes` unknown, with the exception named. The status
+goes on, and a test plants each failure.
 
 **2. The one rule** (`Thresholds/HostRules.cs`, PURE): `Verdicts(HostMemoryFacts, EffectiveConfig)`.
 - `host.commit`: warn above `thresholds.hostCommitWarnPercent` (80); critical above `thresholds.hostCommitCriticalPercent` (90);
@@ -990,9 +993,14 @@ no handle is opened). `IWindowsCounters` gains the two readers, and its test fak
   an id twice. The distro's binary has no host sample and keeps the carried ones.
 
 **4. Keys:** `thresholds.hostCommitWarnPercent` (50–99, 80), `thresholds.hostCommitCriticalPercent` (51–100, 90),
-`thresholds.hostCompressionWarnGb` (1–256, 8). These are display keys, with a coupled rule warn < critical. Defaults come from the
-plan row and are STARTING VALUES. Measured: on the owner's machine, commit was 10.4 of 44.9 GiB on the guest side (D3). The host
-side's 110.98 GB commit charge is in the 2026-10-10 capture, against a limit that the as-built section will record.
+`thresholds.hostCompressionWarnGb` (1–256, 8). These are display keys, with a coupled rule warn < critical. The defaults are
+PROVISIONAL starting values (plan round). Measured on the owner's machine, 4.4 h after boot under heavy agent load
+([2026-10-12_host_memory.md](../research/2026-10-12_host_memory.md)):
+- commit was 68.8 %, the SAME on both roads (perf counter and `MEMORYSTATUSEX`, to 0.01 %);
+- compression was 6.0 GiB;
+- vmmem was 18.9 GiB.
+
+So the defaults stay quiet on a normal heavy day. The records of every full run calibrate them later.
 
 **5. Extension:** `src_vs_code/src/statusBar/statusBarModel.ts` `RELEVANT_VERDICT_PREFIXES` gains `host.`, per the plan's stated
 assumption ("`host.*` verdicts colour the status bar"). Tests: `statusBar.test.ts`.
@@ -1010,6 +1018,10 @@ assumption ("`host.*` verdicts colour the status bar"). Tests: `statusBar.test.t
 - The distro status carries the full-run `host.*` verdicts.
 - `GlobalMemoryStatusEx`'s page-file fields map to charge and limit (a fake counter).
 - The status bar colours on `host.commit` warn.
+- **Across the boundary** (plan round): the extension's status-bar model reads the HEAD GOLDEN `status.json` that the real
+  daemon writes (the captured full run answers the disk script, so it carries `host.commit` / `host.compression` with
+  `basis: fullRun`), and colours from those verdicts. The id or the shape of a verdict cannot drift between the two halves
+  unseen. `module_tests` records the flow.
 
 Break-its on the edges and on the replacement. Docs: README (the keys), `module_daemon`, `module_vs_code`, `module_tests`, the
 as-built section.
