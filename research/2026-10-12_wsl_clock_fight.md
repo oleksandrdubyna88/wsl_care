@@ -144,10 +144,18 @@ here (upstream: 1–2 ms steps are still made).
   preview reads: `/dev/ptp0` is `hyperv`; the fight is measured (backward jumps or a step size above a setting); and a
   **live check that something other than timesyncd holds the clock on the host** — sample `CLOCK_REALTIME − PHC` and
   the `adjtimex` frequency for `clock.handover.sampleSeconds` (proposed 60) and require writes on the ≈ 8-s cadence K1
-  makes (S4). The dry run shows the command, the samples and the rollback. After the change the action samples again for
-  `clock.handover.verifySeconds` (proposed 120) and, if `|realtime − PHC|` exceeds `clock.handover.maxOffsetMillis`
-  (proposed 50) or no 8-s writes are seen, runs `timedatectl set-ntp true` and reports the failure. A second button gives
-  the clock back to timesyncd. Every number is a setting; nothing runs from the timer by default.
+  makes (S4) **and** every sample's `|realtime − PHC|` within `clock.handover.maxPreOffsetMillis` — a clock already far
+  from the host is refused, the failed precondition named in the preview, and nothing is changed. The dry run shows the
+  command, the samples and the rollback. After the change the action samples again for `clock.handover.verifySeconds`
+  (proposed 120) and, if `|realtime − PHC|` exceeds `clock.handover.maxOffsetMillis` or no 8-s writes are seen, runs
+  `timedatectl set-ntp true` and reports the failure. A second button gives the clock back to timesyncd. Every number is
+  a setting; nothing runs from the timer by default.
+- **The two offset limits are NOT measured yet, and must be before the action ships** ("measured before recommended").
+  What exists: with timesyncd fighting, `realtime − PHC` ranged −0.04 to +0.117 s (§ 2b), so the PRE limit has to sit
+  above that fight or F1 could never start — a starting point of 250 ms (≈ 2 × the measured maximum) is a guess to be
+  replaced. The POST limit can only come from an after-measurement of the handed-over clock (§ 6 predicts ≤ 5 ms of
+  step; the upstream report measured 1–2 ms): take its observed maximum over a day and add a stated margin. Until then
+  F1 is advice only.
 
 ### F2 — keep Windows within milliseconds of NTP: the guard's resync every hour
 
