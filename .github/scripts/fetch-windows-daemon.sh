@@ -42,12 +42,16 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 # The download's bounded retry (GitHub once answered "release not found" for a release that exists): the attempts and the
 # backoff step are settings of the caller's environment, checked before anything is asked.
-attempts="$(retry_setting WSL_CARE_FETCH_ATTEMPTS 3 1 10)"
-backoff="$(retry_setting WSL_CARE_FETCH_BACKOFF_SECONDS 10 0 300)"
+attempts=''
+retry_setting WSL_CARE_FETCH_ATTEMPTS 3 1 10 attempts
+backoff=''
+retry_setting WSL_CARE_FETCH_BACKOFF_SECONDS 10 0 300 backoff
 # Each attempt is bounded, as wait-marketplace-served.sh bounds its own: a stalled gh is ended at the attempt limit (exit 124,
 # as timeout reports it) and KILLed the grace later if it ignores TERM (gh starts no child for a download).
-attempt_seconds="$(retry_setting WSL_CARE_FETCH_ATTEMPT_SECONDS 300 1 3600)"
-kill_grace="$(retry_setting WSL_CARE_FETCH_KILL_GRACE_SECONDS 5 1 60)"
+attempt_seconds=''
+retry_setting WSL_CARE_FETCH_ATTEMPT_SECONDS 300 1 3600 attempt_seconds
+kill_grace=''
+retry_setting WSL_CARE_FETCH_KILL_GRACE_SECONDS 5 1 60 kill_grace
 
 # The repository and the signer are constants: an identity taken from the environment could be pointed elsewhere.
 readonly REPO="oleksandrdubyna88/wsl_care"
