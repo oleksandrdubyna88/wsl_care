@@ -3240,6 +3240,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "archive.maxDeferHours",
+      "shape": "int",
+      "min": 0,
+      "max": 72,
+      "default": 24,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": true
+    },
+    {
       "name": "archive.minFreeGb",
       "shape": "int",
       "min": 0,

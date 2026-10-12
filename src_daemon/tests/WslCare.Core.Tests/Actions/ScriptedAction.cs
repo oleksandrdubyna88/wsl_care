@@ -23,6 +23,9 @@ internal sealed class ScriptedAction(string id, List<string> journal) : ICleanup
 
     public IReadOnlyList<HomeFolder> HomeRoots { get; init; } = [];
 
+    /// <summary>How long the timer may defer it for the load before it runs anyway; <c>null</c> by default, as every action but A13.</summary>
+    public ConfigKey.IntKey? MaxDeferHours { get; init; }
+
     public bool Fires { get; init; } = true;
 
     public long PreviewBytes { get; init; } = 100;

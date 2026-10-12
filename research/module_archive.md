@@ -269,6 +269,18 @@ flowchart TD
   Both are streamed, so a long run is progress line by line. In a timer run the slack subtracts `archive.finishGraceMinutes` too:
   the child's CEILING, not only its budget, fits the run limit with the actions behind it (C-5). After a budgeted action ran, the
   engine reads a fresh idle sample for the next action that waits for idle (C-6).
+- **Waiting for idle, and its limit** (2026-10-12, the first live timer run: about 20 sessions kept the load above
+  `idle.cpuPercent` and A13 was deferred): the timer waits for idle (`IdleRule.TimerOnly`) unless the backlog is urgent
+  (`archive.urgentWithinDays`) — or unless A13's LIVE timer deferrals have lasted `archive.maxDeferHours`
+  (`ICleanupAction.MaxDeferHours`, A13 alone declares it). The streak is read from `history.jsonl` (`Actions/Engine/IdleDeferrals.cs`:
+  newest first, lines not naming A13 ignored, any line naming it that is not a live timer deferral ends it — a dry-run timer run
+  too). Only the load is overridden (`IdleVerdict.LoadOnly`): an unknown figure or a running build still defers. The run detail says
+  "ran despite the load: A13 waited for idle since <UTC> (<h> h, archive.maxDeferHours <n>); <the load verdict>". The forced run
+  is the same run at the same priority the timer's every run has, and the same budget. Read on this machine 2026-10-12: the installed unit has `Nice=19` and `IOSchedulingClass=idle`; runuser's PAM stack runs `pam_limits`, and no
+  `limits.conf` line sets a priority, so the child keeps nice 19; every block device's scheduler is `none`, so the idle I/O class
+  has no effect here.
+  `research/2026-10-09_cpu_fairness.md` measured that nice 19 orders the run only inside `system.slice`; nothing further was measured
+  to help, so nothing further is set.
 - **Containment** (risk consult 9/9.4; the S4 own review round S-M1, C-7): EVERY child root starts is recorded — the preview, the
   reach and the list as well as the streamed ones: the launcher at its start, the worker at a stream's first line and right before
   any kill (`CommandRequest.OnKilling`, told while the tree is whole), the record retired at the end. A recorded child of this boot
@@ -423,7 +435,8 @@ literal name matches a never-move name, the kinds and sources are the closed set
 check the selection (E9.S1) applies to every concrete path.
 
 **The keys** (`Config/ConfigKeys.cs`, `Config/ConfigKeys.Archive.cs` → `Archive`): the ages (`olderThanDays` 14,
-`removeAfterHours` 24, `marginDays` 7, `agentRetentionDays` 30, `urgentWithinDays` 7), `minFreeGb`, `copyBufferKib` — the
+`removeAfterHours` 24, `marginDays` 7, `agentRetentionDays` 30, `urgentWithinDays` 7), `maxDeferHours` (24, 0–72, 0 = never; below
+the history's 7-day retention floor), `minFreeGb`, `copyBufferKib` — the
 user's; the budget, the ceilings and the caps of what root reads back (`runBudgetMinutes`, `finishGraceMinutes`,
 `minRunMinutes`, `previewTimeoutSeconds`, `reachabilitySeconds`, `progressSilenceSeconds`, `restoreLimitMinutes`,
 `maxSessionsPerRun`, `maxIndexBytes`, `maxStateFileBytes`, `childOutputCapBytes`, `progressLineMaxBytes`, `inUseScanSeconds`) —

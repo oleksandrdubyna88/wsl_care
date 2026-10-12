@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 using WslCare.Core.Collect;
@@ -206,10 +207,14 @@ public sealed class ActionEngine(EngineContext c)
 
         request.OnRunningWritten();
         var outcomes = new List<ActionOutcome>();
-        var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes) with { RunId = runId.Text, RunStarted = started }) { IdleSource = SampleIdle };
+        var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes) with { RunId = runId.Text, RunStarted = started }) { IdleSource = SampleIdle, HistorySource = ReadHistory };
         var outcome = await ActAllAsync(request, run, running, notes, outcomes, cancellationToken).ConfigureAwait(false);
         return new Pass(target, dry, outcomes, outcome, RunningWritten: true);
     }
+
+    /// <summary>The history's lines for <see cref="IdleDeferrals"/> — read once per run, only when an action that declares
+    /// <see cref="ICleanupAction.MaxDeferHours"/> is deferred for the load; an unreadable history is no evidence of a wait.</summary>
+    private IReadOnlyList<RunRecord> ReadHistory() => RunHistory.Read(c.Paths, c.Files) is { Problem.Length: 0 } read ? read.Records : [];
 
     /// <summary>The idle check of plan §5, read once per run and only when an action needs it — again after a budgeted action (C-6).</summary>
     private IdleVerdict SampleIdle()
@@ -309,17 +314,22 @@ public sealed class ActionEngine(EngineContext c)
             return held;
         }
 
+        // Decided before the run: a budgeted action drops the idle sample (C-6), and the reason is the verdict it ran despite.
+        var despite = IdleWaitOf(action, preview, run).Reason;
         var done = await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false);
         run.Acted(action);
-        return Ran(action, preview, done);
+        return Ran(action, preview, done, despite);
     }
 
-    private ActionOutcome Ran(ICleanupAction action, ActionPreview preview, ActionRun done) => done switch
+    private ActionOutcome Ran(ICleanupAction action, ActionPreview preview, ActionRun done, string despite) => done switch
     {
         { Interrupted: true } => Outcome(action, ActionStatus.Interrupted, $"cut off by {c.InterruptCause()} while it ran: {done.Count} confirmed before the signal, the command in flight and the rest are under notRemoved", preview, done),
-        { Succeeded: true } => Outcome(action, ActionStatus.Ran, preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : "ran", preview, done),
+        { Succeeded: true } => Outcome(action, ActionStatus.Ran, RanReason(preview, despite), preview, done),
         _ => Outcome(action, ActionStatus.Failed, done.Failure, preview, done),
     };
+
+    private static string RanReason(ActionPreview preview, string despite) =>
+        preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : despite.Length > 0 ? despite : "ran";
 
     /// <summary>A gate's answer: the status and reason that stop the action here, or <c>null</c> to go on.</summary>
     private sealed record Stop(string Status, string Reason);
@@ -381,8 +391,40 @@ public sealed class ActionEngine(EngineContext c)
     private static Stop? RefusalStop(ActionPreview preview) => preview.Refusal.Length > 0 ? new Stop(ActionStatus.Refused, preview.Refusal) : null;
 
     /// <summary>The idle gate: asked only when it applies and the preview is no urgent event; the sample is read once per run, and again after a budgeted action (C-6).</summary>
-    private static Stop? IdleStop(ICleanupAction action, ActionPreview preview, RunState run) =>
-        IdleGate.Applies(action.Idle, run.Trigger) && preview.Urgent.Length == 0 && run.Idle() is { Idle: false } busy ? new Stop(ActionStatus.Deferred, busy.Reason) : null;
+    private Stop? IdleStop(ICleanupAction action, ActionPreview preview, RunState run) =>
+        IdleWaitOf(action, preview, run) is { Deferred: true } wait ? new Stop(ActionStatus.Deferred, wait.Reason) : null;
+
+    /// <summary>What the idle gate decided: deferred with the verdict, or go — with the reason it runs despite a busy load when it does.</summary>
+    private sealed record IdleWait(bool Deferred, string Reason);
+
+    private IdleWait IdleWaitOf(ICleanupAction action, ActionPreview preview, RunState run)
+    {
+        if (!IdleGate.Applies(action.Idle, run.Trigger) || preview.Urgent.Length > 0 || run.Idle() is not { Idle: false } busy)
+        {
+            return new IdleWait(false, string.Empty);
+        }
+
+        return Overdue(action, busy, run) is { Length: > 0 } despite ? new IdleWait(false, despite) : new IdleWait(true, busy.Reason);
+    }
+
+    /// <summary>2026-10-12 (<c>archive.maxDeferHours</c>): on the TIMER, an action that declares a limit and is busy for the LOAD alone runs
+    /// once its live timer deferrals have lasted the limit (<see cref="IdleDeferrals"/>) — the reason it runs despite the load, or empty.</summary>
+    private string Overdue(ICleanupAction action, IdleVerdict busy, RunState run)
+    {
+        if (run.Trigger != RunTrigger.Timer || !busy.LoadOnly || action.MaxDeferHours is not { } key || c.Loaded.Config.Int(key) is not (> 0 and var limit))
+        {
+            return string.Empty;
+        }
+
+        var since = IdleDeferrals.StreakStart(run.History(), action.Id.Text);
+        var waited = since is { } start ? c.Clock.GetUtcNow() - start : TimeSpan.Zero;
+        return since is { } from && waited >= TimeSpan.FromHours(limit)
+            ? string.Create(CultureInfo.InvariantCulture, $"ran despite the load: {action.Id} waited for idle since {from.UtcDateTime.ToString(StreakFormat, CultureInfo.InvariantCulture)} ({Math.Floor(waited.TotalHours):0} h, {key.Name} {limit}); {busy.Reason}")
+            : string.Empty;
+    }
+
+    /// <summary>The streak's start in a run detail: UTC to the second.</summary>
+    internal const string StreakFormat = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'";
 
     private static Stop? DryRunStop(RunState run) => run.Dry.DryRun ? new Stop(ActionStatus.DryRun, $"dry run: {run.Dry.Reason}") : null;
 
@@ -586,6 +628,7 @@ public sealed class ActionEngine(EngineContext c)
     private sealed class RunState(RunTrigger trigger, TargetUserResult target, DryRunDecision dry, ActionContext context)
     {
         private IdleVerdict? _idle;
+        private IReadOnlyList<RunRecord>? _history;
 
         public RunTrigger Trigger => trigger;
 
@@ -598,6 +641,11 @@ public sealed class ActionEngine(EngineContext c)
         public Func<IdleVerdict> IdleSource { get; init; } = static () => new IdleVerdict(false, "deferred: no idle sample");
 
         public IdleVerdict Idle() => _idle ??= IdleSource();
+
+        /// <summary>The history's lines, read at most once per run (<see cref="IdleDeferrals"/>).</summary>
+        public Func<IReadOnlyList<RunRecord>> HistorySource { get; init; } = static () => [];
+
+        public IReadOnlyList<RunRecord> History() => _history ??= HistorySource();
 
         /// <summary>After a BUDGETED action ran (A13: it may take most of the run limit), the sample read before it is stale — the next
         /// action that waits for idle reads a fresh one (plan §15r E9.S4 own review round C-6). Any other action leaves it as it was.</summary>

@@ -36,6 +36,7 @@ public sealed class ArchiveKeysTests
         config.Int(Int("archive.marginDays")).Should().Be(7);
         config.Int(Int("archive.agentRetentionDays")).Should().Be(30);
         config.Int(Int("archive.urgentWithinDays")).Should().Be(7);
+        config.Int(Int("archive.maxDeferHours")).Should().Be(24, "a machine busy all day still archives once a day (2026-10-12)");
     }
 
     /// <summary>§15r D10: ⌈removeAfterHours / 24⌉ + olderThanDays + marginDays ≤ agentRetentionDays — 1 + 14 + 7 ≤ 30 by default; a

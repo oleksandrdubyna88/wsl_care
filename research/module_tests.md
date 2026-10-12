@@ -3929,6 +3929,23 @@ E10.S2c's own review #2, fixed in the daemon. RED first; each check then broken 
 
 Each break-it was one mutation of a product file, compiled, the named test files run (`--test-concurrency=8`), then the file
 restored and recompiled; the mutations are listed by their B-number in the plan's *As built — E10.S2a*.
+### A13 waits for idle at most `archive.maxDeferHours` (2026-10-12)
+
+The first live timer run deferred A13 for a load that about 20 sessions never let fall. RED first (the engine tests read "deferred"
+where they now read "ran despite the load"; the streak tests read `null`; `LoadOnly` read false), then green; then one product line
+broken at a time (M1–M7, `defer-breakit`: the file mutated, the Core tests built and run, the file restored by its sha256).
+
+| Guarantee | Held by | RED, and teeth |
+|---|---|---|
+| a live streak past the limit runs the action, and its outcome says since when, how long, the key and the load verdict | `MaxDeferTests` (*past the limit*, *exactly the limit*) | red: deferred; teeth M3 (`>` for `≥`), M7 (the reason dropped) |
+| within the limit it defers; the key at 0 never runs; an action that declares no limit waits however long | `MaxDeferTests` | teeth M4 (0 no longer never) |
+| dry-run deferrals are no streak (the consultant's case: the idle gate is asked before the dry-run gate) | `MaxDeferTests` (*dry run deferrals*), `IdleDeferralsTests` | teeth M1 → 2 red |
+| a newer line of another status (a button's ran, skipped, failed) ends the streak; lines not naming the action are ignored; lines are ordered by their start | `MaxDeferTests`, `IdleDeferralsTests` | teeth M5 (the walk never ends) → 11 red |
+| only the load is overridden: a running build, alone or beside the load, still defers | `MaxDeferTests` (*build*), `IdleDeferralsTests` (*load only*) | teeth M2 → 2 red |
+| an unreadable history is no streak; a dry run past the limit still records dryRun | `MaxDeferTests` | — |
+| the REAL `ArchiveAction` through the engine (the plan round's #1): past the limit the preview, the reach and the run child start and the detail says why; within it only the preview; at 0 it defers | `ArchiveEngineTests` | teeth M6 (A13 declares no limit), M7 |
+| the key: default 24, 0–72, higher is safer with 0 unbounded, its maximum below `runs.historyRetentionDays`' floor (the plan round's #0), its contract row | `ArchiveKeysTests`, `IdleDeferralsTests`, `NumbersAreConfigurationTests`, `ContractFilesTests` | teeth M6 |
+
 ### What the service-account fix of the `.vsix` leak check rests on (release PR #47, 2026-10-08)
 
 Release PR #47 (extension 0.2.0) was red on both CI legs (run 37751902435): release-please's CHANGELOG section said

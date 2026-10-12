@@ -34,7 +34,7 @@ public sealed class NumbersAreConfigurationTests
         "thresholds.memoryPressureWarn", "thresholds.rootUsedWarnPercent", "journal.maxGb", "thresholds.journalHistoryWarnDays",
         "thresholds.clockJumpsWarnPer4h", "thresholds.collectorFreshMinutes", "wslConfig.recommendedMemoryGb",
         "thresholds.wslMemoryCriticalPercent", "processes.topCount",
-        "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.minFreeGb",
+        "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.maxDeferHours", "archive.minFreeGb",
         "archive.copyBufferKib", "disk.eventsSinceDays", "disk.vhdxGapWarnGib", "disk.vhdxGrowthWarnGibPerDay", "disk.hostFreeWarnGib",
         "disk.growthMinHours", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
     ];
