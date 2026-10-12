@@ -1,7 +1,7 @@
 # module_daemon — the `wsl-care` daemon / CLI (`src_daemon/`)
 
 > The module overview of the daemon. The deep detail stays where each epic wrote it, in
-> [architecture.md](architecture.md) (the daemon half of E6 in [architecture-daemon-e6.md](architecture-daemon-e6.md)); the tests are in [module_tests.md](module_tests.md). This file is the map between
+> [architecture.md](architecture.md) (the daemon half of E6 in [architecture-daemon-e6.md](architecture-daemon-e6.md); the installer, the units and the release pipeline of E4 in § *Story history* below, moved from architecture.md on 2026-10-12); the tests are in [module_tests.md](module_tests.md). This file is the map between
 > them, in the same shape as [module_vs_code.md](module_vs_code.md). Added 2026-10-06 by the retro review of PR #7 (the
 > review gate found no module document for the daemon, `common.knowledge-base`); the same finding on PR #5 was first
 > rejected as a layout question and is answered by this file too.
@@ -116,7 +116,7 @@ has none.
 | memory / build-server / trim / clock actions, the timer pass, `logs` / `runs` | *The memory, build-server, trim and clock actions, the timer pass, `logs` / `runs` (E3.S3)*, *E3 review fixes (2026-10-03)*; since E14 S3 (2026-10-08) A3's TIMER also waits until every build server is measured idle for `buildServers.idleMinutes` (the section below), and the C# language server is a process family of its own (`language-servers`, for A11) — architecture.md's A3 row and *A11 — suspects* |
 | the "machine busy" signal (`wsl-care busy`, `pressure.cpu` / `pressure.io`) | architecture.md *The "machine busy" signal (E14 S6, 2026-10-09)*; the agent-side contract in the README's *Busy* section |
 | memory and swap before the evening (E14 S5, a report) | the section below; architecture.md's *`.wslconfig`* paragraph |
-| installer and units; release | *The installer and the units (E4.S1)*, *The release pipeline (E4.S2)* |
+| installer and units; release | *The installer and the units (E4.S1)*, *The release pipeline (E4.S2)* — both in § *Story history* below since 2026-10-12 |
 | the read contract, detached runs | *The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)*; *The daemon read contract (E6.S0)* and *Detached runs, the request, the stop (E6.S1)* now in [architecture-daemon-e6.md](architecture-daemon-e6.md) |
 | configuration trust, AI agents, A18, numbers | *The configuration trust (E7.S0, 2026-10-05, plan §15q R1)*, *The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)* with its *Manual agents and `agents probe` (E7.S2, 2026-10-05, plan §15q D4, R2)*, *A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)*, *Numbers are configuration (standing convention, owner rule 2026-10-05)* |
 | the MCP server instances of the AI agents (`Core/Mcp/`, `status --json` `mcpServers`) | [module_mcp_servers.md](module_mcp_servers.md) (E7.S2d, 2026-10-06/07); architecture.md *MCP server instances of the AI agents* points there |
@@ -231,6 +231,12 @@ flowchart TB
   and the fix.
 - **The fix is the extension's** (*Start Windows Time*, [module_vs_code.md](module_vs_code.md)); the SYSTEM scheduled task
   that would restart the service by itself is the plan's story 2, not built.
+- **Who else sets the clock** (measured 2026-10-12, [2026-10-12_wsl_clock_fight.md](2026-10-12_wsl_clock_fight.md)): the
+  verdicts' "Hyper-V's time sync vs timesyncd" is incomplete. All distros share one kernel clock, and on the owner's
+  machine it has three writers besides Hyper-V's TimeSync driver: WSL's own VM-level `chronyd` (the host's PTP clock,
+  every 8 s), Ubuntu's `systemd-timesyncd` (NTP), and Docker Desktop's `/initd`, which steps it every 30 s while Docker
+  Desktop runs — every clock change counted in the window both logs cover was one of its steps. That record names the
+  journal's loss mechanism (`SystemMaxFiles` 100) and the ranked fixes; the verdict texts are unchanged.
 
 ## The Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10)
 
@@ -451,3 +457,292 @@ flowchart LR
   `windowsTasks.archiveLogonDelayMinutes` (20, 0–720), `windowsTasks.archiveEveryHours` (4, 1–24) — all `SafeDirection.Higher`,
   none machine-only (an unelevated runner's own user layer is the natural place, the plan's Q2). No new coupled rule: the
   existing `mcpWatchdog.periodMinutes < mcpServers.cpuIntervalMaxMinutes` holds the watch cadence under the baseline's maximum.
+
+## Story history (moved from architecture.md, 2026-10-12)
+
+What E4 built — the installer and the units (E4.S1) and the release pipeline (E4.S2) — moved here from
+[architecture.md](architecture.md), unchanged apart from heading levels and the cross-references the move made wrong, to
+keep that file well under the conventions resolver's 256 KiB per-file limit; architecture.md keeps a summary and stays
+the entry point. The plan's decisions and review tables are in [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md).
+
+### The installer and the units (E4.S1)
+
+`install.sh` (repository root, POSIX `sh`, `set -eu`, no `eval`, shellcheck-clean) is the install trust boundary:
+`curl … | sudo sh` runs it as root on the owner's distro. It installs what a release archive carries —
+`wsl-care-$VERSION-$RID.tar.gz` holding `wsl-care-$VERSION-$RID/` with `wsl-care`, `systemd/` (every unit of
+`src_daemon/systemd/`) and `config/machine.json` (`src_daemon/config/machine.json`) — the layout E4.S2's release job
+packs (plan §15e #1).
+
+```mermaid
+flowchart TD
+    args["arguments<br/>--version · --skip-attestation · --set-default-user · --distro-name · --dry-run · --uninstall [--purge]<br/>each value checked against a whole-string pattern<br/>(--distro-name: WSL's rule = DistroIdentity.NamePatternText; empty = no name)"]
+    pre["preflight — nothing written yet<br/>Linux · root (or --dry-run) · systemd booted (/run/systemd/system)<br/>arch → linux-x64 / linux-arm64 · tools<br/>/usr/local/bin/wsl-care absent or ours · wsl.conf decision"]
+    ghpre{"gh ≥ 2.56.0 with attestation verify<br/>--bundle · --cert-identity · --deny-self-hosted-runners<br/>(unless --skip-attestation; asked BEFORE any download)"}
+    rel["release: --version, or the newest daemon-v* of the releases API<br/>(never releases/latest — the extension's)"]
+    dl["download archive + .sha256 into a mktemp folder (trap removes it)<br/>curl https-only, redirects too, --max-time"]
+    sum{"sha256 of the archive<br/>= the .sha256?"}
+    fetchatt["root fetches the attestations itself, unauthenticated:<br/>GET /repos/R/attestations/sha256:digest → each bundle_url<br/>→ the snappy bundle → unsnappy (od + awk)"]
+    att{"as root, gh isolated in the temp folder, no token:<br/>gh attestation verify --bundle · --repo<br/>--cert-identity release.yml@refs/tags/daemon-vVERSION<br/>--deny-self-hosted-runners — any ONE bundle passes"}
+    skip["--skip-attestation:<br/>ATTESTATION NOT VERIFIED, on stderr"]
+    unp{"members: regular files and folders,<br/>all under wsl-care-V-RID/, no '..', no link"}
+    files["/opt/wsl-care/bin/wsl-care 0755 · link /usr/local/bin/wsl-care<br/>the units → /etc/systemd/system 0644<br/>/etc/wsl-care/config.json ONLY if absent<br/>/var/lib/wsl-care · /var/log/wsl-care 0755"]
+    conf["/etc/wsl.conf: [user] default= ONLY with the flag and only when none is set<br/>otherwise advice, nothing written"]
+    pkgs["sysstat + atop via apt when missing<br/>debconf sysstat/enable=true; dpkg-reconfigure when still off"]
+    units["systemctl daemon-reload · try-restart follower (upgrade)<br/>enable --now wsl-care.timer wsl-care-events.service<br/>enable --now sysstat.service atop.service<br/>each call ≤ WSL_CARE_INSTALL_SYSTEMCTL_SECONDS (900) + 10 s kill grace"]
+    first["said first: may take minutes, at most 900 s<br/>[env WSL_DISTRO_NAME=--distro-name] /opt/wsl-care/bin/wsl-care collect<br/>(a root collect: DistroIdentity.Record writes distro-name.json — the installer never does)<br/>(one full run: records, never acts; ≤ 900 s + 30 s kill grace)"]
+    ver["verify: sar · atop on PATH → is-active timer · events<br/>→ doctor --json healthy (wall-clock wait ≤ WSL_CARE_INSTALL_DOCTOR_SECONDS,<br/>each call cut to the deadline, at least 10 s)"]
+    fail["exit 1: FAILED at step #quot;…#quot;<br/>+ how to re-run or --uninstall once something was written"]
+    ok["summary"]
+
+    args --> pre --> ghpre
+    ghpre -- "missing / too old / a flag missing" --> fail
+    ghpre -- usable --> rel --> dl --> sum
+    sum -- no --> fail
+    sum -- yes --> fetchatt --> att
+    sum -- "yes, --skip-attestation" --> skip --> unp
+    att -- refused --> fail
+    att -- verified --> unp
+    unp -- no --> fail
+    unp -- yes --> files --> conf --> pkgs --> units --> first --> ver
+    ver -- "a check fails" --> fail
+    ver -- all hold --> ok
+```
+
+**What each check proves.** The `.sha256` is integrity only — whoever can replace the archive can replace its checksum
+beside it. Authenticity is the build-provenance attestation, pinned to the EXACT certificate identity
+`https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release.yml@refs/tags/daemon-v<version>`
+(`--cert-identity`) with `--repo oleksandrdubyna88/wsl_care` and `--deny-self-hosted-runners`. E4.S1 used
+`--signer-workflow …/release.yml`, which gh matches as a literal PREFIX of the identity, so `release.yml` built from any
+branch passed (independent review HIGH, 2026-10-03; measured on gh 2.97.0 with cli/cli's own attestation:
+`--signer-workflow …/deploy` accepted `…/deployment.yml@refs/heads/trunk`).
+
+**How it is verified — root, a bundle, no login** (review LOW, the better design taken). E4.S1 ran `gh` online as
+`SUDO_USER` through `runuser`, so that user's gh login, configuration and Sigstore cache decided the verdict. Now root
+asks GitHub's attestation API for the archive's digest **unauthenticated** (`Accept: application/vnd.github+json`,
+`X-GitHub-Api-Version: 2026-03-10`); the API answers every attestation by `bundle_url` alone (`bundle: null`, observed
+for every probe on 2026-10-03), a blob of snappy-compressed JSON (`application/x-snappy`), which the installer fetches
+(≤ 1 MiB, ≤ 10 bundles) and decompresses itself — `unsnappy`, awk over `od`, `LC_ALL=C` so mawk and gawk both write
+each value as one byte (a real bundle carries bytes above 127). Then root runs `gh attestation verify <archive>
+--bundle <file> …` with `HOME`, `GH_CONFIG_DIR`, `XDG_{CONFIG,CACHE,DATA,STATE}_HOME` inside the run's temporary folder
+and every token variable unset: **measured, a `--bundle` verification needs no login** (gh 2.56.0–2.97.0, empty
+configuration, no token); gh still fetches Sigstore's trusted root by TUF from `tuf-repo-cdn.sigstore.dev`, unauthenticated
+(with the network cut it hangs until the 180 s ceiling — a refusal, never a pass). Each bundle is verified on its own
+and any ONE passing suffices (gh before 2.65 stops at the first bundle in a set that fails — GitHub's own immutable-release
+attestation sits beside a build attestation for some artifacts).
+
+**Which gh** (review MEDIUM, corrected by measurement). The review assumed `gh attestation` (2.49.0+) suffices; bisected
+over gh's releases on 2026-10-03, **2.56.0** is the oldest that verifies a public-good attestation today — 2.49.0 to
+2.55.0 fail with `unsupported tlog public key type: PKIX_ED25519` (Sigstore's trusted root now carries a Rekor v2
+Ed25519 key), and Ubuntu 24.04's own gh is 2.45.0 (no `gh attestation`). The preflight asks BOTH the version (≥
+2.56.0) and `gh attestation verify --help` for the four flags, BEFORE any download, and points at GitHub's apt
+repository (`cli.github.com/packages`) — never `apt-get install gh`, never a login. `--skip-attestation` proceeds with
+a banner on stderr and the checksum still applies.
+
+**Every step that writes goes through `run`**, which under `--dry-run` only prints `would run: …`; the dry run still
+downloads and verifies into its temporary folder, needs no root, and changes nothing else. A failed step exits 1 naming
+it (`preflight`, `resolve-release`, `download`, `checksum`, `attestation`, `unpack`, `install-binary`, `install-units`,
+`machine-config`, `wsl-conf`, `packages`, `upgrade-wait`, `enable-units`, `first-run`, `verify: …`; uninstall: `units`, `purge`,
+`verify: …`); a usage refusal exits 2.
+`apt-get install` has no kill ceiling on purpose (a dpkg killed mid-configure breaks the package database) — its waits
+are bounded by `DPkg::Lock::Timeout=300`; every other wait has one (`curl --max-time`, `timeout` around `gh`, `apt-get
+update`, `units dropin`, `status`, every job-waiting `systemctl`, `collect` and `doctor`).
+
+**The ceilings** (retro reviews of PR #8 and PR #11, 2026-10-06). Every `timeout` carries `-k`: SIGTERM at the ceiling,
+SIGKILL after a grace (10 s; 30 s for the first `collect`), so a child that ignores SIGTERM never outlives its ceiling by
+more than the grace. Every `systemctl` call that waits for a job — `daemon-reload`, `try-restart`, `enable --now`,
+`disable --now`, `stop` — goes through `systemctl_job`, under `WSL_CARE_INSTALL_SYSTEMCTL_SECONDS` (default 900: above a stop's
+worst case, `TimeoutStopSec` ≤ 300 s twice); measured on WSL Ubuntu, `sysstat.service` is `Type=oneshot` with
+`TimeoutStartUSec=infinity` and `JobTimeoutUSec=infinity`, so `enable --now` had no ceiling at all. At the ceiling only the
+WAIT ends — the step fails saying the job may still be running (`systemctl list-jobs`); a dry run prints the plain systemctl
+command. The two waits run on the WALL clock and end at their deadline: the health wait
+(`WSL_CARE_INSTALL_DOCTOR_SECONDS`, 120) gives each `doctor --json` what is left of it (at least 10 s) and never sleeps past
+it, then at most the last look and the readable report, 10 s each plus the kill grace — a refusal within 120 + 40 s (it
+counted only its 5 s sleeps before, so 120 s could stretch to ~50 minutes of 120 s calls); the upgrade wait
+(`WSL_CARE_INSTALL_RUN_WAIT_SECONDS`, 600) does the same with each `status --json` (`WSL_CARE_INSTALL_STATUS_SECONDS`, 30, cut to
+what is left, at least 5 s unless set lower). Every ceiling variable (and `WSL_CARE_INSTALL_PROGRESS_SECONDS`) is a whole number of seconds,
+no leading zero, at most a day, or a usage refusal (exit 2) before anything runs; `SYSTEMCTL` and `STATUS` refuse 0, which
+`timeout` reads as no ceiling. The first full run is announced before it starts — it takes minutes. An installed binary
+that EXISTS but cannot be started is no status answer (in flight, then the refusal with the manual escape); only a binary
+that does not exist means a fresh install.
+
+**Uninstall** stops and disables the timer and the follower, stops a running full run, removes the units (every loaded `wsl-care-act@*` instance stopped first), the
+binary, the link (only when it is the installer's) and the emptied `/opt/wsl-care`, and verifies the timer inactive and
+the files gone. It keeps `/var/lib/wsl-care`, `/var/log/wsl-care` and `/etc/wsl-care`; `--purge` names and removes
+exactly those and `/run/wsl-care.lock` — **only while it holds the run lock** (retro review of PR #8, G1): the daemon's
+`RunLock` is `flock(2)` on `/run/wsl-care.lock` (.NET's `FileShare.None`), so after the units are stopped and the binary is
+gone the installer takes `flock -n` on that file (fd 9) and removes the three folders and then the lock file itself, LAST,
+inside the locked section — with no binary left nothing can lock a new file at that path in between. A run started by hand
+(`sudo wsl-care collect`) still holding it refuses the purge at step `purge`: nothing of the state is removed, and the same
+command purges once that run has ended. `--purge` needs `flock` (util-linux) and refuses at `preflight`, before anything
+changes, without it. It never removes sysstat, atop, `/etc/wsl.conf` or a user's own layer.
+
+**The units** (`src_daemon/systemd/`, all root):
+
+| Unit | Shape | Why |
+|---|---|---|
+| `wsl-care.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care collect --timer`, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=1G`, `TimeoutStartSec=276min` (above the derived worst case of a timer run, E7.S2b/S2c review C-H2; 240 until PLAN_boot_settle.md added the settle step's waits), `SuccessExitStatus=75 130`, `NoNewPrivileges=yes`, `KillMode=control-group`, `TimeoutStopSec=90`; no `[Install]` | `--timer` is the only thing that makes a run the timer (§15d CI). 75 is `ExitCode.Busy`: a second run meeting the lock is designed, not a failed unit (the health collector counts failed units); 130 is a stop asked for, recorded `interrupted` (retro over PR #11). `MemoryMax` is the cgroup's, so it covers every child — npm, dotnet, pip, the Docker CLI, the 2M-entry walk — and §8's 256M (a guess for the binary alone) was raised to 1G by the E4 review |
+| `wsl-care.timer` | `OnCalendar=*-*-* 00/4:00:00`, `Persistent=true`, `RandomizedDelaySec=5min`, `AccuracySec=1min` | Persistent= acts on calendar timers only; the stored last trigger makes the first boot of the day run ONCE for the night's missed slots — the case §8's monotonic timer was chosen for. That catch-up fires at boot; the SERVICE then settles (`RunSettle`: `timer.bootDelayMinutes` after boot, then while S6 says busy, bounded) before it takes the lock — PLAN_boot_settle.md |
+| `wsl-care-events.service` | `Type=simple`, `ExecStart=/opt/wsl-care/bin/wsl-care events follow`, `Restart=always`, `RestartSec=30`, `MemoryMax=1G`, `NoNewPrivileges=yes`, `WantedBy=multi-user.target` | the follower waits for Docker in-process (§15b #8); the restart is the outer net |
+| `wsl-care-watch.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care watch --timer`, the hardening of `wsl-care.service`, `TimeoutStartSec=10min` (`mcpWatchdog.runLimitMinutes`, above `RunBudget.WatchRunWorstCase`), `SuccessExitStatus=75 130`; no `[Install]` | E14 S2b: the watch — root's MCP CPU ledger and the agents' CPU history every few minutes, and A19 as a recorded act (the busy half needs interval evidence the 4-hour timer never gives); since E14 S7b.2 the act is `[A19, A21]` — A21 ends client-gone interop relays with SIGTERM only, each action by its own switch; [module_mcp_servers.md](module_mcp_servers.md) § *The busy half and the watch*, § *A21* |
+| `wsl-care-watch.timer` | `OnActiveSec=5min`, `OnUnitActiveSec=5min` (`mcpWatchdog.periodMinutes`), `AccuracySec=30s` | monotonic, from the timer's own start (a past `OnBootSec` would fire at `enable --now`, into the installer's first run): nothing to catch up after the VM was off; installed only when the release ships it |
+| `wsl-care-act@.service` | template; `[Unit] CollectMode=inactive-or-failed`; `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care act --request %i`, the hardening of `wsl-care.service`, `TimeoutStartSec=infinity`, `SuccessExitStatus=3 75 76 78 79 80 82 130` (the RECORDED ends: an action failed, a refusal recorded, no request, an unusable request recorded, a stop recorded); no `[Install]` | a detached run the panel asked for (E6.S1, described with the detached runs in [architecture-daemon-e6.md](architecture-daemon-e6.md)); `CollectMode` sits in `[Unit]`, the only section systemd reads it from (0.1.0 had it in `[Service]`, ignored — fixed in 0.1.1) |
+
+Each unit's configurable values (`timer.*`, `units.*`) come as a drop-in, `<unit>.d/50-wsl-care-config.conf`, that
+`install.sh` writes from `wsl-care units dropin <unit>` (E7.S2c); the drop-in of the defaults says what the unit file
+says.
+
+**Hardening, decided per action.** Deliberately NOT set, because each breaks a named action: `ProtectHome` (A8, A12,
+A14, A17 clean caches under the target user's home), `ProtectSystem=strict` (state, A9's `/var/cache/apt`, A10's
+journal), `ProtectKernelTunables` (A1, A2 write `/proc/sys/vm`), `ProtectClock` (A16's `hwclock -s`), `PrivateDevices`
+(A15's `fstrim`), `ProtectProc` / `PrivateUsers` / `PrivateTmp` (A11 and the collectors read every user's processes and
+signal them by pidfd), a `CapabilityBoundingSet` (the set the actions need is nearly all of root's). Set: only what no
+action relies on — `NoNewPrivileges=yes` (the run already is root; `runuser` only drops privilege; `sudo` is on the
+never-list) and §8's resource limits. **One known risk is kept on purpose:** no_new_privs also blocks the AppArmor profile
+change a snap application makes at start, so a Docker installed as a snap would fail under the timer (Docker figures
+unavailable, A4–A7 refused) while working from a terminal; Docker Desktop's CLI and apt's docker-ce are not snaps. The
+README says what to do, `POST_DEPLOY.md` #11 checks the journal for it (and for an OOM kill at `MemoryMax`). None of it
+has been OBSERVED on a live systemd yet (E4's live install): it is a request to systemd until then, and the unit files
+say so. `ShippedFilesTests` keeps the breaking directives out; CI's
+`verify-systemd-units.sh` step reads every unit file (templates as instances, with their drop-ins) with systemd's own
+parser.
+
+**The machine layer is deliberately empty** (`src_daemon/config/machine.json`: comments and `{}`), not a copy of the
+embedded defaults: a copy would freeze every default at the installed version, show every key as `(machine)` in `config
+get`, and — the moment a later release renames a key — make the layer invalid and every run observe-only. Its comment
+documents an example that `ShippedFilesTests` runs through the real loader.
+
+**The test harness** is `InstallWorld` / the `Install*Flows` classes in `WslCare.Scenarios` (C#, the product's language, no new
+dependency): the real script under `/bin/sh` over a temporary prefix `WSL_CARE_INSTALL_ROOT` (every path the script
+reads or writes as a file sits under it), `TMPDIR` the world's own, a `PATH` of exactly two folders — the fake tool under
+the names of everything that changes the machine or reaches the network (curl, gh, systemctl, apt-get, debconf,
+runuser, sudo, plus `id` / `uname` so a test can be root or arm64) and links to an allowlist of real text and file
+tools. The fake gained one answer option for it, `OutputFlag` (write the fixture to the file named after `--output`),
+and since the E4 review a verifying `gh`: `VerifiesAttestation` makes it ENFORCE the identity flags of the call over a
+bundle in Sigstore's own shape (`FakeAttestation`: the certificate's SAN and Fulcio extensions, the statement's digests;
+`--cert-identity` exact, `--signer-workflow` a prefix, as measured on the real gh), and `WSL_CARE_FAKE_RECORD_ENV` makes
+every call record the named environment variables — so a test proves what the installer's check lets through, and
+under whose configuration, rather than the argv it sent. The worlds publish an attestation per release
+(`AttestationBundles`: a self-signed certificate with the SAN and extensions, snappy-compressed, served at a bundle URL
+named by the API answer), and a captured cli/cli bundle (`src_daemon/tests/fixtures/attestation/`) exercises the
+decoder's copy elements.
+The released binary is a stub that logs the path it was started as and hands its argv to a fake `wsl-care`, so the
+absolute-path rule is observed, not assumed. [module_tests.md](module_tests.md) lists every flow and its red run.
+
+### The release pipeline (E4.S2)
+
+A daemon release is the tag `daemon-v<version>` plus a GitHub release holding, per RID, an archive, its `.sha256`, and a
+build-provenance attestation of the archive signed by `.github/workflows/release.yml` — the three things `install.sh`
+checks. Nothing has been released yet: the first cut, `daemon-v0.1.0`, is the owner's step after the settings of
+`docs/repo-settings.md` (the App, its secrets, the two rulesets) are in place.
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant RP as release-please.yml<br/>(App token, contents: read)
+    participant GH as GitHub
+    participant Rel as release.yml
+    Owner->>RP: dispatch
+    RP->>GH: release PR — src_daemon/version.txt, manifest, src_daemon/CHANGELOG.md
+    Owner->>GH: squash-merge the release PR
+    Owner->>RP: dispatch again
+    RP->>GH: git.createRef refs/tags/daemon-vX (force-tag-creation)
+    RP->>GH: create the release as a DRAFT
+    GH-->>Rel: push of tag daemon-vX (an App-token ref is an ordinary push)
+    Rel->>Rel: guard — tag shape, version.txt at the tag, commit on main
+    Rel->>Rel: build × 3 RIDs — tests, AOT publish, smoke, package, attest, artifact
+    Rel->>GH: publish job — draft? then verify the built set, upload, verify FROM the draft
+    Rel->>GH: gh release edit --draft=false (the last step)
+```
+
+```mermaid
+flowchart TD
+    tag["push: tags daemon-v* — the only trigger<br/>(no pull_request, no workflow_dispatch)"]
+    guard["guard · ubuntu-24.04 · contents: read<br/>release-guard.sh: daemon-v + install.sh's version pattern<br/>= src_daemon/version.txt · ancestor of origin/main"]
+    subgraph legs["build · one leg per RID · contents: read + id-token: write + attestations: write"]
+        l1["linux-x64 · ubuntu-24.04"]
+        l2["linux-arm64 · ubuntu-24.04-arm"]
+        l3["win-x64 · windows-latest"]
+    end
+    steps["restore + Release build → Core, CLI, Scenarios test executables<br/>→ dotnet publish -r RID (AOT) → smoke-daemon.sh (the SAME script ci-daemon.yml runs)<br/>→ package-daemon.sh → archive + .sha256 → its path opened outside bash (pwsh)<br/>→ attest-build-provenance(archive)<br/>→ upload-artifact daemon-RID (1 day)"]
+    pub["publish · ubuntu-24.04 · contents: write (the only write in the file)<br/>needs guard + build, no if:"]
+    d{"release is a draft?"}
+    v1{"verify-release-assets.sh<br/>over the built set"}
+    up["gh release upload --clobber"]
+    v2{"verify-release-assets.sh<br/>over gh release download"}
+    live["gh release edit --draft=false"]
+    stop["red run, the release stays an invisible draft<br/>fix forward; never move or delete the tag"]
+
+    tag --> guard --> legs
+    l1 --> steps
+    l2 --> steps
+    l3 --> steps
+    steps --> pub --> d
+    d -- no --> stop
+    d -- yes --> v1
+    v1 -- incomplete --> stop
+    v1 -- "every RID, matching .sha256, nothing else" --> up --> v2
+    v2 -- incomplete --> stop
+    v2 -- complete --> live
+```
+
+**Why the tag push is the trigger.** With `draft: true` + `force-tag-creation: true` release-please (holding the App's
+token) creates the tag ref through `git.createRef` before it creates the draft release — read in its bundled source
+(`release-please-action` v5.0.0, `dist/index.js`). That ref creation is an ordinary tag push, so `push: tags` fires —
+the event the family's `bugs-v0.3.0` ran on. `release: published` never fires for a draft, and the draft is the point
+(nothing public until every RID's asset is on it, plan §15e #2); `workflow_dispatch` carries no tag, so its attestation would not
+carry the identity `install.sh` pins (`release.yml@refs/tags/daemon-v<version>`). A failed run is re-run, which replays the tag event.
+
+**Permissions** (plan §15e #0): workflow level `contents: read`; the build job alone holds `id-token: write` +
+`attestations: write` (it signs) and nothing that writes the repository, so it hands its archive to the run as an
+artifact instead of to the draft; the publish job alone holds `contents: write`. `release-please.yml`'s job holds only
+`contents: read` — every write there is the App token's.
+
+**The scripts** (`.github/scripts/`, bash): `lib/daemon-assets.sh` is the asset contract in one place — the RIDs
+(`DAEMON_RIDS`), the version pattern (equal to `install.sh`'s `VERSION_PATTERN`) and `daemon_archive_name` (tarball for
+Linux, zip for Windows, an unknown RID refused rather than mapped). `package-daemon.sh` packs one archive with exactly the
+E4.S1 layout (`wsl-care-$V-$RID/` with `wsl-care` 0755, every file of `src_daemon/systemd/` and `config/machine.json`
+0644, folders, owner 0:0, sorted names, `gzip -n`; Windows: the exe alone, zipped with 7-Zip) and writes the `.sha256`
+line itself (`<hash>  <name>`, so Git Bash's binary-mode `*` can never reach it) and prints the archive's path spelled for
+the caller — from `<out-dir>` as given, through `cygpath -m` under Git Bash (E4 review B1). `release-guard.sh` and
+`verify-release-assets.sh` are the two refusals the pipeline rests on; the latter takes optional RIDs to check one leg's
+pair (`ci-daemon.yml`). `smoke-daemon.sh` is ci-daemon.yml's former smoke steps, now one script both workflows call
+(plan §15e #5), six parts since the review added `preview --all --json`. Every one is shellchecked by `ci · workflows`;
+`package-daemon.sh` and `verify-release-assets.sh` run on every pull request leg (all three RIDs, the Windows zip
+included), and the scenario suite runs the scripts too (`PackageFlows` and `ReleaseScriptFlows` on Linux,
+`PackagePathFlows` on every OS — under Git for Windows' bash on Windows, the zip wherever 7-Zip is on `PATH`). The
+smoke itself runs in CI, not in the suite.
+
+**What makes a daemon release** is the package path: release-please hands `src_daemon` only the commits touching a file
+under `src_daemon/`, so a `.github/`- or root-only commit never reaches it. The former `exclude-paths: [".github"]` was
+inert (no exclude path can remove a commit the split never handed over) and was removed by the E4 review;
+`ReleaseConfigTests` holds the package-path rule and the key's absence. Before 1.0.0, `bump-minor-pre-major: true` makes
+a breaking change a MINOR (release-please's default would jump to 1.0.0) and `bump-patch-for-minor-pre-major: false`
+keeps a `feat:` a minor.
+
+**The first version** is 0.1.0 exactly: the manifest says `"src_daemon": "0.0.0"` (release-please backfills a "previous
+release" from the manifest only when it is not 0.0.0) and the package sets `initial-version: 0.1.0` (what
+`buildNewVersion` returns with no previous release; the `simple` strategy does not override it). After the first release
+both files say 0.1.0 and `initial-version` is never read again.
+
+**Owner-applied settings, as files** (GitHub reads none of them; `docs/repo-settings.md` applies them, each with a probe
+that must be refused): `.github/rulesets/tags-daemon.json` (target tag, `refs/tags/daemon-v*`, creation + update +
+deletion, bypass = the release App alone) and `.github/rulesets/branch-main.json` (the default branch: no deletion, no
+force push, linear history, pull requests with resolved conversations, squash or rebase, the six check names a pull
+request reports — pinned to the GitHub Actions app, id 15368 — strict, no bypass). Sonar: `sonarcloud.yml` passes every
+`key=value` of `.github/sonar.properties` to `dotnet-sonarscanner begin` (pinned 11.3.0, with `dotnet-coverage`
+18.11.2 over the three test executables) and skips with a warning when `SONAR_TOKEN` is absent; the settings file is
+deliberately NOT a `sonar-project.properties` — the .NET scanner 11.3.0 fails its `end` step when one sits in the folder
+`begin` ran in (`SonarProjectPropertiesValidator`, read in its source). CodeRabbit: `.coderabbit.yaml` (ru-RU, chill,
+per-path instructions) and `coderabbit-review.yml` (asks for the review once; the App's installation is the owner's).
+
+**Kept equal by tests** (`ReleaseWorkflowTests`, `ReleaseConfigTests`, every OS — the workflows read with a small YAML
+subset reader that refuses what it does not understand): the trigger, the permissions per job across every workflow,
+`publish` needing `guard` + `build` with no `if:`, the release matrix = `DAEMON_RIDS` = ci-daemon.yml's matrix (same
+runner per RID) with Linux on `ubuntu-24.04*`, both workflows calling `smoke-daemon.sh` with no inline copy, the stage
+order inside a leg, the publish order, every `uses:` pinned to a 40-hex commit with its version, a ceiling on every job,
+`persist-credentials: false` on every checkout, no `${{ }}` inside a `run:`, the release-please tag = the release
+trigger = the tag ruleset's pattern, manifest = `version.txt`, and the required checks = the jobs a pull request runs —
+the gating workflows DERIVED (every workflow a `pull_request` / `pull_request_target` triggers, minus the two named
+non-gating ones, `sonarcloud.yml` and `coderabbit-review.yml`), every workflow declaring `permissions:` at the top or on
+every job (a workflow without one would pass the per-job checks vacuously), and every pull-request leg packing the
+archive and opening its path outside bash (E4 review B2, B5, B6).
