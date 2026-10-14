@@ -1,6 +1,6 @@
 # PLAN — Windows disk hygiene: a verdict for every lettered volume, the AI-agent worktree report, a build-output cleanup, the `testsToDelete-` sweep, and A5's compose exemption
 
-> Status: **plan only, nothing implemented yet, 2026-10-14.** Scope: the daemon's disk verdicts (`Thresholds/`), a
+> Status: **plan only, nothing implemented yet, 2026-10-14 — coai plan round 1: proceed (§12a).** Scope: the daemon's disk verdicts (`Thresholds/`), a
 > Windows-side worktree scanner and two Windows-side cleanup actions (`Core/Worktrees/` new, `Core/Actions/`), the Docker
 > cleanup's selection (`Preview/CleanupTargets.cs`), a test-leftover sweep on both sides, this repository's own test-temp
 > prefix, and the extension's panel rows and buttons for all of it. The split into epics is a DRAFT (see `## Epics`, the
@@ -85,6 +85,10 @@ spells `act` or `--confirm` towards the Windows binary (PLAN_windows_runner.md �
 - **Which volumes:** every lettered volume whose size ≥ `disk.volumeFreeMinSizeGib` (8) and whose letter is not in
   `disk.volumeFreeIgnoreLetters` (`[]`). The size floor exists for the measured E: — the keyboard's USB FAT volume (D1) —
   so a full device volume never warns; measurement M5 records its size before the floor is fixed.
+- **Small volumes are judged by percent alone** (coai plan round 1, finding 2): the absolute floors apply only to a volume
+  of at least `disk.volumeFreeAbsoluteMinSizeGib` (100) — below that a 16 GiB volume with 12 GiB free would warn forever
+  and a 9 GiB one would be critical forever, whatever it held. The limit text says which rule judged each volume. RED:
+  `A_small_mostly_empty_volume_is_ok`.
 - **Unknown, never ok,** when the sample is unavailable or a volume's size/free is unread (the reading's own reason), as
   `disk.hostFree` does.
 - **Relation to `disk.hostFree`:** both stay. `disk.hostFree` asks "can the VHDX files grow here"; `disk.volumeFree` asks
@@ -116,10 +120,14 @@ style), never by starting git:
 | `notGit` | no `.git` at all — reported as "not a git folder", never a candidate |
 | `testLeftover` (a flag) | the folder's own name matches the §3.6 prefix — reported as a count; NOT swept by this plan (§9) |
 
-**Idle.** A folder's idle age = now − the NEWEST of: every descendant's write time found by the walk (files AND folders,
-the WR-T1 rule), and for a worktree its admin folder's `HEAD`, `index` and `logs/HEAD` (git touches `index` on every
-status/add/checkout, which agents run constantly). A folder whose walk did not finish within budget is `unknown — not idle`.
-This is conservative by design: a build today, or a `git status` today, makes the worktree active. Measurement M2 compares it
+**Idle.** A folder's idle age = now − the NEWEST of: every write time (files AND folders, the WR-T1 rule) found by the
+walk OUTSIDE its build-output folders, each build-output folder's OWN write time (not its inside), and for a worktree its
+admin folder's `HEAD`, `index` and `logs/HEAD` (git touches `index` on every status/add/checkout, which agents run
+constantly). The inside of each build-output folder is walked separately, under its own budget, for its size and its own
+newest write — which A24 checks per candidate (§3.4), so a build today still keeps that `bin` (coai plan round 1, finding 5:
+otherwise the largest `node_modules` would spend the budget and the worktrees that most need cleaning would never read
+idle). A worktree whose NON-build walk did not finish, or met an entry it could not read, is `unknown — not idle`; a
+candidate whose own walk did not finish or met an unreadable entry is `unknown — retained`. Measurement M2 compares this
 with the admin-files-only signal over the owner's tree; if the cheap signal agrees on every folder it may become the default.
 
 **Build output** (the selection rule A24 deletes, measured in the report):
@@ -132,7 +140,12 @@ with the admin-files-only signal over the owner's tree; if the cheap signal agre
 - never `.git` (folder or file), never anything under one; never a reparse point, never anything under one.
 
 **The walk.** `TreeWalk` (`Files/TreeWalk.cs:105-110`: `RecurseSubdirectories`, `IgnoreInaccessible`,
-`AttributesToSkip = ReparsePoint`) through `IFileSystem.WalkTree` with `TreeRules.NeverEnter` for `.git`, budgets
+`AttributesToSkip = ReparsePoint`) through `IFileSystem.WalkTree` with `TreeRules.NeverEnter` for `.git`. **`IgnoreInaccessible`
+is the one thing this scan may NOT inherit** (coai plan round 1, finding 1): a skipped, unreadable subtree would hide a
+fresh write and let a worktree read idle. DH-3 widens `TreeRules` with a mode that COUNTS every entry the enumeration could
+not open (an access error per directory, caught and counted, never silently passed) and returns it on the measure, so
+any such count makes the folder or the candidate `unknown` — the existing callers keep today's behaviour. RED:
+`An_unreadable_subfolder_makes_the_worktree_unknown_not_idle`. Budgets
 `worktrees.scanMaxEntries` (5 000 000) and `worktrees.scanMaxSeconds` (900) for the WHOLE scan and per root a fair share, a
 cancellation check every 1024 entries (`TreeWalk.cs:43`). M1's 1.24 M files in 97 s is the basis (×4 headroom); a budget
 that runs out makes the remaining folders `unknown`, never `idle`. Sizes are "logical bytes" (file length), never "disk
@@ -218,7 +231,9 @@ candidate paths (relative to their root), in the run detail under `%LOCALAPPDATA
   `\wsl-care\hygiene` through its `Run`. The task has NO trigger; its body is `act <id>` with the manual trigger, spelt by
   the supervisor from a CLOSED table (D3, PLAN_windows_runner.md §3.3). Which id: the task is registered with
   `tasks run hygiene $(Arg0)` and run with one parameter that the supervisor accepts only from {`A24`, `A24Orphans`,
-  `A26`}; measurement M3 proves `$(Arg0)` substitution on this machine first, and if it fails the fallback is one
+  `A26`} (Task Scheduler's `IRegisteredTask::Run(params)` pairs a single string value with `Arg0` for the action's
+`$(Arg0)` — the documented COM contract; `schtasks /run` passes none, and the product never uses it);
+measurement M3 proves the substitution on this machine first, and if it fails the fallback is one
   on-demand task per id (`\wsl-care\hygiene-a24`, …). Either way the run re-checks everything (A5's "re-checked at run time"
   model, `research/architecture.md:1233`), and the panel's line reads the run record ("last: <t>, N removed, M kept,
   <bytes> logical"), "running" while it runs (durable status from the run record, not a webview flag).
@@ -249,8 +264,15 @@ a variable that can be empty.
 - Removal, never `-f` (the removal templates' rule, `Actions/DockerCleanups/DockerCleanupCommands.cs:9-14`): a RUNNING
   leftover is stopped first (`docker stop --time <testLeftovers.stopSeconds> <64-hex id>`, a new declared template), then
   `docker rm -v <id>` — which Docker refuses if it was restarted in between; then `docker volume rm <name>` (refuses a volume
-  in use), then `docker network rm <name>` (refuses one with endpoints). Order: containers, volumes, networks. Each removal
-  re-reads the name by id just before (a recycled name never takes another object).
+  in use), then `docker network rm <id>` (refuses one with endpoints). Order: containers, volumes, networks. A container
+  and a network are removed by their 64-hex id, re-read just before (a recycled name never takes another object).
+- **A volume has no id but its name** (coai plan round 1, finding 0): Docker offers no conditional delete. So immediately
+  before `docker volume rm` the volume is inspected again and removed only when its `CreatedAt` and labels are EXACTLY the
+  preview's and it is still older than the age floor — a replacement created under the same name after the preview has a
+  new `CreatedAt`, and one created within the floor is never eligible anyway. What is left is the milliseconds between that
+  inspect and the `rm`, against a volume both newly created under a `testsToDelete-` name — a name whose whole promise is
+  that it is safe to delete — and already holding data; the preview and README name that residue. RED:
+  `A_volume_recreated_under_the_same_name_after_the_preview_is_kept`.
 - A container carrying `wsl-care.keep=true` is kept, as everywhere (`DockerInventory.cs:140`).
 
 **A26 — Windows `%TEMP%`, in the Windows binary:** top-level folders of the current user's `%TEMP%` whose own name matches,
@@ -265,7 +287,7 @@ the reasons, and the preview shows every signal with its reading):
 
 | signal | side | in flight when | source |
 |---|---|---|---|
-| a test-runner process | each side its own | a process matches `testLeftovers.runnerPatterns` (default: an image name ending `.Tests.exe` or `.Tests`; `testhost`; a `vitest` in a node command line; `dotnet test`; `npm test` / `npm run test`) — matched on the program name and, on Windows, the command line | WSL `ProcessSnapshot.All` (`Collectors/ProcessCollector.cs:97`, `Programs`); Windows `IWindowsProcessTable.List` + `CommandLine(pid)` (`Mcp/WindowsMcp.cs:18-26`, `Mcp/Win32ProcessTable.cs:30`) |
+| a test-runner process | each side its own | a process matches `testLeftovers.runnerPatterns` (default: an image name ending `.Tests.exe` or `.Tests`; `testhost`; `node` whose script argument's file name is `vitest.mjs` / `vitest`; `dotnet` with argv[1] = `test`; `npm` with argv[1] = `test`, or `run` then `test`) — matched on ARGV TOKENS (the program's base name, then whole arguments), never by a substring of the command line (coai plan round 1, finding 6), so an editor or a shell whose text merely contains "test" never blocks; a test WATCHER does block, and the preview names it (pid, program) so the owner can stop it | WSL `ProcessSnapshot.All` (`Collectors/ProcessCollector.cs:97`, `Programs`); Windows `IWindowsProcessTable.List` + `CommandLine(pid)` (`Mcp/WindowsMcp.cs:18-26`, `Mcp/Win32ProcessTable.cs:30`) |
 | a running Testcontainers container | distro (A25) | any RUNNING container labelled `org.testcontainers=true` (Ryuk included — it carries the label) | the container list's labels |
 | a young prefixed resource | the side being swept | any matched resource younger than `testLeftovers.minAgeMinutes` exists | the candidates' own times |
 | an unreadable signal | — | `unknown` blocks: a process table that could not be read, a Docker list that failed | the reading's reason |
@@ -497,6 +519,23 @@ opt-in). What remains for the owner:
   (the extension never writes daemon config). Acceptable, or should DH-5 add a panel picker that runs the daemon's own
   `config set` through the hygiene task?
 - **Q4** — whole-worktree removal (§9) as its own later plan?
+
+## 12a. Plan round (coai, 2026-10-14)
+
+Round 1, two reviewers (codex, one chat preset): verdict **proceed** (5 gating against a threshold of 6). Accepted and
+written in: a Docker volume has only its name, so it is re-inspected and removed only with the preview's `CreatedAt` and
+labels (§3.6); `IgnoreInaccessible` would let an unreadable subtree read idle, so the scan counts access errors (§3.3);
+small volumes are judged by percent alone (§3.2); the idle signal does not walk the inside of build output, which has its
+own budget per candidate (§3.3); runner processes are matched on argv tokens, never substrings (§3.6). Rejected: (a)
+"`$(Arg0)` is substituted only for event triggers" — `IRegisteredTask::Run(params)` documents the `Arg0` pairing for any
+run; the plan already measures it (M3) and names the per-id fallback; (b) "`git check-ignore` from the parent folder breaks
+root-anchored patterns" — git turns a path given relative to the working directory into the repository-relative path
+before matching, so `/bin/` anchored at the root is still applied; the parent folder is chosen so a submodule's own
+repository answers for its candidates.
+
+**A recording error, named:** the `resolve` call swapped two indices — the gate's record shows finding 4 (check-ignore)
+accepted and finding 5 (the idle budget) rejected, the reverse of the decisions above. The session had already moved to
+its code stage, so the record could not be corrected; this paragraph and the text of §3.3 are the decisions as made.
 
 ## 13. Definition of Done
 
