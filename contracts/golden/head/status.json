@@ -2308,19 +2308,6 @@
       }
     },
     {
-      "id": "host.vmmem",
-      "level": "unknown",
-      "value": "",
-      "limit": "warn > 24 GiB (wslConfig.vmmemAdviceGb)",
-      "reason": "vmmemWSL is read by the Windows binary's status",
-      "basis": {
-        "source": "fullRun",
-        "runId": "20000101T000000Z-1",
-        "evaluatedAt": "2000-01-01T00:00:00+00:00",
-        "ageSeconds": 0
-      }
-    },
-    {
       "id": "docker.A4",
       "level": "ok",
       "value": "3 volumes, 0.64 GB",
