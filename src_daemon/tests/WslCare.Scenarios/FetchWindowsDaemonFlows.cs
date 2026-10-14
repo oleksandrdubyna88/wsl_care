@@ -56,7 +56,10 @@ public sealed class FetchWindowsDaemonFlows
               "release download")
                 n=$(cat "$FAKE_GH_LOG.downloads" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE_GH_LOG.downloads"
                 if [ "$n" -le "$FAKE_GH_DOWNLOAD_FAILS" ]; then echo "release not found" >&2; exit 1; fi
-                if [ "$n" -le "$FAKE_GH_DOWNLOAD_HANGS" ]; then sleep 120; fi
+                if [ "$n" -le "$FAKE_GH_DOWNLOAD_HANGS" ]; then
+                  if [ "$FAKE_GH_IGNORE_TERM" = 1 ]; then trap '' TERM; fi
+                  exec sleep 120
+                fi
                 dir=""; prev=""
                 for arg in "$@"; do [ "$prev" = "--dir" ] && dir="$arg"; prev="$arg"; done
                 prev=""
@@ -309,15 +312,20 @@ public sealed class FetchWindowsDaemonFlows
     }
 
     /// <summary>The coai plan round: a download that HANGS (a network stall) must still end its attempt — each attempt is bounded by
-    /// <c>timeout</c>, as <c>wait-marketplace-served.sh</c> bounds its own — and the next attempt goes on.</summary>
-    [Fact]
-    public async Task A_download_that_hangs_is_ended_at_its_attempt_limit_and_the_next_attempt_goes_on()
+    /// <c>timeout</c>, as <c>wait-marketplace-served.sh</c> bounds its own — and the next attempt goes on. The second case is a hang
+    /// that IGNORES TERM (the fake traps it and execs its sleep, so the ignore survives and KILL ends the sleep itself): `timeout`
+    /// must then KILL it after the grace and answer 137 — the path CI's loaded runner took on PR #137, now proven on every run.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_download_that_hangs_is_ended_at_its_attempt_limit_and_the_next_attempt_goes_on(bool ignoresTerm)
     {
         Runnable();
         using var root = new TempRoot("fetch-retry-hang");
         var world = Make(root);
         Publish(world, SevenZipShape());
         world.Env["FAKE_GH_DOWNLOAD_HANGS"] = "1";
+        world.Env["FAKE_GH_IGNORE_TERM"] = ignoresTerm ? "1" : "0";
         world.Env["WSL_CARE_FETCH_ATTEMPTS"] = "2";
         world.Env["WSL_CARE_FETCH_ATTEMPT_SECONDS"] = "2";
         world.Env["WSL_CARE_FETCH_KILL_GRACE_SECONDS"] = "1";
@@ -328,7 +336,13 @@ public sealed class FetchWindowsDaemonFlows
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
         clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "the hung attempt was ended near its 2 s limit, not after the fake's 120 s sleep");
         Downloads(world).Should().Be(2);
-        result.Stderr.Should().Contain("download attempt 1 of 2 failed (exit 124)", "timeout's own code names the ended attempt");
+        // How the hung attempt ended depends on the machine's speed, not on the product: `timeout` answers 124 when TERM ended
+        // it, and 137 when the fake was still alive after the kill grace and KILL ended it — seen on CI's loaded Windows runner
+        // (PR #137, 2026-10-12). Both are "ended at its limit"; what the guarantee needs is that the attempt ended and the next
+        // one ran, asserted above.
+        result.Stderr.Should().MatchRegex(
+            ignoresTerm ? @"download attempt 1 of 2 failed \(exit 137\)" : @"download attempt 1 of 2 failed \(exit (124|137)\)",
+            "timeout's own code names the ended attempt: 124 after TERM, 137 after KILL — and only KILL ends one that ignores TERM");
     }
 
     [Theory]
