@@ -1427,6 +1427,12 @@ E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `da
     that names its detail; `act` lines and the reconcile's `interrupted` lines are not full runs) and reads ONE file, its
     detail, through a narrow DTO (`RunDetailVerdicts`: the head and `thresholds`), normalising null strings (C# doctrine
     §4a). `status` reads `history.jsonl` once for the slow parts and the verdicts (`LastFullRun.From`).
+  - **E15.S5, Windows memory pressure** ([module_daemon.md](module_daemon.md) § *Windows memory pressure*): the full run judges
+    `host.commit` and `host.compression` from the Windows disk script (no `host.vmmem`: the script reads no vmmem), so the
+    distro's `status` carries those two from the full run. On the Windows binary ONLY, `StatusVerdicts.From` judges the `host.*`
+    rule (`HostRules`) over its OWN sample; a sampled verdict REPLACES the carried full-run verdict of the same id in its place,
+    and one nothing carried (`host.vmmem`) is appended after the carried ones, so no id is listed twice. The extension's status
+    bar colours on `host.*` ([module_vs_code.md](module_vs_code.md)).
 - **`productVersion`** — the assembly's informational version, `Program.VersionText`, the ONE expression `--version` prints
   too (`0.0.0+<sha>` before the first release). The default JSON encoder writes the `+` as `\u002B`; a reader parses.
 - The text form adds one line, `verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown`.

@@ -704,17 +704,18 @@ flowchart LR
     commit --> probe
     ws --> probe
     wdf --> disk["HostMemoryFacts.FromWindowsDisk<br/>(vmmem unknown)"]
-    probe --> rules["Thresholds/HostRules.Verdicts<br/>(PURE)"]
-    disk --> rules
-    rules -- "basis: sample" --> sv["StatusVerdicts.From<br/>a sampled verdict REPLACES<br/>the carried one of the same id"]
-    rules -- "ThresholdRules.FromFullRun<br/>(after disk.hostFree)" --> detail["run detail verdicts"]
+    probe --> rules["Thresholds/HostRules.Verdicts<br/>commit · compression · vmmem<br/>(PURE)"]
+    disk --> fr["Thresholds/HostRules.FullRunVerdicts<br/>commit · compression<br/>(the same functions)"]
+    rules -- "Windows side only<br/>basis: sample" --> sv["StatusVerdicts.From<br/>a sampled verdict REPLACES<br/>the carried one of the same id;<br/>host.vmmem is appended"]
+    fr -- "ThresholdRules.FromFullRun<br/>(after disk.hostFree)" --> detail["run detail verdicts"]
     detail -- "carried, basis: fullRun + age" --> sv
 ```
 
 - **The facts** (`Health/HostMemoryFacts.cs`): `CommitBytes`, `CommitLimitBytes`, `CompressionBytes`, `VmmemBytes`,
   `HostTotalBytes` and the `.wslconfig` audit, each a `Reading`. `FromProbe(HostSample, audit)` is the Windows binary's road;
   `FromWindowsDisk(WindowsDiskSample, audit)` is the full run's, where vmmem and the host RAM are unknown ("vmmemWSL is read by the
-  Windows binary's status"). The two roads read the same commit quantity: on 2026-10-12 the perf counter and `MEMORYSTATUSEX`
+  Windows binary's status"). `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
+  daemon sets no job commit limit (WR-D3's job is kill-on-close only), so they are the system's. The two roads read the same commit quantity: on 2026-10-12 the perf counter and `MEMORYSTATUSEX`
   agreed to 0.01 %.
 - **The readers fail ALONE** (`Collectors/WindowsProbe.cs`, `Collectors/ProcessWorkingSets.cs`). `Memory()` and `Commit()` each
   make their own `GlobalMemoryStatusEx` call, so a failure costs only that figure. `ProcessWorkingSets.Sum` reads vmmemWSL and
@@ -728,18 +729,25 @@ flowchart LR
   `wslConfig.vmmemAdviceGb`, and its reason IS `VmmemAdvice.For`'s text — the level follows the advice, so they cannot disagree).
   An unread figure is `unknown` with its reason, never `ok`. `VmmemAdvice.For` gained an overload over the host's RAM in bytes;
   the old one delegates to it.
-- **Where each road judges.** The full run: `HostRules` is spread into `ThresholdRules.FromFullRun` after the disk verdicts, so
-  the distro's `status` carries the three with `basis: fullRun` and their age (its own binary has no host sample). The Windows
-  binary: `StatusVerdicts.From` judges `HostRules` over its own sample with `basis: sample`, and a sampled verdict REPLACES the
-  carried full-run verdict of the same id, in that verdict's place — the newer, direct reading wins, the ids and their order stay
-  the full run's, and a `status` never lists an id twice. `status` reads `.wslconfig` once on Windows and hands the same audit to
+- **Where each road judges.** The full run: `HostRules.FullRunVerdicts` — `host.commit` and `host.compression` only, by the same
+  functions — is spread into `ThresholdRules.FromFullRun` after the disk verdicts, so the distro's `status` carries those two with
+  `basis: fullRun` and their age. It judges no `host.vmmem` (code round and own review, 2026-10-12): its script reads no vmmem,
+  and a verdict that could only be `unknown` sat in every distro status, the status bar's tooltip and every run's history line.
+  The Windows binary, and ONLY the Windows side (`ProbeSample.Side`; a distro sample that ever carried a host part keeps the
+  carried verdicts): `StatusVerdicts.From` judges `HostRules.Verdicts` (all three) over its own sample with `basis: sample`. A
+  sampled verdict REPLACES the carried full-run verdict of the same id, in that verdict's place — the newer, direct reading wins
+  — and one nothing carried (`host.vmmem`) is appended after the carried ones (after `npm.cache`); a `status` never lists an id
+  twice. `status` reads `.wslconfig` once on Windows and hands the same audit to
   the advice and to the verdict.
 - **The keys** (`Config/ConfigKeys.Thresholds.cs`, display trust): `thresholds.hostCommitWarnPercent` (50–99, 80),
   `thresholds.hostCommitCriticalPercent` (51–100, 90), `thresholds.hostCompressionWarnGb` (1–256, 8). A coupled rule in
-  `NumberRules` refuses a layer whose critical value is not above its warn value. The defaults are PROVISIONAL starting values
+  `NumberRules` refuses a layer whose critical value is not above its warn value: as with every coupled rule and every invalid
+  value, a machine-layer contradiction is an error (observe-only) and a user-layer one a notice (the value not taken). No softer
+  path exists for display keys — a display key out of range in the machine layer is an error too — so this rule follows the
+  existing ones (checked in the code round, 2026-10-12). The defaults are PROVISIONAL starting values
   (a heavy afternoon: commit 68.8 %, compression 6.0 GiB, vmmem 18.9 GiB); the full runs' records calibrate them.
-- **Not built here**: a vmmem line in the distro's disk script, which would let the full run judge `host.vmmem` too — it waits
-  for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
+- **Not built here**: a vmmem line in the distro's disk script. With it the full run can judge `host.vmmem` again
+  (`FullRunVerdicts` gains it); it waits for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
 
 ## Story history (moved from architecture.md, 2026-10-12)
 

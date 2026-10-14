@@ -399,14 +399,16 @@ the first weeks of growth figures calibrate it); 1 h keeps the extrapolation fac
 
 **Windows memory pressure** (E15.S5, a report: nothing acts on these). Three verdicts, judged by ONE rule on both roads: the
 Windows binary's `status` judges its own sample (`GlobalMemoryStatusEx`, the process list), and the distro's full run judges the
-Windows disk script's `commit=` / `compression=` lines, so the distro's `status` carries them with `basis: fullRun` and their age.
-On the Windows binary a sampled verdict replaces the carried one of the same id, so a `status` never lists an id twice.
+Windows disk script's `commit=` / `compression=` lines, so the distro's `status` carries `host.commit` and `host.compression` with
+`basis: fullRun` and their age. On the Windows binary a sampled verdict replaces the carried one of the same id, and `host.vmmem`
+(which nothing carries) is added after them, so a `status` never lists an id twice.
 - `host.commit`: Windows' commit charge as a share of its commit limit ("charge of limit = %"). Warn above
   `thresholds.hostCommitWarnPercent` (50–99, 80), critical above `thresholds.hostCommitCriticalPercent` (51–100, 90). A layer that
   sets the critical value at or below the warn value is refused (a coupled limit).
 - `host.compression`: the Memory Compression process's working set. Warn above `thresholds.hostCompressionWarnGb` (1–256, 8) GiB.
 - `host.vmmem`: the WSL VM's working set as Windows sees it (`vmmemWSL`). Warn above the existing `wslConfig.vmmemAdviceGb`; its
-  reason is the vmmem advice text itself. Only the Windows binary reads it, and the full run says so (`unknown`).
+  reason is the vmmem advice text itself. Only the Windows binary reads and judges it; the distro's `status` has no `host.vmmem`
+  (the full run reads no vmmem).
 
 A figure that was not read is `unknown` with its reason, never `ok`. The three defaults are PROVISIONAL starting values. Measured on
 the owner's machine 4.4 h after boot under heavy agent load (research/2026-10-12_host_memory.md): commit 68.8 % (the same on both

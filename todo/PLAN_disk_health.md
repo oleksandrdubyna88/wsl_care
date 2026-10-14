@@ -1055,7 +1055,12 @@ replacement rule in `StatusVerdicts.From`, and `host.` in the extension's `RELEV
 - The extension's head golden now colours the bar warn: its captured full run (2026-10-10) read 9.86 GiB of Memory Compression,
   above the provisional 8. The status-bar tests that colour one verdict at a time start from that golden with `host.compression`
   set to ok (`calm()`), so each keeps its teeth.
-- No architecture.md change: #129 split it into the module docs; the notes are in `module_daemon` and `module_vs_code`.
+- ~~No architecture.md change~~ — wrong, corrected in the code round: #129 split most of architecture.md into the module docs,
+  but its section *The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)* stays there, and it now carries
+  the E15.S5 rule (the Windows side's sampled `host.*`, the replacement, the appended `host.vmmem`, the bar).
+- **The full run judges no `host.vmmem`** (code round and own review, below): only `host.commit` and `host.compression` come from
+  `FromWindowsDisk` (`HostRules.FullRunVerdicts`); all three come from `FromProbe` (`HostRules.Verdicts`). "The same function on
+  both bases" now reads: the same `Commit` and `Compression` functions judge both roads; vmmem is the Windows binary's alone.
 
 **Tests, RED first** (every message and break-it is in `module_tests.md`, *E15.S5*): 25 of 242 Core checks and the CLI check red
 against stubs, each for the named reason (no verdicts; `host.commit` at index -1; an empty `host.commit` list; the coupled layer
@@ -1082,5 +1087,33 @@ plan-lifecycle clean.
 410 (391 passed, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the extension 1250 (1249 passed, 1 skipped); lint,
 format and plan-lifecycle clean.
 
+**Code round and own review (2026-10-12).** Three fixes and two checks, each fix red first.
+- **The distro's `host.vmmem` was permanently `unknown`** (own review, confidence 80). The full run reads no vmmem, so every distro
+  `status` carried `host.vmmem: unknown`, the status bar's tooltip listed it forever, and `CollectRun` wrote it into every run's
+  history as a warning. The full-run road now judges commit and compression only (`HostRules.FullRunVerdicts`, spread into
+  `ThresholdRules.FromFullRun`). On the Windows binary the sampled `host.vmmem` replaces nothing and is appended after the carried
+  verdicts (after `npm.cache`), once. The seven Linux status goldens were regenerated.
+- **Only the Windows side samples the host** (coai finding 2). `StatusVerdicts` judges `HostRules` only when `ProbeSample.Side` is
+  `Windows`. A distro sample that ever carried a host part keeps the carried `host.*` verdicts, unchanged.
+- **architecture.md** (coai finding 0): the E5.S0 verdicts section gained the E15.S5 rule (see the corrected deviation above).
+- **Checked, no change**: (a) `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
+  daemon sets no job commit limit (WR-D3's job is `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` alone), so they are the system's — now said
+  in `HostCommit.FromPageFile`'s remarks. (b) The coupled rule makes a machine-layer contradiction an error (observe-only) and a
+  user-layer one a notice. That is how EVERY coupled rule and every invalid value behaves (`ConfigLoader.HoldRules` /
+  `ApplyEntry`); there is no softer path for display keys (a display key out of range in the machine layer is an error too), and
+  no other display warn/critical pair has a coupled rule. So the rule stays as it is.
+
+Red (8 of 40 Core checks, 1 of 19 extension checks): *Expected HostRules.FullRunVerdicts(Facts(), Config()).Select(v => v.Id) to be
+equal to {"host.commit", "host.compression"}, but {"host.commit", "host.compression", "host.vmmem"} contains 1 item(s) too many*; *Expected
+ids {…} to not contain "host.vmmem" because the full run does not read vmmem, so it judges none*; *Expected ids.IndexOf("host.vmmem") to
+be 36, but found 31*; *Expected Find(verdicts, "host.commit") to be* the carried verdict (the distro sample's host part had replaced
+it); *Expected warnings … not to contain* a `host.vmmem` record (the collect's history line); the extension: *The input was expected
+to not match the regular expression /host.vmmem: unknown/. Input: '… host.vmmem: unknown — …'*. Break-its (product code, each
+restored byte for byte): `ThresholdRules` back to `HostRules.Verdicts` → 6 red (the full-run list, the history line, the distro
+status, the Windows order and position); the `Side: HostSide.Windows` arm removed → *A_distro_sample_with_a_host_part_keeps_the_carried_host_verdicts*
+red.
+
+The suites of this round are recorded after the rebase, below.
+
 **Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
-that script. The three defaults are provisional until the full runs' records calibrate them.
+that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.
