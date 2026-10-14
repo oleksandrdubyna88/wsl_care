@@ -1,11 +1,12 @@
 # PLAN — Windows disk hygiene: a verdict for every lettered volume, the AI-agent worktree report, a build-output cleanup, the `testsToDelete-` sweep, and A5's compose exemption
 
 > Status: **plan only, nothing implemented yet, 2026-10-14 — coai plan round 1: proceed; the owner's answers to Q1–Q4 and the
-> own review written in, plan round 2 (§12a).** Scope: the daemon's disk verdicts (`Thresholds/`), a
+> own review written in, plan round 2 (§12a); the epics split by Fable, 2026-10-14 (E19–E21, cornerstones DH-4 and DH-6,
+> `## Epics`); implementation waits for the owner's go.** Scope: the daemon's disk verdicts (`Thresholds/`), a
 > Windows-side worktree scanner and two Windows-side cleanup actions (`Core/Worktrees/` new, `Core/Actions/`), the Docker
 > cleanup's selection (`Preview/CleanupTargets.cs`), a test-leftover sweep on both sides, this repository's own test-temp
-> prefix, and the extension's panel rows and buttons for all of it. The split into epics is a DRAFT (see `## Epics`, the
-> last section): it is Fable's to make.
+> prefix, and the extension's panel rows and buttons for all of it. The split into epics is `## Epics` (the last section):
+> three outcome epics — E19 *See it*, E20 *Clean it*, E21 *Test leftovers and A5*.
 >
 > Related: [PLAN_disk_health.md](PLAN_disk_health.md) (E15–E18), [PLAN_windows_runner.md](PLAN_windows_runner.md) (WR-T1–T3,
 > A23, the tasks and the supervisor), [PLAN_windows_care.md](PLAN_windows_care.md) (W-A2), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md)
@@ -486,7 +487,7 @@ Every key: `ConfigKeys.*.cs`, `default.json`, the regenerated `contracts/config-
 | id | title | side | files (reuse → new) | Fable own reviewer | depends on |
 |---|---|---|---|---|---|
 | DH-1 | `disk.volumeFree`: every lettered volume, warn/critical, GiB OR %, the critical mark on the bar (`withVolumeMark`, the exact id); the five `disk.volumeFree*` keys; the panel's `disk.hostC` "arrives in E7" row (`src_vs_code/src/panel/fieldMap.ts:140`) becomes the verdict row | distro + extension | `Thresholds/DiskRules.cs`, `ThresholdRules.cs` (spread), `Config/ConfigKeys.Disk.cs`, `ConfigKeys.Numbers.cs`, `default.json`, `contracts/config-keys.json`, `contracts/golden/head/status*.json`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts`, README | no | — |
-| DH-1b | the Windows watch reads every lettered volume's free space natively every 5 min and its `status` carries `disk.volumeFree` with `basis sample`; panel and bar take the newer of the two readings — straight after DH-1, because only the frequent reading closes the original failure | Windows + extension | `Core/Watch/WatchRun.cs`, `Status/*`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts` | no | DH-1, **WR-D4** (the Windows watch; DH-1b cannot ship before it) |
+| DH-1b | the Windows watch reads every lettered volume's free space natively every 5 min and its `status` carries `disk.volumeFree` with `basis sample`; panel and bar take the newer of the two readings — straight after DH-1, because only the frequent reading closes the original failure | Windows + extension | `Core/Watch/WatchRun.cs`, `Status/*`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts` | no | DH-1, **WR-D4** (the Windows watch; DH-1b cannot ship before it); its extension half **WR-E1** (today `WindowsCareClient` runs the bundled exe with `--version` alone, `src_vs_code/src/client/WindowsCareClient.ts:17` — the panel reads a Windows `status` only through the client WR-E1 widens; added at the epic split, 2026-10-14) |
 | DH-2 | A5 keeps every compose container; the label in the inspect template and `ContainerDetail`; a compose fixture captured from a real `docker ps`/`inspect` (redacted) | distro | `Docker/DockerCommands.cs`, `ContainerDetail.cs`, `DockerInventory.cs`, `Preview/CleanupTargets.cs`, `Preview/CleanupPreview.cs`, fixtures, goldens | no | M4 |
 | DH-3 | the worktree report: `worktrees.*` keys, root validation and `worktrees roots set/clear` (stdin), the folder classifier (file reads only), the bounded walk that counts access errors, idle, the git resolver and the THREE read-only git templates (§3.4), "reclaimable" = only what A24/A24Orphans may delete, `worktrees scan --json`, `worktrees.json`, the Windows `status`'s `worktrees` + `worktrees.reclaimable` | Windows | `Core/Worktrees/` (new: `WorktreeRoots`, `FolderKinds`, `WorktreeScan`, `BuildOutputRule`, `GitQuestions`), `Files/TreeWalk.cs` (widened), `Processes/Policy/*` (templates, resolver), `Cli/Commands/WorktreesCommand.cs` (new), `Cli/CommandLine.cs`, `Status/*`, keys, contracts | **yes** (adds git, writes a key that admits deletion) | M1, M2 |
 | DH-4 | A24 + A24Orphans: selection (DH-3's rule and git questions, reused), `DeletionRule.WorktreeRoot` + `WorktreeBuildOutput`, the no-link bottom-up delete, re-validation, budgets, checkpoint, run detail, dry window | Windows | `Core/Actions/WorktreeBuildOutput/` (new), `ActionId.cs` (+`ExecutionOrder`), `ActionRegistry.cs`, `ConfigKeys.cs` (`Auto`), `Files/Deletion/DeletionPolicy.cs`, `Processes/Policy/*`, keys, contracts | **yes** (deletes) | DH-3, WR-T1 (the engine's Windows path), WR-D4 (the Windows run-retention sweep that retires its run details) |
@@ -500,7 +501,9 @@ Every key: `ConfigKeys.*.cs`, `default.json`, the regenerated `contracts/config-
 
 1. **DH-1** — first: it is the warning that was missing.
 1b. **DH-1b** — straight after DH-1 (the owner, 2026-10-14): only a 5-minute reading closes the original failure. It waits
-   for WR-D4, the Windows watch; if WR-D4 is not there yet, DH-1b is the next story the moment it is.
+   for WR-D4, the Windows watch; if WR-D4 is not there yet, DH-1b is the next story the moment it is. Its extension half
+   (the panel and the bar taking the newer reading) also waits for WR-E1, the client that reads the Windows `status`
+   (§5's row; WR-E1 depends only on built runner stories, so it runs beside WR-D4).
 1c. **DH-2, DH-8** — independent, distro or tests only. DH-2 after M4.
 2. **DH-6** — after DH-2 (both change the inspect template; one change, two readers). The Docker sweep works from the distro
    alone; its preview names the other side as "not read from this side" until DH-7.
@@ -729,12 +732,12 @@ its code stage, so the record could not be corrected; this paragraph and the tex
       arriving row is gone; README says the defaults are starting values.
 - [ ] DH-2: A5 never selects a compose container (a RED test proved it did); `auto.A5` still off.
 - [ ] DH-3: the Windows `status` carries `worktrees` and `worktrees.reclaimable`, whose bytes are only what A24/A24Orphans
-      would be allowed to delete; the scan starts no process but the three read-only git templates; roots are chosen by
-      *Choose folders…*.
+      would be allowed to delete; the scan starts no process but the three read-only git templates; roots are set and
+      validated through `worktrees roots set` on stdin (the *Choose folders…* button that feeds it is DH-5's).
 - [ ] DH-4: A24 and A24Orphans delete only the positive rule's folders, never through a link, never outside a root, with git
       confirming A24's; `DeletionPolicy` refuses every other path under a configured root BY ITSELF; a WSL-made worktree is
       never read as an orphan; no attribute of a file outside the root changes; the Fable own review ran.
-- [ ] DH-5: every action has a panel button with a dry-run preview; the clean and sweep tasks are on-demand only, the scan task daily + on demand.
+- [ ] DH-5: every action has a panel button with a dry-run preview; roots are chosen by *Choose folders…*; the clean and sweep tasks are on-demand only, the scan task daily + on demand.
 - [ ] DH-6/DH-7: the sweep refuses while any signal reads `inFlight` or `unknown`, never touches anything younger than an
       hour, and the preview shows how it decided.
 - [ ] DH-8: this repo's test temp folders carry `testsToDelete-`.
@@ -748,20 +751,151 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 
 ## Epics
 
-> **DRAFT — the split into epics is Fable's** (`.agents/conventions/common/subagent-models.md`: plan → epics is the
-> `fable` tier). This grouping exists so the reviewers can see an order; Fable may regroup, renumber and designate the
-> cornerstones. The epic numbers continue PLAN_disk_health.md's E15–E18 and are provisional.
+> The split is Fable's (model `fable`, the *Plan → epics* row of `.agents/conventions/common/subagent-models.md`), made
+> 2026-10-14 after the question consultant was asked what should drive it (coai consult `3d4d02e6`: three OUTCOME epics —
+> not a split by side, not one by runner availability — taken, and checked against §3, §5, §5a, §6, the runner plan's §5 and
+> §14, and the extension's client code; where this section departs from the advice it says so). The numbers continue
+> PLAN_disk_health.md's E15–E18 and are identifiers, not the build order: E21's distro half is built first of all (§5a 1c–2).
+> Three epics, so the cornerstone quota is Q = ⌈2·3/5⌉ = 2. None of the three starts before the owner's go.
 
-- **E19 — See it** (DH-1, DH-1b, DH-3). Goal: the owner is warned before a volume fills and can see where the space
-  went. Scope: two verdicts, one read-only scan, panel rows. Depends on: — (DH-3's panel row on WR-E1). Done when the owner's
-  D: would have warned at 30 GiB and the report shows his roots.
-- **E20 — Clean it** (DH-4, DH-5). Goal: one button frees the idle build output, a second the orphans'. Depends on: E19,
-  WR-T1, WR-E1/E3/E4. Done when the owner's first preview on his own roots is the POST_DEPLOY acceptance item.
-- **E21 — Test leftovers and A5** (DH-2, DH-6, DH-7, DH-8). Goal: leftovers named by the rule are swept safely; A5 can be
-  automated. Depends on: — for DH-2/DH-6/DH-8; WR-T1 and DH-5 for DH-7.
+### E19 — See it (DH-1, DH-1b, DH-3)
 
-Cornerstones: 0 of 2 — none designated yet (draft; the candidates for Fable: DH-4, the delete and its `DeletionPolicy`
-deny-by-default; DH-6, `TestRuns.Judge`, the in-flight contract both binaries share).
+- **Goal.** The owner is warned before any lettered volume fills — within five minutes of the filling, not four hours — and
+  can see, per root, where the space went: how many worktrees, how idle, how much build output, which folders git can no
+  longer vouch for. Nothing in this epic deletes.
+- **Scope.** DH-1 (`disk.volumeFree` and the bar's mark), DH-1b (the Windows watch's 5-minute native reading; the newer of the
+  two readings wins), DH-3 (the worktree report: roots and `worktrees roots set/clear`, the classifier, the walk that counts
+  access errors, idle, the git resolver and its three read-only templates, `worktrees scan --json`, `worktrees.reclaimable`).
+- **Depends on.** WR-D4 (DH-1b: the Windows watch — real and explicit, DH-1b cannot ship before it); WR-E1 (the EXTENSION
+  halves of DH-1b and DH-3: today `WindowsCareClient` runs the bundled exe with `--version` alone,
+  `src_vs_code/src/client/WindowsCareClient.ts:17`, so the panel can read a Windows `status` — the sample, `worktrees` — only
+  through the client WR-E1 widens; WR-E1 waits on nothing unbuilt); M1, M2 (DH-3's budgets and the idle default); M5 (DH-1's
+  size floor). NOT on DH-5 (E20): until E20 the roots are set through DH-3's own `worktrees roots set` verb on stdin (or
+  the `config set` duplicate) and the scan is started by hand, `worktrees scan --json`; the panel row reads `worktrees.json`
+  through `status` and says "not configured" without a button until DH-5 adds *Choose folders…*. NOT on WR-T1, WR-E3, WR-E4.
+- **Priority path.** **DH-1 → WR-D4 → DH-1b** (WR-E1 beside WR-D4; both depend only on built runner stories). DH-3 runs
+  beside that path after M1/M2 — its CLI needs no runner story. E19 is the first epic to start and, by the runner's own
+  order (WR-D4 is its step 3), the first to finish.
+- **Done when (provable).** (1) DH-1: the pure rule over the recorded D1 sample (D: 195.3 GiB, 30.6 GiB free) reads `warn`
+  naming D:, and over 4.1 GiB / 2.1 % reads `critical` with D: first; the E: USB volume is not judged (M5 recorded, below the
+  floor); a 16 GiB volume with 12 GiB free is `ok`; one unread volume beside a critical one leaves the verdict `critical`,
+  beside ok ones makes it `unknown`; the bar carries ` · D: low space` with the free GiB, % and the reading's age only on a
+  critical `disk.volumeFree` (`a warn disk.volumeFree adds no mark`, `the mark never lowers a critical bar`, `no other disk.*
+  verdict colours the bar` green beside the held `statusBar.test.ts:61`); the `disk.hostC` "arrives in E7" row is gone; README
+  says the defaults are starting values. (2) DH-1b: the REAL `\wsl-care\watch` task on the owner's machine (WR-D4
+  registered) writes a `disk.volumeFree` sample with `basis {source: sample, ageSeconds}` every `mcpWatchdog.periodMinutes`
+  and starts no process doing it (`The_windows_watch_reads_every_lettered_volume_without_a_process`); the panel and the
+  bar show the NEWER reading — a 4-hour-old `collect` verdict loses to a 1-minute-old sample, and the reverse (`the newer of
+  the full run and the windows sample is shown`). (3) DH-3: `worktrees scan --json` over the owner's real roots (set through
+  the verb) completes inside its budget with M1's entries / seconds / bytes recorded; the report distinguishes `worktree` /
+  `locked` / `orphan` / `foreignPointer` / `mainClone` / `notGit`, a WSL-made `/mnt/<letter>/` pointer reading `worktree` and a
+  `/home/…` pointer `foreignPointer` (never a candidate); `worktrees.reclaimable` counts ONLY candidates that pass every §3.4
+  check at scan time, everything else under `retained{reason, count, bytes}`; the classifier starts no process and the scan
+  starts only the three read-only templates (the two tripwire tests); a walk past its budget or an unreadable subfolder
+  reads `unknown`, never `idle`; the distro binary refuses the verb naming the Windows side; `roots set` refuses nested,
+  relative, network, drive-root, profile and agent-folder roots and writes nothing on any refusal. (4) No `auto.*` key is
+  added or changed by E19; nothing it ships deletes.
+- **Cornerstone areas.** None in the quota. DH-1's rule is pure and fully named by its RED list; DH-3's selection mistakes
+  are caught twice downstream by design — DH-4's per-candidate re-validation and the policy's own re-run of the predicate
+  (§3.4) — so its guarantees are proven where they bite, in E20's cornerstone. DH-3 keeps its Fable OWN REVIEW (§5's column:
+  it adds git and writes a key that admits deletion), which is outside the quota.
 
-When an epic starts, its stories move out of §5 into their own `todo/PLAN_disk_hygiene_windows_E<n>.md` (its own status
-line, its own `todo/README.md` row, a link back here and from here), per the planning-docs rule.
+### E20 — Clean it (DH-4, DH-5)
+
+- **Goal.** One button frees the idle worktrees' build output, a second the orphaned folders' — each with a dry-run preview,
+  run by the owner's own task — and the deletion policy refuses, by itself, everything under a root that is not an admitted
+  `bin` / `obj` / `node_modules` candidate.
+- **Scope.** DH-4 (A24 + A24Orphans: the selection reused from DH-3, `DeletionRule.WorktreeRoot` + `WorktreeBuildOutput`,
+  the no-link bottom-up delete, re-validation, budgets, checkpoint, run detail, dry window) — **cornerstone**; DH-5 (the
+  four tasks, the `worktrees` lease, `tasks preview …`, the heartbeat, *Choose folders…*, the panel's buttons and lines).
+- **Depends on.** DH-3 (E19's selection contract and git questions — NOT on DH-1 or DH-1b); WR-T1 (the engine's Windows path:
+  the walk, the re-validated delete, the cursor — or, if DH-4 is ready first, §6's extraction: the shared core moves into
+  WR-T1's place and A23 consumes it, never two copies); WR-D4 (the run-retention sweep that retires A24's run details, §10);
+  WR-E1, WR-E3, WR-E4 (DH-5's previews, install and run-now; WR-E2 arrives with WR-E3 by the runner's order); M6 (the
+  artifact list). E20 therefore waits for the runner's steps 5 (WR-E3/E4) and 7a (WR-T1).
+- **Priority path.** WR-T1 → DH-4 → DH-5 (WR-E1/E3/E4 may land any time before DH-5).
+- **Done when (provable).** (1) The policy refusals are tested INDEPENDENTLY of selection: `DeletionPolicy` alone, with no
+  selection code in the test, refuses a source file under a configured root and every path under a worktree root or `~\git`
+  that is not an admitted candidate (`A_source_file_under_a_D_root_is_refused_by_the_policy_itself`,
+  `DeletionPolicy_refuses_every_other_path_under_a_worktree_root_or_a_git_root`). (2) Link confinement, on the Windows leg
+  in a sandbox: a junction inside `node_modules` is removed AS A LINK and its target survives; any reparse tag but junction
+  and symlink retains the candidate; a candidate replaced by a junction after the preview is retained; nothing outside the
+  root is ever deleted. (3) Hard links: a read-only pnpm hard link is deleted through the disposition flag and the store
+  file's attributes are unchanged (`A_hard_linked_read_only_file_is_deleted_without_changing_the_store_file_attributes`).
+  (4) Recovery after interruption: the checkpoint is written before the first delete; a run killed mid-candidate takes that
+  candidate first next time, judges it by its remaining files, finishes or retains it, and reads "interrupted", never
+  "completed". (5) git: exit 1 an answer and 128 a refusal; a batch judged per path; a negated rule, a tracked file, a
+  discovery that escaped the root, any refusal — each retains by name; A24Orphans' preview opens with "not confirmed by git"
+  (or "ignore rules confirmed; tracked files NOT checked"); the templates cannot be bent into `prune` / `remove` / `clean`; git
+  never from `PATH`. (6) Content: a `bin` holding `local.db` or `.env` is retained and names the file; `node_modules` is
+  exempt. (7) Nothing is deleted while dry; `auto.A24` / `auto.A24Orphans` default off, trust `Off`. (8) DH-5: the four tasks
+  render as fixed lines of the closed table, the clean and sweep tasks with no trigger and the scan task one daily trigger; a
+  second clean while the `worktrees` lease is held ends at once naming the holder; no hygiene task takes the run lock; the
+  preview button never spells `act` or `--confirm`; "running" survives a reload and a stopped heartbeat reads "ended
+  without a record"; *Choose folders…* sends the picked paths on stdin, spells neither `config` nor a path on argv, and a
+  mixed verdict offers *Save the N accepted folders*; every new command has its `COMMAND_BUTTONS` entry. (9) Acceptance: the
+  owner's FIRST real preview on his own roots — A24 and A24Orphans, dry — is recorded in `POST_DEPLOY.md` (DH-9's item, landed
+  with DH-5) with the counts per outcome, the retained reasons and the logical bytes, before `dryRun` is lifted on these
+  paths.
+- **Cornerstone areas — DH-4, the deletion boundary.** Fable writes the scenarios and the brief for: `DeletionRule.WorktreeRoot`
+  deny-by-default and the single `WorktreeBuildOutput` admission with the predicate re-run inside the policy; the content
+  check (every file a build artifact, `node_modules` exempt); the no-link bottom-up delete (the disposition flag, never an
+  attribute change; junction and symlink tags only; the extended-length prefix); per-candidate re-validation; the checkpoint
+  and the interrupted run; and the consumption of DH-3's selection contract — the git questions' per-path parse, exit codes,
+  ceiling and clean environment are proven HERE, where they decide a delete. Sonnet codes, Opus reviews; §5's Fable own
+  review of DH-4 stays. DH-5 is not a cornerstone: its risks are the runner's (WR-D3's closed argv table, WR-E3's tripwire),
+  built or owned there; it keeps §5's Fable own review.
+
+### E21 — Test leftovers and A5 (DH-2, DH-8, DH-6, DH-7, DH-9)
+
+- **Goal.** Everything a test run names `testsToDelete-…` is swept — containers, volumes and networks in the distro, `%TEMP%`
+  folders on Windows — only when no test run is in flight on EITHER side and never younger than an hour; A5 can be automated
+  because it never selects a compose container; this repository's own tests leave prefixed folders; the plan closes.
+- **Scope.** DH-2 (A5's compose exemption), DH-8 (this repo's test-temp prefix), DH-6 (A25 and `TestRuns.Judge`) —
+  **cornerstone**; DH-7 (A26 on WR-T1's engine, A23's exclusion, the both-sides panel flow); DH-9 (the closing docs and the
+  promotion; its POST_DEPLOY A24 item lands with E20's DH-5).
+- **Depends on.** The distro half — DH-2 (after M4), DH-8, DH-6 (after DH-2: one inspect-template change, two readers) — on
+  NOTHING of the runner: they start at once, beside E19, so the A5 data-loss fix is never held by this epic's number (§5a
+  1c–2); DH-6's preview names the other side "not read from this side" until DH-7. The Windows half — DH-7 — on WR-T1,
+  WR-D4, DH-5 (E20) and DH-6; it is the last story of the plan (§5a 7).
+- **Priority path.** DH-2 → DH-6 (DH-8 any time); then, after E20: DH-7 → DH-9.
+- **Done when (provable).** (1) DH-2: a RED test on M4's redacted compose fixture showed A5 selecting a stopped compose
+  container; then it is kept and named "a container of compose project <name>" in the preview; A5Testcontainers still takes a
+  labelled compose-module container; `auto.A5` still off (`ConfigSchemaTests.cs:52`). (2) DH-8: `TempRoot` and
+  `WindowsIdleTests` name `testsToDelete-wsl-care-…`; the transition sweep takes both shapes under a dated comment; the
+  extension's `mkdtemp` prefixes audited. (3) DH-6: the match is anchored and case-insensitive — a prefix later in the name
+  and the underscore form never match; nothing younger than `testLeftovers.minAgeMinutes` is ever selected, whatever the
+  signals say; any `inFlight` or `unknown` signal — a runner matched on the RAW argv (`npm test`, `dotnet exec … testhost.dll`)
+  and named by pid and program, a running Ryuk or a young labelled container, an unreadable process table or Docker list —
+  ends the run with its reasons, and the judgement is repeated before EVERY batch
+  (`The_judgement_is_repeated_before_every_batch`); a stale running Testcontainers container does not block forever; a
+  running leftover younger than 24 h is kept, an older one stopped then removed, never `-f`; a volume recreated under the
+  same name after the preview is kept; the order is containers, volumes, networks; `network prune` is on the never-list; the
+  preview shows every signal with its reading. (4) DH-7: nothing under `%TEMP%\claude\` is selected even with the prefix; A23
+  never selects the prefix; the panel runs neither side unless BOTH previews read `inFlight: none` — a conjunction of two
+  Core verdicts, no threshold in the extension. (5) E21 is done only when DH-7 works; DH-9 then promotes the plan to
+  `research/` with its open tail (whole-worktree removal, §9) named in the status line.
+- **Cornerstone areas — DH-6, the in-flight contract.** Fable writes the scenarios and the brief for `TestRuns.Judge`, the
+  one judge both binaries compile and DH-7 and the panel's conjunction consume: the four signals and `unknown` blocking; the
+  argv-token runner match on the raw command line (never `Programs`, never a substring); the Ryuk / young-labelled rule
+  (never "any running labelled container"); the age floor as the one guarantee a snapshot cannot give; the per-batch
+  re-judgement — and A25's removal: stop-then-rm never `-f`, the volume re-inspect by `CreatedAt` + labels, the order, the
+  never-list's third prune. A wrong judge sweeps under a running test on both sides and nothing downstream re-checks it —
+  that is where a mistake compounds. Sonnet codes, Opus reviews; §5's Fable own review stays. DH-7 consumes the judge and
+  WR-T1's engine and adds no deletion rule of its own (it keeps §5's Fable own review); DH-2 and DH-8 are bounded by their
+  RED lists.
+
+### Order, ledger, stories documents
+
+**Build order** (as §5a, which this split leaves as it is): E19 and E21's distro half start together — DH-1, then DH-2 / DH-8
+and DH-6, DH-3 after M1/M2; WR-D4 and WR-E1 next, then DH-1b (the priority path **DH-1 → WR-D4 → DH-1b**); WR-T1; E20 (DH-4,
+then DH-5 after WR-E3/E4); E21's DH-7; DH-9. The plan is promoted when DH-7 and DH-1b have shipped (§13).
+
+Cornerstones: 2 of 2 — DH-4, DH-6 (DH-4: the deletion boundary — the only code that removes files under a configured root,
+and the policy's deny-by-default is what makes every other path there safe; DH-6: `TestRuns.Judge`, the one in-flight
+contract both binaries and both sweeps rely on, with no second check behind it). Q = ⌈2·E/5⌉ = 2 for E = 3; a third mark
+goes to the operator, not into this file.
+
+When an epic starts — not now — its stories move out of §5 into `todo/PLAN_disk_hygiene_windows_E<n>.md` (its own status
+line and `todo/README.md` row, a link here and from the epic above), written by an Opus judge, which marks the cornerstone
+story `model: fable` within the ledger in the same commit; the parent and the three stories documents promote together.
