@@ -1113,7 +1113,17 @@ restored byte for byte): `ThresholdRules` back to `HostRules.Verdicts` → 6 red
 status, the Windows order and position); the `Side: HostSide.Windows` arm removed → *A_distro_sample_with_a_host_part_keeps_the_carried_host_verdicts*
 red.
 
-The suites of this round are recorded after the rebase, below.
+The Windows suite then found one more test to follow the contract: `Scenarios/CollectFlows` compared the Windows status's ids
+with the run's exactly; it now expects the sampled `host.vmmem` after the carried verdicts, before the MCP servers' own.
+
+**Suites of the code round** (rebased onto `origin/main` 47dbc1fa, 2026-10-14; the machine still heavily loaded): Windows — Core
+2753 (2672 passed, 81 skipped), CLI 410 (408, 2 skipped), Scenarios 616 (330 passed, 284 skipped, 2 failed: two
+`FetchWindowsDaemonFlows` cases whose Git-bash script did not exit within 60 s; the class alone is green, 43 of 43; an earlier
+run under heavier load lost 27 cases the same way, all time limits); Linux, a NEW folder
+`/tmp/testsToDelete-wc-e15s5-20261014T193812Z` — the goldens unchanged (`GoldenContractTests` green without a write), Core 2753
+(2714 passed, 39 skipped), CLI 410 (391, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the goldens themselves
+were written in `/tmp/wc-e15s5-round2-linux-20261012T202048Z` (its suites: one `StatusFlows` time budget, 3.10 s for 3 s at a
+load average of 35); the extension 1251 (1250 passed, 1 skipped); lint, format, plan-lifecycle and the rules check clean.
 
 **Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
 that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.
