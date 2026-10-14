@@ -1430,6 +1430,9 @@ break-it on product code:
 Totals after the code round: Windows Core 2766 (0 failed, 89 skipped), Cli 409 (0 failed, 2 skipped), Scenarios 614 (0
 failed, 285 skipped); Linux (`/tmp/wc-e15s1b-linux-20261012T184232Z`, refreshed) Core 2766 (0 failed, 39 skipped), Cli 409
 (0 failed, 18 skipped), Scenarios 614 (0 failed, 7 skipped). `dotnet format --verify-no-changes` and plan-lifecycle clean.
+After the rebase onto main `fce407f8` (2026-10-14): Windows Core 2812 (0 failed, 89 skipped), Cli 423 (0 failed, 2 skipped),
+Scenarios 622 (0 failed, 287 skipped); Linux (`/tmp/testsToDelete-wc-e15s1b-20261014T192847Z`) Core 2812 (0 failed, 69
+skipped), Cli 423 (0 failed, 29 skipped), Scenarios 622 (0 failed, 8 skipped).
 
 **Open.**
 - **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
