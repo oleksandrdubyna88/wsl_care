@@ -1,6 +1,7 @@
 # PLAN — Windows disk hygiene: a verdict for every lettered volume, the AI-agent worktree report, a build-output cleanup, the `testsToDelete-` sweep, and A5's compose exemption
 
-> Status: **plan only, nothing implemented yet, 2026-10-14 — coai plan round 1: proceed (§12a).** Scope: the daemon's disk verdicts (`Thresholds/`), a
+> Status: **plan only, nothing implemented yet, 2026-10-14 — coai plan round 1: proceed; the owner's answers to Q1–Q4 and the
+> own review written in, plan round 2 (§12a).** Scope: the daemon's disk verdicts (`Thresholds/`), a
 > Windows-side worktree scanner and two Windows-side cleanup actions (`Core/Worktrees/` new, `Core/Actions/`), the Docker
 > cleanup's selection (`Preview/CleanupTargets.cs`), a test-leftover sweep on both sides, this repository's own test-temp
 > prefix, and the extension's panel rows and buttons for all of it. The split into epics is a DRAFT (see `## Epics`, the
@@ -94,20 +95,34 @@ spells `act` or `--confirm` towards the Windows binary (PLAN_windows_runner.md �
   critical one, and never lets the rest read ok.
 - **Relation to `disk.hostFree`:** both stay. `disk.hostFree` asks "can the VHDX files grow here"; `disk.volumeFree` asks
   "is this volume running out". C: can breach both; they say different things.
-- **The status bar:** `RELEVANT_VERDICT_PREFIXES` is `memory.`, `kernel.`, `pressure.` (`src_vs_code/src/statusBar/statusBarModel.ts:24`)
-  and a test holds the three E15.S2 disk verdicts out of the bar (`src_vs_code/src/test/statusBar.test.ts:61`). DH-1 adds
-  `disk.volumeFree` at **critical only** (`warn` stays in the panel): a volume at 0 bytes is what the bar is for. The bar
-  filter is prefix-based today (`isRelevant`, `statusBarModel.ts:34-36`), so DH-1 adds a per-id minimum level beside it —
-  `BAR_VERDICT_MIN_LEVEL = { 'disk.volumeFree': 'critical' }` — read by `isRelevant`, with its own test; the prefixes are
-  unchanged. Q2.
-- **Cadence:** the full run, 4-hourly. A faster reading is DH-1b (the Windows watch, every 5 min, reads `GetDiskFreeSpaceEx`
-  natively once WR-D4 exists) — a follow-up, not a precondition.
+- **The status bar — a MARK by the exact id, the GPU mark's shape** (the owner's answer to Q2, 2026-10-14):
+  `RELEVANT_VERDICT_PREFIXES` stays `memory.`, `kernel.`, `pressure.` (`src_vs_code/src/statusBar/statusBarModel.ts:24`) and
+  the test that holds the E15.S2 disk verdicts out of the bar (`src_vs_code/src/test/statusBar.test.ts:61`) stays true — no
+  `disk.*` prefix joins. DH-1 adds a pure `withVolumeMark(view, mark)` beside `withGpuMark` (`statusBarModel.ts:109`): when
+  the verdict with the EXACT id `disk.volumeFree` is `critical`, the bar text gains ` · D: low space` (the worst volume's
+  letter), the level becomes critical, and the tooltip's first line gives that volume's free GiB, free % and the reading's
+  age (`basis.ageSeconds`); a `warn` adds no mark (it stays in the panel); a mark never LOWERS the bar's level, exactly as
+  `withGpuMark` holds. RED: `a critical disk.volumeFree marks the bar with the volume and its age`,
+  `a warn disk.volumeFree adds no mark`, `the mark never lowers a critical bar`, `no other disk.* verdict colours the bar`.
+- **Cadence — DH-1b comes straight after DH-1** (the owner, 2026-10-14, on the consultant's advice): a 4-hourly full run
+  cannot catch a volume that a few agents' builds fill in an hour, which is the failure that happened, so the frequent
+  reading is part of the fix, not a follow-up. DH-1b: the Windows binary's watch (the `\wsl-care\watch` task, every
+  `mcpWatchdog.periodMinutes` = 5 min) reads every lettered volume's free space natively (`GetDiskFreeSpaceEx`, no
+  PowerShell, no process) and its `status` carries `disk.volumeFree` with `basis {source: sample, ageSeconds}` through the
+  same pure rule; the panel and the bar take the NEWER of the two readings (the distro's full run, the Windows sample). Its
+  dependency is explicit and real: the Windows watch is WR-D4 (PLAN_windows_runner.md §5), and DH-1b cannot ship before it.
 
-### 3.3 The worktree report (DH-3) — read-only, no git process
+### 3.3 The worktree report (DH-3) — read-only; git only through its three read-only questions
 
-**Roots.** `worktrees.roots` — a list of absolute local paths, default **`[]`** (no hard-coded user path; with no root the
-report says "no root configured — `wsl-care.exe config set worktrees.roots …`", the way `temp.allowGlobs` is widened,
-PLAN_windows_runner.md §3.12). A root is refused, with its reason, when it is: not absolute; not on a local FIXED drive (the
+**Roots.** `worktrees.roots` — a list of absolute local paths, default **`[]`** (no hard-coded user path). **They are chosen
+by a panel button, *Choose folders…*** (the owner's answer to Q3, 2026-10-14: every action is a panel button): the
+extension opens VS Code's own folder picker (`showOpenDialog`, folders only, many), then hands the chosen paths to the
+staged exe's dedicated verb `worktrees roots set` ON STDIN (the `--entry -` pattern A20 uses, `contracts/requests/`), which
+validates each by the rules below and writes the key through the daemon's own configuration writer — so the extension
+still never writes daemon config and never spells `config` (PLAN_windows_runner.md §4), and no path travels on argv.
+`worktrees roots clear` empties it. A refused path comes back with its reason and nothing is written. With no root, the
+sidebar and the full view say "not configured" with the *Choose folders…* button beside it. `wsl-care.exe config set
+worktrees.roots …` stays as the CLI duplicate. A root is refused, with its reason, when it is: not absolute; not on a local FIXED drive (the
 `[IO.DriveInfo]` rule of E15.S1, `research/module_daemon.md:315-317`); a drive root; a reparse point or under one; the user
 profile itself or an ancestor of it; inside or an ancestor of any `DeletionPolicy` agent root or Claude temp root
 (`Files/Deletion/DeletionPolicy.cs:96-100`); inside or an ancestor of ANOTHER configured root (nested or overlapping roots
@@ -172,10 +187,20 @@ reason, as `act` does, `Cli/Commands/ActCommand.cs:116-122` — whose text today
 testLeftovers, sizeBytes, idleOver{days, count, sizeBytes}, buildOutput{all, inIdleUnlocked, inIdleLocked, inOrphans}
 {count, bytes}, unknown{count, why}}], top[]}` — `top` the `worktrees.reportTop` (20) largest reclaimable folders by name,
 never their contents). The Windows binary's `status --json` carries it as `worktrees` with `basis {source: scan, scannedAt,
-ageSeconds}` and one verdict, **`worktrees.reclaimable`**: warn when the build output in idle unlocked worktrees PLUS in
-orphans exceeds `worktrees.reclaimableWarnGib` (20); `unknown` with no root or no scan; the value names the root and both
-parts. The scan is read-only: it starts no process, writes only its own file (and, at its start, removes the temp file a
-killed scan of its own left beside it — its own name, its own folder, nothing else).
+ageSeconds}` and one verdict, **`worktrees.reclaimable`**.
+
+**"Reclaimable" means only what a cleanup would actually be allowed to delete** (the owner, 2026-10-14) — never a
+worktree's whole size, never all build output: the bytes of the candidates that pass EVERY selection check of §3.4 at scan
+time — idle, unlocked (or `cleanLocked`), the candidate's own age, no nested repository, no foreign reparse tag, and git's
+confirmation (tracked / ignored) — reported as two parts, `a24` (worktrees) and `a24Orphans` (orphans, with how many were
+ignore-confirmed). Everything else is counted under its own name (`retained{reason, count, bytes}`: locked, recent, tracked,
+not ignored, unknown …), so the owner sees why the rest stays. The verdict warns when `a24 + a24Orphans` exceeds
+`worktrees.reclaimableWarnGib` (20); `unknown` with no root or no scan; the value names the root and both parts.
+
+The scan is therefore read-only but not process-free: it runs exactly the three read-only git templates of §3.4 (the git
+questions the owner asked to have answered read-only), and nothing else; it writes only its own file (and, at its start,
+removes the temp file a killed scan of its own left beside it — its own name, its own folder, nothing else). The CLASSIFIER
+(§3.3's table) still starts no process.
 
 **Who runs the scan** (own review: a 900 s walk as a child of VS Code dies on a window reload, and with no schedule the
 verdict goes stale): the on-demand task `\wsl-care\worktrees-scan` (§3.5), also registered with a daily trigger
@@ -445,11 +470,11 @@ DH-6 with its test, or the key becomes MachineOnly — the story decides and say
 | id | title | side | files (reuse → new) | Fable own reviewer | depends on |
 |---|---|---|---|---|---|
 | DH-1 | `disk.volumeFree`: every lettered volume, warn/critical, GiB OR %, the critical colouring the bar; the five `disk.volumeFree*` keys; the panel's `disk.hostC` "arrives in E7" row (`src_vs_code/src/panel/fieldMap.ts:140`) becomes the verdict row | distro + extension | `Thresholds/DiskRules.cs`, `ThresholdRules.cs` (spread), `Config/ConfigKeys.Disk.cs`, `ConfigKeys.Numbers.cs`, `default.json`, `contracts/config-keys.json`, `contracts/golden/head/status*.json`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts`, README | no | — |
-| DH-1b | (follow-up) the Windows watch reads every volume's free space natively every 5 min and carries `disk.volumeFree` with `basis sample` | Windows | `Core/Watch/WatchRun.cs` | no | WR-D4, DH-1 |
+| DH-1b | the Windows watch reads every lettered volume's free space natively every 5 min and its `status` carries `disk.volumeFree` with `basis sample`; panel and bar take the newer of the two readings — straight after DH-1, because only the frequent reading closes the original failure | Windows + extension | `Core/Watch/WatchRun.cs`, `Status/*`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts` | no | DH-1, **WR-D4** (the Windows watch; DH-1b cannot ship before it) |
 | DH-2 | A5 keeps every compose container; the label in the inspect template and `ContainerDetail`; a compose fixture captured from a real `docker ps`/`inspect` (redacted) | distro | `Docker/DockerCommands.cs`, `ContainerDetail.cs`, `DockerInventory.cs`, `Preview/CleanupTargets.cs`, `Preview/CleanupPreview.cs`, fixtures, goldens | no | M4 |
-| DH-3 | the worktree report: `worktrees.*` keys, root validation, the folder classifier (file reads only), the bounded walk, idle, build-output measure, `worktrees scan --json`, `worktrees.json`, the Windows `status`'s `worktrees` + `worktrees.reclaimable` | Windows | `Core/Worktrees/` (new: `WorktreeRoots`, `FolderKinds`, `WorktreeScan`, `BuildOutputRule`), `Files/TreeWalk.cs` (reused), `Cli/Commands/WorktreesCommand.cs` (new), `Cli/CommandLine.cs`, `Status/*`, keys, contracts | no (read-only) | M1, M2 |
-| DH-4 | A24 + A24Orphans: selection, the two git templates, `DeletionRule.WorktreeBuildOutput`, the no-link bottom-up delete, re-validation, budgets, checkpoint, run detail, dry window | Windows | `Core/Actions/WorktreeBuildOutput/` (new), `ActionId.cs` (+`ExecutionOrder`), `ActionRegistry.cs`, `ConfigKeys.cs` (`Auto`), `Files/Deletion/DeletionPolicy.cs`, `Processes/Policy/*`, keys, contracts | **yes** (deletes; adds git) | DH-3, WR-T1 (the engine's Windows path), WR-D4 (the Windows run-retention sweep that retires its run details) |
-| DH-5 | the button route: the four tasks of §3.5 (`worktrees-scan`, `build-output`, `build-output-orphans`, `test-leftovers`), the `worktrees` lease, `tasks preview …`, the heartbeat and its stale cut, the panel's buttons + lines, `COMMAND_BUTTONS`, settings timeouts | Windows + extension | `Core/Scheduler/WindowsTaskDefinitions.cs`, `Cli/Commands/TasksCommand.cs`, `src/windowsTasks/*`, `panel/*`, `package.json`, `settings/numbers.ts` | **yes** (runs deletes) | DH-4, WR-E1, WR-E3, WR-E4 |
+| DH-3 | the worktree report: `worktrees.*` keys, root validation and `worktrees roots set/clear` (stdin), the folder classifier (file reads only), the bounded walk that counts access errors, idle, the git resolver and the THREE read-only git templates (§3.4), "reclaimable" = only what A24/A24Orphans may delete, `worktrees scan --json`, `worktrees.json`, the Windows `status`'s `worktrees` + `worktrees.reclaimable` | Windows | `Core/Worktrees/` (new: `WorktreeRoots`, `FolderKinds`, `WorktreeScan`, `BuildOutputRule`, `GitQuestions`), `Files/TreeWalk.cs` (widened), `Processes/Policy/*` (templates, resolver), `Cli/Commands/WorktreesCommand.cs` (new), `Cli/CommandLine.cs`, `Status/*`, keys, contracts | **yes** (adds git, writes a key that admits deletion) | M1, M2 |
+| DH-4 | A24 + A24Orphans: selection (DH-3's rule and git questions, reused), `DeletionRule.WorktreeRoot` + `WorktreeBuildOutput`, the no-link bottom-up delete, re-validation, budgets, checkpoint, run detail, dry window | Windows | `Core/Actions/WorktreeBuildOutput/` (new), `ActionId.cs` (+`ExecutionOrder`), `ActionRegistry.cs`, `ConfigKeys.cs` (`Auto`), `Files/Deletion/DeletionPolicy.cs`, `Processes/Policy/*`, keys, contracts | **yes** (deletes; adds git) | DH-3, WR-T1 (the engine's Windows path), WR-D4 (the Windows run-retention sweep that retires its run details) |
+| DH-5 | the button route: the four tasks of §3.5 (`worktrees-scan`, `build-output`, `build-output-orphans`, `test-leftovers`), the `worktrees` lease, `tasks preview …`, the heartbeat and its stale cut, *Choose folders…* (the picker → `worktrees roots set` on stdin), the panel's buttons + lines, `COMMAND_BUTTONS`, settings timeouts | Windows + extension | `Core/Scheduler/WindowsTaskDefinitions.cs`, `Cli/Commands/TasksCommand.cs`, `src/windowsTasks/*`, `panel/*`, `package.json`, `settings/numbers.ts` | **yes** (runs deletes) | DH-4, WR-E1, WR-E3, WR-E4 |
 | DH-6 | A25 Docker sweep: prefix match, volume `CreatedAt`, `network ls`, `TestRuns.Judge` (both binaries), the age floor, stop-then-rm, volume/network rm, `network prune` on the never-list, the `testLeftovers.*` keys, preview + second modal, the cleanup-table row | distro + extension | `Core/TestLeftovers/` (new), `Docker/DockerCommands.cs`, `Actions/DockerCleanups/*`, `Processes/Policy/NeverList.cs`, `Preview/CleanupPreview.cs`, `src/cleanup/*`, keys, contracts | **yes** (deletes, stops containers) | DH-2 (shares the inspect template change) |
 | DH-7 | A26 `%TEMP%` sweep on WR-T1's engine; A23 excludes the prefix; the both-sides *Sweep test leftovers…* flow in the panel | Windows + extension | `Core/Actions/WindowsTemp/` (WR-T1's, reused), `Core/TestLeftovers/`, `src/cleanup/*` or `src/windowsTasks/*` | **yes** (deletes) | WR-T1, WR-D4, DH-5, DH-6 |
 | DH-8 | this repo's own test temp folders take the prefix, with a 30-day transition sweep | tests | `TestSupport/TempRoot.cs`, `Core.Tests/Archive/WindowsIdleTests.cs`, `src_vs_code/src/test/**` | no | — |
@@ -457,8 +482,10 @@ DH-6 with its test, or the key becomes MachineOnly — the story decides and say
 
 ### 5a. Build order
 
-1. **DH-1, DH-2, DH-8** — independent, distro or tests only, no runner dependency; DH-1 first (it is the warning that was
-   missing). DH-2 after M4.
+1. **DH-1** — first: it is the warning that was missing.
+1b. **DH-1b** — straight after DH-1 (the owner, 2026-10-14): only a 5-minute reading closes the original failure. It waits
+   for WR-D4, the Windows watch; if WR-D4 is not there yet, DH-1b is the next story the moment it is.
+1c. **DH-2, DH-8** — independent, distro or tests only. DH-2 after M4.
 2. **DH-6** — after DH-2 (both change the inspect template; one change, two readers). The Docker sweep works from the distro
    alone; its preview names the other side as "not read from this side" until DH-7.
 3. **DH-3** — after M1 and M2; the Windows binary's CLI is usable at once, its panel row after WR-E1.
@@ -467,7 +494,6 @@ DH-6 with its test, or the key becomes MachineOnly — the story decides and say
 6. **DH-5** — after DH-4 and the runner's WR-E1, E3, E4 (DH-4 and DH-7 also wait for WR-D4, whose retention sweep retires their run details).
 7. **DH-7** — after WR-T1, DH-5 and DH-6; the both-sides sweep flow is its extension half.
 8. **DH-9** — each story lands its own docs; the boundary rows land with this plan; promote when DH-7 ships.
-9. DH-1b — whenever WR-D4 exists.
 
 ## 6. Boundaries with other plans (named on both sides)
 
@@ -478,7 +504,7 @@ DH-6 with its test, or the key becomes MachineOnly — the story decides and say
 | `wsl-care-test-*` in `%TEMP%` (the backlog) | DH-8 stops producing new ones | A23's allow-list keeps taking the old backlog |
 | the four tasks `\wsl-care\worktrees-scan`, `build-output`, `build-output-orphans`, `test-leftovers`, and the `worktrees` lease | here (DH-5) | the runner's task set (D1's `WindowsTaskDefinitions`, D3's closed argv table) grows by four fixed lines; E3/E4 install and run them like the others; A26 shares A23's `%TEMP%` lease; none takes the run lock |
 | every lettered volume's free space | here (`disk.volumeFree`, DH-1) | PLAN_disk_health.md E15: `disk.hostFree` (E15.S2) stays the VHDX-growth question; E15.S1's script is reused unchanged |
-| the sidebar's rows (§3.5 of PLAN_disk_health.md, "the sidebar keeps 20 parameters") | proposes rows 15 widened, 21 and 22 (§8) | E18.W2 builds the slim sidebar; the count is the owner's to approve with E18's go (Q1) |
+| the sidebar's rows (§3.5 of PLAN_disk_health.md, "the sidebar keeps 20 parameters") | the count STAYS 20 (the owner, 2026-10-14): row 15 widened to the worst Windows volume + a short reclaimable-build-output suffix, row 7 (Docker reclaimable) gains the test-leftover count (§8) | E18.W2 builds the slim sidebar with those two widened rows |
 | A5's compose exemption | here (DH-2) | PLAN_wsl_care_daemon.md §5 A5 row: `auto.A5` stays off until DH-2 ships |
 | the WSL `~/git/_wt` folder size | untouched | `Folders/FolderSizes.cs:57` keeps measuring it; nothing under `~/git` is deleted (`DeletionPolicy.cs:90-91`) |
 
@@ -502,20 +528,22 @@ Each lands in `research/2026-10-1x_disk_hygiene.md` with its conditions, in the 
 **Before E18** (today's panel, `src_vs_code/src/panel/fieldMap.ts:16-42` sections, `:118-164` rows):
 
 - `disk` section: `disk.hostC` "C: free — arrives in E7" (`:140`) is replaced by **`disk.volumes`** — "Windows volumes:
-  lowest free" (`verdicts[id=disk.volumeFree]`, kind `verdict`); a new **`disk.worktrees`** — "Build output in idle
-  AI-agent worktrees" (the Windows `status`'s `worktrees.reclaimable`, through `WindowsCareClient`; "not available yet"
-  until WR-E1).
-- `containers` section: **`containers.testLeftovers`** — "Test leftovers (`testsToDelete-`)" from A25's preview row.
+  worst free" (`verdicts[id=disk.volumeFree]`, kind `verdict`), with the short suffix "· N GiB reclaimable in worktrees"
+  from the Windows `status`'s `worktrees.reclaimable` (through `WindowsCareClient`; "not configured — *Choose folders…*"
+  with no root, "not available yet" until WR-E1).
+- `containers` section: the existing Docker-reclaimable row gains "· N test leftovers" from A25's preview row (no new row).
 - `cleanup` section: the A25 row in the cleanup table; the A24/A24Orphans/A26 buttons and their last-run lines next to the
   Windows TEMP lines WR-T3 adds.
 
 **In E18** (the mockup at `D:\rsd\_wt\e18-mockup`, not edited by this plan — E18.W1/W2 implement):
 
-- **Sidebar** (`sidebar.html:59-71`, "Disk and Docker"): the row "Host C: free → cleanups" (`:65`) becomes "Windows volumes:
-  lowest free → cleanups" (row 15 of PLAN_disk_health.md §3.5 widened to `disk.volumeFree` + `disk.hostFree`); two new rows
-  — **21** "Build output in idle worktrees → Clean build output…" (`worktrees.reclaimable`) and **22** "Test leftovers →
-  Sweep test leftovers…"; buttons *Clean build output…* and *Sweep test leftovers…* join *Clean…* / *Clean selected…*
-  (`:67-70`). The sidebar becomes 22 rows (Q1).
+- **Sidebar — still 20 rows** (the owner's answer to Q1, 2026-10-14; `sidebar.html:59-71`, "Disk and Docker"): the row
+  "Host C: free → cleanups" (`:65`, row 15 of PLAN_disk_health.md §3.5) becomes "Worst Windows volume → cleanups", e.g.
+  "D: 4.1 GiB free (2 %) · 38 GiB reclaimable in worktrees" (`disk.volumeFree` + `disk.hostFree` + the short
+  `worktrees.reclaimable` suffix — reclaimable meaning only what A24/A24Orphans may delete, §3.3); the row "Docker
+  reclaimable → Clean selected" (`:63`, row 7) gains "· 12 test leftovers". No new row. Buttons *Clean build output…* and
+  *Sweep test leftovers…* join *Clean…* / *Clean selected…* (`:67-70`); with no root the volume row's suffix reads
+  "worktrees not configured" with *Choose folders…*.
 - **Full view, Windows tab:** "Volumes and virtual disks" (`full.html:318-335`) gains Free % and a level per volume (the
   verdict's per-volume breakdown); a new card **"AI-agent worktrees"** right after it — per root: worktrees, size, idle > N
   days, locked, orphans, build output (in idle / in locked / in orphans), the scan's age, *Scan*, *Clean build output…*,
@@ -527,7 +555,8 @@ Each lands in `research/2026-10-1x_disk_hygiene.md` with its conditions, in the 
 
 - **Removing whole idle worktrees.** Measured: `git worktree remove` without `--force` refuses a worktree with a submodule
   (39 of 134) and the owner's agents lock theirs (73 of 134). Doing it safely needs `--force` reasoning, unpushed-commit
-  checks and the lock contract — a plan of its own (Q4).
+  checks and the lock contract — a plan of its own, LATER (the owner's answer to Q4, 2026-10-14): an open tail of this plan,
+  not part of it.
 - Sweeping `testsToDelete-` worktrees and branches (the rule lists them; the report counts the worktrees) and the distro's
   `/tmp`; databases and queues (the rule leaves them to their repositories).
 - Other build output (`target`, `dist`, `.vs`, `artifacts`, `TestResults`) — the report may list them later; the cleanup
@@ -557,7 +586,10 @@ container or task a test creates is named `testsToDelete-…` and removed by the
 - DH-1: `A_volume_below_the_critical_gib_is_critical_whatever_its_percent`; `A_volume_below_the_warn_percent_warns_whatever_its_gib`;
   `The_value_names_the_worst_volume_first`; `A_volume_smaller_than_the_floor_is_not_judged`; `An_ignored_letter_is_not_judged`;
   `An_unread_free_is_unknown_never_ok`; `An_unavailable_sample_is_unknown_with_its_reason`; `The_limit_text_names_both_floors`;
-  extension: `a critical disk.volumeFree colours the bar`, `a warn disk.volumeFree does not`, `the hostFree verdicts still do not`.
+  extension: `a critical disk.volumeFree marks the bar with the volume and its age`, `a warn disk.volumeFree adds no mark`,
+  `the mark never lowers a critical bar`, `no other disk.* verdict colours the bar`.
+- DH-1b: `The_windows_watch_reads_every_lettered_volume_without_a_process`; `The_sample_carries_disk_volumeFree_with_basis_sample`;
+  extension: `the newer of the full run and the windows sample is shown`.
 - DH-2: `A5_keeps_a_stopped_container_of_a_compose_project_and_names_the_project`;
   `A5Testcontainers_still_takes_a_labelled_compose_module_container`; `A_container_without_the_label_is_selected_as_before`;
   `The_inspect_template_reads_the_compose_label`.
@@ -568,7 +600,8 @@ container or task a test creates is named `testsToDelete-…` and removed by the
   `Node_modules_without_package_json_is_not_build_output`; `A_nested_node_modules_is_not_counted_twice`;
   `A_fresh_file_deep_inside_makes_the_worktree_active`; `A_fresh_index_in_the_admin_folder_makes_it_active`;
   `A_walk_past_its_budget_is_unknown_never_idle`; `A_junction_inside_a_worktree_is_never_entered` (Windows leg, a sandbox
-  junction to a sandbox folder outside the root whose file must not be counted); `The_scan_starts_no_process`;
+  junction to a sandbox folder outside the root whose file must not be counted); `The_classifier_starts_no_process`; `The_scan_starts_only_the_three_read_only_git_templates`;
+  `Reclaimable_counts_only_candidates_that_pass_every_check_and_names_the_rest`; `Roots_set_reads_stdin_validates_and_writes_nothing_on_a_refusal`;
   `The_distro_binary_refuses_worktrees_scan`.
 - DH-4: `A_source_file_under_a_D_root_is_refused_by_the_policy_itself`; `A_hard_linked_read_only_file_is_deleted_without_changing_the_store_file_attributes` (Windows leg, sandbox store outside the root);
   `A_reparse_tag_other_than_junction_or_symlink_retains_the_candidate`; `A_bin_holding_a_nested_repository_is_retained_whole`;
@@ -585,7 +618,8 @@ container or task a test creates is named `testsToDelete-…` and removed by the
 - DH-5: `the clean and sweep tasks have no trigger and the scan task one daily trigger`; `each task's argv is a fixed line of the closed table`;
   `a second clean while one holds the worktrees lease ends at once saying already running`; `no hygiene task takes the run lock`;
   `the preview button never spells act or --confirm`; `a running run reads running across a reload`;
-  `a run whose heartbeat stopped reads ended without a record, never running`; `every new command has a panel button`.
+  `a run whose heartbeat stopped reads ended without a record, never running`; `every new command has a panel button`; `choose folders sends the picked paths on stdin and spells neither config nor a path on argv`;
+  `with no root the row reads not configured with the choose folders button`.
 - DH-6: `Npm_test_is_matched_on_the_raw_argv_not_on_Programs`; `Dotnet_exec_testhost_is_matched`; `A_stale_running_testcontainers_container_does_not_block_forever`;
   `A_running_ryuk_blocks`; `A_running_leftover_younger_than_24h_is_kept`; `The_judgement_is_repeated_before_every_batch`;
   `A_name_with_the_prefix_in_another_case_matches`; `A_name_with_the_prefix_later_in_it_never_matches`;
@@ -614,12 +648,19 @@ Asked first of the coai question consultants (`d2330f7e`, one row answered); the
 above (OR levels and defaults, the Windows binary as the side, the in-flight signals and the age floor, orphans as an
 opt-in). What remains for the owner:
 
-- **Q1** — the E18 sidebar grows from 20 to 22 rows (§8). Approve with E18's go, or fold rows 21–22 into row 15?
-- **Q2** — `disk.volumeFree` at `critical` colours the status bar, the first disk verdict to do so (§3.2). Yes?
-- **Q3** — `worktrees.roots` defaults to `[]` and is set with `wsl-care.exe config set`; the panel offers no root picker
-  (the extension never writes daemon config). Acceptable, or should DH-5 add a panel picker that runs the daemon's own
-  `config set` through a task of its own?
-- **Q4** — whole-worktree removal (§9) as its own later plan?
+Answered by the owner (through the coordinator, 2026-10-14, after consultant `57c7e54e`):
+
+- **Q1 — answered:** the sidebar stays at 20 rows; row 15 is widened to the worst Windows volume with a short
+  reclaimable-build-output suffix, and the test-leftover count joins row 7 (Docker reclaimable). "Reclaimable" is only the
+  build output a cleanup may delete, never a worktree's whole size (§3.3, §8).
+- **Q2 — answered yes:** a critical `disk.volumeFree` marks the bar by its EXACT id, the `withGpuMark` shape — a mark that
+  never lowers the level, its tooltip the free GiB, % and the reading's age (§3.2).
+- **Q3 — answered:** roots are chosen by a panel button, *Choose folders…*; default `[]` reads "not configured" with that
+  button; the CLI stays as the duplicate (§3.3).
+- **Q4 — answered:** whole-worktree removal is a later plan of its own, an open tail here (§9).
+- **And:** DH-1b moves straight after DH-1, its WR-D4 dependency explicit (§3.2, §5a).
+
+No question is open.
 
 ## 12a. Plan round (coai, 2026-10-14)
 
@@ -657,7 +698,9 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 - [ ] DH-1: `disk.volumeFree` judges every lettered volume above the size floor; critical colours the bar; the `disk.hostC`
       arriving row is gone; README says the defaults are starting values.
 - [ ] DH-2: A5 never selects a compose container (a RED test proved it did); `auto.A5` still off.
-- [ ] DH-3: the Windows `status` carries `worktrees` and `worktrees.reclaimable`; the scan starts no process.
+- [ ] DH-3: the Windows `status` carries `worktrees` and `worktrees.reclaimable`, whose bytes are only what A24/A24Orphans
+      would be allowed to delete; the scan starts no process but the three read-only git templates; roots are chosen by
+      *Choose folders…*.
 - [ ] DH-4: A24 and A24Orphans delete only the positive rule's folders, never through a link, never outside a root, with git
       confirming A24's; `DeletionPolicy` refuses every other path under a configured root BY ITSELF; a WSL-made worktree is
       never read as an orphan; no attribute of a file outside the root changes; the Fable own review ran.
