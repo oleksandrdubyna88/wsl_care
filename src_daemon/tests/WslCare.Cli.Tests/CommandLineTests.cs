@@ -138,6 +138,20 @@ public sealed class CommandLineTests
         CommandLine.Parse(["tasks"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("render");
     }
 
+    /// <summary>WR-D2: <c>tasks stage</c> takes <c>--remove</c> and <c>--json</c>, each at most once, in any order; nothing else.</summary>
+    [Fact]
+    public void Tasks_stage_takes_remove_and_json_each_once_in_any_order()
+    {
+        CommandLine.Parse(["tasks", "stage"]).Should().Be(new Request.TasksStage(false, false));
+        CommandLine.Parse(["tasks", "stage", "--json"]).Should().Be(new Request.TasksStage(false, true));
+        CommandLine.Parse(["tasks", "stage", "--remove"]).Should().Be(new Request.TasksStage(true, false));
+        CommandLine.Parse(["tasks", "stage", "--json", "--remove"]).Should().Be(new Request.TasksStage(true, true));
+        foreach (var refused in new[] { new[] { "tasks", "stage", "--remove", "--remove" }, ["tasks", "stage", "watch"], ["tasks", "stage", "--force"], ["tasks", "stage", "--json", "--json"] })
+        {
+            CommandLine.Parse(refused).Should().BeOfType<Request.Failed>(string.Join(' ', refused)).Which.Message.Should().Contain("--remove");
+        }
+    }
+
     [Fact]
     public void Every_registered_command_is_in_the_help_text_and_its_example_parses()
     {

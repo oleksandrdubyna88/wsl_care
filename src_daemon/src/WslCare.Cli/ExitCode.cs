@@ -18,7 +18,8 @@ internal enum ExitCode
     /// <c>events follow</c> was started by a process that may not write the state directory. What was measured is
     /// still printed. And <c>tasks run</c> (WR-D3): no worker could start inside a job — no job, no process, a standard handle that
     /// could not be passed, a failed assign or resume, an unreadable unbiased clock — or the worker's exit code could not be read;
-    /// the one stderr line says which, and nothing ran outside the job.</summary>
+    /// the one stderr line says which, and nothing ran outside the job. And <c>tasks stage</c> (WR-D2): no verified copy was
+    /// staged — the answer says why; no <c>stage.json</c> was written and nothing was swept.</summary>
     RunFailed = 1,
 
     /// <summary>The arguments could not be read or accepted — an unknown verb, extra words, a value
@@ -52,7 +53,7 @@ internal enum ExitCode
 
     /// <summary>Another run holds the run lock (<c>collect</c> or <c>act</c> — the second one refuses, it never waits), a
     /// live run is acting, or another follower runs (<c>events follow</c>); nothing was done. 75 is <c>EX_TEMPFAIL</c>:
-    /// try again later.</summary>
+    /// try again later. <c>tasks stage</c> and <c>tasks stage --remove</c> (WR-D2) take the same lock without waiting.</summary>
     Busy = 75,
 
     /// <summary><c>act</c>: a run is WEDGED — its process is alive and its heartbeat stale — or its process cannot be

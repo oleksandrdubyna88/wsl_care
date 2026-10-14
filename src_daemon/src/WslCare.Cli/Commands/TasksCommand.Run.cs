@@ -31,7 +31,7 @@ internal static partial class TasksCommand
             return (int)ExitCode.Usage;
         }
 
-        SweepStagingAtRunStart(host, windows, loaded.Config);
+        SweepStagingAtRunStart(host, windows, loaded.Config, stderr);
         return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config) switch
         {
             Reading<WorkerLaunch>.Available launch => Supervised(request.Task, launch.Value, host.Supervisor, stderr, cancellationToken),
@@ -41,14 +41,45 @@ internal static partial class TasksCommand
     }
 
     /// <summary>
-    /// THE SEAM FOR WR-D2 (PLAN_windows_runner.md §3.10: "the sweep also runs at every <c>tasks run</c> start, so a kept folder goes as
-    /// soon as its run ends"). WR-D2's staging sweep — the one <c>tasks stage</c> runs, never a second one — is called from here, before
-    /// the worker starts; until WR-D2 lands it does nothing. A sweep that fails must not stop the run: the run is the sampling, the sweep
-    /// only retires old copies.
+    /// The start-of-run sweep (PLAN_windows_runner.md §3.10 and WR-D2's keep rule in §14): WR-D2's ONE sweep, <see cref="Staging.Sweep"/>,
+    /// told the digest this run's own copy is staged under (empty when it runs from none) — it keeps that copy and the newest verified
+    /// one and retires every other, under the run lock taken without waiting (held: skipped, the next run retries). It runs BEFORE the
+    /// worker starts, so the worker's own take of the run lock never meets it. A sweep that fails does not stop the run — the run is
+    /// the sampling, the sweep only retires old copies — and a retirement or a failure is said in one stderr line.
     /// </summary>
-    private static void SweepStagingAtRunStart(CliHost host, WindowsHostPaths paths, EffectiveConfig config)
+    private static void SweepStagingAtRunStart(CliHost host, WindowsHostPaths paths, EffectiveConfig config, TextWriter stderr)
     {
-        // WR-D2: Staging's sweep of StagedCopies.Root(paths) through host.Files, with config's numbers, goes here.
+        var place = StagingPlace.For(paths);
+        var own = StagedCopies.DigestOf(place.Root, host.ProcessPath());
+        var access = new StagingAccess(place, host.Files, host.ArchiveFiles(), config.Int(ConfigKeys.Records.MaxStateFileBytes), host.Clock.GetUtcNow());
+        try
+        {
+            SaySwept(Staging.Sweep(access, own), stderr);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Output.Note(stderr, $"tasks run: the staging sweep failed ({e.Message}); the run goes on");
+        }
+    }
+
+    /// <summary>One line per thing worth saying, none when the sweep did nothing (the coai code round on WR-D2: finding 3 asked for the
+    /// skipped and the kept lines; a line on every run was rejected as noise on an unattended five-minute task).</summary>
+    private static void SaySwept(StagingSweep sweep, TextWriter stderr)
+    {
+        if (sweep.Busy.Length > 0)
+        {
+            Output.Note(stderr, $"tasks run: the staging sweep was skipped: {sweep.Busy}; the next run retries");
+        }
+
+        if (sweep.Swept.Count > 0)
+        {
+            Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run: retired {sweep.Swept.Count} older staged copy folder(s): {string.Join(", ", sweep.Swept.Select(f => f.Digest))}"));
+        }
+
+        if (sweep.Kept.Count > 0)
+        {
+            Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run: the staging sweep could not remove {sweep.Kept.Count} folder(s): {string.Join("; ", sweep.Kept.Select(f => $"{f.Path} ({f.Why})"))}"));
+        }
     }
 
     private static int Refused(WindowsTask task, string reason, TextWriter stderr)
