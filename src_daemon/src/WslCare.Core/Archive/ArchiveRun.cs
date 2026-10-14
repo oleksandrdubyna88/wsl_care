@@ -154,6 +154,12 @@ public static class ArchiveRun
 
     private const string BusyWhy = "another archive run of this side holds its lock";
 
+    /// <summary>The busy answer, naming the holder the held run recorded (<c>holder.json</c>, as <c>archive status</c> reads it): the side's
+    /// lock is tried BEFORE the lease, so it is the first refusal a second archive meets (WR-D5 own review, M3).</summary>
+    private static string BusyReason(ArchiveState state) => state.Holder() is { } holder
+        ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{BusyWhy} (pid {holder.Pid}, run {holder.RunId}, since {holder.SinceUtc:O})")
+        : BusyWhy;
+
     private static void Holding(ArchiveRunInput input, ArchiveState state, DateTimeOffset started) =>
         _ = state.WriteHolder(new LockHolderRecord(ArchiveState.Version, input.Me.Pid, input.Me.StartTicks, input.Me.BootId, started, input.RunId));
 
@@ -206,7 +212,7 @@ public static class ArchiveRun
     {
         if (input.Files.TryLockExclusive(state.LockFile) is not ExclusiveLock.Held held)
         {
-            return Answer(input, started, RunOutcomes.Busy, BusyWhy, ArchiveReconcileReport.Empty, NotChecked, []);
+            return Answer(input, started, RunOutcomes.Busy, BusyReason(state), ArchiveReconcileReport.Empty, NotChecked, []);
         }
 
         var abandoned = false;

@@ -82,6 +82,77 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
         File.ReadAllText(session).Should().Be(Transcript, "phase 1 copies; the source goes only a day later");
         Directory.GetFileSystemEntries(baseFolder).Should().NotBeEmpty("the real run wrote the archive");
         Lines(stderr).Should().NotContain(l => l.Contains("a dry run", StringComparison.Ordinal));
+        Lines(stderr).Should().Contain(l => l.Contains("tasks run archive: a real run (dryRun is off and the 7 days since the first timer run", StringComparison.Ordinal), "a real run says why it is real");
+    }
+
+    /// <summary>WR-D5 own review M1: a layer in error makes the run observe-only, yet the loader still merges the other entries — so the
+    /// machine layer's <c>dryRun</c> false and a week-old stamp would read "real". The body previews, names the observe-only reason, and
+    /// never reaches the stamp.</summary>
+    [Fact]
+    public void An_observe_only_configuration_previews_and_never_runs_archive_run()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        _ = Session();
+        var baseFolder = Configured(dryRunOff: true);
+        _sandbox.WriteUserConfig(new JsonObject { ["notAKeyOfThisProduct"] = 1, ["archive"] = new JsonObject { ["baseFolder"] = baseFolder } }.ToJsonString());
+        StampedDaysAgo(8);
+        var stamp = File.ReadAllBytes(DryRunWindow.File(_sandbox.Paths));
+        var supervisor = new RunningSupervisor(() => _host);
+        _host = Host(supervisor);
+        _host.LoadConfig().IsObserveOnly.Should().BeTrue("the fixture must really be observe-only");
+
+        var (_, _, stderr) = CliRun.Over(_host, "tasks", "run", "archive", "--json");
+
+        supervisor.Launches.Should().ContainSingle().Which.Arguments.Should().Equal("archive", "preview", "--json");
+        Lines(stderr).Should().Contain(l => l.Contains("tasks run archive: a dry run (observe-only", StringComparison.Ordinal));
+        File.ReadAllBytes(DryRunWindow.File(_sandbox.Paths)).Should().Equal(stamp, "the stamp is not touched before the gate");
+        Directory.GetFileSystemEntries(baseFolder).Should().BeEmpty();
+    }
+
+    /// <summary>WR-D5 own review m1: an elevated supervisor writes nothing — its worker refuses itself, and the week is not started.</summary>
+    [Fact]
+    public void An_elevated_supervisor_previews_and_does_not_start_the_dry_run_week()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        _ = Session();
+        _ = Configured(dryRunOff: true);
+        var supervisor = new RunningSupervisor(() => _host);
+        _host = Host(supervisor, elevated: true);
+
+        var (_, _, stderr) = CliRun.Over(_host, "tasks", "run", "archive", "--json");
+
+        supervisor.Launches.Should().ContainSingle().Which.Arguments.Should().Equal("archive", "preview", "--json");
+        Lines(stderr).Should().Contain(l => l.Contains("an elevated process", StringComparison.Ordinal));
+        File.Exists(DryRunWindow.File(_sandbox.Paths)).Should().BeFalse("no stamp: the week is not started by a process that cannot run the archive");
+        supervisor.Workers.Should().ContainSingle().Which.Exit.Should().Be((int)ExitCode.NotAsRoot);
+    }
+
+    /// <summary>WR-D5 own review M3: a real second archive meets the side's LOCK before the lease; its busy answer names the holder
+    /// the held run recorded.</summary>
+    [Fact]
+    public void A_second_archive_during_a_run_is_refused_busy_naming_the_holder()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        _ = Session();
+        _ = Configured(dryRunOff: true);
+        StampedDaysAgo(8);
+        var supervisor = new RunningSupervisor(() => _host);
+        _host = Host(supervisor);
+        var state = new ArchiveState(_sandbox.Paths, _sandbox.Files);
+        Directory.CreateDirectory(Path.GetDirectoryName(state.LockFile)!);
+        _ = state.WriteHolder(new LockHolderRecord(ArchiveState.Version, 4242, 1, "boot-1", _clock.GetUtcNow(), "r-held"));
+
+        int exit;
+        using (_sandbox.Files.TryLockExclusive(state.LockFile) is Core.Files.ExclusiveLock.Held held ? held.Handle : throw new InvalidOperationException("the test could not take the side's lock"))
+        {
+            (exit, _, _) = CliRun.Over(_host, "tasks", "run", "archive", "--json");
+        }
+
+        exit.Should().Be((int)ExitCode.Busy, "the worker's own code passes through");
+        var answer = supervisor.Workers.Should().ContainSingle().Subject.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last();
+        var report = JsonSerializer.Deserialize(answer, WslCareJsonContext.Default.ArchiveRunReport)!;
+        report.Outcome.Should().Be(RunOutcomes.Busy);
+        report.Stop.Should().Contain("pid 4242").And.Contain("run r-held");
     }
 
     [Fact]
@@ -104,13 +175,13 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
 
         exit.Should().Be((int)ExitCode.Ok, "a held run lock (a watch sampling) neither stops nor is stopped by the archive: " + stderr);
         supervisor.Workers.Should().ContainSingle().Which.Exit.Should().Be((int)ExitCode.Ok);
-        freeWhileRunning.Should().Equal([false], "the test itself still held it; the body asked for nothing");
+        freeWhileRunning.Should().Equal([false], "the test itself still held it when the supervisor launched the worker");
 
         var free = new List<bool>();
         var alone = new RunningSupervisor(() => _host) { WhileRunning = () => free.Add(RunLockIsFree()) };
         _host = Host(alone);
         CliRun.Over(_host, "tasks", "run", "archive", "--json").Exit.Should().Be((int)ExitCode.Ok);
-        free.Should().Equal([true], "while the archive worker runs the run lock is free: a watch sample is never suppressed");
+        free.Should().Equal([true], "at the moment the supervisor launches the worker the run lock is free: the supervisor holds none (what the worker itself takes is the archive's own side lock and lease, asserted by A_second_archive_*)");
     }
 
     [Fact]
@@ -164,13 +235,13 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
         File.WriteAllBytes(DryRunWindow.File(_sandbox.Paths), JsonSerializer.SerializeToUtf8Bytes(new FirstTimerRun(Core.SchemaVersion.Current, _clock.GetUtcNow().AddDays(-days)), WslCareJsonContext.Default.FirstTimerRun));
     }
 
-    private CliHost Host(IWorkerSupervisor supervisor) =>
+    private CliHost Host(IWorkerSupervisor supervisor, bool elevated = false) =>
         new(_sandbox.Paths, _sandbox.Files, _clock, new RecordingCommandRunner())
         {
             Probe = new FakeProbe(HostSide.Windows, _clock),
             ProcessPath = () => Self,
             Supervisor = supervisor,
-            Privilege = new ProcessPrivilege(false, "a test says so"),
+            Privilege = new ProcessPrivilege(elevated, "a test says so"),
             WindowsProcesses = new NoClaude(),
         };
 

@@ -666,7 +666,28 @@ Decisions the plan did not spell out:
 - **The lease, not the lock, is what the plan names for "a second archive"**: `archive run` takes the side's lock FIRST (a second
   concurrent run answers `busy`, exit 75, before any base I/O) and the lease after; the test plants a live lease (this test process, as
   the product writes it) so the refusal is the lease's, naming host, pid and run. Which of the two stops a real second run is a matter
-  of timing; both are refusals and neither is the run lock.
+  of order: the lock is tried before the lease (corrected by the own review, M3, below); neither is the run lock.
 - **`dryRun` is turned off in the machine layer in tests** (`SafeDirection.On`: a user layer may only turn it on).
 - **Break-its** (product code, sandbox only), each red then restored byte for byte (`cmp`): the dry branch made to run `archive run`;
   the archive task made to take the run lock; the lease refusal's holder text dropped.
+
+**The Fable own review of WR-D5 (2026-10-14)**: no blocking issue; every item accepted and fixed in the same story:
+
+- **M1** — an observe-only configuration never runs `archive run`: `ConfigLoader` merges the other entries, so `loaded.Config` can carry
+  `dryRun` false while `IsObserveOnly` is true. `ArchiveBody.Decide` previews with `{ObserveOnlyReason}: {errors}` BEFORE
+  `DryRunWindow.Decide` (the order of `WatchRun.Windows`), so the stamp is untouched. Test
+  `An_observe_only_configuration_previews_and_never_runs_archive_run`.
+- **M2** — the closed table is a TYPE guarantee again: `TaskWorkers.For(…, Func<DryRunDecision>)`; the only decision to argv mapping is
+  `ArchiveBody.ArgumentsFor` inside Core; `ArchiveBody.Choice` and the public argument lists are gone.
+- **M3** — a real second archive meets `archive.lock` BEFORE the lease and used to answer `busy` without a holder; `ArchiveRun.BusyReason`
+  now reads `holder.json` (as `archive status` does) and names pid, run and since. The "matter of timing" above is corrected: it is
+  the order. Test `A_second_archive_during_a_run_is_refused_busy_naming_the_holder`.
+- **m1** — an elevated supervisor previews and starts no week (`ArchiveBody.Decide` takes `host.Privilege.IsRoot`); the elevated
+  Scenarios legs assert no stamp. **m2** — the lock test's second half only proves the lock is free when the supervisor launches the
+  worker; its reason and the docs say exactly that (the worker's own lock and lease are held by the M3 and lease tests). **m3** — the
+  real Scenarios flow asserts exit 0, `done`, `Copied == 1`. **m4** — doc counts and the one-week wording fixed. **m5** — a REAL
+  run says why (`a real run (dryRun is off and the 7 days since the first timer run (…) have passed)`), one stderr line.
+- **RED evidence**: the fixes were written before their tests this round, so each test's RED was taken by reverting its fix in the sandbox
+  build: M1 `Expected supervisor.Launches to be equal to {"archive", "preview", "--json"}, but {"archive", "run", "--json"} differs at
+  index 1`; m1 `Expected Lines(stderr) {…} to have an item matching l.Contains("an elevated process", Ordinal)`; M3 `Expected
+  report.Stop "another archive run of this side holds its lock" to contain "pid 4242"`. Each restored byte for byte (`cmp`).

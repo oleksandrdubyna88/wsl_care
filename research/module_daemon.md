@@ -658,8 +658,12 @@ flowchart TD
     arun --> job
 ```
 
-- **Where the decision lives**: in `TasksCommand.Run` through `ArchiveBody.Choose` (a `Lazy`, asked ONLY by the archive entry of the
-  closed table — taking the decision writes `first-timer-run.json`, so a `watch` task never starts the archive's week). WR-D4's
+- **Where the decision lives**: in `TasksCommand.Run` through `ArchiveBody.Decide` (a `Lazy<DryRunDecision>`, asked ONLY by the archive
+  entry of the closed table — taking the decision may write `first-timer-run.json`: ONE week, started by the first `tasks run` that
+  reaches a gated body, §3.5). Two gates come BEFORE the stamp, in `WatchRun.Windows`' order: an observe-only configuration (a layer in
+  error; the loader still merges the other entries, so `dryRun` may read false) and an elevated process both preview and write no
+  stamp. The table (`TaskWorkers.For`) takes the decision, never argv: `ArchiveBody.ArgumentsFor` is the only mapping, so no caller
+  can hand the table free text. WR-D4's
   watch decides inside its worker; the archive's argv depends on the decision, so here it is the supervisor's. The stamp is the
   Windows one, under `%LOCALAPPDATA%\wsl-care`.
 - **The closed table** stays two shapes of argv per task: `archive preview` / `archive run` (+ `--json`), never free text. The
@@ -668,9 +672,12 @@ flowchart TD
   preview worker says `archive preview: would move N session(s), M bytes; nothing was moved` on stderr — on the Windows binary's
   `--json` run only (`ArchiveCommand.SayWouldMove`; the distro's root reads its child's stderr as before). Enabled agents only.
 - **No run lock, no lock across a wait**: the body takes none; `archive run` takes the side's lock and the side lease itself. A
-  watch sample is never suppressed by a long archive (the test holds the run lock for the whole run, and probes it free while the
-  worker runs). A second archive is refused by the lease, which names its holder (`another archive run holds the side (host …, pid
-  …, run …, since …)`); the worker's `refused` answer is exit 1, which the supervisor passes through.
+  watch sample is never suppressed by a long archive (the test holds the run lock for the whole run, and probes it free when the
+  supervisor launches the worker). A real second archive meets the side's LOCK first (`archive.lock`, before the lease): `busy`, exit
+  75, naming the holder from `holder.json` (`… holds its lock (pid N, run R, since T)`, `ArchiveRun.BusyReason`); past the lock, the
+  lease refuses a live holder by name (`another archive run holds the side (host …, pid …, run …, since …)`, exit 1). Either answer is
+  the worker's own code, which the supervisor passes through.
+- **The window is said once** before the worker starts: `a dry run (<why>)` or `a real run (<why>)` (`ArchiveBody.Note`).
 
 ## Story history (moved from architecture.md, 2026-10-12)
 

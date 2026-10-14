@@ -76,13 +76,18 @@ public sealed class WindowsTasksRunFlows
         var result = await home.RunAsync("tasks", "run", "archive", "--json");
 
         result.Stderr.Should().Contain("tasks run archive: a dry run").And.Contain("starting").And.Contain("archive preview --json");
-        File.Exists(Core.Actions.Engine.DryRunWindow.File(home.Paths)).Should().BeTrue("the first task run starts the dry-run week, inside the sandbox");
+        if (!Environment.IsPrivilegedProcess)
+        {
+            File.Exists(Core.Actions.Engine.DryRunWindow.File(home.Paths)).Should().BeTrue("the first task run starts the dry-run week, inside the sandbox");
+        }
+
         File.ReadAllText(session).Should().Be("the transcript", "a dry body moves nothing");
         Directory.GetFileSystemEntries(baseFolder).Should().BeEmpty("a preview writes nothing to the base");
         if (Environment.IsPrivilegedProcess)
         {
             result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
             result.Stderr.Should().Contain("tasks run archive: the worker exited 81");
+            File.Exists(Core.Actions.Engine.DryRunWindow.File(home.Paths)).Should().BeFalse("an elevated supervisor starts no dry-run week");
             return;
         }
 
@@ -107,17 +112,22 @@ public sealed class WindowsTasksRunFlows
 
         var result = await home.RunAsync("tasks", "run", "archive", "--json");
 
-        result.Stderr.Should().Contain("starting").And.Contain("archive run --json").And.NotContain("a dry run");
         if (Environment.IsPrivilegedProcess)
         {
+            // An elevated supervisor previews whatever the window says and touches no stamp (own review m1); its worker then refuses with 81.
             result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
+            result.Stderr.Should().Contain("archive preview --json").And.Contain("an elevated process");
             return;
         }
 
+        result.Stderr.Should().Contain("starting").And.Contain("archive run --json").And.NotContain("a dry run");
+
         var answer = result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last();
         var report = JsonSerializer.Deserialize(answer, WslCareJsonContext.Default.ArchiveRunReport)!;
-        report.Outcome.Should().NotBeEmpty();
-        result.Stderr.Should().Contain("tasks run archive: the worker exited");
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        report.Outcome.Should().Be(Core.Archive.RunOutcomes.Done, report.Stop);
+        report.Agents.Single(a => a.Id == "claude-code").Copied.Should().Be(1);
+        result.Stderr.Should().Contain("tasks run archive: the worker exited 0").And.Contain("tasks run archive: a real run");
     }
 
     /// <summary>A Claude Code session in the sandbox's home, forty days old, and an archive base in the sandbox.</summary>

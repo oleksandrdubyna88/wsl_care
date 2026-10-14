@@ -18,27 +18,34 @@ namespace WslCare.Core.Scheduler;
 /// </summary>
 /// <remarks>
 /// <para>The body takes NO lock of its own — not the run lock, never held across a wait: <c>archive run</c> takes the side's lock and
-/// lease itself, so a long archive never suppresses a watch sample, and a second archive is refused by the lease naming its holder.</para>
+/// lease itself, so a long archive never suppresses a watch sample, and a second archive is refused (the side's lock first, then the lease) naming its holder.</para>
 /// </remarks>
 public static class ArchiveBody
 {
     /// <summary>What a dry window runs: the existing read-only verb.</summary>
-    public static IReadOnlyList<string> PreviewArguments { get; } = ["archive", "preview"];
+    private static IReadOnlyList<string> PreviewArguments { get; } = ["archive", "preview"];
 
     /// <summary>What a real run runs: the existing verb that moves sessions.</summary>
-    public static IReadOnlyList<string> RunArguments { get; } = ["archive", "run"];
+    private static IReadOnlyList<string> RunArguments { get; } = ["archive", "run"];
 
-    /// <summary>The body's choice for this run: the worker's arguments (without <c>--json</c>) and the decision that made it.</summary>
-    public sealed record Choice(IReadOnlyList<string> Arguments, DryRunDecision Decision);
+    /// <summary>The timer's decision for this run, gated BEFORE the dry-run stamp is touched (WatchRun.Windows' order): an observe-only
+    /// configuration (a layer in error — <c>ConfigLoader</c> still merges the other entries, so <c>dryRun</c> may read false) and an
+    /// elevated process (its worker refuses itself) both preview, and neither starts the first-week stamp. Otherwise
+    /// <see cref="DryRunWindow.Decide"/> on the Windows paths, which writes the stamp when it is missing.</summary>
+    public static DryRunDecision Decide(ConfigLoadResult loaded, bool elevated, IHostPaths paths, IFileSystem files, DateTimeOffset now) => loaded switch
+    {
+        { IsObserveOnly: true } => new DryRunDecision(true, $"{ActionEngine.ObserveOnlyReason}: {string.Join("; ", loaded.Errors.Select(e => e.Display))}"),
+        _ when elevated => new DryRunDecision(true, "an elevated process: the worker refuses itself, and the dry-run week is not started"),
+        _ => DryRunWindow.Decide(RunTrigger.Timer, loaded.Config, paths, files, now),
+    };
 
-    /// <summary>Takes the timer's dry-run decision (which starts the first-week stamp when it is missing) and names the worker it picks.</summary>
-    public static Choice Choose(EffectiveConfig config, IHostPaths paths, IFileSystem files, DateTimeOffset now) => Of(DryRunWindow.Decide(RunTrigger.Timer, config, paths, files, now));
+    /// <summary>The worker a decision picks — the ONLY mapping from a decision to the archive's argv: dry previews, real runs.</summary>
+    public static IReadOnlyList<string> ArgumentsFor(DryRunDecision decision) => decision.DryRun ? PreviewArguments : RunArguments;
 
-    /// <summary>The worker a decision picks: dry previews, real runs.</summary>
-    public static Choice Of(DryRunDecision decision) => new(decision.DryRun ? PreviewArguments : RunArguments, decision);
-
-    /// <summary>The line the supervisor says before a dry run's worker starts.</summary>
-    public static string DryNote(DryRunDecision decision) => $"a dry run ({decision.Reason}): the worker is \"archive preview\", which moves nothing; end the window with \"config set dryRun false\" once the week has passed";
+    /// <summary>The line the supervisor says before the worker starts: why it is a preview, or why it is a real run.</summary>
+    public static string Note(DryRunDecision decision) => decision.DryRun
+        ? $"a dry run ({decision.Reason}): the worker is \"archive preview\", which moves nothing; end the window with \"config set dryRun false\" once the week has passed"
+        : $"a real run ({decision.Reason}): the worker is \"archive run\"";
 
     /// <summary>The run-log sentence of a preview: what a real run would move now (enabled agents only — a disabled one never moves).</summary>
     public static string WouldMove(ArchivePreviewReport report)

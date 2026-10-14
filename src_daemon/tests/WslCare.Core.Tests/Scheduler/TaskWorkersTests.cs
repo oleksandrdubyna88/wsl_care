@@ -19,9 +19,9 @@ public sealed class TaskWorkersTests
     private static readonly EffectiveConfig Defaults = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new WslCare.Core.Files.FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
 
     /// <summary>The watch never takes the archive body's dry-run decision (it writes the first-week stamp): asking for it is a failure.</summary>
-    private static ArchiveBody.Choice NeverAsked() => throw new InvalidOperationException("the watch asked for the archive body's dry-run decision");
+    private static DryRunDecision NeverAsked() => throw new InvalidOperationException("the watch asked for the archive body's dry-run decision");
 
-    private static Func<ArchiveBody.Choice> Deciding(bool dry) => () => ArchiveBody.Of(new DryRunDecision(dry, "a test says so"));
+    private static Func<DryRunDecision> Deciding(bool dry) => () => new DryRunDecision(dry, "a test says so");
 
     [Theory]
     [InlineData(false, new[] { "watch", "--timer" })]

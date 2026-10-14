@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Hosting;
@@ -32,10 +33,10 @@ internal static partial class TasksCommand
         }
 
         SweepStagingAtRunStart(host, windows, loaded.Config, stderr);
-        var archive = new Lazy<ArchiveBody.Choice>(() => ArchiveBody.Choose(loaded.Config, windows, host.Files, host.Clock.GetUtcNow()));
+        var archive = new Lazy<DryRunDecision>(() => ArchiveBody.Decide(loaded, host.Privilege.IsRoot, windows, host.Files, host.Clock.GetUtcNow()));
         return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config, () => archive.Value) switch
         {
-            Reading<WorkerLaunch>.Available launch => Supervised(request.Task, launch.Value, host.Supervisor, SayDry(archive, stderr), cancellationToken),
+            Reading<WorkerLaunch>.Available launch => Supervised(request.Task, launch.Value, host.Supervisor, SayWindow(archive, stderr), cancellationToken),
             Reading<WorkerLaunch>.Unavailable refused => Refused(request.Task, refused.Reason, stderr),
             _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
         };
@@ -83,13 +84,13 @@ internal static partial class TasksCommand
         }
     }
 
-    /// <summary>The archive body's dry window, said once before its worker starts (WR-D5, §3.5): the decision exists only when the task
-    /// was the archive (the watch never takes it).</summary>
-    private static TextWriter SayDry(Lazy<ArchiveBody.Choice> archive, TextWriter stderr)
+    /// <summary>The archive body's window, said once before its worker starts (WR-D5, §3.5): why it is a preview, or why it is a real
+    /// run. The decision exists only when the task was the archive (the watch never takes it).</summary>
+    private static TextWriter SayWindow(Lazy<DryRunDecision> archive, TextWriter stderr)
     {
-        if (archive.IsValueCreated && archive.Value.Decision.DryRun)
+        if (archive.IsValueCreated)
         {
-            Output.Note(stderr, $"tasks run {WindowsTask.Archive}: {ArchiveBody.DryNote(archive.Value.Decision)}");
+            Output.Note(stderr, $"tasks run {WindowsTask.Archive}: {ArchiveBody.Note(archive.Value)}");
         }
 
         return stderr;
