@@ -43,6 +43,10 @@ public sealed record EngineContext(
     /// <summary>How an unreadable <c>running.json</c> is read again before any verdict (gate finding #7).</summary>
     public RunningReadRetry RunningRetry { get; init; } = RunningReadRetry.Default;
 
+    /// <summary>The account this process runs as, a Windows SID — what A23's owner check compares with (WR-T1). Empty unless the CLI
+    /// wires the real one on Windows; then no entry counts as the person's own.</summary>
+    public string UserSid { get; init; } = string.Empty;
+
     /// <summary>What cancelled the run, in words, asked only once it was cancelled — the CLI names the signal (SIGHUP when
     /// the terminal or the <c>wsl.exe</c> that started it went away, §15j B2), so the <c>interrupted</c> record says which.</summary>
     public Func<string> InterruptCause { get; init; } = static () => "a signal";
@@ -635,6 +639,7 @@ public sealed class ActionEngine(EngineContext c)
             ShownProcesses = request.ShownProcesses,
             ShownEntries = request.ShownEntries,
             Wait = c.Wait,
+            UserSid = c.UserSid,
             RanEarlier = id => soFar.Any(o => o.Id == id.Text && o.Status == ActionStatus.Ran),
         };
 

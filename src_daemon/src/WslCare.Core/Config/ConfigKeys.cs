@@ -68,6 +68,11 @@ public static partial class ConfigKeys
         /// <summary>A21, the client-gone interop relays (plan E14 S7b.2): ON by default — the owner's D3 for the MCP stops; the
         /// daemon's dry-run rules (<c>dryRun</c>, the first week) still govern what the timer actually does.</summary>
         public static readonly ConfigKey.BoolKey A21 = new("auto.A21") { Trust = KeyTrust.Off };
+
+        /// <summary>A23, the Windows <c>%TEMP%</c> cleanup (PLAN_windows_runner.md §3.12, WR-T1): ON by default like the other timer
+        /// actions — installing the cleanup task is the opt-in, and the daemon's dry-run rules (<c>dryRun</c>, the first week) still
+        /// govern what the timer actually deletes.</summary>
+        public static readonly ConfigKey.BoolKey A23 = new("auto.A23") { Trust = KeyTrust.Off };
     }
 
     public static class Volumes
@@ -131,7 +136,7 @@ public static partial class ConfigKeys
     [
         DryRun, Distro, RefreshSeconds,
         Auto.A1, Auto.A2, Auto.A3, Auto.A4, Auto.A5, Auto.A5Testcontainers, Auto.A6, Auto.A6Unused, Auto.A7, Auto.A8,
-        Auto.A9, Auto.A10, Auto.A11, Auto.A12, Auto.A13, Auto.A14, Auto.A15, Auto.A16, Auto.A17, Auto.A19, Auto.A21,
+        Auto.A9, Auto.A10, Auto.A11, Auto.A12, Auto.A13, Auto.A14, Auto.A15, Auto.A16, Auto.A17, Auto.A19, Auto.A21, Auto.A23,
         Volumes.AnonymousMaxCount, Volumes.AnonymousMaxGb, Volumes.AnonymousOlderThanDays,
         Containers.StoppedOlderThanDays, Containers.TestcontainersOlderThanHours,
         Images.UnusedOlderThanDays, Images.UnusedMaxGb,
@@ -143,6 +148,7 @@ public static partial class ConfigKeys
         Thresholds.MemAvailableWarnPercent, Thresholds.MemAvailableActPercent, Thresholds.SwapWarnGb,
         AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
         McpServers.Watched, McpServers.Programs,
+        Temp.AllowGlobs,
         Systemd.IgnoredFailedUnits,
         Archive.OlderThanDays, Archive.WindowsIdleDays, Archive.ClockSkewMinutes, Archive.BaseFolder, Archive.Agents,
         Idle.CpuPercent, Idle.Minutes,

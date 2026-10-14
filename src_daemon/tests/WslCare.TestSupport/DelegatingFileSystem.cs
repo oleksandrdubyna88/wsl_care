@@ -53,6 +53,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual RealPathResult ResolvePath(string path) => inner.ResolvePath(path);
 
+    public virtual string OwnerSidOf(string path) => inner.OwnerSidOf(path);
+
     public virtual (uint Major, uint Minor)? DeviceOf(string path) => inner.DeviceOf(path);
 
     public virtual WriteAccess ProbeWriteAccess(string directory) => inner.ProbeWriteAccess(directory);

@@ -126,7 +126,13 @@ public enum EntryKind
 }
 
 /// <summary>One entry of a directory listing (plan §15q D2: a session is found by its name and its stat, never by its content).</summary>
-public sealed record FileEntry(string Name, EntryKind Kind, long Length, DateTimeOffset LastWriteUtc);
+public sealed record FileEntry(string Name, EntryKind Kind, long Length, DateTimeOffset LastWriteUtc)
+{
+    /// <summary>When the entry was CREATED, UTC — from the listing alone (WR-T1: deleting a folder's children rewrites its write time
+    /// but never its creation time, so a folder created after a checkpoint is told apart by this). The default is the far future: a
+    /// listing that does not say counts as brand new, which can only make a caller keep something.</summary>
+    public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.MaxValue;
+}
 
 /// <summary>The bounds of one listing (plan §15q E7.S2d, consultation C-1): at most <paramref name="MaxEntries"/> entries, the
 /// caller's deadline and its cancellation — asked at EVERY entry. A cooperative bound on the work between file-system calls,
@@ -311,6 +317,11 @@ public interface IFileSystem
             ? new EntryListing.Listed([.. all.Take(bounds.MaxEntries)], false, EntryListing.StoppedAt(bounds.MaxEntries, path))
             : new EntryListing.Listed(all, true, string.Empty);
     }
+
+    /// <summary>The account owning <paramref name="path"/> (a Windows SID such as <c>S-1-5-21-…</c>), read without following a link;
+    /// empty when the owner is not known — the default, and what a test double without its own answers. A caller that compares it
+    /// with a known account treats empty as "not that account" (WR-T1: an entry whose owner is unknown is never deleted).</summary>
+    string OwnerSidOf(string path) => string.Empty;
 
     /// <summary>Where <paramref name="path"/> really is — every link followed, <c>..</c> applied to the real parent (the walk the
     /// deletion policy decides on, <see cref="RealPath"/>); nothing is opened.</summary>
