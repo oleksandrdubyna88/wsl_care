@@ -341,6 +341,20 @@ backlog.
 | DH-8 | this repo's own test temp folders take the prefix, with a 30-day transition sweep | tests | `TestSupport/TempRoot.cs`, `Core.Tests/Archive/WindowsIdleTests.cs`, `src_vs_code/src/test/**` | no | — |
 | DH-9 | docs: `research/module_daemon.md` (three new sections), `module_vs_code.md`, `module_tests.md`, `architecture.md` (the Windows side's new verb and actions, the field-map table regenerated), README, `POST_DEPLOY.md` (the owner's first A24 preview on his own roots is the acceptance item), the boundary rows | docs | as named | no | lands with each story's own docs; the boundary rows land with this plan |
 
+### 5a. Build order
+
+1. **DH-1, DH-2, DH-8** — independent, distro or tests only, no runner dependency; DH-1 first (it is the warning that was
+   missing). DH-2 after M4.
+2. **DH-6** — after DH-2 (both change the inspect template; one change, two readers). The Docker sweep works from the distro
+   alone; its preview names the other side as "not read from this side" until DH-7.
+3. **DH-3** — after M1 and M2; the Windows binary's CLI is usable at once, its panel row after WR-E1.
+4. **WR-T1** (the runner plan) — the engine's first Windows-side action; DH-4 and DH-7 build on its path.
+5. **DH-4** — after DH-3 and WR-T1.
+6. **DH-5** — after DH-4, M3, and the runner's WR-E1, E3, E4.
+7. **DH-7** — after WR-T1, DH-5 and DH-6; the both-sides sweep flow is its extension half.
+8. **DH-9** — each story lands its own docs; the boundary rows land with this plan; promote when DH-7 ships.
+9. DH-1b — whenever WR-D4 exists.
+
 ## 6. Boundaries with other plans (named on both sides)
 
 | item | this plan | the other plan |
