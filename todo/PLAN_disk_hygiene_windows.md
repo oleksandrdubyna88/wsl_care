@@ -10,7 +10,7 @@
 > A23, the tasks and the supervisor), [PLAN_windows_care.md](PLAN_windows_care.md) (W-A2), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md)
 > (A5), [module_daemon.md](../research/module_daemon.md), [module_tests.md](../research/module_tests.md),
 > [architecture.md](../research/architecture.md). Shared rule: `.agents/conventions/common/test-leftovers.md` (conventions
-> `release` e29883f; NOT yet in this repo's pin 12f7850 — its text is carried over in §3.6 so nothing here depends on the bump).
+> `release` e29883f, this repository's pin since main moved to it on 2026-10-14; its text is also carried over in §3.6).
 
 ## 1. Symptom (2026-10-14, measured)
 
