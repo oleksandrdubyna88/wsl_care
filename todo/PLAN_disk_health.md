@@ -1124,6 +1124,11 @@ run under heavier load lost 27 cases the same way, all time limits); Linux, a NE
 (2714 passed, 39 skipped), CLI 410 (391, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the goldens themselves
 were written in `/tmp/wc-e15s5-round2-linux-20261012T202048Z` (its suites: one `StatusFlows` time budget, 3.10 s for 3 s at a
 load average of 35); the extension 1251 (1250 passed, 1 skipped); lint, format, plan-lifecycle and the rules check clean.
+Rebased again onto `origin/main` 0d9be6a3 (WR-D2, the disk-hygiene plan; no status, threshold or contract file changed) and
+re-run in full, 0 failed everywhere: Windows — Core 2783 (2702 passed, 81 skipped), CLI 424 (422, 2 skipped), Scenarios 621 (335
+passed, 286 skipped); Linux, a NEW folder `/tmp/testsToDelete-wc-e15s5-20261014T205832Z` — goldens unchanged, Core 2783 (2714, 69
+skipped), CLI 424 (394, 30 skipped), Scenarios 621 (613, 8 skipped); the extension 1251 (1250, 1 skipped); lint, format,
+plan-lifecycle and the rules check clean.
 
 **Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
 that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.
