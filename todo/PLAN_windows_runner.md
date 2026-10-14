@@ -1,6 +1,6 @@
 # PLAN — the Windows runner: two per-user scheduled tasks run the staged `wsl-care.exe` under one bounded supervisor
 
-> Status: **in progress, 2026-10-12 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 onward not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
+> Status: **in progress, 2026-10-12 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 built (the archive body of `tasks run archive`: dry → `archive preview`, real → `archive run`, no run lock; *WR-D5 as built* in §14); WR-E1 onward not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
 >
 > Related: [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b (A22 = S7b.3, the Windows stop; S7b.1 the ledger; S2b the watch), [PLAN_windows_care.md](PLAN_windows_care.md) §2 and W-A15 (E11), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) D9 (:3010–3017), [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md), [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a, §4 and its forward note), [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the task-registration precedent), [PLAN_pwsh_engine_windows_time.md](../research/PLAN_pwsh_engine_windows_time.md) (the engine rule, F1/F2), [2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md).
 >
@@ -408,8 +408,8 @@ root kind `taskEnded`); the docs in [module_daemon.md](../research/module_daemon
   seam, so a fake reads the order; the Win32 calls are `Win32JobControl` in `JobSupervisor.Win32.cs`, and THAT file is the job
   scan's only allowed site (`AssemblyMetadata WslCare.JobSeam`). The scan also covers `CreateProcess*` (one name more than §3.3
   lists): a process created through Win32 outside the child runner would otherwise slip past the process-start scan.
-- **`archive` is refused as not built** (exit 2, `TaskWorkers.ArchiveNotBuilt`, before any job or process exists) — WR-D5 adds its
-  body to the closed table. Its deadline key (`timer.runLimitMinutes`) is already `TaskWorkers.DeadlineKey`.
+- **`archive` is refused as not built** (exit 2, `TaskWorkers.ArchiveNotBuilt`, before any job or process exists) — *superseded by WR-D5:
+  the archive body is in the closed table now.* Its deadline key (`timer.runLimitMinutes`) is already `TaskWorkers.DeadlineKey`.
 - **`--json` passes through**: the table gives `watch --timer`, plus `--json` when the supervisor got it (the task's action always
   passes it) — still a closed table of two shapes; a person running `tasks run watch` by hand reads text.
 - **The other exits**: a supervisor that could not start the worker inside a job (no job, no process, a standard handle that could
@@ -644,3 +644,29 @@ in [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b.3. Dec
 - *Rejected, out of this story*: A22's dispatch after the hook (finding 8 — S7b.3's), per-OS seams out of `WatchContext` (finding 0),
   the sweep as its own pipeline step (finding 1), the lock's name by `Path.Combine` (finding 2 — the separator is deliberate), a
   progress line on stderr (finding 10 — an unattended task).
+
+**WR-D5 as built (2026-10-14).** `Core/Scheduler/ArchiveBody.cs` (new), `Core/Scheduler/TaskWorkers.cs` (the archive entry of the
+closed table), `Cli/Commands/TasksCommand.Run.cs` (the dry note), `Cli/Commands/ArchiveCommand.cs` (`SayWouldMove`), the usage text of
+`tasks run`; tests `Cli.Tests/TasksRunArchiveBodyTests` (4, the plan's §6 names), `Core.Tests/Scheduler/TaskWorkersTests` (the table),
+`Scenarios/WindowsTasksRunFlows` (the old "archive starts nothing" case replaced by a dry and a real flow); docs in
+[module_daemon.md](../research/module_daemon.md) § *The Windows runner's archive body* and [module_tests.md](../research/module_tests.md).
+Decisions the plan did not spell out:
+
+- **The dry decision is taken in the SUPERVISING process**, before the worker's argv is chosen (the plan text: "`tasks run archive`
+  runs `DryRunWindow.Decide` … while dry → `<self> archive preview --json`"). WR-D4's watch decides inside its worker because its argv
+  does not depend on it; the archive's does. `TaskWorkers.For` takes a `Func<ArchiveBody.Choice>` that ONLY the archive entry calls
+  (`Decide` writes the first-week stamp, so a `watch` task must never ask — `TaskWorkersTests` hands the watch a function that throws).
+- **"The run log records would move N sessions, M bytes"** is ONE stderr line written by the preview worker itself
+  (`archive preview: would move N session(s), M bytes; nothing was moved`), because the supervisor's worker streams are inherited and
+  it cannot read the worker's answer. It is written on the Windows binary's `--json` run only, so the distro's root-run preview child
+  (whose stderr root reads) is untouched; the text form already prints the counts. Enabled agents only. The supervisor adds its own
+  line first: `tasks run archive: a dry run (<reason>): the worker is "archive preview" …`, which also names how the owner ends the window.
+- **No new argv beyond the two verbs**: `archive preview --json` / `archive run --json`, no `--budget-seconds` (the run's own default
+  `archive.runBudgetMinutes` applies and `timer.runLimitMinutes` is the supervisor's deadline, as the plan's closed table already had).
+- **The lease, not the lock, is what the plan names for "a second archive"**: `archive run` takes the side's lock FIRST (a second
+  concurrent run answers `busy`, exit 75, before any base I/O) and the lease after; the test plants a live lease (this test process, as
+  the product writes it) so the refusal is the lease's, naming host, pid and run. Which of the two stops a real second run is a matter
+  of timing; both are refusals and neither is the run lock.
+- **`dryRun` is turned off in the machine layer in tests** (`SafeDirection.On`: a user layer may only turn it on).
+- **Break-its** (product code, sandbox only), each red then restored byte for byte (`cmp`): the dry branch made to run `archive run`;
+  the archive task made to take the run lock; the lease refusal's holder text dropped.

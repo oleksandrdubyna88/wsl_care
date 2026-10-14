@@ -534,11 +534,12 @@ sequenceDiagram
 ```
 
 - **The verb** (`Cli/Commands/TasksCommand.Run.cs`, `CommandLine.cs`: `tasks run <task> [--json]`, exactly one task of
-  `WindowsTask.All` and optionally `--json`, nothing else). The distro's binary refuses it (2). `archive` is refused (2) as not
-  built: its body (dry → `archive preview`, real → `archive run`, §3.5) is WR-D5's. A host whose own path is not absolute starts
+  `WindowsTask.All` and optionally `--json`, nothing else). The distro's binary refuses it (2). `archive` runs the archive body
+  (below). A host whose own path is not absolute starts
   nothing (2). A configuration in error is NOT refused here: the worker reads the same layers and answers for itself.
 - **The closed table** (`Core/Scheduler/TaskWorkers.cs`): `watch` → `<self> watch --timer` (+ `--json` when the supervisor got
-  it; the task's action always passes it), deadline `mcpWatchdog.runLimitMinutes` (10). Each entry holds the task, its arguments
+  it; the task's action always passes it), deadline `mcpWatchdog.runLimitMinutes` (10); `archive` → the archive body's choice (`<self> archive preview` while the dry window is
+  open, `<self> archive run` once it is not, + `--json`), deadline `timer.runLimitMinutes`. Each entry holds the task, its arguments
   and its deadline KEY together; the launch carries both the duration and `DeadlineKey` from that one entry, so no line can name
   another key. The supervisor spells `--timer`; the extension never does. `WorkerLaunch`'s constructor is internal, so the product
   builds a launch only here.
@@ -640,6 +641,36 @@ flowchart TD
   ledger (`WindowsCpuLedger.None`): it answers from the window and records nothing, its `cpuBaseline.reason` naming the held lock
   — so no write ever replaces a sample it did not read. A lost sample only makes the next interval longer. An elevated `status`
   (it writes nothing) takes no lock. There is one ledger; the lock file stays on disk, empty, like the run lock's.
+
+## The Windows runner's archive body (WR-D5 of PLAN_windows_runner.md, 2026-10-14)
+
+`tasks run archive` supervises the archive body (`Core/Scheduler/ArchiveBody.cs`, §3.5). The dry-run decision is taken in the
+SUPERVISING process, before the worker's argv is chosen; the worker is one of the archive's two existing verbs.
+
+```mermaid
+flowchart TD
+    run["tasks run archive --json"] --> sweep["staging sweep (run lock, never waited on, released)"]
+    sweep --> decide{"DryRunWindow.Decide(Timer, Windows paths)<br/>dryRun on, or the first week not over?"}
+    decide -- dry --> note["stderr: a dry run (reason) ..."]
+    note --> preview["worker: self archive preview --json<br/>(read-only; stderr: would move N session(s), M bytes)"]
+    decide -- real --> arun["worker: self archive run --json<br/>(side lock + SideLease inside; no run lock)"]
+    preview --> job["same kill-on-close job, deadline timer.runLimitMinutes"]
+    arun --> job
+```
+
+- **Where the decision lives**: in `TasksCommand.Run` through `ArchiveBody.Choose` (a `Lazy`, asked ONLY by the archive entry of the
+  closed table — taking the decision writes `first-timer-run.json`, so a `watch` task never starts the archive's week). WR-D4's
+  watch decides inside its worker; the archive's argv depends on the decision, so here it is the supervisor's. The stamp is the
+  Windows one, under `%LOCALAPPDATA%\wsl-care`.
+- **The closed table** stays two shapes of argv per task: `archive preview` / `archive run` (+ `--json`), never free text. The
+  run uses `archive run`'s own default budget (`archive.runBudgetMinutes`), inside the deadline `timer.runLimitMinutes`.
+- **The run log**: a dry run says `tasks run archive: a dry run (<reason>): the worker is "archive preview" ...` (supervisor) and the
+  preview worker says `archive preview: would move N session(s), M bytes; nothing was moved` on stderr — on the Windows binary's
+  `--json` run only (`ArchiveCommand.SayWouldMove`; the distro's root reads its child's stderr as before). Enabled agents only.
+- **No run lock, no lock across a wait**: the body takes none; `archive run` takes the side's lock and the side lease itself. A
+  watch sample is never suppressed by a long archive (the test holds the run lock for the whole run, and probes it free while the
+  worker runs). A second archive is refused by the lease, which names its holder (`another archive run holds the side (host …, pid
+  …, run …, since …)`); the worker's `refused` answer is exit 1, which the supervisor passes through.
 
 ## Story history (moved from architecture.md, 2026-10-12)
 

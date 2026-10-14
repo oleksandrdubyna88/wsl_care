@@ -13,8 +13,8 @@ namespace WslCare.Scenarios;
 /// supervises — it creates its OWN built binary suspended inside a kill-on-close job as <c>watch --timer --json</c>, resumes it there
 /// and waits. Since WR-D4 that worker is the Windows watch: inside the SAME <see cref="ScenarioHome"/> sandbox (the worker inherits
 /// <c>WSL_CARE_ROOT</c>) it samples into the sandboxed ledger, writes no history line, and its answer is the supervisor's stdout (WR-D3
-/// review n4: this flow never starts a watch outside the sandbox). <c>tasks run archive</c> is refused as not built (WR-D5) before
-/// anything is started. On the distro's binary the verb is refused with exit 2.
+/// review n4: this flow never starts a watch outside the sandbox). <c>tasks run archive</c> (WR-D5) supervises the archive body: the dry window previews, a real one runs
+/// <c>archive run</c>, both inside the same sandbox. On the distro's binary the verb is refused with exit 2.
 /// </summary>
 public sealed class WindowsTasksRunFlows
 {
@@ -62,17 +62,75 @@ public sealed class WindowsTasksRunFlows
         File.Exists(Core.Records.RunHistory.File(home.Paths)).Should().BeFalse();
     }
 
+    /// <summary>WR-D5 over the BUILT CLI: <c>tasks run archive --json</c> with the dry-run window open (the default) supervises the
+    /// binary's own <c>archive preview --json</c> inside the sandbox — a due session in the sandbox's home stays where it is, the base
+    /// stays empty, the run log says what a real run would move, and the first-week stamp lands in the sandbox. An ELEVATED runner (CI)
+    /// has its worker refuse itself with 81, which the supervisor passes through.</summary>
     [Fact]
-    public async Task The_built_binary_refuses_the_archive_task_as_not_built_and_starts_nothing()
+    public async Task The_built_binary_supervises_a_dry_archive_which_previews_and_moves_nothing()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "the Windows binary's verb: the Windows legs");
-        using var home = new ScenarioHome("tasks-run-archive");
+        WindowsWatchFlows.OnWindowsAsTheTestExecutable();
+        using var home = new ScenarioHome("tasks-run-archive-dry");
+        var (session, baseFolder) = ADueSession(home);
 
         var result = await home.RunAsync("tasks", "run", "archive", "--json");
 
-        result.Exit.Should().Be((int)ExitCode.Usage);
-        result.Stdout.Should().BeEmpty();
-        result.Stderr.Should().Contain("not built in this version").And.NotContain("starting", "no worker was started");
+        result.Stderr.Should().Contain("tasks run archive: a dry run").And.Contain("starting").And.Contain("archive preview --json");
+        File.Exists(Core.Actions.Engine.DryRunWindow.File(home.Paths)).Should().BeTrue("the first task run starts the dry-run week, inside the sandbox");
+        File.ReadAllText(session).Should().Be("the transcript", "a dry body moves nothing");
+        Directory.GetFileSystemEntries(baseFolder).Should().BeEmpty("a preview writes nothing to the base");
+        if (Environment.IsPrivilegedProcess)
+        {
+            result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
+            result.Stderr.Should().Contain("tasks run archive: the worker exited 81");
+            return;
+        }
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        result.Stderr.Should().Contain("tasks run archive: the worker exited 0").And.Contain("would move 1 session(s), 14 bytes");
+        var preview = JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.ArchivePreviewReport)!;
+        preview.Agents.Single(a => a.Id == "claude-code").DueUnits.Should().Be(1);
+    }
+
+    /// <summary>The same with the window closed (the machine layer says <c>dryRun</c> false and the week's stamp is eight days old,
+    /// both in the sandbox): the worker is <c>archive run --json</c>, whose answer is the last line of stdout.</summary>
+    [Fact]
+    public async Task The_built_binary_supervises_a_real_archive_which_runs_archive_run()
+    {
+        WindowsWatchFlows.OnWindowsAsTheTestExecutable();
+        using var home = new ScenarioHome("tasks-run-archive-real");
+        _ = ADueSession(home);
+        Directory.CreateDirectory(Path.GetDirectoryName(home.Paths.MachineConfigFile)!);
+        File.WriteAllText(home.Paths.MachineConfigFile, """{ "dryRun": false }""");
+        Directory.CreateDirectory(home.Paths.StateDirectory);
+        File.WriteAllBytes(Core.Actions.Engine.DryRunWindow.File(home.Paths), JsonSerializer.SerializeToUtf8Bytes(new Core.Actions.Engine.FirstTimerRun(Core.SchemaVersion.Current, DateTimeOffset.UtcNow.AddDays(-8)), WslCareJsonContext.Default.FirstTimerRun));
+
+        var result = await home.RunAsync("tasks", "run", "archive", "--json");
+
+        result.Stderr.Should().Contain("starting").And.Contain("archive run --json").And.NotContain("a dry run");
+        if (Environment.IsPrivilegedProcess)
+        {
+            result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
+            return;
+        }
+
+        var answer = result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last();
+        var report = JsonSerializer.Deserialize(answer, WslCareJsonContext.Default.ArchiveRunReport)!;
+        report.Outcome.Should().NotBeEmpty();
+        result.Stderr.Should().Contain("tasks run archive: the worker exited");
+    }
+
+    /// <summary>A Claude Code session in the sandbox's home, forty days old, and an archive base in the sandbox.</summary>
+    private static (string Session, string BaseFolder) ADueSession(ScenarioHome home)
+    {
+        var session = Path.Combine(home.Paths.Home, ".claude", "projects", "p", "s1.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(session)!);
+        File.WriteAllText(session, "the transcript");
+        File.SetLastWriteTimeUtc(session, DateTime.UtcNow.AddDays(-40));
+        var baseFolder = Directory.CreateDirectory(Path.Combine(home.SandboxRoot, "archive-base")).FullName;
+        Directory.CreateDirectory(Path.GetDirectoryName(home.Paths.UserConfigFile)!);
+        File.WriteAllText(home.Paths.UserConfigFile, new System.Text.Json.Nodes.JsonObject { ["archive"] = new System.Text.Json.Nodes.JsonObject { ["baseFolder"] = baseFolder } }.ToJsonString());
+        return (session, baseFolder);
     }
 
     [Fact]
