@@ -162,7 +162,8 @@ write is older than the idle cut too; and — A24 only — **git confirms it**:
   submodule is asked of the submodule's own repository) must list NOTHING — a tracked file inside retains the whole
   candidate ("holds tracked files");
 - `git check-ignore -z --stdin` must name the candidate as ignored — an untracked, non-ignored build folder is retained
-  ("not ignored by git").
+  ("not ignored by git"). Each candidate is passed WITH a trailing `/`, because a directory-only pattern (`bin/`) matches
+  a path spelt as a directory; a RED test pins the spelling.
 - Run read-only: `--no-optional-locks`, `-c core.fsmonitor=false` (a repository's own config can name a program as its
   fsmonitor, which `git` would start), environment `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, a clean environment
   (`CommandEnvironment`), the timeout `worktrees.gitTimeoutSeconds` (30), stdin closed, exit 0 REQUIRED (an empty answer
