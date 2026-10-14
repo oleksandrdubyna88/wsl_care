@@ -120,7 +120,10 @@ extension opens VS Code's own folder picker (`showOpenDialog`, folders only, man
 staged exe's dedicated verb `worktrees roots set` ON STDIN (the `--entry -` pattern A20 uses, `contracts/requests/`), which
 validates each by the rules below and writes the key through the daemon's own configuration writer — so the extension
 still never writes daemon config and never spells `config` (PLAN_windows_runner.md §4), and no path travels on argv.
-`worktrees roots clear` empties it. A refused path comes back with its reason and nothing is written. With no root, the
+`worktrees roots clear` empties it. The verb is all-or-nothing: if any path is refused, nothing is written and EVERY path
+comes back with its own verdict (accepted / refused + reason). The panel then shows that list (coai plan round 2,
+finding 3) with two buttons — *Save the N accepted folders* (the verb again with just those) and *Choose again* — so one
+mistaken pick never costs the others and never leaves a half-written key. With no root, the
 sidebar and the full view say "not configured" with the *Choose folders…* button beside it. `wsl-care.exe config set
 worktrees.roots …` stays as the CLI duplicate. A root is refused, with its reason, when it is: not absolute; not on a local FIXED drive (the
 `[IO.DriveInfo]` rule of E15.S1, `research/module_daemon.md:315-317`); a drive root; a reparse point or under one; the user
@@ -166,7 +169,20 @@ with the admin-files-only signal over the owner's tree; if the cheap signal agre
   another) — the one-off took any `node_modules`; this rule is narrower on purpose;
 - never `.git` (folder or file), never anything under one; never a reparse point, never anything under one;
 - a candidate that holds a `.git` (folder or file) ANYWHERE inside it — a nested repository — is retained WHOLE, not merely
-  "not entered" (own review). RED: `A_bin_holding_a_nested_repository_is_retained_whole`.
+  "not entered" (own review). RED: `A_bin_holding_a_nested_repository_is_retained_whole`;
+- **a `bin`/`obj` candidate is deleted only when EVERY file inside it is a build artifact** (coai plan round 2, findings 0
+  and 2): git's "ignored" says the folder is not source, not that nothing in it is valuable — a SQLite file an app created
+  in its output folder, a hand-placed `.env` or tool, would go with it. The walk that sizes the candidate also classifies
+  each file against `worktrees.buildArtifactPatterns` (a closed default list, MachineOnly: `*.dll`, `*.exe`, `*.pdb`,
+  `*.xml`, `*.json`, `*.cache`, `*.props`, `*.targets`, `*.editorconfig`, `*.so`, `*.dylib`, `*.a`, `*.lib`, `*.obj`,
+  `*.wasm`, `*.js`, `*.mjs`, `*.map`, `*.txt`, `*.nupkg`, `*.snupkg`, `*.resources`, `*.runtimeconfig.*`, `*.deps.*`,
+  `*.assets.*`, `*.AssemblyInfo*.cs`, `*.GlobalUsings*.cs`, `*.g.cs`, `*.baml`, `*.ilk`, `*.exp`, `*.res`, `*.tlog`,
+  `*.lastbuildstate`, `*.stamp`, `*.sourcelink.json` — the exact list is fixed by M6 against the owner's tree); ONE file
+  outside it retains the whole candidate, named in the preview ("holds a file that is not a build artifact: local.db").
+  `node_modules` is exempt from the content check — its contents are packages that `package.json` and the lockfile
+  restore, and that is the owner's rule. The same check applies to A24Orphans, so an orphan's `bin` with a database in it
+  stays even where git cannot be asked. RED: `A_bin_holding_a_sqlite_file_is_retained_and_names_it`,
+  `A_bin_of_only_build_artifacts_is_a_candidate`, `An_orphans_bin_holding_an_env_file_is_retained`.
 
 **The walk.** `TreeWalk` (`Files/TreeWalk.cs:105-110`: `RecurseSubdirectories`, `IgnoreInaccessible`,
 `AttributesToSkip = ReparsePoint`) through `IFileSystem.WalkTree` with `TreeRules.NeverEnter` for `.git`. **`IgnoreInaccessible`
@@ -191,7 +207,7 @@ ageSeconds}` and one verdict, **`worktrees.reclaimable`**.
 
 **"Reclaimable" means only what a cleanup would actually be allowed to delete** (the owner, 2026-10-14) — never a
 worktree's whole size, never all build output: the bytes of the candidates that pass EVERY selection check of §3.4 at scan
-time — idle, unlocked (or `cleanLocked`), the candidate's own age, no nested repository, no foreign reparse tag, and git's
+time — idle, unlocked (or `cleanLocked`), the candidate's own age, no nested repository, no foreign reparse tag, only build artifacts inside a `bin`/`obj`, and git's
 confirmation (tracked / ignored) — reported as two parts, `a24` (worktrees) and `a24Orphans` (orphans, with how many were
 ignore-confirmed). Everything else is counted under its own name (`retained{reason, count, bytes}`: locked, recent, tracked,
 not ignored, unknown …), so the owner sees why the rest stays. The verdict warns when `a24 + a24Orphans` exceeds
@@ -439,12 +455,12 @@ only that way), `MachineOnly` (the user layer cannot set it at all), `Off` (an `
 | `testLeftovers.minAgeMinutes` | 60 | 60–10080 | Higher | the rule's hour is the FLOOR: it may only grow |
 | `testLeftovers.stopRunningOlderThanHours` | 24 | 2–720 | Higher | |
 | `testLeftovers.stopSeconds` | 10 | 1–120 | Display | |
-| `testLeftovers.runnerPatterns` | §3.6's list | closed token shapes, ≤ 32 | Superset (the user layer may only ADD patterns) | fewer patterns would loosen the in-flight check |
+| `testLeftovers.runnerPatterns` | §3.6's list | closed token shapes, ≤ 32 | **MachineOnly** (coai plan round 2, finding 4: no new trust kind) | fewer patterns would loosen the in-flight check |
+| `worktrees.buildArtifactPatterns` | the M6-fixed list of §3.3 | closed glob shapes, ≤ 128 | **MachineOnly** | a wider list loosens what is deleted |
 | `auto.A24`, `auto.A24Orphans`, `auto.A25`, `auto.A26` | false | — | Off | nothing is deleted without the owner's choice |
 
 Every key: `ConfigKeys.*.cs`, `default.json`, the regenerated `contracts/config-keys.json`, a row in
-`NumbersAreConfigurationTests`, a README sentence. A trust a direction cannot express (Superset) is added to `KeyTrust` in
-DH-6 with its test, or the key becomes MachineOnly — the story decides and says so.
+`NumbersAreConfigurationTests`, a README sentence. No new `KeyTrust` kind is needed: every key here uses one that exists.
 
 ## 4. Never
 
@@ -520,6 +536,9 @@ prefix (the rule leaves them to their own repositories), and every other W-A act
 - **M3** — dropped with the `$(Arg0)` route (§3.5: one task per operation).
 - **M4** — a captured, redacted `docker ps -a` + `inspect` of a real compose project (labels present in both), and of a running Ryuk container (its labels and image, for §3.6's live-session signal).
 - **M5** — the E: volume's size (the keyboard's USB volume, D1), for `disk.volumeFreeMinSizeGib`.
+- **M6** — every file extension found inside `bin`/`obj` candidates on the owner's roots, counted, to fix
+  `worktrees.buildArtifactPatterns` so that a real build's output is fully covered and nothing else is; the extensions
+  outside the list are reviewed by name before the default is written.
 
 Each lands in `research/2026-10-1x_disk_hygiene.md` with its conditions, in the story that needs it.
 
@@ -639,7 +658,7 @@ override dropped; `cleanLocked` ignored; the re-validation removed; the checkpoi
 removed; the `WorktreeRoot` deny-by-default removed; the read-only attribute cleared instead of the disposition flag; a
 non-junction reparse tag removed as a link; the `/mnt/` translation removed (a WSL worktree reads orphan); check-ignore
 judged by the exit code; `GIT_CEILING_DIRECTORIES` dropped; the runner match on `Programs`; any running Testcontainers
-container blocking; the per-batch re-judgement removed; the heartbeat's stale cut removed; the anchored match replaced by `Contains`; `-f` added to a removal; the in-flight re-check before removal removed;
+container blocking; the per-batch re-judgement removed; the heartbeat's stale cut removed; the artifact-content check removed (a `bin` holding `local.db` deleted); the anchored match replaced by `Contains`; `-f` added to a removal; the in-flight re-check before removal removed;
 an `unknown` signal read as clear; the `claude` guard removed.
 
 ## 12. Questions
@@ -689,6 +708,17 @@ task with a daily trigger (§3.3); a key table with trust directions (§3.9); WR
 ends "running" (§3.5); verdict precedence and the bar's per-id rule (§3.2); nested roots refused; the side text widened;
 citations corrected. The `$(Arg0)` finding the gate raised and this plan rejected is moot now: the route is gone.
 
+Round 2 (branch `docs/plan-disk-hygiene-windows-r2`, the owner's answers and the own review in), two reviewers: verdict
+**proceed** (4 gating against 6). Accepted: a `bin`/`obj` is deleted only when every file in it is a build artifact
+(findings 0 and 2 — an app's SQLite file or a hand-placed `.env` in an output folder; `worktrees.buildArtifactPatterns`,
+M6, §3.3); `worktrees roots set` returns a verdict per path and the panel offers to save the accepted ones (finding 3);
+`testLeftovers.runnerPatterns` is MachineOnly, no new trust kind (finding 4). Rejected: finding 1, "`check-ignore
+--no-index` cannot take `--git-dir` and skips the repository's ignore rules" — `--no-index` only stops git from consulting
+the INDEX (so a tracked path is still judged by the patterns); `.gitignore` files in the work tree and `<common>/info/exclude`
+are still read, and `--git-dir`/`--work-tree` are global options that apply to it as to any command. DH-4's RED test
+`An_orphan_with_its_repository_still_there_is_ignore_confirmed` runs that exact argv against a real throw-away repository
+in a `testsToDelete-` folder, so a wrong flag is caught before anything ships.
+
 **A recording error, named:** the `resolve` call swapped two indices — the gate's record shows finding 4 (check-ignore)
 accepted and finding 5 (the idle budget) rejected, the reverse of the decisions above. The session had already moved to
 its code stage, so the record could not be corrected; this paragraph and the text of §3.3 are the decisions as made.
@@ -708,7 +738,7 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 - [ ] DH-6/DH-7: the sweep refuses while any signal reads `inFlight` or `unknown`, never touches anything younger than an
       hour, and the preview shows how it decided.
 - [ ] DH-8: this repo's test temp folders carry `testsToDelete-`.
-- [ ] M1, M2, M4, M5 recorded in `research/` with their conditions before the defaults they set.
+- [ ] M1, M2, M4, M5, M6 recorded in `research/` with their conditions before the defaults they set.
 - [ ] Every key of §3.9 has its default, range and trust in `contracts/config-keys.json` and a `NumbersAreConfigurationTests` row.
 - [ ] Docs: `module_daemon.md`, `module_vs_code.md`, `module_tests.md`, `architecture.md`, README, POST_DEPLOY; both sides of
       every boundary in §6 written; `node .agents/conventions/tools/plan-lifecycle.mjs` clean.
