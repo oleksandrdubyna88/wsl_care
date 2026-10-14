@@ -117,6 +117,12 @@ public sealed partial class ArchitectureTests
         // WR-D1 (PLAN_windows_runner.md §3.7): stage.json beside a staged copy, under %LOCALAPPDATA%\wsl-care\bin — the unelevated
         // Windows binary's own file, read capped (records.maxStateFileBytes).
         ["WslCare.Core/Scheduler/StageRecord.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
+        // WR-D2 (§3.2, §3.10): the sweep lists the names of the staging root — the unelevated Windows binary's own folder; a link
+        // is named, never followed, and only a digest-named FOLDER is acted on.
+        ["WslCare.Core/Scheduler/Staging.Sweep.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
+        // WR-D2 review M1: the stage reads the staging root's names to see what is at the digest name (a folder, a link — never
+        // followed —, a file, another case) before it acts on it.
+        ["WslCare.Core/Scheduler/Staging.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/InUse.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ListEntries"] = (1, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Archive/Selection.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/GitTrees.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },

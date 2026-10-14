@@ -9,7 +9,12 @@ namespace WslCare.Core.Scheduler;
 /// <param name="Digest">The digest its folder names; empty when the path is not a staged copy's.</param>
 /// <param name="Version">The version its <c>stage.json</c> names; empty when there is none to read.</param>
 /// <param name="Reason">One sentence: what was checked, or the first check that failed.</param>
-public sealed record StagedCheck(bool Registrable, string Digest, string Version, string Reason);
+public sealed record StagedCheck(bool Registrable, string Digest, string Version, string Reason)
+{
+    /// <summary>When its <c>stage.json</c> says the copy was staged; <see cref="DateTimeOffset.MinValue"/> when there is none to read
+    /// (WR-D2's keep rule chooses the newest copy by it, so a sweep reads each <c>stage.json</c> once).</summary>
+    public DateTimeOffset StagedAtUtc { get; init; } = DateTimeOffset.MinValue;
+}
 
 /// <summary>
 /// The staged copies of the Windows binary (PLAN_windows_runner.md §3.2, §3.7): <c>&lt;stagingRoot&gt;\&lt;64-hex digest&gt;\wsl-care.exe</c>
@@ -46,6 +51,14 @@ public static class StagedCopies
             : Verified(new Copy(stagingRoot, processPath, digest), ReleaseOf(ownVersion), files, archive, maxStageBytes);
     }
 
+    /// <summary>Whether the folder <paramref name="digest"/> under <paramref name="stagingRoot"/> holds a verified copy of ANY release
+    /// (WR-D2's keep rule: an older copy a registered task may still name) — the same checks as <see cref="Check"/> but the release.</summary>
+    public static StagedCheck Verify(string stagingRoot, string digest, IFileSystem files, IArchiveFiles archive, int maxStageBytes) =>
+        Verified(new Copy(stagingRoot, PathRules.Windows.Join(stagingRoot, digest, ExeName), digest), AnyRelease, files, archive, maxStageBytes);
+
+    /// <summary>The release <see cref="Verify"/> passes: no release is asked of <c>stage.json</c>.</summary>
+    private const string AnyRelease = "";
+
     /// <summary>A path already known to be <c>&lt;root&gt;\&lt;digest&gt;\wsl-care.exe</c>.</summary>
     private sealed record Copy(string Root, string Path, string Digest);
 
@@ -55,7 +68,8 @@ public static class StagedCopies
         var read = StageRecords.Read(files, PathRules.Windows.Join(copy.Root, copy.Digest, StageRecord.FileName), maxStageBytes);
         var version = read is StageRead.Found found ? found.Record.Version : string.Empty;
         var problem = RecordProblem(read, copy.Digest, release) is { Length: > 0 } bad ? bad : HashProblem(archive, copy);
-        return problem.Length > 0 ? new StagedCheck(false, copy.Digest, version, problem) : VerifiedCopy(copy.Path, copy.Digest, version);
+        var check = problem.Length > 0 ? new StagedCheck(false, copy.Digest, version, problem) : VerifiedCopy(copy.Path, copy.Digest, version);
+        return read is StageRead.Found { Record.StagedAtUtc: var at } ? check with { StagedAtUtc = at } : check;
     }
 
     /// <summary>The answer for a copy every check passed — one sentence, built here only (the render's golden builds its registrable
@@ -64,8 +78,9 @@ public static class StagedCopies
         new(true, digest, version, $"a verified staged copy: {path} hashes to its folder's digest and {StageRecord.FileName} names it and release {version}");
 
     /// <summary>The digest folder <paramref name="processPath"/> sits in when it is exactly <c>&lt;root&gt;\&lt;64-hex&gt;\wsl-care.exe</c>
-    /// (no <c>.</c> or <c>..</c> on the way); empty otherwise.</summary>
-    private static string DigestOf(string stagingRoot, string processPath)
+    /// (no <c>.</c> or <c>..</c> on the way); empty otherwise. Read from the path alone, nothing hashed: the <c>tasks run</c> start
+    /// names the copy it runs from to the sweep this way (the sweep verifies every folder it keeps itself).</summary>
+    public static string DigestOf(string stagingRoot, string processPath)
     {
         var rules = PathRules.Windows;
         if (!rules.IsAbsolute(processPath) || PathSpelling.HasBadSegment(processPath))
@@ -91,7 +106,7 @@ public static class StagedCopies
         StageRead.Missing => $"there is no {StageRecord.FileName} beside the copy (tasks stage writes one)",
         StageRead.Refused refused => refused.Why,
         StageRead.Found { Record.Sha256: var sha } when sha != digest => $"{StageRecord.FileName} names digest {sha}, not its folder's {digest}",
-        StageRead.Found { Record.Version: var version } when version != release => $"{StageRecord.FileName} names release {version}, not this build's {release}",
+        StageRead.Found { Record.Version: var version } when release != AnyRelease && version != release => $"{StageRecord.FileName} names release {version}, not this build's {release}",
         _ => string.Empty,
     };
 

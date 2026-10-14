@@ -78,6 +78,7 @@ flowchart TB
 | `WindowsTask`, `TaskIdentity`, `WindowsTaskDefinition`, `TasksRenderReport` | `Core/Scheduler` | the Windows runner's two tasks (a closed set), who a task runs as and what it starts, the rendered XML with its numbers and summary, the `tasks render --json` answer (section below) |
 | `IWorkerSupervisor`, `JobSupervisor`, `IJobControl` / `Win32JobControl`, `WorkerLaunch`, `WorkerOutcome`, `TaskWorkers` | `Core/Processes`, `Core/Scheduler` | the Windows runner's supervisor (WR-D3): one kill-on-close job per `tasks run`, the worker from a closed table, its deadline on the unbiased clock (section below) |
 | `StageRecord` / `StageRead`, `StagedCheck` | `Core/Scheduler` | `stage.json` beside a staged copy and its strict reader; whether this process is a verified staged copy (`registrable`) |
+| `Staging`, `StagingPlace`, `StagingAccess`, `StageInput`, `StageReport` / `StageRemoveReport`, `StagingFolder`, `StagingSweep` | `Core/Scheduler` | `tasks stage` and `--remove` (WR-D2; section below): the copy made, read back and recorded, the sweep of the other digest folders (also the `tasks run` start's), every copy removed |
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 | `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
 
@@ -130,6 +131,8 @@ has none.
 | the Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) §3.1, the measurement [2026-10-10_disk.md](2026-10-10_disk.md) |
 | the Windows runner's render: `tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek` (WR-D1, 2026-10-11) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2–§3.7 |
 | the Windows runner's supervisor: `tasks run`, the Job Object, exit 84 (WR-D3, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.3 |
+
+| the Windows runner's staged copy: `tasks stage`, `tasks stage --remove`, the sweep (WR-D2, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2, §3.7, §3.10 |
 
 ## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
 
@@ -502,7 +505,7 @@ sequenceDiagram
     participant W as worker (self watch --timer)
     TS->>SV: tasks run watch --json
     SV->>SV: Windows layout? task in the closed table? own path absolute?
-    SV->>SV: [seam] SweepStagingAtRunStart (WR-D2 fills it)
+    SV->>SV: SweepStagingAtRunStart: Staging.Sweep keeps its own copy + the newest verified (run lock, never waited on)
     SV->>JC: CreateJob: KILL_ON_JOB_CLOSE, no breakaway, handle NOT inheritable
     SV-->>TS: stderr: starting (argv), deadline N min (its key)
     SV->>JC: StartSuspended(job, self, "watch --timer --json"): CREATE_SUSPENDED | CREATE_NO_WINDOW, JOB_LIST = the job, HANDLE_LIST = the 3 std handles
@@ -868,3 +871,98 @@ the gating workflows DERIVED (every workflow a `pull_request` / `pull_request_ta
 non-gating ones, `sonarcloud.yml` and `coderabbit-review.yml`), every workflow declaring `permissions:` at the top or on
 every job (a workflow without one would pass the per-job checks vacuously), and every pull-request leg packing the
 archive and opening its path outside bash (E4 review B2, B5, B6).
+
+## The Windows runner's staged copy (WR-D2 of PLAN_windows_runner.md, 2026-10-12)
+
+The second story of [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md): the copy a task runs. The extension runs
+`tasks stage` on the BUNDLED exe (a short run, no child); it copies its own file into the staging root and sweeps the older
+copies. `tasks stage --remove` is the *Remove* button's last step. Nothing is registered here (WR-E3 does).
+
+```mermaid
+flowchart TB
+    argv["wsl-care.exe tasks stage [--remove] [--json]"] --> win{"Windows layout?"}
+    win -- "distro's binary" --> u2["exit 2"]
+    win -- "Windows" --> lock{"run lock free?<br/>(never waited on)"}
+    lock -- held --> busy["busy; nothing done; exit 75"]
+    lock -- "--remove" --> rm["Staging.Remove: every digest folder,<br/>then the root when empty (non-recursive)"]
+    lock -- stage --> src["hash the own exe<br/>(IArchiveFiles.OpenSource: no link, one link, this account)"]
+    src --> exists{"bin\\&lt;digest&gt; by ordinal name?"}
+    exists -- "a link, a file, another case" --> refused["refused, named; never followed, never replaced; exit 1"]
+    exists -- "a folder, verifies (StagedCopies.Check)" --> reused["reused: nothing written"]
+    exists -- "a folder, does not verify" --> inuse{"its exe in use?"}
+    inuse -- yes --> refused
+    inuse -- "no: removed whole (policy)" --> make
+    exists -- free --> make["OpenFolderBeneath (held) →<br/>CreateExclusive wsl-care.exe → copy, flush"]
+    make -- "name taken meanwhile, verifies" --> reused
+    make -- "name taken meanwhile, does not verify" --> refused
+    make --> back{"ReadBack hash = digest?"}
+    back -- no --> undo["RemoveOwnCopy + RemoveEmptyFolder;<br/>no stage.json; exit 1"]
+    back -- yes --> rec["stage.json written atomically"]
+    rec --> sweep["sweep the UNVERIFIED &lt;digest&gt; folders;<br/>every verified copy stays (retained)"]
+    reused --> sweep
+    sweep --> out["JSON (StageReport) or text; exit 0"]
+    rm --> out2["JSON (StageRemoveReport) or text; exit 0"]
+    run["tasks run start (WR-D3/D4):<br/>Staging.Sweep(access, ownDigest)"] --> keep["keeps own + the newest verified<br/>(a future stamp counts as now);<br/>retires the older verified copies"]
+```
+
+- **The verb** (`Cli/Commands/TasksCommand.cs`, `CommandLine.cs`: `tasks stage [--remove] [--json]`, each switch once, any
+  order). The distro's binary refuses it with exit 2, as it refuses `tasks render`. A configuration layer in error does NOT refuse
+  it: nothing is rendered from the configuration (only `records.maxStateFileBytes` caps the `stage.json` read), and *Remove* must
+  still clear the copies. Exit 0 for staged, reused and every removal (a kept copy is named, not an error); exit 1 (`RunFailed`,
+  its doc widened) when no verified copy was staged; exit 75 (`Busy`) when another run holds THE run lock — the stage, the removal
+  and the run-start sweep take it without waiting (`StagingPlace.RunLockFile`), so two stages of one digest are serialised.
+- **The source** is `CliHost.ProcessPath` (`Environment.ProcessPath`, wired only in `CliHost.ForThisMachine`; a test hands a
+  sandbox file). It is opened through the archive's no-link open and hashed first: the digest names the folder.
+- **The copy** (`Core/Scheduler/Staging.cs`) uses only the archive's file seam (`IArchiveFiles`): the digest folder opened (made
+  when missing) and HELD under the staging root (`OpenFolderBeneath`), `wsl-care.exe` made by the exclusive no-replace create
+  (`CreateExclusive`), the bytes streamed from a second no-link open and flushed to the disk, the folder flushed (a failed flush
+  refuses the stage: a name that may not survive a crash is never recorded), the copy read back past the cache (`ReadBack`) and
+  compared with the digest. Any failure removes THIS stage's own copy by its identity (`RemoveOwnCopy`) and its new folder only
+  when empty (`RemoveEmptyFolder`, never recursive) — no `stage.json`, nothing swept; the refusal says how that removal went ("the
+  copy was removed", or "could NOT be removed (…): it stays at <exe>", which the next stage replaces as unverified).
+  Then `stage.json` (`{ version: the release, sha256, stagedAtUtc, source }`) is written with `IFileSystem.WriteFileAtomically`.
+  Every create and write is judged by the deletion policy inside the staging root (action `tasks-stage`).
+- **What is at the digest name** (by its ORDINAL name in the root's listing): a real folder is judged as an existing copy; a LINK
+  (a junction) is refused, never followed and never replaced — a junction to a sibling would otherwise lead the replace to delete
+  that sibling's exe; a file is refused as in the way; the same name in another case is refused (NTFS folds case, the sweep does
+  not); a free name is staged.
+- **Never over an existing folder in place**: an existing digest FOLDER is checked with the render's own `StagedCopies.Check`. It is
+  reused when it verifies (nothing is written, its `stagedAtUtc` stays). When it does not verify (an interrupted stage: a half
+  copy, a missing or disagreeing `stage.json`) it is removed WHOLE through the deletion policy — the sweep's exe-first removal —
+  and staged fresh, so a retry recovers by itself; when its exe is in use it is refused and named. Nothing is ever written into an
+  existing folder. The exclusive create is the second guard: a name taken between the classification and the create is judged as
+  an existing folder, reused only when it verifies, never replaced.
+- **The keep rule**: only a VERIFIED folder (`StagedCopies.Verify`: the render's checks without the release; `StagedCheck` carries
+  `StagedAtUtc`) is ever protected; an unverified one never is, even one named with the running digest; `--remove` keeps nothing.
+  `tasks stage` keeps EVERY verified folder and sweeps the unverified ones only — it cannot know which copy the registered tasks
+  name (one declined registration, a skewed clock), and a verified folder is never that cost. The `tasks run` start sweep —
+  `Staging.Sweep(StagingAccess, ownDigest)`, public for WR-D3/D4 — runs FROM the registered copy and keeps {own, the newest verified}:
+  from the new copy it retires the older verified copies; from an old copy whose re-registration failed it keeps the new one. The
+  newest is chosen with a clamp: a future `stagedAtUtc` counts as now and loses a tie to a genuine stamp. The folders kept by the
+  rule besides the sweeper's own are answered as `retained`. So the staging bound (plan §3.10) rests on runs happening.
+- **What each sweep hashes** (the coai code round on WR-D2, finding 2): the stage-time sweep and `--remove` (rare) hash every digest
+  folder. The run-start sweep (every 5 minutes once the watch task runs) keeps its OWN folder when its `stage.json` agrees, UNHASHED
+  (the render verified that copy at registration); it walks the other folders with an agreeing `stage.json` newest first and hashes
+  only until one verifies — that one is kept — and retires every other folder unhashed, described from its `stage.json`. Running
+  from the newest copy, the usual case, it hashes nothing.
+- **Said on the run** (`TasksCommand.Run.cs`, finding 3): one stderr line when the run-start sweep was skipped (the run lock held),
+  one when it retired folders, one naming the folders it could not remove; nothing when it did nothing.
+- **The sweep** (`Core/Scheduler/Staging.Sweep.cs`): every entry of the staging root that is a FOLDER named with 64 lower-case hex
+  digits, other than those the keep rule keeps, oldest first. Anything else — a person's folder, a file, a link (never
+  followed), an upper-case or short name — is never touched and is listed as `untouched`. A folder goes **exe first**
+  (`IFileSystem.DeleteFile`): an exe that is executing cannot be deleted (Windows refuses a running image, as it refuses a file
+  held open without delete sharing), so the folder is KEPT WHOLE, `stage.json` too, and named with the reason; the next stage,
+  remove or `tasks run` start retries. Only then the rest of the folder (`IFileSystem.DeleteDirectory`, judged inside the root).
+  A sharing violation, or access denied on the exe (a running image), reads "in use"; any other failure "could not be
+  removed (…)". Each folder says what it was: from its `StagedCopies.Verify` check when it was hashed — "an older copy (release …)"
+  or "unverified: …" with the check's reason (a half copy, bytes that disagree with `stage.json`) — and from its `stage.json` alone
+  when a run-start sweep retires it unhashed ("an older copy by its stage.json (…; not hashed)").
+- **The removal** (`Staging.Remove`): the sweep keeping none, then the staging root itself through `RemoveEmptyFolder` (judged
+  inside the state directory, which is never removed) only when nothing is kept and nothing is untouched.
+- **The answers**: `StageReport {schemaVersion, outcome (staged, reused, refused, busy), reason, digest, path, version, source,
+  swept[], kept[], retained[]}`, `StageRemoveReport {schemaVersion, outcome (removed, busy), reason, root, rootRemoved, removed[],
+  kept[], untouched[]}` and the run-start `StagingSweep {swept, kept, retained, untouched, busy}`, each folder
+  `{digest, path, why}`; the text form prints one head line and one `swept:` / `removed:` / `kept:` / `retained:` line per folder.
+- **Not here**: no elevated refusal (the plan does not ask it; an elevated stage's copy may be owned by Administrators, and the
+  render's no-link open then refuses it — not registrable, so nothing is registered); the extension's own digest compare and its
+  `BUNDLED_DAEMON` check (§3.7) are WR-E3's.
