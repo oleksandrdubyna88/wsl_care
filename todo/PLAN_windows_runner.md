@@ -171,7 +171,7 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 | W-A2, the `%TEMP%` cleanup (top-level scratch older than N days, allow-listed) | here (A23, WR-T1–T3, the `\wsl-care\cleanup` task) | PLAN_windows_care.md W-A2 points here; its stale-`swap.vhdx` item stays E12 |
 | the Windows engine path and the `%TEMP%` walk (`claude` guard, owner SID, reparse refusal, re-validated delete) | here, WR-T1 builds it first (A23) | [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (2026-10-14) REUSES it for A24/A24Orphans (worktree build output) and A26 (`testsToDelete-*` in `%TEMP%`, 1 h); if its DH-4 is ready first the shared core is extracted here, never copied |
 | `testsToDelete-*` names in `%TEMP%` | A23 never selects them (`temp.allowGlobs` may not match the prefix); its preview names them "the test-leftover sweep's" | A26 owns them |
-| the on-demand `\wsl-care\hygiene` task (no trigger, one closed parameter: A24, A24Orphans, A26) | D1's definitions and D3's closed argv table grow by it; E3/E4 install and run it like the others | PLAN_disk_hygiene_windows.md DH-5 |
+| the tasks `\wsl-care\worktrees-scan` (daily + on demand), `build-output`, `build-output-orphans`, `test-leftovers` (on demand only), each one fixed argv line, none taking the run lock | D1's definitions and D3's closed argv table grow by four lines; E3/E4 install and run them like the others; A26 shares A23's `%TEMP%` lease | PLAN_disk_hygiene_windows.md DH-5 |
 
 ### 3.12 The Windows `%TEMP%` cleanup — W-A2 on the runner (the owner's decision, 2026-10-11)
 
