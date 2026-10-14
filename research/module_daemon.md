@@ -631,7 +631,8 @@ flowchart TD
 - **What it records**: the ledger only. **No history line, no run detail** (S2b's rule: a watch that acts on nothing writes no
   run). `WatchResult.History` is `WatchRun.NoAgentHistory` (the agents' CPU history is the distro's evidence; the CLI does not
   warn about it). `WatchResult.Swept` / `watch --json`'s new `retention` member (absent on the distro) carry the sweep's
-  `historyLinesRemoved`, `detailsRemoved`, `problems`; the run log has one line for it and one warning per problem.
+  `historyLinesRemoved`, `detailsRemoved`, `problems`; the run log has one line for it and one warning per problem, and the text
+  answer's one line ends with `; retention: N history line(s) and M detail(s) removed` (its problems in brackets).
 - **The ledger lock** (`Core/Mcp/McpCpuLedgerLock.cs`; coai plan round `8138f140`, finding 1): every Windows ledger WRITER — the
   Windows watch AND the Windows `status`, both through `WindowsMcpCollector` — does its read-modify-write under `mcp-cpu.lock`
   beside the ledger (`McpCpuLedgerPlace.WindowsState.LockFile`), taken with `IFileSystem.TryLockExclusive` and never waited on. The

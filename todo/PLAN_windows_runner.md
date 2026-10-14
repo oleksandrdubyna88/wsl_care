@@ -626,3 +626,19 @@ in [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b.3. Dec
 - **Notes, no change in this story:** the ledger lock file is opened without a reparse check, the same as the run lock beside it
   (pre-existing); `RunLock.TakeAsync` does not catch `UnauthorizedAccessException` (pre-existing); the retention runs on the wall
   clock, as `collect`'s does; S7b.3 must decide whether `auto.A22` needs a `UserLayerUnread`-style gate (the distro's watch has one).
+
+**The coai code round on WR-D4 (session `062e684e`, 2026-10-14)**: verdict `proceed`, eleven findings, one accepted, ten rejected.
+
+- *Accepted (finding 6, minor)*: the text answer of `watch` (no `--json`) now names the retention sweep in its one line —
+  `; retention: N history line(s) and M detail(s) removed` and its problems in brackets — as `--json`'s `retention` does, not only the
+  log (`Cli.Tests/WatchCommandTests.A_windows_watch_in_text_names_what_its_retention_sweep_removed`: red first, the line without it;
+  break-it: the line's retention part dropped → red).
+- *Rejected, the ledger lock held across the CPU window (findings 4, 5)*: that is the plan round's finding 1 itself — releasing it
+  across the window lets two writers read one baseline and drop each other's sample.
+- *Rejected, "only `UnauthorizedAccessException` is caught" (findings 3, 9)*: refuted — `PhysicalFileSystem.TryLockExclusive` already
+  turns every `IOException` (missing folder, long path included) into `ExclusiveLock.Busy`.
+- *Rejected, the retention sweep "needs a preview, a switch and a run record" (finding 7, blocking)*: it trims the daemon's OWN run
+  records, as `collect` always has, through the deletion policy, with its result reported — record keeping, not a cleanup action.
+- *Rejected, out of this story*: A22's dispatch after the hook (finding 8 — S7b.3's), per-OS seams out of `WatchContext` (finding 0),
+  the sweep as its own pipeline step (finding 1), the lock's name by `Path.Combine` (finding 2 — the separator is deliberate), a
+  progress line on stderr (finding 10 — an unattended task).

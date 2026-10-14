@@ -116,6 +116,15 @@ internal static class WatchCommand
         var ledger = result.Ledger.Recorded ? "ledger recorded" : $"ledger not recorded ({result.Ledger.Reason})";
         var history = result.History.Length == 0 ? "history recorded" : $"history not recorded ({result.History})";
         var tried = result.Tried.Count == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"; A19 asked to stop {string.Join(", ", result.Tried)}");
-        return CommandLine.Printable($"watch {result.Outcome.ToString().ToLowerInvariant()}: {result.Reason}; {ledger}; {history}{tried}");
+        return CommandLine.Printable($"watch {result.Outcome.ToString().ToLowerInvariant()}: {result.Reason}; {ledger}; {history}{tried}{Retention(result.Swept)}");
     }
+
+    /// <summary>What the run records' retention sweep did, for the one line (the coai code round on WR-D4, finding 6) — nothing when
+    /// no sweep ran (the distro's watch).</summary>
+    private static string Retention(IReadOnlyList<RetentionReport> sweeps) =>
+        string.Concat(sweeps.Select(static s => string.Create(CultureInfo.InvariantCulture,
+            $"; retention: {s.HistoryLinesRemoved} history line(s) and {s.DetailsRemoved.Count} detail(s) removed{Problems(s.Problems)}")));
+
+    private static string Problems(IReadOnlyList<string> problems) =>
+        problems.Count == 0 ? string.Empty : $" ({string.Join("; ", problems)})";
 }

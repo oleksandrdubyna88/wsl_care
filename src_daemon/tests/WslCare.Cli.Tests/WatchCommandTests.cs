@@ -78,6 +78,27 @@ public sealed class WatchCommandTests : IDisposable
         RunHistory.Read(_sandbox.Paths, _sandbox.Files).Records.Should().BeEmpty("a watch that stops nothing writes no history line");
     }
 
+    /// <summary>The coai code round on WR-D4 (session <c>062e684e</c>, finding 6): the one line a person reads names what the run records'
+    /// retention sweep removed, as the JSON answer's <c>retention</c> does — not only the log.</summary>
+    [Fact]
+    public void A_windows_watch_in_text_names_what_its_retention_sweep_removed()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "a CliHost over a Windows layout is built on Windows only");
+        using var root = new TempRoot("watch-retention-text");
+        var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
+        var files = new PhysicalFileSystem(paths);
+        var started = FixedTimeProvider.DefaultNow.AddDays(-RunRetention.RetentionDays - 1);
+        var id = RunId.New(started, 100);
+        RunDetailStore.Write(paths, files, id, """{"schemaVersion":1}"""u8);
+        new RunRecordWriter(paths, files).Append(
+            new RunRecord(1, id, RunTrigger.Timer, started, started, RunOutcome.Completed, [], RunKind.Collect) { Detail = RunDetailStore.RelativePath(id) });
+
+        var (exit, stdout, stderr) = CliRun.Over(WindowsHost(paths, elevated: false), "watch", "--timer");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        stdout.Should().MatchRegex(@"; retention: 1 history line\(s\) and [1-9][0-9]* detail\(s\) removed", "the aged line and what it named went");
+    }
+
     /// <summary>A host over a sandboxed Windows layout (WR-D4) — built on Windows only (<c>CliHost.ProbeFor</c>); no table, no boot of
     /// this machine is read.</summary>
     private static CliHost WindowsHost(WindowsHostPaths paths, bool elevated) =>
