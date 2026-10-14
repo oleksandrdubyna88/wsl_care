@@ -58,7 +58,11 @@ public abstract record McpCpuLedgerPlace
 
     /// <summary>The Windows binary's own, under its state directory (<c>%LOCALAPPDATA%\wsl-care</c>, E14 S7b.1): read and written by
     /// an unelevated <c>status</c>; an elevated one reads it and writes nothing (<paramref name="Writes"/> false) — it is the user's file.</summary>
-    public sealed record WindowsState(string Directory, string File, bool Writes) : McpCpuLedgerPlace;
+    public sealed record WindowsState(string Directory, string File, bool Writes) : McpCpuLedgerPlace
+    {
+        /// <summary>The ledger lock beside the ledger (<c>mcp-cpu.lock</c>, WR-D4 of PLAN_windows_runner.md §11 finding 1).</summary>
+        public string LockFile => McpCpuLedgerLock.Beside(File);
+    }
 
     /// <summary>No ledger: every instance is measured across the window.</summary>
     public sealed record None(string Reason) : McpCpuLedgerPlace;

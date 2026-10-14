@@ -16,6 +16,9 @@ namespace WslCare.Core.Mcp;
 /// when one needs it — and compared only while the pid still names the process the first read saw (same creation time, coai plan
 /// round 2026-10-09 finding 2). This sample's readings become the next one's baselines (S1's two-point rule).</para>
 /// <para>Without a ledger, or without a boot id, every instance is measured across the window and nothing is recorded.</para>
+/// <para><b>The ledger lock (WR-D4 of PLAN_windows_runner.md):</b> a writing ledger is leased through <see cref="McpCpuLedgerLock"/>
+/// BEFORE it is read and released after it is written; when another writer (the Windows watch or a Windows status) holds the lock,
+/// this sample keeps no ledger — it answers from the window and records nothing, saying why.</para>
 /// </remarks>
 public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, WindowsCpuLedger ledger)
 {
@@ -41,7 +44,9 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
             .ToList();
         var agesAt = clock.GetUtcNow();
         var owners = matched.ToDictionary(m => m.Entry.Pid, m => WindowsMcpOwners.Of(m.Entry, m.First.Created, byPid, Created));
-        var round = await CpuAsync(matched, settings, cancellationToken).ConfigureAwait(false);
+        // WR-D4: the ledger lock is held from BEFORE the ledger is read until after it is written; held elsewhere, no ledger.
+        using var lease = McpCpuLedgerLock.Take(ledger);
+        var round = await CpuAsync(matched, settings, lease.Ledger, cancellationToken).ConfigureAwait(false);
         List<WindowsMcpInstance> instances =
         [
             .. matched
@@ -51,7 +56,7 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
         ];
         return Reading.Of(new WindowsMcpSample((int)settings.Window.TotalMilliseconds, instances, [.. instances.Take(settings.MaxInstances)], WindowsMcpOwners.Groups(instances))
         {
-            Baseline = Record(round, settings),
+            Baseline = Record(round, settings, lease.Ledger),
         });
     }
 
@@ -82,9 +87,9 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
     }
 
     /// <summary>Each instance's CPU: over the interval since its ledger point when it has one in bounds, otherwise across the window.</summary>
-    private async Task<CpuRound> CpuAsync(IReadOnlyList<Matched> matched, McpSettings settings, CancellationToken cancellationToken)
+    private async Task<CpuRound> CpuAsync(IReadOnlyList<Matched> matched, McpSettings settings, WindowsCpuLedger leased, CancellationToken cancellationToken)
     {
-        var (boot, at, before, why) = Now(settings);
+        var (boot, at, before, why) = Now(leased, settings);
         List<McpCpuReading> readings = boot.Length == 0 ? [] : [.. matched.Select(m => ReadingOf(m, at)).OfType<McpCpuReading>()];
         var fromLedger = readings
             .Select(r => (r.Pid, Cpu: McpCpuLedger.Baseline(before, boot, r, settings.Bounds) is { } from ? Interval(r.At, from) : null))
@@ -96,7 +101,7 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
 
     /// <summary>The ledger at this sample. Without a ledger, without a boot id or without the unbiased clock there is no baseline and
     /// nothing is recorded — and the reason says which (an unread clock is never a 0 point, coai code round 1bc694ea).</summary>
-    private LedgerNow Now(McpSettings settings) => ledger switch
+    private LedgerNow Now(WindowsCpuLedger leased, McpSettings settings) => leased switch
     {
         WindowsCpuLedger.Kept kept => Now(kept, settings),
         WindowsCpuLedger.None none => Unkept(none.Reason),
@@ -163,7 +168,7 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
         Math.Round(McpSample.PercentPerCore * Math.Max(0, cpu.TotalSeconds) / seconds, 1);
 
     /// <summary>This sample's readings into the ledger by S1's two-point rule — or why they are not recorded.</summary>
-    private McpCpuBaseline Record(CpuRound round, McpSettings settings) => (ledger, round) switch
+    private McpCpuBaseline Record(CpuRound round, McpSettings settings, WindowsCpuLedger leased) => (leased, round) switch
     {
         (WindowsCpuLedger.None none, _) => McpCpuBaseline.NotRecorded(string.Empty, none.Reason),
         (WindowsCpuLedger.Kept k, { Boot.Length: 0 }) => McpCpuBaseline.NotRecorded(k.Place.FileOrEmpty, round.Why),
