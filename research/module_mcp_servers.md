@@ -314,7 +314,7 @@ the window (`cpuBasis: window`), and the wait is paid only when one needs it. Me
 ```mermaid
 flowchart LR
     boot["IWindowsBoot (Win32Boot)<br/>RegGetValueW PrefetchParameters\\BootId → windows-&lt;n&gt;<br/>QueryUnbiasedInterruptTime (stops in sleep)"] --> col["WindowsMcpCollector"]
-    ledger["%LOCALAPPDATA%\\wsl-care\\mcp-cpu.json<br/>McpCpuLedgerPlace.WindowsState<br/>written unelevated, read-only elevated"] <--> col
+    ledger["%LOCALAPPDATA%\\wsl-care\\mcp-cpu.json<br/>McpCpuLedgerPlace.WindowsState<br/>written unelevated under mcp-cpu.lock (status, watch)<br/>read-only elevated"] <--> col
     col --> basis["per instance: interval (from the ledger) or window<br/>cpuBasis · cpuIntervalSeconds · cpuBaseline"]
 ```
 
@@ -326,10 +326,16 @@ flowchart LR
 - **The place** is `McpCpuLedgerPlace.ForWindowsStatus`. An unelevated `status` reads and writes it; an elevated one reads it
   and writes nothing (`ReadOnlyElevated`), because it is the user's file. It is read as the distro's own-state ledger (regular,
   capped, through no link) and written atomically, privately, only when it changed.
+- **Its writers since WR-D4** ([PLAN_windows_runner.md](../todo/PLAN_windows_runner.md); [module_daemon.md](module_daemon.md)
+  § *The Windows watch and the ledger lock*): the unelevated Windows `status` and the Windows `watch` (`tasks run watch`, every
+  `mcpWatchdog.periodMinutes`, so the ledger advances every period). Both write under ONE ledger lock, `mcp-cpu.lock` beside the
+  ledger (`McpCpuLedgerLock`, taken by `WindowsMcpCollector` before the read, released after the write, never waited on): a
+  writer that finds it held reads nothing, answers from the window and records nothing, its `cpuBaseline.reason` naming the lock.
 - **The wire:** additive — `instances[].cpuBasis`, `instances[].cpuIntervalSeconds` and the block's
   `cpuBaseline {file, recorded, reason}`, S1's names. The text line says how many instances were measured over their last
   interval and how many over the window.
-- **Not here:** `collect` on the Windows binary (no Windows run records anything yet); S7b's idle history and stop;
+- **Not here:** `collect` on the Windows binary (no Windows run records anything yet); S7b's idle history and stop (A22 plugs
+  into the Windows watch's `--timer` branch, `WatchRun.WindowsActing`);
   `node.exe` / `wslhost.exe` children and `playwright-mcp` on Windows.
 
 ## Residuals and what it does not cover

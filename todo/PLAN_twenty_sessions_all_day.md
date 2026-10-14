@@ -1242,6 +1242,14 @@ whatever still leaks, from any server.
      |---|---|---|
      | the Windows `watch` verb, its lock, ledger write, retention sweep, dry gate | WR-D4 | the A22 act inside the `--timer` branch |
      | the Windows watch cadence and runner | the `\wsl-care\watch` task | item 5's "extension timer" assumption is superseded |
+
+     **Where the A22 hook is (WR-D4 as built, 2026-10-12).** `Core/Watch/WatchRun.Windows.cs`: `WatchRun.WindowsActing`, the
+     Windows actions the watch's `--timer` branch lets act — EMPTY today — and `WindowsTimerBranch`, whose gates run in this
+     order: `--timer`, not observe-only, a non-empty `WindowsActing`, then `DryRunWindow.Decide(RunTrigger.Timer, …)` on the
+     Windows paths. S7b.3 adds A22 to `WindowsActing` and its preview and recorded act after the dry decision, outside the run
+     lock (the engine takes it, as the distro's watch does). Until then the Windows watch samples only (the ledger under its
+     ledger lock, `RunRetention` swept) and writes no history line; because the list is empty it never reaches `Decide`, so
+     the Windows dry-run week starts at A22's first timer run, not before.
 6. **Where the thresholds live (own review 8).**
    - The Windows binary reads its own layers (`%APPDATA%\wsl-care\config.json`, `%ProgramData%`; `WindowsHostPaths.cs:67-69`), not the distro's. "The same threshold" (D1) is therefore the same KEYS with the same defaults and ranges, set per side. The owner has the Windows layer's `wsl-care.exe config set`.
    - The panel names the values the Windows side applies and whether its `dryRun` / first-week window holds. While either holds, the timer stops nothing.

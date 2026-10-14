@@ -45,6 +45,20 @@ public static class RunRetention
         return new RetentionReport(removedLines, removed, problems);
     }
 
+    /// <summary><see cref="Sweep"/>, guarded: a sweep that fails is a problem in its report, never the caller's crash (the Windows
+    /// watch, WR-D4 of PLAN_windows_runner.md — a housekeeping step must not cost the sample it follows).</summary>
+    public static RetentionReport TrySweep(IHostPaths paths, IFileSystem files, DateTimeOffset now)
+    {
+        try
+        {
+            return Sweep(paths, files, now);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
+        {
+            return new RetentionReport(0, [], [$"run retention failed: {e.Message}"]);
+        }
+    }
+
     private static int TrimHistory(IHostPaths paths, IFileSystem files, DateTimeOffset now, List<string> problems)
     {
         var removed = 0;
