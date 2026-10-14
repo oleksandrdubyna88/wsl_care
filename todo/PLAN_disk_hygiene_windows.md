@@ -625,14 +625,14 @@ container or task a test creates is named `testsToDelete-…` and removed by the
   `A_name_with_the_prefix_in_another_case_matches`; `A_name_with_the_prefix_later_in_it_never_matches`;
   `The_underscore_form_is_not_matched`; `A_resource_younger_than_an_hour_is_never_selected`;
   `A_running_test_runner_refuses_the_sweep_and_names_it`; `A_running_testcontainers_container_refuses_the_sweep`;
-  `An_unreadable_process_table_refuses_the_sweep`; `The_judgement_is_repeated_before_the_first_removal`;
+  `An_unreadable_process_table_refuses_the_sweep`;
   `A_running_leftover_is_stopped_then_removed_never_forced`; `A_kept_container_is_never_selected`;
   `Network_prune_is_on_the_never_list`; `The_order_is_containers_volumes_networks`.
 - DH-7: `Nothing_under_temp_claude_is_selected_even_with_the_prefix`; `A23_never_selects_the_prefix`;
   `the panel runs neither side unless both previews read no test run`.
 - DH-8: `TempRoot_names_its_folder_with_the_prefix`; `The_transition_sweep_takes_both_shapes`.
 
-**Break-it (each red, then restored):** the OR made AND; the critical bar colouring removed; the size floor ignored; the
+**Break-it (each red, then restored):** the OR made AND; the volume mark removed from the bar, or keyed on the `disk.` prefix; the size floor ignored; the
 compose label dropped from the template; the reparse check removed from the walk; the delete enumerating into a link;
 the root containment check removed; the git confirmation skipped; a non-zero git exit read as clean; the fsmonitor
 override dropped; `cleanLocked` ignored; the re-validation removed; the checkpoint written after the delete; the age floor
@@ -646,7 +646,7 @@ an `unknown` signal read as clear; the `claude` guard removed.
 
 Asked first of the coai question consultants (`d2330f7e`, one row answered); their answers were verified and are taken
 above (OR levels and defaults, the Windows binary as the side, the in-flight signals and the age floor, orphans as an
-opt-in). What remains for the owner:
+opt-in).
 
 Answered by the owner (through the coordinator, 2026-10-14, after consultant `57c7e54e`):
 
@@ -695,7 +695,7 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 
 ## 13. Definition of Done
 
-- [ ] DH-1: `disk.volumeFree` judges every lettered volume above the size floor; critical colours the bar; the `disk.hostC`
+- [ ] DH-1: `disk.volumeFree` judges every lettered volume above the size floor; a critical one marks the bar by its exact id; the `disk.hostC`
       arriving row is gone; README says the defaults are starting values.
 - [ ] DH-2: A5 never selects a compose container (a RED test proved it did); `auto.A5` still off.
 - [ ] DH-3: the Windows `status` carries `worktrees` and `worktrees.reclaimable`, whose bytes are only what A24/A24Orphans
@@ -712,7 +712,9 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 - [ ] Every key of §3.9 has its default, range and trust in `contracts/config-keys.json` and a `NumbersAreConfigurationTests` row.
 - [ ] Docs: `module_daemon.md`, `module_vs_code.md`, `module_tests.md`, `architecture.md`, README, POST_DEPLOY; both sides of
       every boundary in §6 written; `node .agents/conventions/tools/plan-lifecycle.mjs` clean.
-- [ ] The plan promoted to `research/` when DH-7 ships (DH-1b may stay as an open tail named in the status line).
+- [ ] DH-1b: the Windows watch carries `disk.volumeFree` every 5 minutes, and panel and bar show the newer reading.
+- [ ] The plan promoted to `research/` when DH-7 and DH-1b ship; its open tail (whole-worktree removal, §9) named in the
+      status line as a plan still to write.
 
 ## Epics
 
@@ -720,7 +722,7 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 > `fable` tier). This grouping exists so the reviewers can see an order; Fable may regroup, renumber and designate the
 > cornerstones. The epic numbers continue PLAN_disk_health.md's E15–E18 and are provisional.
 
-- **E19 — See it** (DH-1, DH-3; DH-1b later). Goal: the owner is warned before a volume fills and can see where the space
+- **E19 — See it** (DH-1, DH-1b, DH-3). Goal: the owner is warned before a volume fills and can see where the space
   went. Scope: two verdicts, one read-only scan, panel rows. Depends on: — (DH-3's panel row on WR-E1). Done when the owner's
   D: would have warned at 30 GiB and the report shows his roots.
 - **E20 — Clean it** (DH-4, DH-5). Goal: one button frees the idle build output, a second the orphans'. Depends on: E19,
