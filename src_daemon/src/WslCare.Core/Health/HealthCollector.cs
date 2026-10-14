@@ -42,14 +42,23 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         return new WindowsDiskSample(at, Elapsed(outcome, facts), facts) { Engine = Reading.Of(used), StartedFrom = outcome.StartedFrom };
     }
 
-    /// <summary>The script under <paramref name="engine"/>; when that is the MSI pwsh and it failed to START, 5.1 once instead.</summary>
+    /// <summary>The script under <paramref name="engine"/>; when that is the MSI pwsh and it failed to START, the fallback engine's
+    /// script once instead. The command RUN is always <c>Under(the engine returned)</c> — the command whose answer is read (final
+    /// code round, finding 4).</summary>
     private static async Task<(InteropEngine Used, CommandOutcome Outcome)> RunDiskAsync(ICommandRunner runner, InteropEngine engine, CancellationToken cancellationToken)
     {
-        var outcome = await runner.RunAsync(WindowsDiskCommands.Under(engine).ToRequest(), cancellationToken).ConfigureAwait(false);
-        return outcome is CommandOutcome.FailedToStart failed && engine.Kind == InteropEngineKind.Msi
-            ? (PwshEngine.NotStartable(failed.Reason), await runner.RunAsync(WindowsDiskCommands.WindowsDisk.ToRequest(), cancellationToken).ConfigureAwait(false))
-            : (engine, outcome);
+        var outcome = await RunUnderAsync(runner, engine, cancellationToken).ConfigureAwait(false);
+        if (outcome is not CommandOutcome.FailedToStart failed || engine.Kind != InteropEngineKind.Msi)
+        {
+            return (engine, outcome);
+        }
+
+        var fallback = PwshEngine.NotStartable(failed.Reason);
+        return (fallback, await RunUnderAsync(runner, fallback, cancellationToken).ConfigureAwait(false));
     }
+
+    private static Task<CommandOutcome> RunUnderAsync(ICommandRunner runner, InteropEngine engine, CancellationToken cancellationToken) =>
+        runner.RunAsync(WindowsDiskCommands.Under(engine).ToRequest(), cancellationToken);
 
     private static Reading<TimeSpan> Elapsed(CommandOutcome outcome, Reading<WindowsDiskFacts> facts) =>
         outcome is CommandOutcome.Exited exited && facts.IsAvailable ? Reading.Of(exited.Elapsed) : Reading.Missing<TimeSpan>(facts.ReasonOrEmpty);

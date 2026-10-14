@@ -219,6 +219,27 @@ public sealed class HealthTests : IDisposable
         var engine = Value(health.WindowsDisk.Engine);
         engine.Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
         engine.Reason.Should().Contain("could not be started").And.Contain("virtiofs");
+        // Final code round (finding 4): the command RUN on fallback is the command whose answer is READ — Under(the engine kept).
+        var diskRuns = argv.Where(a => a[0] is HealthCommands.Pwsh or HealthCommands.PowerShell && !a.SequenceEqual(HealthCommands.WindowsClock.Argv)).ToList();
+        diskRuns[^1].Should().Equal(WindowsDiskCommands.Under(engine).Argv, "the executed and the parsed command come from one expression");
+    }
+
+    /// <summary>Final code round (finding 7): the MSI pwsh could not be started and the 5.1 fallback could not be started either. The
+    /// sample is unavailable and ITS reason names the 5.1 failure; the engine's reason claims only that 5.1 was TRIED — never
+    /// that it ran.</summary>
+    [Fact]
+    public async Task When_the_fallback_fails_too_the_sample_names_the_51_failure_and_the_engine_never_claims_51_ran()
+    {
+        var (health, argv) = await CollectWithClockAsync(
+            RecordingCommandRunner.Exited(0, PwshEngineFixture.Verified),
+            (WindowsDiskCommands.WindowsDiskUnderPwsh, new CommandOutcome.FailedToStart("not started from the Windows system drive: /mnt/c is a virtiofs mount")),
+            (WindowsDiskCommands.WindowsDisk, new CommandOutcome.FailedToStart("no interop for powershell.exe")));
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "5.1 is tried once");
+        health.WindowsDisk.Facts.IsAvailable.Should().BeFalse();
+        health.WindowsDisk.Facts.ReasonOrEmpty.Should().Contain("powershell.exe could not be started").And.Contain("no interop for powershell.exe");
+        var engine = Value(health.WindowsDisk.Engine);
+        engine.Reason.Should().NotContain("ran instead", "5.1 did not run").And.Contain("tried instead").And.Contain("virtiofs");
     }
 
     [Fact]

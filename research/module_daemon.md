@@ -359,13 +359,16 @@ flowchart LR
   (`ClockParsers.RepeatedPwshLine`), so 5.1 runs; and the clock lines are written and FLUSHED before the look, so a look that
   hangs past the ceiling costs the engine choice, never the clock reading (`HealthCollector` reads a timed-out probe's whole
   flushed lines). `PwshEngine.Choose(sample)` is PURE: the MSI
-  pwsh only when the known folder is EXACTLY `C:\Program Files`, the environment's `ProgramFiles` agrees (case-insensitive),
+  pwsh only when the known folder is `C:\Program Files` (without case, as Windows compares folder names — the final code round; a trailing separator is still another
+  spelling), the environment's `ProgramFiles` agrees (case-insensitive),
   the item is a `file` and it is `signed`; anything else, a failed probe and a probe from before the tags give 5.1 with the
   reason; a quoted value is cut to `records.maxReasonChars`. `InteropEngine(Kind, Reason)` DERIVES its program from the
   kind, so the two can never disagree. `HealthCollector.CollectAsync` chooses after the clock probe and its reference and
   runs `WindowsDiskCommands.Under(engine)`; when the MSI pwsh then FAILS TO START (the fixed-folder lookup refused it or did
   not answer: virtiofs, several C: mounts, a non-root ancestor, interop off, a slow 9p), the 5.1 script runs once instead and
-  the engine says why (`PwshEngine.NotStartable`). A timeout or an exit code under pwsh is not retried. The argv names the BARE `pwsh.exe` (what
+  the engine says why (`PwshEngine.NotStartable`: "Windows PowerShell 5.1 was tried instead" — never "ran"; when 5.1 fails
+  too, the sample's own reason names that failure). The command run on fallback is `Under(the fallback engine)`, the same
+  expression whose answer is read. A timeout or an exit code under pwsh is not retried. The argv names the BARE `pwsh.exe` (what
   the policy judges); the resolver maps it ONLY to its one fixed folder on the mounted system drive
   (`WindowsSystemDrive.Programs`: `pwsh.exe` → `Program Files/PowerShell/7`, through the same mount, interop, ancestor and
   file checks as `powershell.exe`) and NEVER to PATH, with or without a PATH entry (`WindowsSystemDrive.FixedFolderOnly`,
@@ -388,7 +391,8 @@ flowchart LR
   the rest of the script joins paths), in its own `try` — a failed import leaves each Storage section to print its own
   error line. Under 5.1 it is the same module the pinned path already names. Live after the change (read-only, the owner's
   machine): 4 volumes, 2 disks, `end=1` under the Store pwsh (9–15 s, two harmless nested-module errors on stderr, exit 0)
-  and under 5.1 (6–8 s). `RealPwshDiskScriptTests` runs the actual script under `%ProgramFiles%\PowerShell\7\pwsh.exe` on
+  and under 5.1 (6–8 s). `RealClockProbeTests` (Windows, the owner's machine and CI) runs the ACTUAL clock probe under the real `powershell.exe`
+  through the product's runner and policy: exit 0, measured, each pwsh tag exactly once. `RealPwshDiskScriptTests` runs the actual script under `%ProgramFiles%\PowerShell\7\pwsh.exe` on
   CI's `windows-latest`; it skips where the MSI build is absent.
 - **The run detail names the engine and the file really started.** `WindowsDiskSample.Engine` (a `Reading`, chosen before
   the run, so it is kept also when the script fails) and `WindowsDiskSample.StartedFrom` (the runner's

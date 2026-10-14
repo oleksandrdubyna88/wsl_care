@@ -1434,11 +1434,35 @@ After the rebase onto main `fce407f8` (2026-10-14): Windows Core 2812 (0 failed,
 Scenarios 622 (0 failed, 287 skipped); Linux (`/tmp/testsToDelete-wc-e15s1b-20261014T192847Z`) Core 2812 (0 failed, 69
 skipped), Cli 423 (0 failed, 29 skipped), Scenarios 622 (0 failed, 8 skipped).
 
+**The final code round (coai `proceed`, 2026-10-14).** Four findings accepted, each red first (or a guard where no red was
+possible), each with a break-it on product code:
+- **Finding 4, the fallback command.** `RunDiskAsync` ran `WindowsDiskCommands.WindowsDisk` on fallback while the answer was
+  read with `Under(used)`. They were equal only because `NotStartable` returns the 5.1 kind. Now the fallback command is
+  `Under(the fallback engine)`, one expression for what runs and what is read. No red was possible; a guard asserts that the
+  command run on fallback equals `Under(the engine kept)`. Break-it: the fallback run under the msi engine → 2 red.
+- **Finding 7, a fallback that fails too.** The engine said "Windows PowerShell 5.1 ran instead" even when 5.1 could not be
+  started. It now says "was tried instead", and the sample's own reason names the 5.1 failure. RED: *Did not expect
+  engine.Reason "… Windows PowerShell 5.1 ran instead" to contain "ran instead" because 5.1 did not run*. Break-it: the
+  wording restored → red.
+- **Finding 8, a live clock-probe test.** `RealClockProbeTests` (Windows only) runs the ACTUAL clock probe under the real
+  `powershell.exe` through the product's runner and policy, read-only, with a 60 s ceiling: exit 0, the clock measured,
+  each pwsh tag exactly once. It ran on the owner's machine. Its red is a break-it: a paren removed from the probe →
+  *Expected exited.ExitCode to be 0 because At line:1 char:468 Missing closing ')' in expression*.
+- **Finding 11, the known folder's case.** `FolderProblem` compares without case, as Windows compares folder names. RED:
+  *Expected PwshEngine.Choose(Sample(@"c:\program files", …)).Kind to be InteropEngineKind.Msi … but found
+  InteropEngineKind.WindowsPowerShell*. Break-it: ordinal again → red. (The S2 break-it "the known folder compared without
+  case" is reversed by this finding: a trailing separator is still another spelling and is refused.)
+
+Rejected in the round, with the reasons recorded in coai (no work): the C: assumption, the silent catch on the Storage
+import, progress output, the `WSL_CARE_ROOT` seam, `IsPrivilegedProcess`, caching Authenticode.
+
 **Open.**
 - **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
   the first CI run on `windows-latest` is the evidence that the selection is safe to ship.
 - **pwsh is slower than 5.1 for this script on the owner's machine** (9–16 s against 6–7 s, the Store build, loaded
   machine). Both are under the 30 s ceiling; the MSI build's own timing is measured on the first machine that has it.
+- **Windows on a drive other than C:** always gets Windows PowerShell 5.1: the daemon maps only `C:\Program Files` (a
+  documented assumption, the same as `WindowsSystemDrive.Drive`).
 - **Residuals of the trust boundary (code round, recorded, not changed):** the signature rule trusts the user's own root
   store (the folder is administrator-only, so a forged signature still needs an administrator to place the file); nothing ties
   the started file to the verified one but its path (administrator-only, and the window is seconds); `powershell.exe` (the

@@ -63,9 +63,10 @@ public static class PwshEngine
     private static InteropEngine WindowsPowerShell(string reason) => new(InteropEngineKind.WindowsPowerShell, reason);
 
     /// <summary>Code round: the probe verified the MSI file, but the runner could not START <c>pwsh.exe</c> (its fixed-folder lookup
-    /// refused it or did not answer) — Windows PowerShell 5.1 runs the disk script instead, and this says why.</summary>
+    /// refused it or did not answer) — Windows PowerShell 5.1 is TRIED instead, and this says why. It never claims that 5.1 ran:
+    /// when 5.1 fails too, the sample's own reason names that failure (final code round).</summary>
     public static InteropEngine NotStartable(string reason) =>
-        WindowsPowerShell($"the clock probe verified {MsiFile}, but pwsh.exe could not be started: {Cut(reason)}; Windows PowerShell 5.1 ran instead");
+        WindowsPowerShell($"the clock probe verified {MsiFile}, but pwsh.exe could not be started: {Cut(reason)}; Windows PowerShell 5.1 was tried instead");
 
     /// <summary>A value the probe printed — environment-controlled — quoted cut to <c>records.maxReasonChars</c> (code round).</summary>
     private static string Cut(string value) => ClockParsers.Cut(value);
@@ -75,9 +76,10 @@ public static class PwshEngine
             InteropEngineKind.Msi,
             $"the clock probe verified {MsiFile}: a real file, Authenticode Valid from CN=Microsoft Corporation, under the known folder {KnownFolder}, which the environment's ProgramFiles names too");
 
-    /// <summary>EXACTLY the one folder the daemon maps (ordinal): the known-folder API's own spelling, nothing else.</summary>
+    /// <summary>The one folder the daemon maps, compared without case as Windows compares folder names (final code round): any
+    /// other folder, or another spelling of this one (a trailing separator), is refused.</summary>
     private static string FolderProblem(PwshProbe probe) =>
-        string.Equals(probe.KnownFolder, KnownFolder, StringComparison.Ordinal)
+        string.Equals(probe.KnownFolder, KnownFolder, StringComparison.OrdinalIgnoreCase)
             ? string.Empty
             : $"the known folder ProgramFiles is \"{Cut(probe.KnownFolder)}\", not {KnownFolder} — the one folder the daemon maps to the system drive";
 

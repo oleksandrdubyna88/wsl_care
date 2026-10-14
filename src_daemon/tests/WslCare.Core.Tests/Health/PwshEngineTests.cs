@@ -31,7 +31,6 @@ public sealed class PwshEngineTests
     [InlineData(ProgramFiles, @"D:\Evil", "file", "signed", @"D:\Evil")]
     [InlineData(@"D:\PF", @"D:\PF", "file", "signed", @"D:\PF")]
     [InlineData(@"C:\Program Files (x86)", @"C:\Program Files (x86)", "file", "signed", "(x86)")]
-    [InlineData(@"c:\program files", @"c:\program files", "file", "signed", @"c:\program files")]
     [InlineData("", "", "", "", "known folder")]
     [InlineData(ProgramFiles, ProgramFiles, "absent", "", "absent")]
     [InlineData(ProgramFiles, ProgramFiles, "link", "", "link")]
@@ -60,6 +59,16 @@ public sealed class PwshEngineTests
         engine.Kind.Should().Be(InteropEngineKind.Msi);
         engine.Program.Should().Be(HealthCommands.Pwsh, "the policy judges the bare name; the resolver answers it from the fixed folder only");
         engine.Reason.Should().Contain("verified").And.Contain("CN=Microsoft Corporation").And.Contain(PwshEngine.MsiFile);
+    }
+
+    /// <summary>Final code round (finding 11): Windows compares folder names without case, so the known folder spelled
+    /// <c>c:\program files</c> is the same folder the daemon maps — a trailing separator or another folder still is not.</summary>
+    [Fact]
+    public void The_known_folder_may_differ_in_case_only()
+    {
+        PwshEngine.Choose(Sample(@"c:\program files", @"c:\program files", "file", "signed")).Kind.Should().Be(InteropEngineKind.Msi, "Windows folder names compare without case");
+        PwshEngine.Choose(Sample(@"C:\PROGRAM FILES", ProgramFiles, "file", "signed")).Kind.Should().Be(InteropEngineKind.Msi);
+        PwshEngine.Choose(Sample(@"C:\Program Files\", @"C:\Program Files\", "file", "signed")).Kind.Should().Be(InteropEngineKind.WindowsPowerShell, "a trailing separator is another spelling");
     }
 
     [Fact]
