@@ -61,13 +61,29 @@ below names which part it proves.
    `worktrees.gitPath` stays MachineOnly (an administrator names a program to run).
 4. **Git names travel on argv, not stdin**: `CommandRequest` has no stdin payload, and adding one (a concurrent writer
    beside both drains) is a runner change no E19 story needs. `check-ignore` and `ls-files` take their names as a bounded
-   `Repeat` of a new `RelativeName` slot (≤ `worktrees.gitNamesPerCall`, 64), in batches.
-5. **The git environment is clean plus what git needs**: `SystemRoot`, `WINDIR`, `USERPROFILE`, `HOME` (= `USERPROFILE`),
-   `TEMP`, `TMP`, and the three `GIT_*` of the parent — measured against the real `git.exe` on this machine in E19.S4 before
-   the list is final.
+   `Repeat` of a new `RelativeName` slot, in batches bounded by BOTH a count (`worktrees.gitNamesPerCall`, 64) and the
+   encoded command line (`worktrees.gitCommandLineMaxChars`, 7000 — under Windows' 8 191 / 32 767 limits with room for the
+   fixed words; coai plan round, findings 0 and 5); a single name that cannot fit alone is retained, named "too long for
+   one git call", never dropped.
+5. **The git environment is clean plus what git needs — and NO user or system git configuration** (coai plan round,
+   finding 4: with `HOME` set, a user's `core.excludesFile` or `~/.config/git/ignore` would make `check-ignore` answer with
+   the user's rules as if they were the repository's): `SystemRoot`, `WINDIR`, `TEMP`, `TMP`, the three `GIT_*` of the parent,
+   plus `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=NUL`; NO `HOME`, `USERPROFILE` or `XDG_CONFIG_HOME`; and
+   `-c core.excludesFile=` in argv. Measured against the real `git.exe` on this machine in E19.S4 before final; a scenario
+   with a user excludes file that conflicts with the repository's rules pins it.
 6. **A real `git.exe` runs in tests only against a throw-away `testsToDelete-` repository the test creates**, read-only
    commands only (the parent's §4 "never a real git from a test" is narrowed to "never against a real repository" — the
    round-2 rejection already relied on such a test).
+8. **A WSL-made worktree's pointer is translated only through known automount roots** (coai plan round, finding 1): the
+   Windows side cannot read the distro's `wsl.conf`, so `worktrees.wslAutomountRoots` (default `["/mnt/"]`, a closed shape:
+   absolute, ends with `/`) lists the prefixes; a POSIX pointer under none of them is `foreignPointer`, never a candidate —
+   the safe failure. `worktrees.json` stores Windows paths only.
+9. **`git.exe`'s folder is admitted when non-administrators cannot WRITE it** (coai plan round, finding 2): the ACL check
+   is about write, modify, delete and take-ownership rights for anyone but Administrators, SYSTEM and TrustedInstaller on
+   the file and every folder up to the volume root — read and execute for Users is normal and allowed. A per-user install
+   (`%LOCALAPPDATA%\Programs\Git`) is refused unless an administrator names it in `worktrees.gitPath` (machine layer).
+10. **Absent is not zero** (coai plan round, finding 3): until E19.S4, `worktrees.reclaimable` carries no byte figure —
+   the report's `reclaimable` is `{available: false, reason}` and the verdict `unknown`; the panel renders "—".
 7. **`disk.volumeFree` needs seven keys, not five** (the parent's §3.9 table is right, its DH-1 row said five).
 
 ## 4. Stories
@@ -254,6 +270,12 @@ this epic — not in this document.
 The coai plan round runs ONCE for this document (epic `19/21` of the parent). A code round runs per story on its
 branch, with this document's story section as `planText` plus what the previous round changed; every finding is
 resolved, rejections with reasons, in round one.
+
+## 6a. Plan round (coai, 2026-10-15)
+
+One round, two reviewers: **proceed** (4 gating against 6). All six findings accepted and written into §3: batches bounded
+by the command-line length as well as the count (0, 5), automount roots as a key with `foreignPointer` as the safe failure
+(1), the ACL rule about WRITE (2), absent is not zero for `reclaimable` (3), no user or system git configuration (4).
 
 ## 7. Questions
 
