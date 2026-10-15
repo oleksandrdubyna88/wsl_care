@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.5.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.4.0...daemon-v0.5.0) (2026-10-15)
+
+
+### Features
+
+* **daemon:** A13 runs despite the load after archive.maxDeferHours ([#134](https://github.com/oleksandrdubyna88/wsl_care/issues/134)) ([ac70fa6](https://github.com/oleksandrdubyna88/wsl_care/commit/ac70fa6361837249150c1371e4ad2bb844e3c23e))
+* **daemon:** tasks render, the windowsTasks keys and DryRunWindow.Peek (WR-D1) ([#124](https://github.com/oleksandrdubyna88/wsl_care/issues/124)) ([0f0b921](https://github.com/oleksandrdubyna88/wsl_care/commit/0f0b9219f64599ed97bd498537059001c7e7b34d))
+* **daemon:** tasks run, the Job Object supervisor and exit 84 TaskEnded (WR-D3) ([#133](https://github.com/oleksandrdubyna88/wsl_care/issues/133)) ([281dd59](https://github.com/oleksandrdubyna88/wsl_care/commit/281dd59b816a64027e9e097d79ab00eea4aca31c))
+* **daemon:** tasks stage and tasks stage --remove, the staged copy and its sweep (WR-D2) ([#137](https://github.com/oleksandrdubyna88/wsl_care/issues/137)) ([fce407f](https://github.com/oleksandrdubyna88/wsl_care/commit/fce407f80af04e44145aee0bb77932ade27ea746))
+* **daemon:** the archive body of tasks run archive — dry previews, real runs, no run lock (WR-D5) ([#147](https://github.com/oleksandrdubyna88/wsl_care/issues/147)) ([3386660](https://github.com/oleksandrdubyna88/wsl_care/commit/3386660cec397c36c1c1f071196eb62688162bf6))
+* **daemon:** the failed-units verdict ignores a configured list, default getty@tty1.service ([#128](https://github.com/oleksandrdubyna88/wsl_care/issues/128)) ([6ec9623](https://github.com/oleksandrdubyna88/wsl_care/commit/6ec96235e3cb418e0a14e6caa3f4a496ddbfa8d0))
+* **daemon:** the virtual disks and the hosting volume — gap, growth, free space (E15.S2) ([#111](https://github.com/oleksandrdubyna88/wsl_care/issues/111)) ([dd543b7](https://github.com/oleksandrdubyna88/wsl_care/commit/dd543b75b3c9881f57700540c52afe33bc6010d7))
+* **daemon:** the Windows disk script, a second fixed interop script read by the full run (E15.S1) ([#99](https://github.com/oleksandrdubyna88/wsl_care/issues/99)) ([1087861](https://github.com/oleksandrdubyna88/wsl_care/commit/1087861f3844a782ff17e9e992a653845cf070c8))
+* **daemon:** the Windows watch, the ledger lock and the retention sweep (WR-D4) ([#144](https://github.com/oleksandrdubyna88/wsl_care/issues/144)) ([b741a93](https://github.com/oleksandrdubyna88/wsl_care/commit/b741a9342ff42724016a68de067a1d30f9d94fd4))
+* **extension:** E10.S2b — Restore from the Archive page through the root road, over the `wsl-care` daemon's `act A20` ([#105](https://github.com/oleksandrdubyna88/wsl_care/issues/105)) ([28343e0](https://github.com/oleksandrdubyna88/wsl_care/commit/28343e07298267b0ddc0c60361aa6e74fc560575))
+* **extension:** E10.S2c — the Logs page names the archive runs, tested against run goldens the daemon's engine writes ([#114](https://github.com/oleksandrdubyna88/wsl_care/issues/114)) ([befb57a](https://github.com/oleksandrdubyna88/wsl_care/commit/befb57a07ece7ed9c068a821e7fe1a35eae784a1))
+* **extension:** Stop client-gone relays, the panel's A21 button (E14 S7b.2b) ([#100](https://github.com/oleksandrdubyna88/wsl_care/issues/100)) ([8ccece6](https://github.com/oleksandrdubyna88/wsl_care/commit/8ccece645dd00b72b0b28226232884222aa4a560))
+* **install:** record the distro name through a validated --distro-name argument (E15.S2b) ([#126](https://github.com/oleksandrdubyna88/wsl_care/issues/126)) ([6314311](https://github.com/oleksandrdubyna88/wsl_care/commit/631431155e2952039dcc532034bd04f7c4c0b133))
+* **tests:** local test runs take at most 8 workers, at lowered CPU priority ([#102](https://github.com/oleksandrdubyna88/wsl_care/issues/102)) ([baab38e](https://github.com/oleksandrdubyna88/wsl_care/commit/baab38e36ad71c9566e1cde6a79d7eaa5a36f9c6))
+
+
+### Bug Fixes
+
+* **daemon:** A20 believes only the entries it asked for ([#118](https://github.com/oleksandrdubyna88/wsl_care/issues/118)) ([b76e1b2](https://github.com/oleksandrdubyna88/wsl_care/commit/b76e1b26e337c77dec5d1d09f12957766e3bf260))
+* **daemon:** the disk gap advice never recommends a sparse VHD ([#115](https://github.com/oleksandrdubyna88/wsl_care/issues/115)) ([c0ef932](https://github.com/oleksandrdubyna88/wsl_care/commit/c0ef9321f7192aab4f8c84f5b939e53c8ed295e8))
+* **health:** the clock verdicts say what was measured — journal.history from the reading, clock.fight's three writers, clock.jumps' stepper floor ([#136](https://github.com/oleksandrdubyna88/wsl_care/issues/136)) ([0d8a6e5](https://github.com/oleksandrdubyna88/wsl_care/commit/0d8a6e54f1eaa695adfe4af1023d1879b7e6dd31))
+* **health:** the wsl-care daemon's interop scripts pin the PowerShell module path first ([#112](https://github.com/oleksandrdubyna88/wsl_care/issues/112)) ([b7c78d2](https://github.com/oleksandrdubyna88/wsl_care/commit/b7c78d20edf515c91b95109d360fadc98ecae13c))
+* **privacy:** take the owner's login name out of tracked text, and find the daemon's user sentences in CI too ([#109](https://github.com/oleksandrdubyna88/wsl_care/issues/109)) ([fa7c9a3](https://github.com/oleksandrdubyna88/wsl_care/commit/fa7c9a33ed6ded406bf252c9d1835991037759ad))
+* **release:** fetch-windows-daemon retries the download, bounded, timed out per attempt and logged ([#125](https://github.com/oleksandrdubyna88/wsl_care/issues/125)) ([3b9b4ff](https://github.com/oleksandrdubyna88/wsl_care/commit/3b9b4ff7eb4e840b51a1574c1d745c675deea2ea))
+* **tests:** TempRoot sweeps the wsl-care-test-* roots earlier test processes left in %TEMP% ([#122](https://github.com/oleksandrdubyna88/wsl_care/issues/122)) ([dadb8dd](https://github.com/oleksandrdubyna88/wsl_care/commit/dadb8ddcc79983c4de17fa8871578c2ee9f8bfee))
+
 ## [0.4.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.3.0...daemon-v0.4.0) (2026-10-10)
 
 
