@@ -60,7 +60,7 @@ public sealed record ActionId
     /// </summary>
     public static IReadOnlyList<ActionId> ExecutionOrder { get; } =
     [
-        .. new[] { "A5Testcontainers", "A5", "A4", "A6", "A6Unused", "A7", "A8", "A9", "A12", "A14", "A17", "A10", "A15", "A16", "A3", "A11", "A18", "A19", "A21", "A13", "A20", "A23", "A1", "A2" }
+        .. new[] { "A5Testcontainers", "A5", "A4", "A6", "A6Unused", "A7", "A8", "A9", "A12", "A14", "A17", "A10", "A15", "A16", "A3", "A11", "A18", "A19", "A21", "A23", "A13", "A20", "A1", "A2" }
             .Select(text => All.Single(id => id.Text == text)),
     ];
 
