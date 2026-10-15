@@ -692,3 +692,12 @@ Decisions the plan did not spell out:
   index 1`; m1 `Expected Lines(stderr) {…} to have an item matching l.Contains("an elevated process", Ordinal)`; M3 `Expected
   report.Stop "another archive run of this side holds its lock" to contain "pid 4242"`. Each restored byte for byte (`cmp`).
 - **Suites**: Core 2759 (2678 passed, 81 skipped), Cli 432 (430, 2), LiveContract 28 (12, 16), Scenarios 624 (the Linux legs skip). One Scenarios run had `FetchWindowsDaemonFlows...(shape: "bin-dll")` time out under load (1 min 1 s); the class run alone passes 43/43 and D5 does not touch it. M2 is a compile-time guarantee (the table takes a `DryRunDecision`; `ArchiveBody.Choice` is gone), so its proof is that nothing outside Core can build the argv.
+
+**The story's coai plan round (session `ad924fee`, 2026-10-15)**: `proceed`, five findings, one accepted, four rejected. *Accepted*:
+the two archive locks are named apart in the docs — `archive.lock` (this user, this machine, an exclusive open released by the OS,
+taken first, its holder from `holder.json`) and the side lease (one side across machines, in the base, a dead holder of this host and
+boot taken over); neither is the run lock (module_daemon.md § *The Windows runner's archive body*). *Rejected*: a stale holder after a
+supervisor kill (refuted — the OS releases `archive.lock`, `SideLease` takes over a dead holder); the stamp only after a successful
+preview (the distro's `Decide` rule, which only ever errs towards more dry runs); an interrupted archive's recovery (the archive's own
+two-phase protocol, proven by `ArchiveRunFlows`' 14-point kill theory — a deadline kill is the same kill); the dry log's counts
+untested (refuted — `TasksRunArchiveBodyTests` and the Scenarios flow assert "would move 1 session(s), 14 bytes").

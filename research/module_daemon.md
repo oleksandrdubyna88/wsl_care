@@ -647,6 +647,11 @@ flowchart TD
 `tasks run archive` supervises the archive body (`Core/Scheduler/ArchiveBody.cs`, §3.5). The dry-run decision is taken in the
 SUPERVISING process, before the worker's argv is chosen; the worker is one of the archive's two existing verbs.
 
+**Two archive locks, two jobs** (the story's coai plan round `ad924fee`, finding 1): `archive.lock` (`%LOCALAPPDATA%\wsl-care\archive\
+archive.lock`, an exclusive open the OS releases when its holder dies) serialises the archive runs of THIS user on THIS machine and
+is taken first, its holder named from `holder.json`; the side lease (`SideLease`, a record in the BASE) serialises the runs of one
+side across machines and hosts and is taken inside it, a dead holder of this host and boot taken over. Neither is the run lock.
+
 ```mermaid
 flowchart TD
     run["tasks run archive --json"] --> sweep["staging sweep (run lock, never waited on, released)"]
