@@ -24,7 +24,9 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
  * SHARED while it runs: a tick or a Refresh that finds the exe still running joins that read — one start, one store write.
  *
  * Each `status` run opens one run-log file in the daemon (M1) — and, since E19.S2b, one in the WINDOWS binary's own log folder
- * too, so a Windows window-day costs about TWICE the files (721 + 721 at the default). The numbers per window-day are measured by
+ * too, so a Windows window-day costs about TWICE the files at the default (721 + 721). An interval tick reads the Windows status only when
+ * the last Windows read STARTED at least max(refreshSeconds, 120 s) ago (`Timers.nowMs`), so at the 30 s floor the Windows side stays at 721
+ * a day (the distro's 2 881 follows the setting); a panel Refresh and a regained focus always read. The numbers per window-day are measured by
  * `poller.test.ts` over this very class and recorded in research/2026-10-04_extension_poll_churn.md.
  *
  * Every round is stamped with the TARGET it was started for (`target`, the `wslCare.distro` value). A round started for
@@ -36,6 +38,8 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
 
 export const DEFAULT_REFRESH_SECONDS = 120;
 export const MIN_REFRESH_SECONDS = 30;
+/** The Windows `status` read on an interval tick happens at most this often — the 120 s default, whatever the (shorter) refresh interval (E19.S2b). */
+export const WINDOWS_READ_MIN_SECONDS = DEFAULT_REFRESH_SECONDS;
 /** One day — the schema's `maximum` too. `setInterval` takes a 32-bit delay: above 2^31-1 ms (~24.8 days) Node clamps it to
  * 1 ms, so an unclamped huge setting would poll the daemon every millisecond. */
 export const MAX_REFRESH_SECONDS = 86_400;
@@ -43,6 +47,11 @@ export const MAX_REFRESH_SECONDS = 86_400;
 /** A repeating timer, injectable so tests drive a manual clock; the returned function disarms it. */
 export interface Timers {
   every(ms: number, run: () => void): () => void;
+  /**
+   * A monotonic clock in milliseconds, injected with the timers (E19.S2b): the Windows read's throttle measures from it. Absent, the
+   * Windows read is not throttled — every tick reads.
+   */
+  nowMs?(): number;
 }
 
 export interface PollerOptions {
@@ -106,6 +115,8 @@ export class Poller {
   private readonly pending = new Set<Promise<unknown>>();
   /** The Windows `status` read in flight, shared by every ask until it ends (E19.S2b). */
   private windowsReading: Promise<void> | undefined;
+  /** When the newest Windows read STARTED, on the injected clock — what the tick throttle measures from. */
+  private windowsStartedAt: number | undefined;
   /** Replaced, never edited, at every observed target (`nextTargets`). */
   private targets: TargetState = { generation: 0, lastTarget: undefined };
 
@@ -119,7 +130,7 @@ export class Poller {
   focusChanged(focused: boolean): void {
     this.stopTimer();
     if (focused) {
-      void this.tick();
+      void this.tick(true);
       this.arm();
     }
   }
@@ -134,13 +145,13 @@ export class Poller {
 
   /** What the interval does: one `status` (and, on Windows, the bundled daemon's), and only while focused (the timer can fire just after focus was lost). An
    * unfocused tick still notices a changed target, so the previous distribution's answers are not left on show. */
-  tick(): Promise<void> {
+  tick(regainedFocus = false): Promise<void> {
     this.observeTarget();
     if (!this.options.focused()) {
       return Promise.resolve();
     }
 
-    return this.track(Promise.all([this.ask(this.begin(), 'status'), this.askWindows()]).then(() => undefined));
+    return this.track(Promise.all([this.ask(this.begin(), 'status'), this.askWindows(regainedFocus)]).then(() => undefined));
   }
 
   /**
@@ -173,9 +184,11 @@ export class Poller {
     this.options.store.setChecking(true);
     try {
       const asking = this.ask(round, 'status', options);
-      void this.track(this.askWindows());
+      const windows = this.askWindows(true);
       const status = await asking;
+      // preview and doctor follow the distro's status at once — they never wait for the Windows exe (up to its ceiling); "checking" does.
       await this.afterStatus(round, status);
+      await windows;
     } finally {
       this.settle(round, () => this.options.store.setChecking(false));
     }
@@ -205,18 +218,65 @@ export class Poller {
 
   /**
    * The Windows `status` into its own slot — when the host can run the bundled exe. Never rejects and never reads the distribution's
-   * outcome: whatever it ends in (a thrown client included) is stored as the Windows reading and nothing else.
+   * outcome: whatever it ends in (a thrown client included) is stored as the Windows reading and nothing else. `always` is a panel
+   * Refresh or a regained focus; an interval tick (`always` false) reads only when the last read STARTED at least
+   * {@link WINDOWS_READ_MIN_SECONDS} or the refresh interval ago, so at the 30 s floor the Windows binary's run logs stay at 721 per
+   * window-day, not 2 881. A `usable()` that throws is a defect of the probe: nothing is asked and an `unknownFailure` is stored, so it
+   * shows in the slot rather than vanishing.
    */
-  private askWindows(): Promise<void> {
+  private askWindows(always: boolean): Promise<void> {
     const windows = this.options.windows;
-    if (windows === undefined || !windows.usable()) {
-      return Promise.resolve();
-    }
-    // ONE read at a time, as the client shares one call per verb: a tick or a Refresh while the exe still runs joins it — one start,
-    // one store write, so an older answer can never land after a newer one.
-    this.windowsReading ??= this.readWindows(windows).finally(() => { this.windowsReading = undefined; });
 
-    return this.windowsReading;
+    return windows === undefined ? Promise.resolve() : this.askUsable(windows, always);
+  }
+
+  private askUsable(windows: WindowsStatusSource, always: boolean): Promise<void> {
+    const usable = this.usable(windows);
+    if (usable === true) {
+      return this.shareRead(windows, always);
+    }
+    if (usable !== false) {
+      this.options.store.setWindowsStatus(usable);
+    }
+
+    return Promise.resolve();
+  }
+
+  /**
+   * ONE read at a time, as the client shares one call per verb: a tick or a Refresh while the exe still runs joins it — one start, one
+   * store write, so an older answer can never land after a newer one.
+   */
+  private shareRead(windows: WindowsStatusSource, always: boolean): Promise<void> {
+    if (this.windowsWanted(always)) {
+      this.windowsStartedAt = this.options.timers.nowMs?.();
+      this.windowsReading = this.readWindows(windows).finally(() => { this.windowsReading = undefined; });
+    }
+
+    return this.windowsReading ?? Promise.resolve();
+  }
+
+  /** A new read starts when none runs and the ask is a Refresh / regained focus, or the tick's throttle has passed. */
+  private windowsWanted(always: boolean): boolean {
+    return this.windowsReading === undefined && (always || this.windowsDue());
+  }
+
+  /** `windows.usable()`: its answer, or the `unknownFailure` of a probe that threw. */
+  private usable(windows: WindowsStatusSource): boolean | VerbOutcome {
+    try {
+      return windows.usable();
+    } catch (error: unknown) {
+      return { kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb: 'status' };
+    }
+  }
+
+  /** An interval tick may read the Windows status: no clock to measure by, no read yet, or the throttle's span has passed. */
+  private windowsDue(): boolean {
+    const now = this.options.timers.nowMs?.();
+    if (now === undefined || this.windowsStartedAt === undefined) {
+      return true;
+    }
+
+    return now - this.windowsStartedAt >= Math.max(WINDOWS_READ_MIN_SECONDS, effectiveSeconds(this.options.refreshSeconds())) * 1000;
   }
 
   private async readWindows(windows: WindowsStatusSource): Promise<void> {

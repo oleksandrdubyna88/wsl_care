@@ -72,6 +72,7 @@ const REAL_TIMERS: Timers = {
     const handle = setInterval(run, ms);
     return () => clearInterval(handle);
   },
+  nowMs: () => performance.now(),
 };
 
 const ONE_SHOT = {

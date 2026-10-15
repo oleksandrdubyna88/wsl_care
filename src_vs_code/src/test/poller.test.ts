@@ -19,6 +19,7 @@ import { answered, failed, headBody } from './support/outcomes';
 /** A clock the test advances by hand; `every` registers a repeating timer like `setInterval`. */
 class ManualClock implements Timers {
   now = 0;
+  readonly nowMs = (): number => this.now;
   private timers: { at: number; ms: number; run: () => void; live: boolean }[] = [];
 
   every(ms: number, run: () => void): () => void {
@@ -420,6 +421,57 @@ async function windowsStatusRunsOver(hoursFocused: number, seconds: number): Pro
 test('E19.S2b churn, measured: the Windows binary adds the same number of status runs (= run-log files) per window-day as the distro\'s', async () => {
   assert.equal(await windowsStatusRunsOver(24, 120), 721, 'a window focused all day: 720 interval polls + the one at focus');
   assert.equal(await windowsStatusRunsOver(8, 120), 241);
-  assert.equal(await windowsStatusRunsOver(24, 30), 2881);
+  assert.equal(await windowsStatusRunsOver(24, 30), 721, 'at the 30 s floor the Windows read is throttled to once per 120 s: not 2 881');
   assert.equal(await windowsStatusRunsOver(0, 120), 1);
+});
+
+// ---- E19.S2b coai code round: the throttle, the panel round's wait, a throwing usable() ----
+
+test('at the 30 s floor the windows status is read once per 120 s — a Refresh and a regained focus always read', async () => {
+  const w = windowsWorld();
+  w.seconds = 30;
+  w.poller.start();
+  await w.poller.settled();
+  await advanceEach(w, 30_000, 8);
+  const reads = (): number => w.order.filter((a) => a === 'windowsStatus').length;
+  assert.equal(w.order.filter((a) => a === 'status').length, 9, 'the distro is read at every 30 s tick');
+  assert.equal(reads(), 3, 'the Windows binary at 0, 120 and 240 s only');
+  await w.poller.refreshPanel();
+  assert.equal(reads(), 4, 'a panel Refresh always reads');
+  w.focused = false;
+  w.poller.focusChanged(false);
+  w.focused = true;
+  w.poller.focusChanged(true);
+  await w.poller.settled();
+  assert.equal(reads(), 5, 'a regained focus always reads');
+});
+
+test('a panel refresh stays "checking" until the windows read ends, yet asks preview and doctor right after the distro status', async () => {
+  const held = heldWindows();
+  const w = windowsWorld(okAnswer, held.windows);
+  const round = w.poller.refreshPanel();
+  for (let i = 0; i < 10; i += 1) {
+    await Promise.resolve();
+  }
+  assert.deepEqual(w.calls.map((c) => c.verb), ['status', 'preview', 'doctor'], 'preview and doctor do not wait for the Windows exe');
+  assert.equal(w.store.snapshot().checking, true, 'still checking while the Windows read runs');
+  held.finish(windowsAnswer());
+  await round;
+  assert.equal(w.store.snapshot().checking, false);
+  assert.equal(w.store.snapshot().windowsStatus?.kind, 'answered');
+});
+
+test('a windows.usable() that throws is caught: the tick and the refresh resolve, nothing is asked, an unknownFailure is stored', async () => {
+  const w = windowsWorld();
+  const throwing = new Poller({
+    run: (verb) => Promise.resolve(okAnswer(verb)), store: w.store, focused: () => true, refreshSeconds: () => undefined, timers: w.clock, target: () => '',
+    windows: { usable: () => { throw new Error('the probe broke'); }, status: () => { w.order.push('windowsStatus'); return Promise.resolve(windowsAnswer()); } },
+  });
+  await throwing.tick();
+  await throwing.refreshPanel();
+  assert.deepEqual(w.order, [], 'the Windows status was never asked');
+  const stored = w.store.snapshot().windowsStatus;
+  assert.equal(stored?.kind, 'unknownFailure', 'a defect in the probe is visible in the slot, not silent');
+  assert.match(JSON.stringify(stored), /the probe broke/);
+  assert.equal(w.store.snapshot().status?.kind, 'answered', 'the distro outcome is untouched');
 });

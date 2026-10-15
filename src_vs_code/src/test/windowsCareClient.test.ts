@@ -124,3 +124,15 @@ test('off Windows, or for an extension not on a local disk, no status is read an
   }
   assert.equal((await client(recording(exited(0, '')).runner, 'linux').status()).kind, 'notWindows');
 });
+
+test('a native crash text with no wsl-care: line still reaches the messages — the last five non-empty lines, each cut', async () => {
+  const crash = ['Unhandled exception. System.InvalidOperationException: boom', ...Array.from({ length: 8 }, (_, i) => `   at Frame${i}`), '', 'x'.repeat(500)].join('\r\n');
+  const outcome = await client(recording(exited(134, '', crash)).runner).status();
+  assert.equal(outcome.kind, 'unknownFailure');
+  const messages = outcome.kind === 'unknownFailure' ? outcome.messages : [];
+  assert.equal(messages.length, 5);
+  assert.ok(messages.every((m) => m.length <= 200), 'each line cut to a sane length');
+  assert.ok(messages.at(-1)?.startsWith('xxx'), 'the LAST lines are kept');
+  const prefixed = await client(recording(exited(70, '', 'noise\r\nwsl-care: a defect\r\n')).runner).status();
+  assert.deepEqual(prefixed.kind === 'internalDefect' && prefixed.messages, ['wsl-care: a defect'], 'a wsl-care: line wins when there is one');
+});

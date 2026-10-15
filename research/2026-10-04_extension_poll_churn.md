@@ -104,9 +104,15 @@ What is NOT measured: the daemon's wall time and bytes per `status` run on this 
 |---|---|---|---|---|
 | 24 h | 120 (default) | **721** | 721 (0 when WSL is stopped) | ~10 094 |
 | 8 h (a working day) | 120 (default) | **241** | 241 | ~3 374 |
-| 24 h | 30 (the floor) | **2 881** | 2 881 | ~40 334 |
+| 24 h | 30 (the floor) | **721** (throttled: one read per 120 s on interval ticks) | 2 881 | ~10 094 |
 | an instant | 120 | **1** | 1 | — |
 
-So a Windows machine writes about twice the run logs the table above counts for the distribution alone (the distro's count is
-unchanged). The decision above (accept / exception / change the default) now covers both folders; changing
-`wslCare.refreshSeconds` halves or doubles both together.
+**The throttle (the coai code round).** An interval tick reads the Windows status only when the last Windows read STARTED at least
+max(`wslCare.refreshSeconds`, 120 s) ago (measured on the poller's injected clock); a panel Refresh and a regained focus always read.
+At the default 120 s nothing changes (721 a day); at the 30 s floor the Windows binary stays at 721 a day instead of 2 881 — the
+distribution's own count still follows the setting. Measured: `poller.test.ts`, *at the 30 s floor the windows status is read once
+per 120 s* and *E19.S2b churn, measured* (721 / 241 / 721 / 1).
+
+So a Windows machine writes about twice the run logs the table above counts for the distribution alone at the default, and at most
+721 more a day at any setting (the distro's count is unchanged). The decision above (accept / exception / change the default) now
+covers both folders; raising `wslCare.refreshSeconds` above 120 s thins both together.
