@@ -252,7 +252,7 @@ public static class ConfigLoader
 
     /// <summary>E9.S0 review round decision (d): keys only the USER's own process acts on — the archive's base folder (plan §15r
     /// D1) — whose invalid user value is a notice: the value is not taken, and root is never put observe-only by it.</summary>
-    private static readonly ConfigKey[] UserOwned = [ConfigKeys.Archive.BaseFolder];
+    private static readonly ConfigKey[] UserOwned = [ConfigKeys.Archive.BaseFolder, ConfigKeys.Worktrees.Roots];
 
     /// <summary>A valid value enters the merge — unless it is a user value the trust does not take (plan §15q R1.2, R1.3, R1.6),
     /// which is a notice instead.</summary>

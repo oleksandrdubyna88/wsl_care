@@ -95,6 +95,9 @@ public sealed record StatusReport(
     /// are none. The distro's binary reads them from that run's detail; the Windows binary says the distro reads them. Additive;
     /// absent from the sample a run detail embeds.</summary>
     public Collect.DiskReport? Disk { get; init; }
+
+    /// <summary>E19.S3: the last worktree scan (<c>worktrees.json</c>), summarised, with its basis and age; the Windows binary only. Additive.</summary>
+    public WslCare.Core.Worktrees.WorktreesSection? Worktrees { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>

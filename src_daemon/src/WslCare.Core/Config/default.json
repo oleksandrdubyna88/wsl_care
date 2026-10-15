@@ -368,5 +368,23 @@
     "watchLogonDelaySeconds": 60,
     "archiveLogonDelayMinutes": 20,
     "archiveEveryHours": 4
+  },
+  "worktrees": {
+    "roots": [],
+    "maxRoots": 8,
+    "idleDays": 3,
+    "projectFileExtensions": [".csproj", ".fsproj", ".vbproj", ".esproj", ".sqlproj", ".vcxproj"],
+    "buildArtifactPatterns": [
+      ".dll", ".exe", ".pdb", ".json", ".cache", ".so", ".dylib", ".a", ".lib", ".obj", ".wasm", ".gz", ".br", "obj:.cs", ".props",
+      ".targets", ".editorconfig", ".txt", ".map", ".js", ".mjs", ".up2date", ".sn", ".rsp", ".def", ".sourcelink", ".resources",
+      ".xml", ".nupkg", ".snupkg", ".baml", ".ilk", ".exp", ".res", ".tlog", ".lastbuildstate", ".stamp", "none"
+    ],
+    "artifactSkewMinutes": 10,
+    "wslAutomountRoots": ["/mnt/"],
+    "scanMaxEntries": 5000000,
+    "scanMaxSeconds": 900,
+    "reportTop": 20,
+    "reportMaxAgeDays": 7,
+    "reclaimableWarnGib": 20
   }
 }

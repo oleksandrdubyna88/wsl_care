@@ -117,8 +117,18 @@ internal static class ActCommand
     {
         var otherSide = request.Ids.Select(id => host.Actions.Find(id)!).Where(a => !a.Sides.Contains(host.Paths.Side)).ToList();
         return otherSide.Count > 0
-            ? (ExitCode.Usage, $"{string.Join(", ", otherSide.Select(a => a.Id))} {(otherSide.Count == 1 ? "runs" : "run")} inside the WSL distro, not on this side (the {SideName(host)} binary)")
+            ? (ExitCode.Usage, $"{Where(otherSide)} not on this side (the {SideName(host)} binary)")
             : null;
+    }
+
+    /// <summary>E19.S3: where the refused actions run, in the words of THEIR side — <c>A10 runs inside the WSL distro</c>, <c>A24 runs on the Windows host</c> —
+    /// not one fixed sentence about the distro.</summary>
+    private static string Where(IReadOnlyList<ICleanupAction> actions)
+    {
+        var homes = actions.GroupBy(a => a.Sides.Contains(Core.Hosting.HostSide.Wsl) ? "inside the WSL distro" : "on the Windows host").ToList();
+        return homes.Count == 1
+            ? $"{string.Join(", ", actions.Select(a => a.Id))} {(actions.Count == 1 ? "runs" : "run")} {homes[0].Key},"
+            : string.Join(", ", homes.Select(h => $"{string.Join(", ", h.Select(a => a.Id))} run {h.Key}")) + ",";
     }
 
     private static string SideName(CliHost host) => host.Paths.Side == Core.Hosting.HostSide.Wsl ? "WSL" : "Windows";

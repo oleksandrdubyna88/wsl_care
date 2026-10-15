@@ -118,6 +118,10 @@ public sealed class ContractFilesTests
         ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.McpProgramName } open =>
             [("shape", "textList"), ("memberPattern", Core.Mcp.McpUserPrograms.Pattern), ("maxMembers", open.MaxMembers), ("refused", new JsonArray([.. Core.Mcp.McpUserPrograms.Refused.Select(v => (JsonNode)v)])),
                 ("launchers", new JsonArray([.. Core.Mcp.McpUserPrograms.Launchers.Select(v => (JsonNode)v)])), ("launcherVersionSuffix", Core.Mcp.McpUserPrograms.LauncherVersionSuffix)],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.WindowsLocalPath } open =>
+            [("shape", "textList"), ("memberShape", "windowsLocalPath"), ("memberMaxLength", TextRule.AbsolutePathOrEmpty.MaxLength), ("maxMembers", open.MaxMembers)],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.Matching matching } open =>
+            [("shape", "textList"), ("memberPattern", matching.Expression), ("maxMembers", open.MaxMembers)],
         ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
         ConfigKey.AgentListKey => [("shape", "agentList"), ("maxEntries", ExtraAgentShape.MaxEntries), ("maxFolders", ExtraAgentShape.MaxFolders), ("maxPathLength", ExtraAgentShape.MaxPathLength), ("maxGlobLength", ExtraAgentShape.MaxGlobLength), ("maxNameLength", ExtraAgentShape.MaxNameLength), ("sides", new JsonArray(ExtraAgentShape.Wsl, ExtraAgentShape.Windows))],
         _ => throw new InvalidOperationException($"{key.Name}: a key shape the contract does not describe"),
