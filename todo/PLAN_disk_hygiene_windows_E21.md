@@ -91,8 +91,8 @@ The scenarios and the brief are Fable's: §4 below.
 
 ### E21.S4 = DH-7 — the A26 `%TEMP%` sweep and the both-sides panel flow — waits for WR-T1
 
-- **Depends on:** WR-T1 (A23, the engine's first Windows action and its `%TEMP%` walk — the runner plan) OR E20's DH-4 if it
-  lands first and extracts the shared Windows engine path (the parent's §6: never two copies); E19.S2b (the Windows status
+- **Depends on:** WR-T1 (A23, the privilege rule) AND E20's DH-4 (the handle-based `ITreeRemoval` it extracts from WR-T1's
+  walk — a prerequisite, §4b item 6; the parent's §6: never two copies); E19.S2b (the Windows status
   read — the panel's both-sides conjunction reads the Windows preview); DH-6 (the shared judge).
 - **Brief (when unblocked).** A26: top-level `testsToDelete-*` folders of the user's `%TEMP%` (shell-folder API), newest
   descendant write older than `testLeftovers.minAgeMinutes`, through the shared walk (`%TEMP%\claude\` guard first, owner
@@ -785,10 +785,61 @@ Round for the gate's epic 3/3: **proceed** (6 gating against 6). Seven findings;
   third-party test frameworks; the window is milliseconds against a name whose convention says "delete me", Docker still
   refuses an in-use volume, and §2.7 names the residue verbatim in the preview and README.
 
+## 4b. Risk consultations for stories 3.3 and 3.4 (2026-10-15) — binding on §3, §4 and §4a where they differ
+
+Both gate-ordered consultations ran (`25402b8a` for 3.3, `4e0a8210` for 3.4); each point was checked against the code.
+
+**DH-6 (3.3):**
+
+1. **An unreadable process is not "no runner".** Verified: `ProcessCollector.cs:193` turns a failed `cmdline` read into `[]`, and
+   `:125` drops a process whose `status` failed. The runner reading carries both counts: a process whose `status` is readable
+   but whose `cmdline` is not, or whose `status` failed with anything but "does not exist" (ENOENT/ESRCH = vanished, the
+   normal race), makes `runner.wsl` **Unknown** (`act` runs as root, so this is rare and it blocks — the safe direction). RED:
+   `An_access_denied_cmdline_makes_the_runner_signal_unknown`, `A_vanished_process_is_not_unknown`.
+2. **Runners inside containers count.** Decision 13 is struck: a test runner in a dev container drives Docker through the
+   socket like any other, so the match covers EVERY user process of the snapshot, counted container members included (zombies
+   still excluded). RED: `A_runner_inside_a_counted_container_blocks`.
+3. **What the distro cannot see is said, not implied.** A fifth signal `runner.otherDistros`, `NotObserved` by design: "other
+   WSL distros sharing this Docker daemon are not read from this distro" — always listed in the basis beside `runner.windows`.
+   The guarantee is stated as what it is: **a snapshot of this distro's processes, repeated before every batch, plus the hour
+   floor**; README says a test that runs in another distro or on Windows is protected only by the floor and by Docker's own
+   refusals until DH-7, and that a long test reusing an OLD stopped `testsToDelete-` container across phases is the named
+   residue (the convention says such a container is disposable once stopped for an hour).
+4. **More launchers by default, and a test per shape.** `testLeftovers.runnerPatterns` gains `"pnpm test"`, `"pnpm run test"`,
+   `"yarn test"`, `"bun test"`, `"go test"`, `"pytest"` (the program) and `"python pytest"` (`python -m pytest` as a
+   subsequence); a table test over those exact argv arrays plus `npx vitest` (matched through its `node … vitest.mjs` child)
+   and `dotnet vstest` (through `testhost`); an MTP test exe with an arbitrary name is added by the machine layer (the key is
+   an open list) — README says so. The ≤ 32-member cap stays.
+5. **A25 removes containers WITHOUT `-v`.** `rm -v` would delete anonymous volumes no A25 check ever saw (prefix, fingerprint,
+   age). A25 gets its own template `docker-rm-leftover` = `docker rm <64-hex>…` (never `-v`, never `-f`); the anonymous volumes
+   it leaves become dangling and are A4's, under A4's own rules. `ContainerRemove` (A5's `rm -v`) is untouched. Break-it:
+   `-v` added → `A25_never_removes_an_anonymous_volume` red. §4 2.5's pseudo-code and §3.3's template list read accordingly.
+
+**DH-7 (3.4):**
+
+6. **DH-4's extraction is a PREREQUISITE, not an alternative.** §3's "WR-T1 OR E20's DH-4" is struck: A26 is built only on the
+   handle-based `ITreeRemoval` with the verify-pass manifest and the no-share-delete opens (E20 §4b items 2–4). Verified in
+   WR-T1: its folder removal reaches `Directory.Delete(path, recursive: true)` (`PhysicalFileSystem.cs:624-625`) after the
+   walk, so a child created after enumeration would go unchecked — reported to WR-T1's review (its fix uses
+   `DeleteEmptyDirectory`, `:627-628`). A26 keeps A23's stricter link rule: ANY reparse point in a candidate retains it.
+7. **A26 is all-or-nothing per candidate.** A test folder half-deleted is worse than one kept: the verify pass probes every
+   file with the delete pass's own open (DELETE, share READ|WRITE, never DELETE); any sharing violation or denied open retains
+   the WHOLE candidate before its first delete ("in use: <first name>"). What appears between the probe and the delete is kept
+   by the manifest rule (E20 §4b item 3). RED: `A_test_folder_with_one_file_in_use_is_kept_whole`.
+8. **The Windows runner signal refuses the rest of the sweep, re-read before EVERY candidate** (no runner-to-folder
+   association exists, so no per-candidate exemption). On Windows, an unreadable command line of a process of the SAME user
+   whose image is a launcher (`dotnet`, `node`, `npm`, `pnpm`, `yarn`, `bun`, `go`, `python`, `pwsh`, `powershell`)
+   reads **Unknown**; other accounts' processes stay judged by image name (DH-6 decision 5) — only the user's own processes
+   write into the user's `%TEMP%`.
+9. **The panel's conjunction is re-read at the start of each side's run**, not trusted from the two previews: the Windows
+   task's run judges both its own side and (through E19.S2b's status read of the distro) refuses when the distro's last
+   judgement is older than the run's start; A25's batches keep re-judging the distro. The panel's sentence says
+   "while no test run was seen on either side, re-checked before each batch" — a snapshot guarantee, worded as one.
+
 ## 5. Order
 
 E21.S1 → E21.S3 (they share FILES — the Docker collectors, the preview, the goldens — not data: A25 reads the container LIST
-rows, `DockerInventory.cs:54-69`, never the inspect template, so DH-6 is not held behind DH-2; whichever merges second rebases); E21.S2 any time; E21.S4 after WR-T1 or E20's extraction;
+rows, `DockerInventory.cs:54-69`, never the inspect template, so DH-6 is not held behind DH-2; whichever merges second rebases); E21.S2 any time; E21.S4 after WR-T1 AND E20.S1 (DH-4's extraction, §4b item 6);
 E21.S5 last. E21.S1–S3 run beside E19 (different files, apart from contracts regenerated on rebase).
 
 ## 6. Gates
