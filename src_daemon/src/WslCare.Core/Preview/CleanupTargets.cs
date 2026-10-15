@@ -20,7 +20,8 @@ public sealed record VolumeTargets(
 
 /// <summary>A5's selection: the stopped containers old enough to go and, per container, the anonymous volumes it holds
 /// (removed with it by <c>docker rm -v</c>); the named volumes they hold (kept), those whose labels are unknown (not
-/// counted), the younger ones, the labelled ones. Each volume is listed ONCE, however many selected containers share it.</summary>
+/// counted), the younger ones, the labelled ones, and — for A5 only — the compose containers it never touches
+/// (<paramref name="ComposeKept"/>) and the distinct names of their projects (<paramref name="ComposeProjects"/>, sorted). Each volume is listed ONCE, however many selected containers share it.</summary>
 public sealed record ContainerTargets(
     IReadOnlyList<CleanupTarget> Selected,
     IReadOnlyDictionary<string, IReadOnlyList<string>> AnonymousVolumesOf,
@@ -28,7 +29,9 @@ public sealed record ContainerTargets(
     IReadOnlyList<CleanupTarget> NamedVolumes,
     IReadOnlyList<CleanupTarget> UnknownVolumes,
     IReadOnlyList<CleanupTarget> Younger,
-    IReadOnlyList<CleanupTarget> Kept);
+    IReadOnlyList<CleanupTarget> Kept,
+    IReadOnlyList<CleanupTarget> ComposeKept,
+    IReadOnlyList<string> ComposeProjects);
 
 /// <summary>A6's selection: the images no container uses (of one kind), and those created too recently.</summary>
 public sealed record ImageTargets(IReadOnlyList<CleanupTarget> Selected, IReadOnlyList<CleanupTarget> Younger);
@@ -93,7 +96,9 @@ public static class CleanupTargets
             [.. mounted.Where(volumes.ContainsKey).Where(n => !IsAnonymous(n)).Select(Volume)],
             [.. mounted.Where(n => !volumes.ContainsKey(n)).Select(Volume)],
             [.. candidates.Except(selected).Select(Container)],
-            [.. kept.Select(Container)]);
+            [.. kept.Select(Container)],
+            [],
+            []);
     }
 
     private static bool StoppedBy(ContainerDetail container, DateTimeOffset cutoff) =>

@@ -9,7 +9,12 @@ using WslCare.Core.Records;
 namespace WslCare.Core.Preview;
 
 /// <summary>A sub-figure of a row: what was left out of it, and why (younger than the limit, kept by label, …).</summary>
-public sealed record RowNote(string What, int Count, Reading<long> Bytes);
+/// <remarks><see cref="Names"/> is optional: the names behind the count when a person needs them (A5's compose projects) — at most
+/// <see cref="CleanupPreviews.NamesShown"/> names, then <c>more: N</c>; empty for every other note.</remarks>
+public sealed record RowNote(string What, int Count, Reading<long> Bytes)
+{
+    public IReadOnlyList<string> Names { get; init; } = [];
+}
 
 /// <summary>What one cleanup would take: how many objects, the bytes of those whose size Docker reported, how
 /// many have no reported size, and the notes.</summary>
@@ -46,6 +51,13 @@ public static class CleanupPreviews
 {
     public const string NpmNotYet = "the npm cache size is a folder walk the daily full run takes (plan 4.4); no full run has recorded one yet";
     public const string AptNotYet = "the apt cache and the disabled snap revisions are measured by the daily full run; no full run has recorded them yet";
+
+    /// <summary>The FIXED text of A5's note for the containers of a compose project it keeps — tests and the golden key on it; the
+    /// projects' names go in <see cref="RowNote.Names"/>, never in this text.</summary>
+    public const string ComposeKeptNote = "containers of a docker compose project (kept — compose owns them)";
+
+    /// <summary>How many names a <see cref="RowNote"/> lists before it says <c>more: N</c>.</summary>
+    public const int NamesShown = 5;
 
     /// <summary>The A4 refusal when Docker's version could not be read as a number (E3.S2: unknown is not "new enough").</summary>
     public const string A4VersionUnknown = "Docker's server version could not be read as a number: A4 refuses where it cannot tell Docker 23 or later (plan 5)";

@@ -51,7 +51,7 @@ public sealed record PreviewRowReport(
     IReadOnlyList<RowNoteReport>? Notes,
     string? Refusal);
 
-public sealed record RowNoteReport(string What, int Count, ByteFigure Bytes);
+public sealed record RowNoteReport(string What, int Count, ByteFigure Bytes, IReadOnlyList<string>? Names = null);
 
 /// <summary>Named volumes no container uses: kept, report-only — a person decides per volume (plan §4.3).</summary>
 public sealed record KeptReport(bool Available, string? Reason, int? Count, long? Bytes, IReadOnlyList<KeptVolumeReport>? Volumes);
@@ -121,7 +121,7 @@ public static class PreviewReports
     {
         Reading<RowFigures>.Available { Value: var f } => new PreviewRowReport(
             row.Id, row.Action, row.What, row.AutoSwitch.Name, row.Auto, row.Basis, true, null, f.Count, f.Bytes, f.Unsized,
-            [.. f.Notes.Select(n => new RowNoteReport(n.What, n.Count, StatusReports.Bytes(n.Bytes)))], Refusal(row.Refusal)),
+            [.. f.Notes.Select(n => new RowNoteReport(n.What, n.Count, StatusReports.Bytes(n.Bytes), n.Names.Count == 0 ? null : n.Names))], Refusal(row.Refusal)),
         _ => new PreviewRowReport(row.Id, row.Action, row.What, row.AutoSwitch.Name, row.Auto, row.Basis, false, row.Figures.ReasonOrEmpty, null, null, null, null, Refusal(row.Refusal)),
     };
 

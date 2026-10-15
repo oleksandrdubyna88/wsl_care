@@ -62,6 +62,15 @@ public sealed class DockerCollectorTests
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
+    /// <summary>E21.S1: the compose project label is read INSIDE the docker CLI like every other field — the template names that one
+    /// label (never the others, which carry host paths), between <c>keep</c> and <c>mounts</c>, as the live capture of 2026-10-15 ran it.</summary>
+    [Fact]
+    public void The_inspect_template_reads_the_compose_label()
+    {
+        DockerCommands.InspectTemplate.Should().Contain("\"keep\":{{json (index .Config.Labels \"wsl-care.keep\")}},\"compose\":{{json (index .Config.Labels \"com.docker.compose.project\")}},\"mounts\":[");
+        DockerCommands.InspectTemplate.Should().Contain(DockerLabels.ComposeProject).And.NotContain("compose.project.", "only the project name is read, never the config-file or working-directory labels");
+    }
+
     [Fact]
     public async Task Over_the_captured_answers_every_part_is_read_with_docker_read_commands_only()
     {
