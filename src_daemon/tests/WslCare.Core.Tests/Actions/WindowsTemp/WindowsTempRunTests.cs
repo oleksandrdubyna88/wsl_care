@@ -237,6 +237,40 @@ public sealed class WindowsTempRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_candidate_folder_that_resolves_elsewhere_at_delete_time_is_never_listed_or_deleted()
+    {
+        _world.Dir("coai-a", Old).File(@"coai-a\f", Old);
+
+        var (_, run) = await Both(between: _ => _world.Redirected[_world.Full("coai-a")] = @"C:\elsewhere\coai-a");
+
+        run.Count.Should().Be(0);
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain("a link appeared");
+        _world.DeleteAsked.Should().BeEmpty("the candidate folder itself is judged before it is listed");
+        _world.Exists(@"coai-a\f").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_file_that_appears_in_a_not_yet_listed_subfolder_after_the_scan_is_never_deleted_and_stops_the_candidate()
+    {
+        _world.Dir("coai-a", Old).Dir(@"coai-a\sub", Old).File(@"coai-a\sub\f", Old);
+
+        var listings = 0;
+        var (_, run) = await Both(between: _ => _world.AfterList = listed =>
+        {
+            // The first listing of the candidate after the preview is the re-validation scan; the second is the delete walk's.
+            if (listed.EndsWith("coai-a", StringComparison.OrdinalIgnoreCase) && ++listings == 2)
+            {
+                _world.File(@"coai-a\sub\fresh.txt", Fresh);
+            }
+        });
+
+        run.Count.Should().Be(0);
+        _world.Exists(@"coai-a\sub\fresh.txt").Should().BeTrue("a file newer than the age limit is never judged by the old scan");
+        _world.Exists("coai-a").Should().BeTrue();
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain("changed while deleting");
+    }
+
+    [Fact]
     public async Task The_run_detail_counts_outcomes_and_logical_bytes()
     {
         _world.Dir("coai-a", Old).File(@"coai-a\f", Old, 1000);

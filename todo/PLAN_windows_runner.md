@@ -905,3 +905,23 @@ message is in [module_tests.md](../research/module_tests.md)), and a break-it.
 - **m11 — not here:** the `testsToDelete-` rename of the test harness is DH-8's debt; `wsl-care-test-*` stays on the allow-list.
 - **A defect found on `main`, not fixed here:** this plan file holds §1–§14 twice on `main` (a doubled paste around line 759 of the
   rebased file); §3.12 was corrected in both copies, the as-built blocks live at the end.
+
+**WR-T1, the coai code round (56c596c6), 2026-10-15.** The round passed; four findings accepted, each with a RED test, a fix and a
+break-it (messages in [module_tests.md](../research/module_tests.md)):
+
+- **Finding 4 — the candidate folder is judged before it is listed.** `TempDeletion.DeleteTree` asks `ReadLink` (not a link) and the
+  real-path comparison for the CANDIDATE folder itself before listing it; before, only sub-folders and entries were asked. A folder that
+  resolves elsewhere at delete time stops "a link appeared" with nothing deleted.
+- **Finding 10 — nothing newer than the cutoff is deleted.** The walk gets the cutoff (`now - temp.olderThanDays`); an entry (file or
+  folder) whose later of write and creation time is newer stops the candidate, retained "changed while deleting", nothing after it
+  deleted. A file dropped into a not-yet-listed sub-folder after the scan is therefore never judged by the old scan.
+- **Finding 11 — one budget for the listing and the planning.** `WindowsTempAction.PreviewRoot` creates the run's `TempBudget` before the
+  top-level listing and passes it to `TempPlanner.Plan`; time spent listing counts against `temp.scanMaxSeconds`.
+- **Finding 8 — the cap defers arithmetically.** `TempPlanner.Run.DecideAll` stops at the first name past `temp.maxItemsPerRun` (or an
+  exhausted budget) and adds the number of names left to `Deferred`; it no longer loops over them (the count is unchanged).
+
+Rejected (nine, one line each): 0 refuted — `TryStat` asks `ReadLink` first; 1 a mixed-week request cannot exist today (A23 is the only
+action with its own week); 2 the two refusal orders are by design, and m8 fixed the one that mattered; 3 refuted — `Walk.Entry` halts on a
+`Link`; 5 the scanner never deletes and the walk re-checks; 6 the per-entry real-path check is M4's guarantee; 7 the cursor written per
+decided candidate is crash safety; 9 one glob matcher in one assembly; 12 the top-level listing is bounded by `temp.maxTopLevelEntries`
+and the wrap needs the sort.

@@ -27,22 +27,25 @@ internal sealed record TreeDeletion(long Bytes, IReadOnlyList<string> Kept, stri
 /// </summary>
 internal static class TempDeletion
 {
-    public static TreeDeletion DeleteTree(IFileSystem files, PathRules rules, DeletionScope scope, string folder, CancellationToken token)
+    /// <param name="cutoff">Nothing whose later of write and creation time is newer than this is ever deleted: the scan judged the tree
+    /// by what it saw, and anything created or refreshed after it (a new file in a sub-folder not yet listed) was never judged (the coai
+    /// code round 56c596c6, finding 10).</param>
+    public static TreeDeletion DeleteTree(IFileSystem files, PathRules rules, DeletionScope scope, string folder, DateTimeOffset cutoff, CancellationToken token)
     {
-        var walk = new Walk(files, rules, scope, token);
-        var emptied = walk.Folder(folder);
+        var walk = new Walk(files, rules, scope, cutoff, token);
+        var emptied = walk.Candidate(folder) && walk.Folder(folder);
         return new TreeDeletion(walk.Bytes, walk.Kept, walk.Stop, walk.Cancelled, emptied);
     }
 
     /// <summary>One file — a top-level entry that is a file.</summary>
     public static TreeDeletion DeleteFile(IFileSystem files, PathRules rules, DeletionScope scope, string path, long length)
     {
-        var walk = new Walk(files, rules, scope, CancellationToken.None);
+        var walk = new Walk(files, rules, scope, DateTimeOffset.MaxValue, CancellationToken.None);
         var gone = walk.File(path, length);
         return new TreeDeletion(walk.Bytes, walk.Kept, walk.Stop, false, gone);
     }
 
-    private sealed class Walk(IFileSystem files, PathRules rules, DeletionScope scope, CancellationToken token)
+    private sealed class Walk(IFileSystem files, PathRules rules, DeletionScope scope, DateTimeOffset cutoff, CancellationToken token)
     {
         private readonly List<string> _kept = [];
         private readonly string _realRoot = files.ResolvePath(scope.Root) is RealPathResult.Resolved resolved ? resolved.Path : string.Empty;
@@ -56,6 +59,11 @@ internal static class TempDeletion
         public bool Cancelled { get; private set; }
 
         private bool Stopped => Stop.Length > 0 || Cancelled;
+
+        /// <summary>The candidate folder itself, judged BEFORE it is listed (the coai code round, finding 4): not a link, and really where its
+        /// spelling puts it. Sub-folders and entries get the same two questions as they are met.</summary>
+        public bool Candidate(string path) =>
+            files.ReadLink(path) is LinkReadResult.NotALink && InPlace(path) ? true : Halt($"a link appeared: {path}");
 
         /// <summary>The folder's entries deleted, then the folder itself; <c>true</c> when it is gone.</summary>
         public bool Folder(string path)
@@ -77,9 +85,12 @@ internal static class TempDeletion
         private bool Entry(FileEntry entry, string path) => entry.Kind switch
         {
             EntryKind.Link => Halt($"a link appeared: {path}"),
+            _ when Newest(entry) > cutoff => Halt($"{path} is newer than the age limit (created or written after the scan): changed while deleting"),
             EntryKind.Directory => files.ReadLink(path) is LinkReadResult.NotALink && InPlace(path) ? Folder(path) : Halt($"a link appeared: {path}"),
             _ => File(path, entry.Length),
         };
+
+        private static DateTimeOffset Newest(FileEntry entry) => entry.LastWriteUtc >= entry.CreatedUtc ? entry.LastWriteUtc : entry.CreatedUtc;
 
         private bool Halt(string reason)
         {

@@ -66,6 +66,9 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
     /// <summary>Runs before the listing of a folder (once per call) — a test changes the tree between two listings here.</summary>
     public Action<string> BeforeList { get; set; } = static _ => { };
 
+    /// <summary>Runs after the listing of a folder was taken (once per call): what appears now is NOT in that listing but IS in the next one.</summary>
+    public Action<string> AfterList { get; set; } = static _ => { };
+
     /// <summary>The refusals the policy gave, in order.</summary>
     public List<DeletionVerdict.Refused> Refusals { get; } = [];
 
@@ -143,8 +146,8 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
     public string UserConfig { get; set; } = "{}";
 
     /// <summary>A context for one action call: the product's defaults plus <paramref name="userConfig"/>.</summary>
-    public ActionContext Context(string userConfig = "{}", string sid = Sid, RunTrigger trigger = RunTrigger.Cli, DateTimeOffset? now = null) =>
-        new(Paths, this, new FixedTimeProvider(now ?? Now), Load(userConfig), trigger, new TargetUserResult.None("the Windows binary has no target user"))
+    public ActionContext Context(string userConfig = "{}", string sid = Sid, RunTrigger trigger = RunTrigger.Cli, DateTimeOffset? now = null, TimeProvider? clock = null) =>
+        new(Paths, this, clock ?? new FixedTimeProvider(now ?? Now), Load(userConfig), trigger, new TargetUserResult.None("the Windows binary has no target user"))
         {
             UserSid = sid,
         };
@@ -170,10 +173,12 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
         BeforeList(path);
         Listed.Add(Rules.Normalize(path));
         var parent = Rules.Normalize(path);
-        return [.. _nodes.Values
+        IReadOnlyList<FileEntry> taken = [.. _nodes.Values
             .Where(n => !Rules.PathEquals(n.Path, parent) && Rules.PathEquals(Rules.Parent(n.Path), parent))
             .OrderBy(n => Rules.Segments(n.Path)[^1], StringComparer.Ordinal)
             .Select(n => new FileEntry(Rules.Segments(n.Path)[^1], n.Kind, n.Length, n.Written) { CreatedUtc = n.Created })];
+        AfterList(path);
+        return taken;
     }
 
     public override LinkReadResult ReadLink(string path) =>

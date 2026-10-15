@@ -166,7 +166,7 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
         }
 
         var done = isFolder
-            ? TempDeletion.DeleteTree(context.Files, context.Paths.Rules, scope, candidate.Path, token)
+            ? TempDeletion.DeleteTree(context.Files, context.Paths.Rules, scope, candidate.Path, now - settings.OlderThan, token)
             : TempDeletion.DeleteFile(context.Files, context.Paths.Rules, scope, candidate.Path, candidate.Length);
         Account(candidate, judgement, done);
         if (done.Cancelled)
@@ -194,7 +194,7 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
 
         _totals.AddBytes(done.Bytes);
         _totals.KeptInUse += done.Kept.Count;
-        _totals.Changed += done.Stop.StartsWith("a link", StringComparison.Ordinal) ? 1 : 0;
+        _totals.Changed += done.Stop.Length > 0 && !done.Stop.StartsWith("the deletion policy", StringComparison.Ordinal) ? 1 : 0;
         _totals.Refused += done.Stop.StartsWith("the deletion policy", StringComparison.Ordinal) ? 1 : 0;
         _notRemoved.Add(new ActionItem(kind, candidate.Path, done.Bytes, Retained(done)));
     }

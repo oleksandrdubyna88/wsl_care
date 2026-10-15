@@ -28,11 +28,12 @@ internal sealed record TempPlan(string Root, IReadOnlyList<PlannedEntry> Entries
 /// </summary>
 internal static class TempPlanner
 {
-    public static TempPlan Plan(ActionContext context, TempSettings settings, string root, IReadOnlyList<FileEntry> listed, CancellationToken token)
+    /// <param name="budget">The run's ONE budget: the time the top-level listing took is already spent from it (the coai code round,
+    /// finding 11).</param>
+    public static TempPlan Plan(ActionContext context, TempSettings settings, string root, IReadOnlyList<FileEntry> listed, TempBudget budget, CancellationToken token)
     {
         var now = context.Clock.GetUtcNow();
         var cursor = TempCursors.Read(context.Paths, context.Files);
-        var budget = new TempBudget(settings.ScanMaxNodes, settings.ScanMaxTime, context.Clock);
         var judge = new TempJudge(context.Files, context.Paths.Rules, root, context.UserSid, settings, now, scanDisallowed: context.Trigger != RunTrigger.Timer);
         var entries = listed.OrderBy(e => e.Name, StringComparer.Ordinal).ToList();
         var resume = entries.FirstOrDefault(e => !cursor.InProgress.IsNone && string.Equals(e.Name, cursor.InProgress.Name, StringComparison.OrdinalIgnoreCase));
@@ -61,7 +62,7 @@ internal static class TempPlanner
     }
 
     /// <summary>One planning pass' mutable state: what it decided so far and what is left of its budgets.</summary>
-    private sealed class Run(ActionContext context, TempSettings settings, string root, TempJudge judge, TempBudget budget, CancellationToken token)
+    internal sealed class Run(ActionContext context, TempSettings settings, string root, TempJudge judge, TempBudget budget, CancellationToken token)
     {
         private readonly List<PlannedEntry> _entries = [];
         private int _eligible;
@@ -73,18 +74,19 @@ internal static class TempPlanner
         public string LastDecided { get; private set; } = string.Empty;
 
         /// <summary>Decides the names in turn while the budgets last; the rest are deferred. Answers how many it decided.</summary>
-        public int DecideAll(List<FileEntry> names, TempCheckpoint none)
+        public int DecideAll(IReadOnlyList<FileEntry> names, TempCheckpoint none)
         {
             var decided = 0;
-            foreach (var entry in names)
+            for (var i = 0; i < names.Count; i++)
             {
                 if (_eligible >= settings.MaxItemsPerRun || budget.Exhausted)
                 {
-                    Deferred++;
-                    continue;
+                    // Once a cap is reached nothing after it is decided: the rest is counted, not visited (finding 8).
+                    Deferred += names.Count - i;
+                    break;
                 }
 
-                Decide(entry, resumes: false, none);
+                Decide(names[i], resumes: false, none);
                 decided++;
             }
 

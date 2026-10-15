@@ -1253,7 +1253,7 @@ order. A run takes the interrupted candidate first, then the names after `Last`,
 `Last` itself (the wrap). EVERY candidate it reaches is decided (deleted, retained, excluded, unknown) and `Last` moves to the last
 one, so a run that finds nothing to delete still moves on. A run that decides its first name after the wrap completes a pass
 (`PassesCompleted`, `PassStarted`, `PassDecided`; the preview's `What` says "pass started <t>, N of M names decided"). Limits: a
-node budget and a time budget shared by the run's scans, `temp.maxItemsPerRun` eligible entries (the rest `Deferred`), and
+node budget and a time budget shared by the run's top-level listing and scans (the listing's time counts too), and a plan that reaches `temp.maxItemsPerRun` or an exhausted budget counts the rest of the names `Deferred` without visiting them, `temp.maxItemsPerRun` eligible entries (the rest `Deferred`), and
 `temp.maxTopLevelEntries` (a cut top-level listing has no stable order, so it refuses whole).
 
 **Recovery after a kill** (`TempCheckpoint`). Before the first delete inside a folder candidate the run writes (atomically)
@@ -1271,7 +1271,7 @@ re-validation scans of one run share ONE allowance of `temp.scanMaxNodes` / `tem
 cap (the supervisor's deadline and the cancellation end it; the checkpoint makes that safe). The walk lists each folder without
 following reparse points (`AttributesToSkip = 0`, so they are SEEN), asks `ReadLink` of each sub-folder just before entering it, and
 before EVERY delete requires `ResolvePath(path)` to equal the real temp root plus the relative path (a link anywhere on the way stops
-the candidate, "a link appeared"). A folder is removed only when EMPTY (`IFileSystem.DeleteEmptyDirectory`, never recursive): what
+the candidate, "a link appeared"; the CANDIDATE folder itself is asked the same two questions before it is listed). An entry (file or folder) whose later of write and creation time is newer than the cutoff (`now - temp.olderThanDays`) stops the candidate, "changed while deleting": what appeared after the scan is never deleted unjudged. A folder is removed only when EMPTY (`IFileSystem.DeleteEmptyDirectory`, never recursive): what
 appeared after the listing stays, and the folder is "kept in use". Every delete goes through `IFileSystem` and so through the
 deletion policy. A sharing violation or any I/O failure is kept and counted (`kept in use N`), never retried in the same run.
 **Residual:** the real-path check and the delete are two calls (the seam has no handle-relative delete), so a swap inside that window

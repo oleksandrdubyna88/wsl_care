@@ -62,7 +62,7 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
         var listBudget = new TempBudget(settings.ScanMaxNodes, settings.ScanMaxTime, context.Clock);
         return context.Files.ListEntries(root, new ListingBounds(settings.MaxTopLevelEntries, listBudget.OutOfTime, token)) switch
         {
-            EntryListing.Listed { Complete: true } listed => Previewed(TempPlanner.Plan(context, settings, root, listed.Entries, token), settings),
+            EntryListing.Listed { Complete: true } listed => Previewed(TempPlanner.Plan(context, settings, root, listed.Entries, listBudget, token), settings),
             EntryListing.Listed cut => Refused(settings, $"{root} holds more than {settings.MaxTopLevelEntries} top-level entries or could not be listed in time ({cut.Note}); raise temp.maxTopLevelEntries or temp.scanMaxSeconds - a cut listing has no stable order for the cursor"),
             EntryListing.Unreadable unreadable => ActionPreview.Unavailable(WhatIs(settings), unreadable.Reason),
             _ => throw new System.Diagnostics.UnreachableException("EntryListing is a closed set"),
