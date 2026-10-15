@@ -271,6 +271,48 @@ view shows `program` + the daemon's safe prefix, reveals the redacted command li
 yet — needs the bundled Windows daemon" (muted) where E7.S5a has not landed. Held memory uses binary adaptive units
 (KiB / MiB / GiB).
 
+### 3.6 The owner's review of the mockup (2026-10-15): no sideways scroll, one height per row, a distro picker
+
+A static mockup of the whole redesign (side bar, full view WSL / Windows, Statistics, Help, the kit's components; light /
+dark / high contrast; checked in headless Chrome at 300 / 1280 / 1920 px) was approved by the owner on 2026-10-15 with
+three changes. They bind E18.K1, W1 and W2:
+
+1. **No table ever scrolls sideways**, the small ones above all (*Actions and what they freed*, *Recommendations by rung*,
+   *Disk*, *Own cost*): columns shrink and wrap, headers are short, and where that is not enough a row breaks onto several
+   lines — never a scroll bar. The kit owns it (`dew_flow_vscode_kit · todo/PLAN_kit_components_storybook.md` §4.6a: the
+   `DataTable` is a CSS size container, never a scroll container; below `30em` / `40em` / `60em` of its OWN width, by its
+   `stack` option, each row shows as "label: value" lines and the header becomes a row of sort buttons; proved in a real
+   Chrome at 300 / 1280 / 1920 px × four themes × three sizes). wsl_care passes short headers and the `stack` width per
+   table; it writes no table CSS of its own.
+2. **Cards side by side in one row have one height**, their buttons on one line at the card's bottom (the grid stretches;
+   a card is a flex column whose button row takes the remaining space). wsl_care's own page CSS.
+3. **A distro picker on top of the WSL tab** — there may be many distros, and every figure on the tab follows the chosen
+   one. In WSL 2 every distro runs in ONE VM, so the figures split in two, and the page says which is which:
+
+   | The WSL VM — the same in every distro, labelled "the WSL VM — shared by every distro" | The chosen distro's own |
+   |---|---|
+   | `vm.memory`, swap, PSI (`memory.*`, `pressure.*`), `kernel.*`, `clock.*`, the probe and the forecast, `host.*`, `disk.vhdx` / volumes (Windows-side files) | `vm.disk` / `disk.root`, processes, `mcpServers`, `interopRelays`, `folders`, `actions` / `limits` / `capabilities` / `running` / `lastCleanup`, the archive, the ladder and its recommendation; Docker where the engine runs inside this distro (Docker Desktop's own distro is shown read-only) |
+
+   **The data path today** (checked 2026-10-15 on `main`): one setting `wslCare.distro` (`src_vs_code/package.json:165-171`,
+   empty = the default from `wsl -l -v`), read on every call; the daemon's argv always carries `-d <distro>`
+   (`src_vs_code/src/client/WslCareClient.ts:101-103`); a stopped distro is never woken (`:295-299`). Distros are listed only
+   by private helpers (`WslCareClient.ts:82-84`, `:273`; `src_vs_code/src/wsl/distros.ts:31`). `OutcomeStore` (`src_vs_code/src/state/outcomeStore.ts:21`) holds ONE
+   snapshot with no distro key, and the poller clears it when its target changes (`src_vs_code/src/poll/poller.ts:196-216`);
+   `WslCareClient`'s `knownVersion` / `knownContainers` are single slots that remember one distro (`WslCareClient.ts:116`, `:118`), while the in-flight keys are already
+   `${setting}|…`. The outcomes that concern a distro already name it (`src_vs_code/src/client/outcome.ts:57-67`); `status --json`
+   does not name its own distro (only the best-effort `disk.distroName`) — the extension knows which distro it asked, so the
+   daemon is not changed.
+
+   **What the picker needs** (E18.W1a, before any UI): a public `listDistros()` on `WslCareClient` (name, running / stopped,
+   WSL version, default) from the existing helpers; every verb taking an explicit distro, the setting staying the default;
+   `OutcomeStore` as a map distro → snapshot, today's snapshot being the default distro's (the side bar's); the poller keeps
+   polling the default distro on its schedule and reads a PICKED distro only while the full view shows it — on pick,
+   *Refresh* and becoming visible (§3.5's rule) — and never a stopped one; the in-flight and `known*` slots keyed by distro;
+   every action, its modal and the run journal name the picked distro. A distro with no daemon shows *Install daemon in
+   <distro>…* and the VM's figures labelled "measured by <distro>'s daemon"; a stopped distro shows its last known figures,
+   muted, with their time, and *Start <distro> and check*. The side bar keeps showing the default distro, its name in the
+   section title — no picker there. A WSL 1 distro is not in the VM: it is listed with "WSL 1 — AI OS Care needs WSL 2" and shows no VM figures (gate, plan round 2026-10-15).
+
 ## 4. Stories — one pull request each, grouped in four epics (build order in §5)
 
 Every story: RED tests first, then GREEN, then a break-it of the product line the behaviour depends on; every number a key
@@ -317,23 +359,26 @@ The template for a threshold key is commit `95448096` (E14 S5).
 
 ### E18 — the KIT and the FULL VIEW (#87)
 
-> **Waits for the owner's go** (2026-10-11): no E18 story starts before he says so. Publishing the kit to npmjs is approved
-> (Q1).
+> **The owner's go: 2026-10-12.** Publishing the kit to npmjs is approved (Q1). The mockup was approved on 2026-10-15 with
+> three changes (§3.6); W1 is split into W1a (the per-distro data path) and W1b (the full view). E17 is not started on
+> `main` (2026-10-15: no `Stats/`, no `stats` verb, no contract), so W3 is built after E17.S1 and E17.S3, not against a
+> contract that does not exist yet; W4 goes before it.
 
 | Story | What it builds | Risk |
 |---|---|---|
-| **E18.K1** kit 0.2.0 + Storybook (in `dew_flow_vscode_kit`) | `Tabs` (ARIA tablist, arrow keys, a tone per tab + its word), `DataTable` (sort by click / Enter / Space with `aria-sort`, a search box, consumer-supplied units, a per-row reveal cell), `RecommendationCard` (icon + word, sentence, one button slot, evidence), theme tokens; Storybook (`@storybook/html-vite`, `addon-a11y`) — every component × state × light / dark / high-contrast × three font sizes; axe tests in the kit's CI; classes only. Publishing 0.2.0 to npmjs is owner-visible (Q1). | medium — capped at these components |
+| **E18.K1** kit 0.2.0 + Storybook (in `dew_flow_vscode_kit`) | `Tabs` (ARIA tablist, arrow keys, a tone per tab + its word), `DataTable` (sort by click / Enter / Space with `aria-sort`, a search box, consumer-supplied units, a per-row reveal cell, and §3.6's fit rule — never a sideways scroll: a size container whose rows stack below a width), `RecommendationCard` (icon + word, sentence, one button slot, evidence), theme tokens; Storybook (`@storybook/html-vite`, `addon-a11y`) — every component × state × light / dark / high-contrast × three font sizes; axe tests in the kit's CI; classes only. Publishing 0.2.0 to npmjs is owner-visible (Q1). | medium — capped at these components |
 | **E18.W0** wsl_care consumes the kit | a second esbuild entry `src/webview/fullView.ts → media/full.js` and `media/full.css` (`scripts/bundle.mjs:55-68`); the exact pinned dependency; `vsix-files.txt`; the harness's tag set widened only per need, each a RED test. | medium — the kit's publish timing |
-| **E18.W1** the full view | `logsPanel.ts`' panel shape, the store (no second poll), the renderers shared between both views; tabs *WSL: <distro>* and *Windows* (each per side), the tables with `program` + `argumentsShown` and a reveal that posts only an index, binary units for Held, no wrapping PIDs, "not available yet" (muted); the spawn ledger; every action a button here too (`commandButtons.ts` gains `where: 'full'`, the test widens to the full page). RED: no row shows a command line before reveal; Held 14 MiB reads "14.0 MiB"; a hidden panel receives no post. | medium |
-| **E18.W2** the slim sidebar | `fieldMap.ts` gains a required `justifies` per sidebar row (§3.5's 20) and a `sidebar | full` column (one table, two readers; the generated block in `architecture.md` regenerated); the recommendation card under G1's alert; *Open full view*. RED: no `arriving` row in the sidebar; every sidebar row names its button. | low |
-| **E18.W3** the Statistics tab with JSON export | E17's verbs through the client's run reads; periods today / yesterday / week / month / year; triggers by metric, why, what happened, predicted vs realised, self-cost; *Export JSON…* writes exactly the daemon's redacted bytes (the extension's first file write, named in `structure.test.ts`). | low |
+| **E18.W1a** the per-distro data path (§3.6, no UI) | `WslCareClient.listDistros()` (public, from `WslCareClient.ts:82-84`, `:273` and `src/wsl/distros.ts:31`); an explicit distro on every verb, `wslCare.distro` the default; `OutcomeStore` as distro → snapshot; the poller's rule of §3.6 (the default on schedule, a picked one only while shown, never a stopped one); the in-flight and `known*` slots keyed by distro; actions, modals and the journal naming their distro. ONE distro-aware entry point: `WslCareClient` stays the only argv speller and every verb and action takes the distro as an argument, never from the setting at the call site. The maps hold only the distros the last `listDistros()` reported — an entry for a distro no longer listed is dropped at that list (a machine's distro count bounds them; no LRU needed). A picked distro that stops between reads: the client's existing running check (`WslCareClient.ts:295-299`) answers `stopped` without starting it, the in-flight read for it is dropped, and the view turns to the stopped card. A WSL 1 distro (the daemon needs WSL 2) shows "WSL 1 — AI OS Care needs WSL 2" and NO VM figures, never the shared-VM label. RED: picking a distro never clears the default's snapshot; a stopped distro is never started by a read; two distros' outcomes never mix; a test that enumerates EVERY verb and action of the client (the verb register and `commandButtons.ts`) and checks each argv carries the picked `-d`; a distro removed from the list drops its entries; a picked distro that stops mid-session turns to the stopped card with no daemon call; a mixed WSL 1 / WSL 2 machine shows no VM figures for the WSL 1 distro. | medium |
+| **E18.W1b** the full view | the distro picker on the WSL tab (a radio group: name, state, its status mark; arrows / Home / End), §3.6's split shown on the page; cards of one height per row; `logsPanel.ts`' panel shape, the store (no second poll), the renderers shared between both views; tabs *WSL: <distro>* and *Windows* (each per side), the tables with `program` + `argumentsShown` and a reveal that posts only an index, binary units for Held, no wrapping PIDs, "not available yet" (muted); the spawn ledger; every action a button here too (`commandButtons.ts` gains `where: 'full'`, the test widens to the full page). RED: no row shows a command line before reveal; Held 14 MiB reads "14.0 MiB"; a hidden panel receives no post; every figure follows the picked distro and the VM's are labelled as the VM's; the page passes a headless-Chrome layout check at 300 / 1280 / 1920 px × four themes (no page, box, table or cell wider than its room; cards in a row of one height) — the kit's §4.6a probe reused, never copied (shipped from the kit as a bin if K1's code round admits it, otherwise a small kit story before W1b). | medium |
+| **E18.W2** the slim sidebar | `fieldMap.ts` gains a required `justifies` per sidebar row (§3.5's 20) and a `sidebar | full` column (one table, two readers; the generated block in `architecture.md` regenerated); the recommendation card under G1's alert; *Open full view*; the default distro's name in the section title (no picker in the side bar, §3.6). RED: no `arriving` row in the sidebar; every sidebar row names its button. | low |
+| **E18.W3** the Statistics tab with JSON export | E17's verbs through the client's run reads; periods today / yesterday / week / month / year; triggers by metric, why, what happened, predicted vs realised, self-cost; *Export JSON…* writes exactly the daemon's redacted bytes (the extension's first file write, named in `structure.test.ts`) — never parsed and re-serialised. Starts only when E17.S1 and E17.S3 are MERGED; W4 does not wait for it. RED: a known daemon export (with a planted `--token=…` the daemon already redacted) is written and the file's bytes equal the daemon's stdout byte for byte. | low |
 | **E18.W4** Help in the coai design, five languages | the kit's Help (catalogue, digests, search); an English article for every command, setting, verdict and rung (a coverage test); `wslCare.helpLanguage`; ru / uk / de / es as one content PR each (Q4); the UI stays English. | low |
 | **E18.W5** accessibility, both pages, and the close of #87 | keyboard sort / search, ARIA, the kit's contrast job, `pagesShareOneRenderer.test.ts`; docs. The PR body says "Closes #87". | low |
 
 ## 5. Build order and pull requests
 
 E15.S1 → E15.S2 → E15.S1b → E15.S5 → E15.S10 → E15.S7 → E15.S6 → E15.S4 → E15.S3 → E15.S9 → E15.S8 ‖ E16.S1 → E16.S2 → E16.S3 → E16.S4 ‖ E16.S5 (after E15.S10; its checkbox half does not wait for the ladder) ‖
-E17.S1 → E17.S2 → E17.S3 ‖ E18.K1 → W0 → W1 → W2 → W3 → W4 → W5. E16 starts after E15.S1; E17.S1 after E16.S1 (the probe
+E17.S1 → E17.S2 → E17.S3 ‖ E18.K1 → W0 → W1a → W1b → W2 → W4 → W5's prerequisites; W3 starts only when E17.S1 and E17.S3 are merged (gated on them, not on W4), and W5 closes #87 after W3. E16 starts after E15.S1; E17.S1 after E16.S1 (the probe
 records). E17.S4 and the Windows halves' panel rows wait for E7.S5a and S7b's runner. At most three open pull requests in
 this repository, one per lane; E18.K1 lives in the kit's repository.
 
