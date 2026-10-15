@@ -1493,6 +1493,14 @@ with a break-it on product code:
   fixed folder on the drive and never on PATH. RED: *Expected resolved to be …Found* (2 cases). Break-it: ordinal again → 2 red.
 - **Extra c.** The Open list and module_daemon say what the code guarantees, no more (below).
 
+Totals after the security review, rebased onto main `28ebdeed` (2026-10-15): Windows Core 2828 (0 failed, 89 skipped), Cli
+427 (0 failed, 2 skipped), Scenarios 625 (1 failed, 287 skipped: a `StatusFlows` time budget, 3.5 s against 3 s, with the
+Linux leg running beside it; alone 3.1 s). Linux (`/tmp/testsToDelete-wc-e15s1b-20261015T081613Z`) Core 2828 (0 failed, 77
+skipped), Cli 427 (0 failed, 33 skipped), Scenarios 625 (6 failed, 11 skipped) — rerun alone, `ReadContractFlows`,
+`DetachFlows`, `GoldenContractTests` and `WindowsDiskFlows` were green (40 run, 2 failed): only the two `StatusFlows` time
+budgets stay red on the loaded machine (4.9 s against 2 s, 6.3 s against 3 s). They time nothing this story touches; CI is
+the authority for them. `dotnet format --verify-no-changes` and plan-lifecycle clean.
+
 **Open.**
 - **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
   the first CI run on `windows-latest` is the evidence that the selection is safe to ship.
