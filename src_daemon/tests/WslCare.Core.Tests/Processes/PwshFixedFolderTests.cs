@@ -95,7 +95,20 @@ public sealed class PwshFixedFolderTests : IDisposable
 
         var resolved = ExecutableResolver.Resolve(name, _root.Under($"cased-{name}"), windows: false, Lookup(), TestContext.Current.CancellationToken);
 
-        resolved.Should().BeOfType<ResolvedExecutable.NotFound>("the resolver answered {0}", resolved).Which.Reason.Should().Contain("never from PATH");
+        resolved.Should().Be(new ResolvedExecutable.Found(Path.Combine(DriveC.MountPoint, "Program Files/PowerShell/7", name)) { OnTheSystemDrive = true }, "never the decoy on PATH ({0})", resolved);
+    }
+
+    /// <summary>Security review (Fable, extra b): the closed list of drive programs compares without case, as the never-PATH rule does
+    /// — so <c>Pwsh.exe</c> is the SAME program, found in its one fixed folder on the drive, and still never on PATH.</summary>
+    [Theory]
+    [InlineData("Pwsh.exe")]
+    [InlineData("PWSH.EXE")]
+    public void Pwsh_spelled_in_another_case_resolves_in_its_fixed_folder_on_the_drive(string name)
+    {
+        var resolved = ExecutableResolver.Resolve(name, "/usr/local/sbin:/usr/bin", windows: false, Lookup(), TestContext.Current.CancellationToken);
+
+        resolved.Should().Be(new ResolvedExecutable.Found(Path.Combine(DriveC.MountPoint, "Program Files/PowerShell/7", name)) { OnTheSystemDrive = true }, "the resolver answered {0}", resolved);
+        WindowsSystemDrive.Programs.ContainsKey("POWERSHELL.EXE").Should().BeTrue("the drive list compares without case for both programs");
     }
 
     [Fact]

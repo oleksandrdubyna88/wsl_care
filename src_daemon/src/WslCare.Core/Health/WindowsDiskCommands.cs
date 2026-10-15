@@ -216,7 +216,8 @@ public static class WindowsDiskCommands
 
     /// <summary>The end line, then everything in ONE write, LF-separated, as UTF-8 bytes on the raw stdout stream: Windows
     /// PowerShell 5.1 writes <c>Console.Out</c> in the OEM code page, so a Cyrillic volume label or user name would reach the
-    /// daemon's UTF-8 reader as U+FFFD (own review). <c>OutputEncoding</c> is not set — it can throw with no console attached.</summary>
+    /// daemon's UTF-8 reader as U+FFFD (own review). <c>OutputEncoding</c> is not set — it can throw with no console attached.
+    /// Since the E15.S1b security review this is the ONE road the clock probe prints by too (<see cref="HealthCommands.Utf8WriteStart"/>).</summary>
     private static readonly string Print =
-        $$"""$o.Add('{{EndLine}}'); $u=[Text.Encoding]::UTF8.GetBytes(($o -join [char]10)+[char]10); $s=[Console]::OpenStandardOutput(); $s.Write($u,0,$u.Length); $s.Flush()""";
+        $$"""$o.Add('{{EndLine}}'); """ + HealthCommands.Utf8WriteStart + "($o -join [char]10)+[char]10" + HealthCommands.Utf8WriteEnd;
 }

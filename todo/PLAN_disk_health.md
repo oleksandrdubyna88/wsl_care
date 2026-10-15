@@ -1456,6 +1456,43 @@ possible), each with a break-it on product code:
 Rejected in the round, with the reasons recorded in coai (no work): the C: assumption, the silent catch on the Storage
 import, progress output, the `WSL_CARE_ROOT` seam, `IsPrivilegedProcess`, caching Authenticode.
 
+**The security review of the tag-injection fix (Fable, 2026-10-15).** Two real defects and three extras, each red first, each
+with a break-it on product code:
+- **S1, the parser refused duplicates but not shape.** The real probe prints the pwsh block LAST, in a second write after
+  both Windows Time lines. A Windows user can end the probe (their own process) with exit 0 after the first flush; with a
+  line break smuggled into the profile, a forged block BEFORE the Windows Time lines had each tag once and gave msi. Now the
+  pwsh block is read ONLY as the trailing block — the last four non-empty lines, in the script's order, with both Windows
+  Time lines before it (`ClockParsers.NotTheTrailingPwshBlock`); the duplicate rule stays. RED, the exact forged input:
+  *Expected answer.Pwsh.IsAvailable to be False because the real probe prints the pwsh block last, after both Windows Time
+  lines, but found True*. Break-it: the "after both Windows Time lines" condition removed → at first NO test went red (the
+  order rule alone already refused every case written); two cases were added (a trailing block with no Windows Time line,
+  and with only one), and the break-it then went red.
+- **S2, best-fit console encoding defeated the sanitiser.** Measured on the owner's machine (read-only, `powershell.exe` 5.1,
+  stdout redirected to a file):
+  - inheriting this session's console: `utf-8`, code page 65001, `System.Text.EncoderReplacementFallback`; U+25D9, U+266A,
+    U+263A, U+0444 → their UTF-8 bytes (`E2 97 99`, `E2 99 AA`, `E2 98 BA`, `D1 84`);
+  - in a FRESH hidden console (what a launch without an inherited UTF-8 console gets; the machine's OEMCP is 437, ACP 1252):
+    `IBM437`, code page 437, **`System.Text.InternalEncoderBestFitFallback`**; U+25D9 → **`0A`** (a real line feed),
+    U+266A → **`0D`**, U+263A → **`01`**, U+0444 → `3F` (`?`).
+  So `-replace '[\x00-\x1f]','?'` ran on the UTF-16 string and the encoder re-created a line break after it. Fixed: the probe
+  prints by the disk script's ONE road — `HealthCommands.Utf8WriteStart` + text + `Utf8WriteEnd`
+  (`[Text.Encoding]::UTF8.GetBytes(…)` written to `[Console]::OpenStandardOutput()` and flushed), twice (the clock lines, then
+  after the look the pwsh lines), with `[char]10` line breaks and no double quote; the disk script's own print now uses the
+  same two constants. UTF-8 has no best fit, and the daemon decodes UTF-8, so a non-ASCII profile also arrives intact (it was
+  `?` before). RED: the script-shape test (*Did not expect clock … to contain "[Console]::Out"*) and, Windows only, the live
+  `RealClockProbeTests.A_hostile_profile_comes_back_as_one_line_and_forges_no_tag` — a profile `C:\Users\Фёдор◙pwsh.msi=file`
+  in a fresh hidden console came back as `C:\Users\?????` and a SECOND line `pwsh.msi=file`. That test starts the probe's own
+  arguments through `Process`, because the hostile value must reach the child through its environment and the shared runner
+  has no environment seam (adding one for a test would widen the product's launcher). Break-it: the encoding set to the ANSI
+  code page (`[Text.Encoding]::Default`, best fit) → the live test red (*C:\Users\??????pwsh.msi=file*).
+- **Extra a.** A kill in the middle of the second write left a partial line, and a timed-out answer that did not end in a line
+  feed lost the whole clock reading. The partial tail is now dropped (`HealthCollector.WholeLines`) and the clock is read; the
+  pwsh look stays unread on a timeout. RED: *Expected sample.Measured to be True … but found False*. Break-it: the old
+  "ends in a line feed" rule back → red.
+- **Extra b.** `WindowsSystemDrive.Programs` compares without case, as `FixedFolderOnly` does: `Pwsh.exe` resolves in the same
+  fixed folder on the drive and never on PATH. RED: *Expected resolved to be …Found* (2 cases). Break-it: ordinal again → 2 red.
+- **Extra c.** The Open list and module_daemon say what the code guarantees, no more (below).
+
 **Open.**
 - **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
   the first CI run on `windows-latest` is the evidence that the selection is safe to ship.
@@ -1463,6 +1500,12 @@ import, progress output, the `WSL_CARE_ROOT` seam, `IsPrivilegedProcess`, cachin
   machine). Both are under the 30 s ceiling; the MSI build's own timing is measured on the first machine that has it.
 - **Windows on a drive other than C:** always gets Windows PowerShell 5.1: the daemon maps only `C:\Program Files` (a
   documented assumption, the same as `WindowsSystemDrive.Drive`).
+- **The probe itself is the Windows user's (security review, extra c).** `powershell.exe` (the probe) is still PATH-first, and
+  interop runs it as the Windows user. Under a root collect launched from Windows (`wsl.exe -u root`, the Windows PATH
+  appended), that user can put their own `powershell.exe` first and forge the WHOLE verification — a well-shaped trailing
+  block, `pwsh.msi=file`, `pwsh.signature=signed`. Nothing in the parser can tell that apart. What bounds it is the
+  fixed-folder rule: the daemon still starts only `Program Files/PowerShell/7/pwsh.exe` from the mounted system drive
+  (administrator-only), or 5.1 — never a file the user chose. Under the timer (systemd's PATH) the probe is System32's.
 - **Residuals of the trust boundary (code round, recorded, not changed):** the signature rule trusts the user's own root
   store (the folder is administrator-only, so a forged signature still needs an administrator to place the file); nothing ties
   the started file to the verified one but its path (administrator-only, and the window is seconds); `powershell.exe` (the

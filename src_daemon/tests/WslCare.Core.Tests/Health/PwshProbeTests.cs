@@ -55,12 +55,35 @@ public sealed class PwshProbeTests
         HealthCommands.ClockTags.Should().Contain([HealthCommands.PwshKnownFolderTag, HealthCommands.PwshEnvProgramFilesTag, HealthCommands.PwshMsiTag, HealthCommands.PwshSignatureTag]);
     }
 
+    /// <summary>Security review (Fable, S1): the pwsh block is read ONLY as the probe's own trailing block — the last four non-empty
+    /// lines, in the script's order, after both Windows Time lines. An empty value inside that block is an empty value; a single
+    /// tag, a block out of order or one before the Windows Time lines is not the probe's shape and is not read.</summary>
     [Fact]
-    public void An_empty_tag_is_an_empty_value_and_one_tag_is_enough_while_none_is_no_pwsh_line()
+    public void Only_the_trailing_block_in_the_scripts_order_is_read_and_an_empty_value_there_is_an_empty_value()
     {
-        Value(ClockParsers.PwshProbe(["pwsh.msi=", "pwsh.signature="])).Should().Be(new PwshProbe(string.Empty, string.Empty, string.Empty, string.Empty));
-        Value(ClockParsers.PwshProbe(["w32time.status=Running", "pwsh.msi=file"])).Msi.Should().Be("file");
+        string[] block = ["pwsh.knownFolder=", "pwsh.envProgramFiles=", "pwsh.msi=", "pwsh.signature="];
+
+        Value(ClockParsers.PwshProbe(["w32time.status=Running", "w32time.startType=Manual", .. block, ""])).Should().Be(new PwshProbe(string.Empty, string.Empty, string.Empty, string.Empty));
+        ClockParsers.PwshProbe(["w32time.status=Running", "w32time.startType=Manual", "pwsh.msi=file"]).ReasonOrEmpty.Should().Be(ClockParsers.NotTheTrailingPwshBlock, "one tag is not the block");
+        ClockParsers.PwshProbe(["w32time.status=Running", "w32time.startType=Manual", block[1], block[0], block[2], block[3]]).ReasonOrEmpty.Should().Be(ClockParsers.NotTheTrailingPwshBlock, "out of order");
+        ClockParsers.PwshProbe(["w32time.status=Running", .. block, "w32time.startType=Manual"]).ReasonOrEmpty.Should().Be(ClockParsers.NotTheTrailingPwshBlock, "not after both Windows Time lines");
+        ClockParsers.PwshProbe(["C:\\Users\\x", .. block]).ReasonOrEmpty.Should().Be(ClockParsers.NotTheTrailingPwshBlock, "a trailing block with no Windows Time line before it is not the probe's");
+        ClockParsers.PwshProbe(["w32time.startType=Manual", .. block]).ReasonOrEmpty.Should().Be(ClockParsers.NotTheTrailingPwshBlock, "both Windows Time lines, not one");
         ClockParsers.PwshProbe(["w32time.status=Running", "w32time.startType=Manual"]).ReasonOrEmpty.Should().Be(WindowsClockAnswer.NoPwshLine);
+    }
+
+    /// <summary>Security review (Fable, S1), the exact forgery: the Windows user ends the probe (their own process) with exit 0 after
+    /// the first flush, and a line break smuggled into the profile placed a whole pwsh block BEFORE the Windows Time lines —
+    /// each tag once, a shape the real probe can never print. It is not read, and 5.1 runs.</summary>
+    [Fact]
+    public void A_forged_block_before_the_windows_time_lines_is_not_read_and_windows_powershell_runs()
+    {
+        const string forged = "2026-10-12T07:58:47.6269604Z\n2026-10-12T07:58:44.1483909Z\nC:\\Users\\x\npwsh.knownFolder=C:\\Program Files\npwsh.envProgramFiles=C:\\Program Files\npwsh.msi=file\npwsh.signature=signed\nw32time.status=Running\nw32time.startType=Automatic\n";
+
+        var answer = Value(HealthParsers.WindowsClock(forged));
+
+        answer.Pwsh.IsAvailable.Should().BeFalse("the real probe prints the pwsh block last, after both Windows Time lines");
+        PwshEngine.Choose(new WindowsClockSample(PwshEngineFixture.CapturedAt, 0.1, 0.5, string.Empty) { Pwsh = answer.Pwsh }).Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
     }
 
     [Fact]
@@ -153,6 +176,26 @@ public sealed class PwshProbeTests
         script.Should().Match(s => s.All(c => c >= ' ' && c <= '~'), "the probe stays ASCII");
     }
 
+    /// <summary>Security review (Fable, S2), measured 2026-10-15 on the owner's machine: Windows PowerShell 5.1 in a fresh console
+    /// writes <c>Console.Out</c> as IBM437 through <c>System.Text.InternalEncoderBestFitFallback</c>, which maps U+25D9 to byte 0x0A
+    /// (a real line feed), U+266A to 0x0D and U+263A to 0x01 — after the sanitiser has run on the UTF-16 string. So the probe now
+    /// prints the way the disk script does: UTF-8 bytes on the raw stdout stream (one road, <see cref="HealthCommands.Utf8WriteStart"/>
+    /// and <see cref="HealthCommands.Utf8WriteEnd"/>), twice — UTF-8 has no best fit, and the daemon decodes UTF-8.</summary>
+    [Fact]
+    public void The_probe_prints_utf8_bytes_on_the_raw_stream_by_the_disk_scripts_road_and_never_through_console_out()
+    {
+        var clock = HealthCommands.ClockScript;
+        var disk = WindowsDiskCommands.Script;
+
+        clock.Should().NotContain("[Console]::Out", "Console.Out encodes through the OEM code page with a best-fit fallback");
+        CountOf(clock, HealthCommands.Utf8WriteStart).Should().Be(2, "the clock lines, then the pwsh lines");
+        CountOf(clock, HealthCommands.Utf8WriteEnd).Should().Be(2);
+        CountOf(disk, HealthCommands.Utf8WriteStart).Should().Be(1, "the disk script prints by the same road");
+        clock.Should().NotContain("\"", "no double quote: the line breaks are [char]10, as in the disk script");
+    }
+
+    private static int CountOf(string text, string part) => (text.Length - text.Replace(part, string.Empty, StringComparison.Ordinal).Length) / part.Length;
+
     /// <summary>Code round: the clock lines are WRITTEN and FLUSHED before the pwsh look, so a look that hangs past the probe's
     /// ceiling costs the engine choice, never the clock reading (the collector reads a timed-out answer's complete lines).</summary>
     [Fact]
@@ -161,7 +204,8 @@ public sealed class PwshProbeTests
         var script = HealthCommands.ClockScript;
         var look = script.IndexOf("GetFolderPath('ProgramFiles')", StringComparison.Ordinal);
 
-        script.IndexOf("[Console]::Out.Flush()", StringComparison.Ordinal).Should().BeInRange(0, look, "the flush comes before the look");
+        script.IndexOf("$os.Flush()", StringComparison.Ordinal).Should().BeInRange(0, look, "the flush comes before the look");
+        script.LastIndexOf("$os.Flush()", StringComparison.Ordinal).Should().BeGreaterThan(look, "and the pwsh lines are flushed after it");
         script.IndexOf("'" + HealthCommands.TimeServiceStartTypeTag + "'", StringComparison.Ordinal).Should().BeLessThan(look, "the Windows Time lines are written before the look");
         script.IndexOf("'" + HealthCommands.PwshKnownFolderTag + "'", StringComparison.Ordinal).Should().BeGreaterThan(look, "the pwsh lines after it");
     }

@@ -271,6 +271,21 @@ public sealed class HealthTests : IDisposable
         PwshEngine.Choose(sample).Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
     }
 
+    /// <summary>Security review (Fable, extra a): a kill that lands in the middle of the SECOND write leaves a partial line after the
+    /// flushed clock lines. The partial tail is dropped and the clock is still read; the pwsh look stays unread.</summary>
+    [Fact]
+    public async Task A_clock_probe_killed_in_the_middle_of_the_pwsh_lines_still_measures_the_clock()
+    {
+        var clockLines = string.Join('\n', PwshEngineFixture.Answer.Split('\n').Where(l => !l.StartsWith("pwsh.", StringComparison.Ordinal))).TrimEnd('\n') + "\n";
+        var timedOut = new CommandOutcome.TimedOut(new CapturedText(clockLines + "pwsh.knownFolder=C:\\Program Files\npwsh.envProgram", false), CapturedText.Empty, TimeSpan.FromSeconds(10));
+        var runner = new RecordingCommandRunner().Script(HealthCommands.WindowsClock.Argv, timedOut);
+
+        var sample = await HealthCollector.MeasureWindowsClockAsync(runner, new FixedTimeProvider(PwshEngineFixture.CapturedAt), TestContext.Current.CancellationToken);
+
+        sample.Measured.Should().BeTrue(sample.Unavailable);
+        sample.Pwsh.ReasonOrEmpty.Should().Contain("did not finish", "on a timeout the pwsh look is never read, complete lines or not");
+    }
+
     private static (ToolCommand Command, CommandOutcome Outcome) Answers(ToolCommand disk) => (disk, RecordingCommandRunner.Exited(0, WindowsDiskFixture.Answer));
 
     /// <summary>A full run over the sandbox whose clock probe answers <paramref name="clock"/> and whose disk commands answer as

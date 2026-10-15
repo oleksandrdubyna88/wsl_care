@@ -72,6 +72,20 @@ public static class HealthCommands
         + "else { $m = 'file'; $a = Get-AuthenticodeSignature -LiteralPath $i.FullName; if ($a.Status -eq 'Valid' -and $a.SignerCertificate.Subject -like 'CN=Microsoft Corporation,*') { $g = 'signed' } else { $g = 'unsigned:' + $a.Status + '|' + $a.SignerCertificate.Subject } } } "
         + "catch { $m = 'error:' + $_.Exception.GetType().Name }";
 
+    /// <summary>
+    /// The ONE printing road of the interop scripts (security review, Fable S2), written around a PowerShell string expression:
+    /// <c>Utf8WriteStart + &lt;text&gt; + Utf8WriteEnd</c> turns the text into UTF-8 bytes and writes them, flushed, to the RAW stdout
+    /// stream. Never <c>[Console]::Out</c>: Windows PowerShell 5.1 encodes it in the OEM code page through a BEST-FIT fallback —
+    /// measured 2026-10-15 in a fresh console: IBM437, <c>System.Text.InternalEncoderBestFitFallback</c>, U+25D9 → 0x0A (a real
+    /// line feed), U+266A → 0x0D, U+263A → 0x01 — which re-creates a line break AFTER the sanitiser ran, and turns a Cyrillic
+    /// profile into <c>?</c>. UTF-8 has no best fit, and the daemon decodes UTF-8. <c>OutputEncoding</c> is not set: it can throw
+    /// with no console attached. No double quote.
+    /// </summary>
+    public const string Utf8WriteStart = "$ob=[Text.Encoding]::UTF8.GetBytes(";
+
+    /// <summary>The end of <see cref="Utf8WriteStart"/>'s road: the write and the flush.</summary>
+    public const string Utf8WriteEnd = "); $os=[Console]::OpenStandardOutput(); $os.Write($ob,0,$ob.Length); $os.Flush()";
+
     /// <summary>The tail that prints a value CLEAN (code round, security): every control character replaced by <c>?</c>, so a value
     /// from the environment or the file system can never end its line and start a forged tagged one.</summary>
     private const string Clean = " -replace '[\\x00-\\x1f]','?')";
@@ -79,13 +93,13 @@ public static class HealthCommands
     /// <summary>The three positional lines and the two Windows Time lines, WRITTEN and FLUSHED before the pwsh look (code round):
     /// a look that hangs past the ceiling then costs the engine choice, never the clock reading.</summary>
     private const string ClockLines =
-        "[Console]::Out.Write($n + \"`n\" + $p + \"`n\" + ($env:USERPROFILE" + Clean + " + \"`n\" + '" + TimeServiceStatusTag + "' + ([string]$s.Status" + Clean
-        + " + \"`n\" + '" + TimeServiceStartTypeTag + "' + ([string]$s.StartType" + Clean + " + \"`n\"); [Console]::Out.Flush()";
+        Utf8WriteStart + "$n + [char]10 + $p + [char]10 + ($env:USERPROFILE" + Clean + " + [char]10 + '" + TimeServiceStatusTag + "' + ([string]$s.Status" + Clean
+        + " + [char]10 + '" + TimeServiceStartTypeTag + "' + ([string]$s.StartType" + Clean + " + [char]10" + Utf8WriteEnd;
 
-    /// <summary>The four pwsh lines as the probe prints them, after the look, each value clean.</summary>
+    /// <summary>The four pwsh lines as the probe prints them, after the look, each value clean, by the same UTF-8 road.</summary>
     private const string PwshLines =
-        "[Console]::Out.Write('" + PwshKnownFolderTag + "' + ($f" + Clean + " + \"`n\" + '" + PwshEnvProgramFilesTag + "' + ($e" + Clean + " + \"`n\" + '"
-        + PwshMsiTag + "' + ($m" + Clean + " + \"`n\" + '" + PwshSignatureTag + "' + ($g" + Clean + " + \"`n\"); [Console]::Out.Flush()";
+        Utf8WriteStart + "'" + PwshKnownFolderTag + "' + ($f" + Clean + " + [char]10 + '" + PwshEnvProgramFilesTag + "' + ($e" + Clean + " + [char]10 + '"
+        + PwshMsiTag + "' + ($m" + Clean + " + [char]10 + '" + PwshSignatureTag + "' + ($g" + Clean + " + [char]10" + Utf8WriteEnd;
 
     /// <summary>
     /// What the probe prints, one per line: Windows' UTC now, the PowerShell process's own start (UTC, the same

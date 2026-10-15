@@ -264,15 +264,19 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
 
     /// <summary>
     /// The probe's answer. Code round: the probe WRITES and FLUSHES its clock lines before the pwsh look, so a probe that ran
-    /// past its ceiling still answered the clock when its captured output ends with a whole line and parses — the pwsh look is
-    /// then unread (<see cref="PwshLookTimedOut"/>) and Windows PowerShell 5.1 runs the disk script. Anything else is read as before.
+    /// past its ceiling still answered the clock when its captured WHOLE lines parse — a partial last line (a kill in the middle of
+    /// the second write) is dropped (security review, Fable extra a) — the pwsh look is then unread (<see cref="PwshLookTimedOut"/>)
+    /// and Windows PowerShell 5.1 runs the disk script. Anything else is read as before.
     /// </summary>
     private static Reading<WindowsClockAnswer> ClockAnswer(CommandOutcome outcome) => outcome switch
     {
-        CommandOutcome.TimedOut { Stdout.Text: var text } when text.EndsWith('\n') && HealthParsers.WindowsClock(text) is Reading<WindowsClockAnswer>.Available { Value: var answer } =>
+        CommandOutcome.TimedOut { Stdout.Text: var text } when HealthParsers.WindowsClock(WholeLines(text)) is Reading<WindowsClockAnswer>.Available { Value: var answer } =>
             Reading.Of(answer with { Pwsh = Reading.Missing<PwshProbe>(PwshLookTimedOut) }),
         _ => ToolAnswers.Read(HealthCommands.WindowsClock, outcome).Bind(HealthParsers.WindowsClock),
     };
+
+    /// <summary>The text up to and including its last line feed — a partial last line dropped; empty when there is no whole line.</summary>
+    private static string WholeLines(string text) => text[..(text.LastIndexOf('\n') + 1)];
 
     private WindowsClockSample ClockUnavailable(string reason) => new(clock.GetUtcNow(), 0, 0, reason);
 }

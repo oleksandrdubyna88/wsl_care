@@ -392,7 +392,7 @@ public sealed class WindowsDiskTests
 
         script.Should().NotContain("\"", "WSL interop and PowerShell quote double quotes their own way; the script needs none");
         script.Should().Match(s => s.All(c => c >= ' ' && c <= '~'), "ASCII only, and the never-list refuses a control character");
-        script.Should().EndWith("$s.Write($u,0,$u.Length); $s.Flush()");
+        script.Should().EndWith(HealthCommands.Utf8WriteEnd, "the answer leaves by the one UTF-8 road the clock probe uses too");
         script.IndexOf("$o.Add('" + WindowsDiskCommands.EndLine + "')", StringComparison.Ordinal).Should().BeGreaterThan(script.LastIndexOf("$o.Add('adapter", StringComparison.Ordinal), "end=1 is added last");
         script.Should().Contain("$ProgressPreference='SilentlyContinue'");
     }

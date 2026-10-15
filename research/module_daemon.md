@@ -354,9 +354,15 @@ flowchart LR
   `pwsh.knownFolder=`, `pwsh.envProgramFiles=`, `pwsh.msi=` (`absent` / `link` / `directory` / `empty` / `file`) and
   `pwsh.signature=` (`signed` only for Authenticode Valid from `CN=Microsoft Corporation`, through the pinned module path) —
   inside its own `try`, so no third PowerShell starts per run. Code round: every value the probe prints (the profile, the two
-  Windows Time words, the four pwsh values) has its control characters replaced by `?`, so an environment value can never
-  start a forged tagged line; the parser reads NO pwsh line when any pwsh tag appears more than once
-  (`ClockParsers.RepeatedPwshLine`), so 5.1 runs; and the clock lines are written and FLUSHED before the look, so a look that
+  Windows Time words, the four pwsh values) has its control characters replaced by `?`, and (security review, 2026-10-15)
+  the probe prints by the disk script's ONE road — UTF-8 bytes on the raw stdout stream (`HealthCommands.Utf8WriteStart` /
+  `Utf8WriteEnd`), never `[Console]::Out`, whose OEM best-fit encoding was measured to turn U+25D9 into a real line feed
+  after the sanitiser ran. What the code guarantees is narrower than "no forged line ever": a value the PROBE prints cannot
+  break its line, and the parser believes a pwsh block ONLY as the probe's own trailing block — the last four non-empty
+  lines, in the script's order, after both Windows Time lines (`ClockParsers.NotTheTrailingPwshBlock`) — and none at all
+  when a pwsh tag appears more than once (`ClockParsers.RepeatedPwshLine`); either way 5.1 runs. A Windows user who ends or
+  replaces the probe can still print a well-shaped block (see the as-built *Open* list); the fixed-folder rule is what
+  bounds that to starting the real MSI file or 5.1. The clock lines are written and FLUSHED before the look, so a look that
   hangs past the ceiling costs the engine choice, never the clock reading (`HealthCollector` reads a timed-out probe's whole
   flushed lines). `PwshEngine.Choose(sample)` is PURE: the MSI
   pwsh only when the known folder is `C:\Program Files` (without case, as Windows compares folder names — the final code round; a trailing separator is still another
@@ -375,7 +381,7 @@ flowchart LR
   `ExecutableResolver.OnPath`). The reason: a root collect through `wsl.exe -u root` inherits the Windows PATH, whose user
   part holds the Store package's alias — a file the Windows user can replace — so the daemon never starts the Store package
   or its alias, only the verified MSI file. On the Windows binary a `pwsh.exe` lookup answers "never from PATH" too. The rule
-  compares without case (the 9p share is case-insensitive). `powershell.exe` keeps PATH first.
+  and the drive list (`WindowsSystemDrive.Programs`) compare without case (the 9p share is case-insensitive). `powershell.exe` keeps PATH first.
 - **The scenario seam (E15.S1b).** The scenario harness reaches its fakes through PATH, which `pwsh.exe` never uses. So the
   product's runner asks `SystemDriveLookup.ForThisProcess`: `ThisMachine`, except for a process that is inside a sandbox
   (`WSL_CARE_ROOT`) AND not really privileged, which gets `SystemDriveLookup.Sandboxed` — `<sandbox>/mnt/c`, interop taken as

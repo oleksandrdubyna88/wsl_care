@@ -68,9 +68,11 @@ public static class WindowsSystemDrive
 
     /// <summary>
     /// The CLOSED list of Windows programs looked up on the system drive when PATH does not name them, each with its folder
-    /// relative to the drive's root. A name not here is looked up on PATH alone, exactly as before.
+    /// relative to the drive's root. A name not here is looked up on PATH alone, exactly as before. Compared without case, as
+    /// <see cref="FixedFolderOnly"/> is (security review, Fable extra b): the drive is case-insensitive, so <c>Pwsh.exe</c> is the
+    /// same program, found in the same one folder.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> Programs { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
+    public static IReadOnlyDictionary<string, string> Programs { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         // Where Windows installs Windows PowerShell 5.1 (%SystemRoot%\System32\WindowsPowerShell\v1.0) — the folder WSL's
         // own interop PATH names for it.
