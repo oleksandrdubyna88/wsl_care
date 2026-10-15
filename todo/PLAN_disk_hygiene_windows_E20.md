@@ -728,6 +728,31 @@ the refusals), `tests/WslCare.TestSupport/` additions to `WorktreeWorld` (S3's; 
     §3.4 by the story (the E19 stories document's convention: "each a deviation from the parent's text, recorded there in the
     same commit"), and E20's stories document — when the Opus judge writes it — carries DH-4 as `model: fable` with this spec.
 
+## 4a. Plan round (coai, 2026-10-15) — three findings accepted, binding on §4
+
+Round for the gate's epic 2/3: **proceed** (3 gating against 6). All three accepted; where they and §4 differ, these win:
+
+1. **The candidate folder itself is removed through a fresh, verified handle** (finding 0: a hold opened without
+   `FILE_SHARE_DELETE` makes the folder's own disposition fail with a sharing violation). After every child is gone, the hold
+   is CLOSED; the folder is reopened with `DELETE | READ_ATTRIBUTES`, `OPEN_REPARSE_POINT | BACKUP_SEMANTICS`; it is
+   disposed only when that handle's attributes say a plain directory (no reparse bit), its `FinalPath` equals the recorded
+   candidate path exactly, and it is empty (error 145 otherwise → "partly removed"). A folder swapped for a link in that
+   window is a link, fails the check and is retained. RED: `The_candidate_folder_is_removed_through_a_fresh_verified_handle`,
+   `A_candidate_swapped_for_a_junction_after_its_children_are_gone_is_retained`.
+2. **The checkpoint retires instead of trapping** (finding 1): `build-output-cursor.json` older than
+   `worktrees.checkpointMaxAgeDays` (7, 1–90, Lower), or naming a candidate that no longer exists or a root no longer
+   admitted, is retired with a logged note and the run goes on with a fresh preview; an UNREADABLE checkpoint is renamed
+   aside (`build-output-cursor.unreadable-<utc>.json`, its own folder only, one file kept) and THAT run refuses once with
+   the reason — the next run proceeds. The resumed candidate is ALWAYS re-verified (R0–R6 of §4 B.1) before any delete; the
+   checkpoint only says where to look first. RED: `A_stale_checkpoint_is_retired_and_the_run_goes_on`,
+   `An_unreadable_checkpoint_is_set_aside_once_and_never_blocks_twice`, `A_resumed_candidate_is_reverified_before_its_first_delete`.
+3. **The file system is a precondition, not a surprise** (finding 2): a root is admitted only on a local fixed NTFS or ReFS
+   volume (`DriveInfo.DriveFormat`, a new rule beside E19.S3's root rules — FAT/exFAT and network refused with the reason);
+   a `FileDispositionInfoEx` that answers `ERROR_INVALID_PARAMETER` or `ERROR_NOT_SUPPORTED` falls back to the classic
+   `FileDispositionInfo` (allowed here: not an agent folder), where a read-only file is kept and named, never its attribute
+   changed. M-DH4-1 (ReFS POSIX delete on D:) is measured in the story before the default is relied on. RED:
+   `A_root_on_a_fat_volume_is_refused`, `An_unsupported_posix_disposition_falls_back_and_keeps_read_only_files`.
+
 ## 5. Order and gates
 
 E20.S1 after E19.S3+S4; E20.S2 after its runner dependencies. One coai plan round for this document (the gate's epic
