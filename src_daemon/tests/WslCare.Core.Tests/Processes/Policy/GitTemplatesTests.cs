@@ -22,7 +22,7 @@ public sealed class GitTemplatesTests
 
     public static TheoryData<string> RefusedNames =>
     [
-        "", "-x", "--force", "..", "../x", "a/../b", "a/./b", "./a", "a//b", "//a", "/abs", @"\x", @"a\b", @"C:\x", "C:x", ":x", "a:b", ":(glob)x", ":(top)",
+        "", "-x", "--force", "..", "../x", "a/../b", "a/./b", "./a", "a//b", "//a", "/abs", @"\x", @"a\b", @"C:\x", "C:x", ":x", "a:b", ":(glob)x", ":(top)", "clean", "CLEAN", "prune", "worktree", "worktree/",
         "a*b", "a?b", "a[b", "*", "a\nb", "a\0b", "a\tb", "a\u001bb", "a\"b", "a<b", "a>b", "a|b", new string('a', 261),
     ];
 
@@ -176,19 +176,16 @@ public sealed class GitTemplatesTests
     }
 
     [Fact]
-    public void A_name_that_spells_clean_is_refused_because_the_never_list_is_asked_before_any_template()
+    public void Names_that_spell_clean_or_worktree_prune_are_refused_by_the_slot_and_would_be_refused_by_the_never_list_anyway()
     {
-        var verdict = CommandPolicy.Product.Review(Request(GitCommands.CheckIgnore(Questions("bin", "clean"))));
-
-        verdict.Should().BeOfType<CommandVerdict.Refused>().Which.Reason.Should().Contain("never-list").And.Contain("delete-by-command");
-    }
-
-    [Fact]
-    public void Names_that_spell_worktree_and_prune_are_refused_by_the_never_list_even_though_the_template_accepts_them()
-    {
-        var verdict = CommandPolicy.Product.Review(Request(GitCommands.CheckIgnore(Questions("worktree", "prune"))));
-
-        verdict.Should().BeOfType<CommandVerdict.Refused>().Which.Reason.Should().Contain("git-worktree-prune");
+        // The slot refuses the destructive words as WHOLE names, so no instance of a git template can ever carry them (the template
+        // property found "worktree" and "prune" side by side). The never-list stays the second wall: asked first, whatever a slot says.
+        CommandPolicy.Product.Review(Request(GitCommands.CheckIgnore(Questions("bin", "clean")))).IsAllowed.Should().BeFalse();
+        CommandPolicy.Product.Review(Request(GitCommands.CheckIgnore(Questions("worktree", "prune")))).IsAllowed.Should().BeFalse();
+        NeverList.FirstBroken(GitCommands.CheckIgnore(Questions("worktree", "prune")))!.Id.Should().Be("git-worktree-prune");
+        NeverList.FirstBroken(GitCommands.CheckIgnore(Questions("clean")))!.Id.Should().Be("delete-by-command");
+        Name.Accepts("cleaner").Should().BeTrue("only the whole word is a git subcommand");
+        Name.Accepts("tools/clean").Should().BeTrue("a name with a folder in front is not an argv word");
     }
 
     [Fact]

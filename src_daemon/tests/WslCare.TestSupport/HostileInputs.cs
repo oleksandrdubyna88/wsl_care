@@ -105,7 +105,7 @@ public sealed class HostileInputs(int seed)
         SlotKind.Text t => TextValue(t),
         SlotKind.HttpsUrl => Pick<string>(["https://www.microsoft.com", "https://a.b:8443/x/y", "https://1.2.3.4", "https://time-host.example/p_~.-/q", "https://X"]),
         SlotKind.WindowsDiskScript => WslCare.Core.Health.WindowsDiskCommands.Script, // its whole accepted space: one value
-        SlotKind.RelativeName => Pick<string>(["bin", "obj/", "node_modules", "src/App/bin", "résumé/obj", "my project/bin", "clean", "worktree", "prune"]),
+        SlotKind.RelativeName => Pick<string>(["bin", "obj/", "node_modules", "src/App/bin", "résumé/obj", "my project/bin", "cleaner", "prune/bin", "worktrees"]),
         SlotKind.AdminFolder => Pick<string>([@"C:\repo\.git", "D:/rsd/x/.git", @"E:\a b\.git"]),
 
         SlotKind.OneOf o => Pick(o.Values),

@@ -200,8 +200,14 @@ public abstract record SlotKind
     {
         private static readonly char[] Forbidden = ['*', '?', '[', ':', '\\', '"', '<', '>', '|'];
 
+        /// <summary>Whole names that are a destructive git word. A candidate is never called one, and refusing them keeps every instance of the
+        /// git templates clear of <c>worktree prune</c> and <c>clean</c> however the names are combined (the template property found the combination).</summary>
+        private static readonly string[] GitWords = ["clean", "prune", "worktree"];
+
         public override bool Accepts(string value) =>
-            Checks.All(value, v => v.Length is > 0 and <= 260, v => v[0] != '-' && v[0] != '/', v => v.All(c => !char.IsControl(c)), v => v.IndexOfAny(Forbidden) < 0, HasOnlyPlainSegments);
+            Checks.All(value, v => v.Length is > 0 and <= 260, v => v[0] != '-' && v[0] != '/', v => v.All(c => !char.IsControl(c)), v => v.IndexOfAny(Forbidden) < 0, HasOnlyPlainSegments, IsNoGitWord);
+
+        private static bool IsNoGitWord(string value) => !GitWords.Contains(value.TrimEnd('/'), StringComparer.OrdinalIgnoreCase);
 
         private static bool HasOnlyPlainSegments(string value) =>
             (value.EndsWith('/') ? value[..^1] : value).Split('/').All(segment => segment.Length > 0 && segment is not ("." or ".."));

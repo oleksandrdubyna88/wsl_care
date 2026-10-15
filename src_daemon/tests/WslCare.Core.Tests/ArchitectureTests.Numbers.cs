@@ -186,6 +186,8 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Processes/Policy/CommandTemplate.cs: > 40"] = "a display truncation: how much of a value one sentence quotes, not how much is done",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 128"] = "a command-policy slot bound — the closed policy is never configuration (plan §15q R1.3)",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 19"] = "the digits of a 64-bit number — a format",
+        ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 260"] = "a relative name's length: Windows' MAX_PATH of 260 — the file system's format, and a command-policy slot bound (E19.S4)",
+        ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 260"] = "a relative name's length: Windows' MAX_PATH of 260 — the file system's format, and a command-policy slot bound (E19.S4)",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 32"] = "a Linux account name's length (useradd's 32) — the system's format",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 40"] = "a command-policy slot bound — the closed policy is never configuration (plan §15q R1.3)",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: == 20"] = "an RFC 3339 UTC instant to the second is 20 characters — a format",

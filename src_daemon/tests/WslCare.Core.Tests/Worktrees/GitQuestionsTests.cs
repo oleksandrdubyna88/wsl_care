@@ -274,15 +274,28 @@ public sealed class GitQuestionsTests
     }
 
     [Fact]
-    public async Task A_command_the_policy_refuses_retains_the_candidate_instead_of_running()
+    public async Task A_name_that_would_spell_a_destructive_git_word_is_never_asked_and_is_retained_as_a_bad_name()
     {
         var runner = new FakeRepository().Runner();
 
-        // "clean" as a name builds an argv the never-list refuses: the answer is a retained candidate, not an exception.
-        var answers = await Asker(runner).AskAsync(Repo("bin", "clean"), CancellationToken.None);
+        var answers = await Asker(runner).AskAsync(Repo("bin", "clean", "Prune", "worktree/"), CancellationToken.None);
 
-        answers.Should().OnlyContain(a => a.Verdict is GitVerdict.Retained);
-        ((GitVerdict.Retained)Of(answers, "clean")).Reason.Should().StartWith("git could not be run: refused by the never-list");
+        Of(answers, "bin").Should().Be(Retained(GitReasons.NotIgnored));
+        Of(answers, "clean").Should().Be(Retained(GitReasons.BadName));
+        Of(answers, "Prune").Should().Be(Retained(GitReasons.BadName));
+        Of(answers, "worktree/").Should().Be(Retained(GitReasons.BadName));
+        runner.Requests.SelectMany(r => r.Argv).Should().NotContain(["clean", "Prune", "worktree/"]);
+    }
+
+    [Fact]
+    public async Task A_command_the_policy_refuses_retains_the_candidate_instead_of_running()
+    {
+        // The policy's own refusal reaches the answer as a retained candidate, never an exception: a planted runner that refuses everything.
+        var runner = new RecordingCommandRunner { Policy = CommandPolicy.Over(CommandCatalogue.Empty) };
+
+        var answers = await Asker(runner).AskAsync(Repo("bin"), CancellationToken.None);
+
+        ((GitVerdict.Retained)Of(answers, "bin")).Reason.Should().StartWith("git could not be run: refused: no declared command template matches");
     }
 
     [Fact]
@@ -317,17 +330,17 @@ public sealed class GitQuestionsTests
     [Fact]
     public async Task Names_ride_calls_bounded_by_the_encoded_command_line_and_a_name_that_cannot_fit_alone_is_retained()
     {
-        var longName = string.Join('/', Enumerable.Repeat(new string('d', 49), 5)) + "/bin"; // 253 characters: a legal name, too long for a 400-character line
+        var longName = string.Join('/', Enumerable.Repeat(new string('d', 49), 5)) + "/bin"; // 253 characters: a legal name, too long for a 300-character line
         var names = new[] { "a/bin", longName, "b/bin", "c/bin" };
         var repository = new FakeRepository { Ignored = [.. names] };
         var runner = repository.Runner();
-        var limits = new GitLimits(TimeSpan.FromSeconds(30), 64, 400);
+        var limits = new GitLimits(TimeSpan.FromSeconds(30), 64, 300);
 
         var answers = await Asker(runner, limits).AskAsync(Repo(names), CancellationToken.None);
 
         Of(answers, longName).Should().Be(Retained(GitReasons.TooLong), "a name that cannot fit one call alone is retained, never dropped");
         Of(answers, "a/bin").Should().Be(Confirmed);
-        runner.Requests.Should().OnlyContain(r => WindowsCommandLine.Of("git.exe", r.Argv.Skip(1).ToList()).Length <= 400);
+        runner.Requests.Should().OnlyContain(r => WindowsCommandLine.Of("git.exe", r.Argv.Skip(1).ToList()).Length <= 300);
         runner.Requests.SelectMany(r => r.Argv).Should().NotContain(longName);
     }
 
