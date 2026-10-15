@@ -155,7 +155,7 @@ export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = Obje
  * - `tasks stage --json` — the bundled exe copies itself to the staging folder and verifies the copy;
  * - `tasks stage --remove --json` — every staged copy removed.
  *
- * `tasks run` is the task's own action (the supervisor, which spells `--timer`): the extension never runs it, so it is not here.
+ * `tasks run` is the task's own action (the supervisor, which spells the timer's mark): the extension never runs it, so it is not here.
  */
 export const TASK_NAMES = ['watch', 'archive'] as const;
 

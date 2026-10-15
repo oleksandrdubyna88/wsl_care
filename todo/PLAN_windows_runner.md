@@ -1425,3 +1425,13 @@ in [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b.3. Dec
     test; the fake runner starts `node` and passes the exe as data, so the fake is untouched). **m5** the stage fixtures use the
     daemon's real sentences (`Staging.cs`: the copied line, the already-staged line, the busy line with the lock file, the busy report's
     `source`) and one source path with the extension tests' own publisher. **m6** see above. **m7** §4 reworded (above).
+
+- **The coai code round on WR-E1 (session `ef8a966f`, 2026-10-15)** — `proceed`, ten findings, four accepted, six rejected.
+  *Accepted*: two comments no longer spell the timer's mark (findings 0, 1; the enforced rule is `bundleScan.test.ts` over the
+  bundle, but the words cost nothing); exit 75 with a readable answer that names NO outcome is a failure, not a busy (finding 2 —
+  test `code round finding 2…`, red first; break-it: the old default restored → red); a LocalAppData that names no staged copy says
+  the value it received (finding 8 — test `code round finding 8…`, red first; break-it → red). *Rejected*: a second path authority
+  (finding 3 — `checkProvenance` already compares with `exe(staged(digest))`); exit 75 with no readable body being busy (finding 4 —
+  the code is the daemon's busy by contract, and busy is the fail-safe reading); the digest stream's error handling (findings 5, 7 —
+  a Readable's async iterator rejects with the error and destroys the stream); trailing dots or spaces in LocalAppData (finding 6 —
+  fails closed through the path comparison); `firstLine` splitting a capped buffer (finding 9).

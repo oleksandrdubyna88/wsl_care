@@ -32,7 +32,7 @@ import { endingReason, firstLine, readOutcomeOf, removeResultOf, renderResultOf,
  * - the staged exe: `tasks render <watch|archive>`;
  * - either exe: the run reads (`read`) — values checked before a spawn, as `WslCareClient.read` checks them.
  *
- * It never runs `tasks run` (the task's own action, whose supervisor spells `--timer`), never registers anything, and is never
+ * It never runs `tasks run` (the task's own action, whose supervisor spells the timer's mark), never registers anything, and is never
  * elevated, never run from a scheduled task or as SYSTEM: the extension folder is the user's own. A refused start (Smart App
  * Control, say) reaches the runner as Node's error message, which is shown as Windows gave it — never a guessed code.
  */
@@ -140,7 +140,7 @@ export class WindowsCareClient {
 
     return localAppData !== undefined && isNormalDrivePath(localAppData)
       ? path.win32.join(localAppData, ...STAGING_SEGMENTS, digest, EXE_NAME)
-      : { reason: 'the profile\'s LocalAppData is not known as a normal local drive path, so no staged copy is named' };
+      : { reason: `the profile's LocalAppData is not known as a normal local drive path (${receivedValue(localAppData)}), so no staged copy is named` };
   }
 
   /** `--version` of the bundled exe, through the given seam — nothing started when {@link exe} says why not. */
@@ -249,6 +249,11 @@ export class WindowsCareClient {
 /** Whether `text` is a path on a local drive that `path.win32.normalize` would leave as it is: no `..`, no `.`, no forward slash, no doubled or trailing separator. */
 function isNormalDrivePath(text: string): boolean {
   return DRIVE_ROOT.test(text) && path.win32.normalize(text) === text && !text.endsWith('\\') && !text.split('\\').includes('..');
+}
+
+/** The LocalAppData value a refusal names, so the person can see what was received (the coai code round on WR-E1, finding 8). */
+function receivedValue(text: string | undefined): string {
+  return text === undefined ? 'none was received' : `received "${text}"`;
 }
 
 /** Why a request is not one of the five Windows reads, or why its values may not be sent. */

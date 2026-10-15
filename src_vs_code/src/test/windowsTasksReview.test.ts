@@ -108,6 +108,22 @@ test('m2: exit 75 with a readable answer whose outcome is not busy is a failure 
   assert.equal((await windowsClient(recording(exited(75, 'not json')).runner).tasksStage()).kind, 'busy');
 });
 
+// ---- the coai code round (session ef8a966f) ----
+
+test('code round finding 2: exit 75 with a readable answer that names NO outcome is a failure, not a busy — stage and remove', async () => {
+  const body = JSON.stringify({ schemaVersion: 1 });
+  assert.equal((await windowsClient(recording(exited(75, body)).runner).tasksStage()).kind, 'failed');
+  assert.equal((await windowsClient(recording(exited(75, body)).runner).tasksStageRemove()).kind, 'failed');
+});
+
+test('code round finding 8: a LocalAppData that names no staged copy says which value it received', async () => {
+  const c = windowsClient(recording(exited(0, '')).runner, { localAppData: 'C:\\Users\\user\\AppData\\Local\\' });
+  const render = await c.tasksRender('watch', STAGED_DIGEST);
+  assert.equal(render.kind, 'unavailable');
+  const reason = 'reason' in render ? String(render.reason) : '';
+  assert.ok(reason.includes('"C:\\Users\\user\\AppData\\Local\\"'), `the received value is named, so the person sees the trailing separator: ${reason}`);
+});
+
 // ---- m3: one table of "it did not end" sentences ----
 
 test('m3: the sentence for a process that did not exit is written once — the Windows client and its answers share it, and the version read keeps its setting name', async () => {

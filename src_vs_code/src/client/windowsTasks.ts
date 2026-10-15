@@ -497,7 +497,8 @@ function busyOf(stdout: Buffer): { readonly kind: 'busy'; readonly reason: strin
 }
 
 function busyAnswer(body: JsonObject): { readonly kind: 'busy'; readonly reason: string } | NotAnswered {
-  const outcome = typeof body.outcome === 'string' ? body.outcome : 'busy';
+  // A readable answer must SAY busy: one that names no outcome is no busy either (the coai code round on WR-E1, finding 2).
+  const outcome = typeof body.outcome === 'string' ? body.outcome : 'no outcome';
   const reason = new Fields(body, '').sentence('reason');
 
   return outcome === 'busy'
