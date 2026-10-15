@@ -145,3 +145,48 @@ export const RUN_READ_CALLS: { readonly [K in RunReadName]: 'runRead' | 'archive
 export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = Object.fromEntries(
   RUN_READ_NAMES.map((name) => [name, ceilingMs(DEFAULT_NUMBERS, { call: RUN_READ_CALLS[name] })]),
 ) as { readonly [K in RunReadName]: number };
+
+/**
+ * The Windows runner's `tasks` verbs (WR-E1 of PLAN_windows_runner.md §3.8) — run by the Windows daemon exe, never through
+ * `wsl.exe`, and spelt HERE and nowhere else like every other verb word:
+ *
+ * - `tasks render <task> --json` — read-only: the XML a task would be registered with, its summary and whether it may be
+ *   registered; run on the STAGED exe;
+ * - `tasks stage --json` — the bundled exe copies itself to the staging folder and verifies the copy;
+ * - `tasks stage --remove --json` — every staged copy removed.
+ *
+ * `tasks run` is the task's own action (the supervisor, which spells the timer's mark): the extension never runs it, so it is not here.
+ */
+export const TASK_NAMES = ['watch', 'archive'] as const;
+
+export type TaskName = (typeof TASK_NAMES)[number];
+
+/** The daemon tail of `tasks render <task>` — the task is a closed word, checked again at runtime (a cast cannot widen it). */
+export function tasksRenderTail(task: TaskName): readonly string[] {
+  if (!TASK_NAMES.includes(task)) {
+    throw new RangeError(`"${String(task)}" is not one of the two Windows tasks`);
+  }
+
+  return ['tasks', 'render', task, '--json'];
+}
+
+/** The daemon tail of `tasks stage`. */
+export const TASKS_STAGE_TAIL: readonly string[] = ['tasks', 'stage', '--json'];
+
+/** The daemon tail of `tasks stage --remove`. */
+export const TASKS_REMOVE_TAIL: readonly string[] = ['tasks', 'stage', '--remove', '--json'];
+
+/**
+ * How long the Windows client waits for `tasks stage` / `tasks render` before it ends the process: the DEFAULT of the setting
+ * WR-E2 adds (`wslCare.timeouts.windowsTasksStageSeconds`, 60 s, range 10–600). A stage copies 13.7 MB and reads it back twice; a
+ * render reads one small file and the configuration.
+ */
+export const TASKS_DEFAULT_TIMEOUT_MS = 60_000;
+
+/**
+ * The five run reads the Windows side asks (WR-E1 of PLAN_windows_runner.md §3.8): `runs show`, `runs`, `logs`, `archive status`,
+ * `archive list`. `archive preview` and `archive check-base` are the WSL side's; the Windows client refuses them by type and at runtime.
+ */
+export const WINDOWS_READ_NAMES = ['runsShow', 'runs', 'logs', 'archiveStatus', 'archiveList'] as const satisfies readonly RunReadName[];
+
+export type WindowsRunRead = Extract<RunRead, { readonly read: (typeof WINDOWS_READ_NAMES)[number] }>;

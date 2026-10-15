@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "outcome": "refused",
+  "reason": "the copy could not be made",
+  "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "path": "",
+  "version": "",
+  "source": "C:\\Users\\user\\.vscode\\extensions\\pub.ai-os-care-0.5.0-win32-x64\\bin\\wsl-care.exe",
+  "swept": [],
+  "kept": [],
+  "retained": []
+}

@@ -25,3 +25,10 @@ export const ENTRY_ID_SHAPE = /^[0-9a-f]{16}$/;
  * and the Archive page's selection (`archivePage/archiveSelection.ts`) — one number, both sides.
  */
 export const MAX_RESTORE_ENTRIES = 5000;
+
+/**
+ * A staged copy's folder name (`StagedCopies`, WR-D2 of PLAN_windows_runner.md): the SHA-256 of the exe as 64 LOWER-case hex digits —
+ * the only spelling the daemon's staging root holds, and so the only digest the Windows client turns into a path
+ * (`WindowsCareClient.exe`).
+ */
+export const STAGED_DIGEST_SHAPE = /^[0-9a-f]{64}$/;

@@ -25,6 +25,15 @@ export function isWslLauncher(file: unknown): boolean {
   return name === 'wsl' || name === 'wsl.exe';
 }
 
+export const WSL_CARE_TRIPWIRE_MESSAGE = 'noRealWsl: a test tried to start the real wsl-care.exe';
+
+/** Whether `file` names the Windows daemon (`wsl-care.exe`, or the distro's `wsl-care`), by its base name on either path style. */
+export function isWslCareExe(file: unknown): boolean {
+  const name = path.win32.basename(String(file)).toLowerCase();
+
+  return name === 'wsl-care' || name === 'wsl-care.exe';
+}
+
 export const ELEVATION_TRIPWIRE_MESSAGE = 'noRealWsl: a test tried to start an ELEVATED PowerShell (RunAs)';
 
 /**
@@ -119,6 +128,9 @@ function shellCommand(program: unknown, rest: readonly string[]): string[] | und
 export function refusalOf(program: unknown, rest: readonly string[] | unknown, depth = 0): string | undefined {
   if (isWslLauncher(program)) {
     return TRIPWIRE_MESSAGE;
+  }
+  if (isWslCareExe(program)) {
+    return WSL_CARE_TRIPWIRE_MESSAGE;
   }
   if (isElevatedPowerShell(program, rest)) {
     return ELEVATION_TRIPWIRE_MESSAGE;

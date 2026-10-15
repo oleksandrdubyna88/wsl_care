@@ -106,6 +106,39 @@ test('the verb union is exactly the four read-only verbs of plan §15f #5, each 
   assert.deepEqual(VERBS, { status: ['status', '--json'], preview: ['preview', '--all', '--json'], doctor: ['doctor', '--json'], version: ['--version'] });
 });
 
+// ---- WR-E1 (PLAN_windows_runner.md §3.8): the Windows runner's `tasks` verbs are spelt in the verb module alone ----
+
+/** The words of `tasks render` / `tasks stage` / `tasks stage --remove`: only `verbs.ts` may spell them. */
+const TASKS_WORDS = ['tasks', 'render', 'stage', '--remove'];
+
+const WINDOWS_CLIENT_MODULES = ['src/client/WindowsCareClient.ts', 'src/client/windowsTasks.ts'];
+
+test('only the verb module spells the words of the tasks verbs — and it spells all of them (the scan is alive)', () => {
+  assert.deepEqual(spellers(sources(), TASKS_WORDS), { [VERB_MODULE]: [...TASKS_WORDS].sort() });
+});
+
+test('the tasks-word scan finds a planted argv outside the verb module, in an array, a template and over lines — the Windows client included — and ignores a comment', () => {
+  const planted: Source[] = [
+    { file: 'src/client/WindowsCareClient.ts', text: "const args = ['tasks', 'stage', '--json'];" },
+    { file: 'src/panel/x.ts', text: 'const a = [\n  `tasks`,\n  "render",\n];' },
+    { file: 'src/windowsTasks/flow.ts', text: "const remove = ['stage', '--remove'];" },
+    { file: 'src/z.ts', text: '// tasks render and tasks stage --remove belong to verbs.ts\nconst s = "staged";' },
+  ];
+  assert.deepEqual(spellers(planted, TASKS_WORDS), {
+    'src/client/WindowsCareClient.ts': ['stage', 'tasks'],
+    'src/panel/x.ts': ['render', 'tasks'],
+    'src/windowsTasks/flow.ts': ['--remove', 'stage'],
+  });
+});
+
+test('the extension never spells --timer: the scan reads the Windows client and its answers too, and finds none', () => {
+  const files = sources().map((s) => s.file);
+  for (const module of WINDOWS_CLIENT_MODULES) {
+    assert.ok(files.includes(module), `the scan reads ${module}`);
+  }
+  assert.deepEqual(spellers(sources(), NEVER_WORDS), {});
+});
+
 // ---- E5.S3: Install daemon — ONE module builds the command, and nothing that builds it can start a process ----
 
 const INSTALL_COMMAND_MODULE = 'src/install/installCommand.ts';
