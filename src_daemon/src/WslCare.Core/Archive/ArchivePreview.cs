@@ -64,6 +64,20 @@ public sealed record ArchivePreviewReport(
 /// <summary>Builds <see cref="ArchivePreviewReport"/> from a selection.</summary>
 public static class ArchivePreview
 {
+    /// <summary>The sentence a preview's run log carries (WR-D5, PLAN_windows_runner.md §3.5): what a real run would move now — enabled
+    /// agents only, a disabled one never moves. The preview's own wording, so the verb needs nothing from the task runner (the coai code
+    /// round on WR-D5, finding 5); one pass over the agents.</summary>
+    public static string WouldMove(ArchivePreviewReport report)
+    {
+        var (units, bytes) = (0L, 0L);
+        foreach (var agent in report.Agents.Where(static a => a.Enabled))
+        {
+            (units, bytes) = (units + agent.DueUnits, bytes + agent.DueBytes);
+        }
+
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"would move {units} session(s), {bytes} bytes");
+    }
+
     /// <summary>The share of the preview's ceiling its listing may spend; the rest is the answer's (a property of a ceiling, like the
     /// 60 s a command keeps under its own — group C).</summary>
     public const double ListingShare = 0.75;

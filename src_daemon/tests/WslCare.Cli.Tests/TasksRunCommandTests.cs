@@ -126,21 +126,6 @@ public sealed class TasksRunCommandTests
     }
 
     [Fact]
-    public void The_archive_task_is_refused_as_not_built_and_starts_nothing()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
-        using var world = new World("tasks-run-archive");
-        var supervisor = new RecordingSupervisor(new WorkerOutcome.Exited(0));
-
-        var (exit, stdout, stderr) = CliRun.Over(world.Host(supervisor), "tasks", "run", "archive", "--json");
-
-        exit.Should().Be((int)ExitCode.Usage);
-        stdout.Should().BeEmpty();
-        stderr.Should().Contain("not built in this version").And.Contain("WR-D5");
-        supervisor.Launches.Should().BeEmpty();
-    }
-
-    [Fact]
     public void A_host_without_its_own_path_starts_no_worker()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);

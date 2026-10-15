@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Hosting;
@@ -17,7 +18,7 @@ namespace WslCare.Cli.Commands;
 /// ONE terminal line (exited N, ended at the deadline, stopped, refused) — and nothing to stdout, ever.
 /// </summary>
 /// <remarks>Exit codes: the worker's own code when it exited by itself; 84 <c>TaskEnded</c> when the deadline ended it; 2 on the distro's
-/// binary, for <c>archive</c> (its body is WR-D5's) and when this process's own path cannot be read; 1 when the supervisor could not start
+/// binary and when this process's own path cannot be read; 1 when the supervisor could not start
 /// the worker inside a job (the reason is the stderr line — fail closed, nothing ran outside the job); 130 when a signal stopped the run
 /// (the job was closed, which ended the tree). A configuration in error is not refused here: the worker reads the same layers and
 /// answers for itself (the watch's observe-only rule), and the deadline's key keeps its default when its layer is in error.</remarks>
@@ -32,9 +33,10 @@ internal static partial class TasksCommand
         }
 
         SweepStagingAtRunStart(host, windows, loaded.Config, stderr);
-        return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config) switch
+        var archive = new Lazy<DryRunDecision>(() => ArchiveBody.Decide(loaded, host.Privilege.IsRoot, windows, host.Files, host.Clock.GetUtcNow()));
+        return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config, () => archive.Value) switch
         {
-            Reading<WorkerLaunch>.Available launch => Supervised(request.Task, launch.Value, host.Supervisor, stderr, cancellationToken),
+            Reading<WorkerLaunch>.Available launch => Started(request.Task, launch.Value, host.Supervisor, archive, stderr, cancellationToken),
             Reading<WorkerLaunch>.Unavailable refused => Refused(request.Task, refused.Reason, stderr),
             _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
         };
@@ -80,6 +82,19 @@ internal static partial class TasksCommand
         {
             Output.Note(stderr, string.Create(CultureInfo.InvariantCulture, $"tasks run: the staging sweep could not remove {sweep.Kept.Count} folder(s): {string.Join("; ", sweep.Kept.Select(f => $"{f.Path} ({f.Why})"))}"));
         }
+    }
+
+    /// <summary>The start of a launch that exists: the archive body's window said first (WR-D5, §3.5: why it is a preview, or why it is
+    /// a real run — the decision the table already took for this launch), then the supervised run. Explicit per task, never inferred from
+    /// the decision's own state (the coai code round on WR-D5, finding 0); the watch takes no decision and says none.</summary>
+    private static int Started(WindowsTask task, WorkerLaunch launch, IWorkerSupervisor supervisor, Lazy<DryRunDecision> archive, TextWriter stderr, CancellationToken cancellationToken)
+    {
+        if (task == WindowsTask.Archive)
+        {
+            Output.Note(stderr, $"tasks run {WindowsTask.Archive}: {ArchiveBody.Note(archive.Value)}");
+        }
+
+        return Supervised(task, launch, supervisor, stderr, cancellationToken);
     }
 
     private static int Refused(WindowsTask task, string reason, TextWriter stderr)

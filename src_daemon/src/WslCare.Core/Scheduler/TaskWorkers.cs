@@ -1,4 +1,5 @@
 using WslCare.Core.Collectors;
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Config;
 using WslCare.Core.Processes;
 
@@ -13,37 +14,35 @@ namespace WslCare.Core.Scheduler;
 /// <list type="table">
 /// <item><term><c>watch</c></term><description><c>&lt;self&gt; watch --timer</c> (+ <c>--json</c> when the supervisor was asked for it — the
 /// task's action always is), deadline <c>mcpWatchdog.runLimitMinutes</c>.</description></item>
-/// <item><term><c>archive</c></term><description>not built in this version: the archive body (dry → <c>archive preview</c>, real →
-/// <c>archive run</c>, §3.5) is WR-D5's. Refused, naming that, before any job or process exists; its deadline will be
-/// <c>timer.runLimitMinutes</c>.</description></item>
+/// <item><term><c>archive</c></term><description>the archive body (WR-D5, <see cref="ArchiveBody"/>, §3.5): <c>&lt;self&gt; archive preview</c> while the
+/// timer's dry-run window is open, <c>&lt;self&gt; archive run</c> once it is not (+ <c>--json</c>), deadline <c>timer.runLimitMinutes</c>. The
+/// dry decision is taken only for this task — a <c>watch</c> never starts the archive's week.</description></item>
 /// </list>
 /// </remarks>
 public static class TaskWorkers
 {
-    /// <summary>What <c>tasks run archive</c> answers until WR-D5 builds the archive body.</summary>
-    public const string ArchiveNotBuilt = "the archive task's body (a dry week previews, a real run archives; PLAN_windows_runner.md §3.5) is not built in this version (WR-D5); nothing was started";
-
     private const string JsonFlag = "--json";
 
-    /// <summary>One entry of the closed table: a task, its worker's arguments, the key its deadline is read from, and — while its body
-    /// is not built — why it is refused. The deadline's duration and its key come from this ONE entry (the coai code round on WR-D3,
-    /// finding 2), so what a run says about its deadline can never name another key.</summary>
-    private sealed record Entry(WindowsTask Task, IReadOnlyList<string> Arguments, ConfigKey.IntKey Deadline, string NotBuilt);
+    /// <summary>One entry of the closed table: a task, its worker's arguments (a function of the archive body's choice, which only the
+    /// archive entry ever calls), and the key its deadline is read from. The deadline's duration and its key come from this ONE entry
+    /// (the coai code round on WR-D3, finding 2), so what a run says about its deadline can never name another key.</summary>
+    private sealed record Entry(WindowsTask Task, Func<Func<DryRunDecision>, IReadOnlyList<string>> Arguments, ConfigKey.IntKey Deadline);
 
     private static readonly IReadOnlyList<Entry> Table =
     [
-        new(WindowsTask.Watch, ["watch", "--timer"], ConfigKeys.McpWatchdog.RunLimitMinutes, string.Empty),
-        new(WindowsTask.Archive, [], ConfigKeys.Timer.RunLimitMinutes, ArchiveNotBuilt),
+        new(WindowsTask.Watch, static _ => ["watch", "--timer"], ConfigKeys.McpWatchdog.RunLimitMinutes),
+        new(WindowsTask.Archive, static decide => ArchiveBody.ArgumentsFor(decide()), ConfigKeys.Timer.RunLimitMinutes),
     ];
 
     /// <summary>The launch of <paramref name="task"/>'s worker, or why there is none.</summary>
     /// <param name="self">This process's own executable path — the worker is always the same binary.</param>
     /// <param name="json">Whether the supervisor was asked for <c>--json</c>; the worker then answers in JSON on the same stdout.</param>
-    public static Reading<WorkerLaunch> For(WindowsTask task, string self, bool json, EffectiveConfig config) => EntryOf(task) switch
+    /// <param name="decide">The archive body's dry-run decision; asked for ONLY by the archive task (taking it may write the first-week stamp).
+    /// The decision → argv mapping stays here in Core (<see cref="ArchiveBody.ArgumentsFor"/>), so no caller can hand this table free argv.</param>
+    public static Reading<WorkerLaunch> For(WindowsTask task, string self, bool json, EffectiveConfig config, Func<DryRunDecision> decide) => EntryOf(task) switch
     {
         _ when !Path.IsPathFullyQualified(self) => Reading.Missing<WorkerLaunch>($"this process's own path could not be read as an absolute path (\"{self}\"), so no worker can be named; nothing was started"),
-        { NotBuilt.Length: > 0 } refused => Reading.Missing<WorkerLaunch>(refused.NotBuilt),
-        var entry => Reading.Of(new WorkerLaunch(self, [.. entry.Arguments, .. Json(json)], TimeSpan.FromMinutes(config.Int(entry.Deadline)), entry.Deadline.Name)),
+        var entry => Reading.Of(new WorkerLaunch(self, [.. entry.Arguments(decide), .. Json(json)], TimeSpan.FromMinutes(config.Int(entry.Deadline)), entry.Deadline.Name)),
     };
 
     /// <summary>The deadline's key of each task, from its table entry.</summary>

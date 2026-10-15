@@ -54,7 +54,19 @@ internal static class ArchiveCommand
             Token = cancellationToken,
         };
         var report = ArchivePreview.From(input, Selection.Select(input), SideName.OfThisProcess(host.Paths.Side));
+        SayWouldMove(report, host, request.Json, stderr);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchivePreviewReport) : RenderPreview(report));
+    }
+
+    /// <summary>WR-D5 (PLAN_windows_runner.md §3.5): the Windows task's dry window runs this verb as its worker, and the worker's stdout is
+    /// the one JSON line — so the run log's "would move N sessions, M bytes" is ONE stderr line, on the Windows binary's <c>--json</c> run
+    /// only (the distro's root reads its child's stderr as it always did; the text form already shows the counts).</summary>
+    private static void SayWouldMove(ArchivePreviewReport report, CliHost host, bool json, TextWriter stderr)
+    {
+        if (json && host.Paths is Core.Hosting.WindowsHostPaths)
+        {
+            Output.Note(stderr, $"archive preview: {ArchivePreview.WouldMove(report)}; nothing was moved");
+        }
     }
 
     private static string RenderPreview(ArchivePreviewReport report)

@@ -1,5 +1,6 @@
 using FluentAssertions;
 
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Processes;
@@ -17,12 +18,17 @@ public sealed class TaskWorkersTests
 
     private static readonly EffectiveConfig Defaults = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new WslCare.Core.Files.FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
 
+    /// <summary>The watch never takes the archive body's dry-run decision (it writes the first-week stamp): asking for it is a failure.</summary>
+    private static DryRunDecision NeverAsked() => throw new InvalidOperationException("the watch asked for the archive body's dry-run decision");
+
+    private static Func<DryRunDecision> Deciding(bool dry) => () => new DryRunDecision(dry, "a test says so");
+
     [Theory]
     [InlineData(false, new[] { "watch", "--timer" })]
     [InlineData(true, new[] { "watch", "--timer", "--json" })]
     public void The_watch_worker_is_this_binary_s_own_watch_timer_bounded_by_the_watch_s_run_limit(bool json, string[] arguments)
     {
-        var launch = TaskWorkers.For(WindowsTask.Watch, Self, json, Defaults).Should().BeOfType<Reading<WorkerLaunch>.Available>().Subject.Value;
+        var launch = TaskWorkers.For(WindowsTask.Watch, Self, json, Defaults, NeverAsked).Should().BeOfType<Reading<WorkerLaunch>.Available>().Subject.Value;
 
         launch.Executable.Should().Be(Self);
         launch.Arguments.Should().Equal(arguments);
@@ -31,11 +37,19 @@ public sealed class TaskWorkersTests
         TaskWorkers.DeadlineKey(WindowsTask.Watch).Should().Be(ConfigKeys.McpWatchdog.RunLimitMinutes);
     }
 
-    [Fact]
-    public void The_archive_worker_is_refused_as_not_built_in_this_version()
+    [Theory]
+    [InlineData(true, false, new[] { "archive", "preview" })]
+    [InlineData(true, true, new[] { "archive", "preview", "--json" })]
+    [InlineData(false, false, new[] { "archive", "run" })]
+    [InlineData(false, true, new[] { "archive", "run", "--json" })]
+    public void The_archive_worker_is_the_preview_while_dry_and_the_run_when_real_bounded_by_the_timer_s_run_limit(bool dry, bool json, string[] arguments)
     {
-        TaskWorkers.For(WindowsTask.Archive, Self, json: true, Defaults).Should().BeOfType<Reading<WorkerLaunch>.Unavailable>()
-            .Which.Reason.Should().Be(TaskWorkers.ArchiveNotBuilt);
+        var launch = TaskWorkers.For(WindowsTask.Archive, Self, json, Defaults, Deciding(dry)).Should().BeOfType<Reading<WorkerLaunch>.Available>().Subject.Value;
+
+        launch.Executable.Should().Be(Self);
+        launch.Arguments.Should().Equal(arguments);
+        launch.Deadline.Should().Be(TimeSpan.FromMinutes(Defaults.Int(ConfigKeys.Timer.RunLimitMinutes)));
+        launch.DeadlineKey.Should().Be(ConfigKeys.Timer.RunLimitMinutes.Name);
         TaskWorkers.DeadlineKey(WindowsTask.Archive).Should().Be(ConfigKeys.Timer.RunLimitMinutes);
     }
 
@@ -44,7 +58,7 @@ public sealed class TaskWorkersTests
     [InlineData("wsl-care.exe")]
     public void A_worker_is_never_named_by_a_path_that_is_not_absolute(string self)
     {
-        TaskWorkers.For(WindowsTask.Watch, self, json: true, Defaults).Should().BeOfType<Reading<WorkerLaunch>.Unavailable>()
+        TaskWorkers.For(WindowsTask.Watch, self, json: true, Defaults, NeverAsked).Should().BeOfType<Reading<WorkerLaunch>.Unavailable>()
             .Which.Reason.Should().Contain("absolute path");
     }
 }
