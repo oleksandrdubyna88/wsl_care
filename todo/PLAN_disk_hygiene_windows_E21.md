@@ -747,6 +747,44 @@ consumes), and the parent plan's §5 DH-6 row status.
 18. **The build-order note "after DH-2" is not a dependency** (§0a.3): the two PRs touch the same files; whichever merges
     second rebases. Nothing in DH-6 reads the inspect template or DH-2's fixture.
 
+## 4a. Plan round (coai, 2026-10-15) — binding on §4 where they differ
+
+Round for the gate's epic 3/3: **proceed** (6 gating against 6). Seven findings; three accepted, four rejected with reasons.
+
+**Accepted:**
+
+1. **`testLeftovers.stopRunning` stays opt-in for good** (finding 1: a default flipped by DH-7 would also let a distro-only
+   `act A25` — CLI or timer — stop containers with `runner.windows` still `NotObserved`). DH-7 does NOT flip the default; §0a.1's
+   and decision 16's "DH-7 flips the default" are struck. The key stays `BoolKey`, default `false`, trust `Off`, so only the
+   machine layer can turn it on — the owner's statement about one machine. DH-7's both-sides flow lists running leftovers
+   with both sides' readings and still stops none unless that key is on.
+2. **Age is not evidence that a run ended** (finding 6). Even with `stopRunning` on, a running container that carries the
+   `org.testcontainers` label is NEVER stopped (selection rule 4b, before rule 5: `RunningTestcontainers`, "running, owned by a
+   Testcontainers session: its reaper removes it"); only an unlabelled running `testsToDelete-` container older than
+   `stopRunningOlderThanHours`, on a side whose runner signal reads none, may be stopped. RED:
+   `A_running_testcontainers_leftover_is_never_stopped_even_with_stopRunning_on`. Break-it: rule 4b removed.
+3. **Ryuk is measured before the story merges** (finding 3). M-DH6-1: in a `testsToDelete-wsl-care-ryuk-<guid>` scratch
+   folder, a minimal `testcontainers-dotnet` session starts one container; while it runs, `docker ps -a --no-trunc --format
+   '{{json .}}'` is captured with exactly the product's argv and passed through the redaction script; the Ryuk row's image
+   and labels pin the rule and become a fixture line for `A_running_ryuk_blocks` (the synthetic rows stay as the
+   registry-prefix and fork theory rows). Recorded in `research/2026-10-15_disk_hygiene_measurements.md`. If the session
+   cannot run on this machine (no network, no Docker), the story says so and ships with the rule marked unmeasured — the
+   young-labelled backstop (§0a.2) stands either way.
+
+**Rejected (reasons recorded in the gate):**
+
+- Finding 0 (`runner.windows` `NotObserved` lets the distro sweep a live Windows test): what the distro may remove without
+  the Windows reading is, by §0a.1 and item 1 above, only STOPPED containers, volumes and networks older than the hour floor;
+  Docker itself refuses a volume referenced by any container (running or stopped) and a network with endpoints; nothing
+  running is stopped. That residue is exactly what the `testsToDelete-` convention declares disposable.
+- Finding 2 (fingerprint precision): a recreated volume's `CreatedAt` is the recreation time, at least the hour floor after
+  the previewed one, so the fingerprint cannot match; and `docker volume rm` refuses any volume a container references.
+- Finding 4 (partial report): §2.5 already records every confirmed removal in `Removed`, every other target in
+  `NotRemoved` with its reason, and one notes line per phase; a blocked run is `failed` WITH those lists.
+- Finding 5 (inspect-to-rm window on a name): Docker removes volumes only by name; no lock can be shared with arbitrary
+  third-party test frameworks; the window is milliseconds against a name whose convention says "delete me", Docker still
+  refuses an in-use volume, and §2.7 names the residue verbatim in the preview and README.
+
 ## 5. Order
 
 E21.S1 → E21.S3 (they share FILES — the Docker collectors, the preview, the goldens — not data: A25 reads the container LIST
