@@ -180,6 +180,9 @@ with the admin-files-only signal over the owner's tree; if the cheap signal agre
   `*.assets.*`, `*.AssemblyInfo*.cs`, `*.GlobalUsings*.cs`, `*.g.cs`, `*.baml`, `*.ilk`, `*.exp`, `*.res`, `*.tlog`,
   `*.lastbuildstate`, `*.stamp`, `*.sourcelink.json` — the exact list is fixed by M6 against the owner's tree); ONE file
   outside it retains the whole candidate, named in the preview ("holds a file that is not a build artifact: local.db").
+  A file written more than `worktrees.artifactSkewMinutes` (10) after the newest `*.dll`/`*.exe`/`*.pdb` of its folder, and
+  any `*.db`, `*.sqlite*`, `*.mdf`, `*.ldf`, `*.env`, `.env*`, `*.pfx`, `*.key`, `*.pem`, also retains the candidate — a name is
+  no proof of regenerability (E19 stories §3 decision 11, 2026-10-15).
   `node_modules` is exempt from the content check — its contents are packages that `package.json` and the lockfile
   restore, and that is the owner's rule. The same check applies to A24Orphans, so an orphan's `bin` with a database in it
   stays even where git cannot be asked. RED: `A_bin_holding_a_sqlite_file_is_retained_and_names_it`,
@@ -760,8 +763,8 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 
 ### E19 — See it (DH-1, DH-1b, DH-3)
 
-Stories: [PLAN_disk_hygiene_windows_E19.md](PLAN_disk_hygiene_windows_E19.md) (2026-10-15; E19.S1–S4, E19.S5 blocked on
-the Windows `status` read, its §7 Q-E19-1). DH-1b keeps the watch's 5-minute sample and gains a live fallback in the
+Stories: [PLAN_disk_hygiene_windows_E19.md](PLAN_disk_hygiene_windows_E19.md) (2026-10-15; E19.S1, S2, S2b — the narrow
+Windows `status` read carved out of WR-E1 — S5, S3, S4). DH-1b keeps the watch's 5-minute sample and gains a live fallback in the
 Windows `status` (its §3 decision 1).
 
 - **Goal.** The owner is warned before any lettered volume fills — within five minutes of the filling, not four hours — and

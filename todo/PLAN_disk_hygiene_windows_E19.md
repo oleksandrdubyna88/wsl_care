@@ -78,10 +78,31 @@ below names which part it proves.
    Windows side cannot read the distro's `wsl.conf`, so `worktrees.wslAutomountRoots` (default `["/mnt/"]`, a closed shape:
    absolute, ends with `/`) lists the prefixes; a POSIX pointer under none of them is `foreignPointer`, never a candidate —
    the safe failure. `worktrees.json` stores Windows paths only.
-9. **`git.exe`'s folder is admitted when non-administrators cannot WRITE it** (coai plan round, finding 2): the ACL check
-   is about write, modify, delete and take-ownership rights for anyone but Administrators, SYSTEM and TrustedInstaller on
-   the file and every folder up to the volume root — read and execute for Users is normal and allowed. A per-user install
+9. **`git.exe` is admitted when no non-administrator can REPLACE it or plant beside it** (coai plan round, finding 2; the
+   cadence consultation `7cf11e9a`, verified 2026-10-15: `C:\` grants Authenticated Users `CreateDirectories`, and
+   `C:\Program Files\Git\cmd` grants Users only read and execute). For anyone but Administrators, SYSTEM and
+   TrustedInstaller: on `git.exe` no write, append, delete, change-permissions or take-ownership; on its own folder (and
+   git's `mingw64\bin`, where its DLLs load from) no create-files either; on every ancestor up to the volume root no
+   delete, delete-child, change-permissions or take-ownership — creating an UNRELATED folder under `C:\` cannot replace an
+   existing path component and is allowed. A positive test, `The_supported_Program_Files_git_is_accepted`, runs against the
+   real ACLs on the Windows leg. A per-user install
    (`%LOCALAPPDATA%\Programs\Git`) is refused unless an administrator names it in `worktrees.gitPath` (machine layer).
+11. **A content check by name is not proof of regenerability** (the cadence consultation, verified against the parent's
+   §3.3 artifact list, which admits `*.json`, `*.txt`, `*.xml`, `*.js`): an app may write `bin\local-state.json` at run
+   time. So a `bin`/`obj` file also retains its candidate when it was written more than `worktrees.artifactSkewMinutes` (10)
+   after the newest `*.dll`/`*.exe`/`*.pdb` in the same folder (a build writes them together; a running app writes later),
+   and these are never artifacts whatever their folder: `*.db`, `*.sqlite*`, `*.mdf`, `*.ldf`, `*.env`, `.env*`,
+   `*.pfx`, `*.key`, `*.pem`. The parent's §3.3 gains the same sentence. RED: `A_json_written_after_the_build_retains_its_bin`.
+12. **The Windows `status` read moves INTO E19, as E19.S2b, before the worktree stories** (consultants `cabfc357` and
+   `7cf11e9a`, both verified against `WindowsCareClient.ts:81-103` and `outcomeStore.ts:11`): without it the 5-minute reading
+   never reaches the bar, so the original failure stays half closed. It is the narrow slice of WR-E1 the bar needs —
+   `status --json` on the BUNDLED exe through `WindowsCareClient`, the fake's answer, a Windows outcome slot, the poll — and
+   nothing else of WR-E1 (no staged exe, no tasks, no run reads). The runner plan's WR-E1 row says so (both sides). E19.S5
+   becomes REQUIRED for the epic. **The visible-warning latency, defined:** while a VS Code window is focused, a volume that
+   crosses the critical floor shows in the bar within `mcpWatchdog.periodMinutes` + `wslCare.refreshSeconds` (5 min + 120 s
+   by default) — the next watch sample, then the next poll; on focus regained, at once (the poller reads on focus); with no
+   window focused, nothing shows until one is (the poller's own rule, `poller.ts:8`). This answers Q-E19-1 under an
+   assumption the owner may overrule.
 10. **Absent is not zero** (coai plan round, finding 3): until E19.S4, `worktrees.reclaimable` carries no byte figure —
    the report's `reclaimable` is `{available: false, reason}` and the verdict `unknown`; the panel renders "—".
 7. **`disk.volumeFree` needs seven keys, not five** (the parent's §3.9 table is right, its DH-1 row said five).
@@ -248,11 +269,27 @@ coai code round per story; the full test executables and `npm test` before the P
   new), docs.
 - **Fable own review** (adds git) — outside the quota.
 
-### E19.S5 — the extension halves: the Windows reading in the bar and panel, the worktree row — BLOCKED
+### E19.S2b — the Windows `status` read in the extension (the narrow slice of WR-E1, decision 12)
+
+- **Proves:** the path E19.S5 needs; nothing visible on its own.
+- **Brief.** `client/WindowsCareClient.ts`: a `status()` read — the bundled exe with `VERBS.status` (`['status','--json']`,
+  `verbs.ts:24`), its own timeout `wslCare.timeouts.windowsStatusSeconds` (default above the Windows status's worst case,
+  the `ceilings.test.ts` pattern), parsed by the same `checkedBody`/`statusAnswer` (`handshake.ts:120-125`) into a
+  `StatusAnswer` with the raw body. `state/outcomeStore.ts`: a second slot `windowsStatus` beside `status`, its own
+  `VerbOutcome`, never mixed. The poller reads it on the same tick as the distro's `status`, only on Windows hosts, and a
+  failure there never touches the distro's slot (WSL stopped still shows the Windows reading). The fake (`test/fake/*`)
+  answers the bundled exe's `status --json` from a golden. `structure.test.ts` and `bundledExeStructure.test.ts` stay true
+  (only `WindowsCareClient` names the exe; it starts only through its runner).
+- **Scenarios.** `the windows status is read through the bundled exe and parsed like the distro's`; `a windows status failure
+  leaves the distro outcome untouched`; `the windows slot is read on the same tick and only on windows`; `wsl stopped still
+  reads the windows status`; `the client names no other verb than status and --version`.
+- **Files:** `src_vs_code/src/client/WindowsCareClient.ts`, `client/verbs.ts`, `state/outcomeStore.ts`, `poll/*`,
+  `settings/numbers.ts`, `package.json`, `test/*`, `research/module_vs_code.md`, the runner plan's WR-E1 row.
+
+### E19.S5 — the extension halves: the Windows reading in the bar and panel, the worktree row
 
 - **Proves:** E19 done-when (2)'s panel half and (3)'s row.
-- **Blocked on:** a Windows `status --json` read in `WindowsCareClient` with its fake, a Windows outcome slot and its poll
-  (WR-E1 territory, not built) — the owner's decision Q-E19-1.
+- **Depends on:** E19.S2b (the Windows `status` read, decision 12). No longer blocked.
 - **Brief when unblocked.** `volumeMarkOf` takes the NEWER of the distro's and the Windows `disk.volumeFree` (by
   `basis.sampledAt`/`evaluatedAt`); the `disk.volumes` row the same; the row's suffix "· N GiB reclaimable in worktrees"
   from the Windows `worktrees.reclaimable` ("worktrees not configured" with no root; "not available yet" while the Windows
@@ -262,7 +299,8 @@ coai code round per story; the full test executables and `npm test` before the P
 
 ## 5. Order
 
-E19.S1 → E19.S2 → E19.S3 → E19.S4; E19.S5 when Q-E19-1 is answered. E21's distro half (DH-2, DH-8, DH-6) may run beside
+E19.S1 → E19.S2 → E19.S2b → E19.S5 (the bar and panel half of DH-1b first: it closes the original failure) → E19.S3 →
+E19.S4 → E19.S5's worktree row (a small follow-up PR on S5's code). E21's distro half (DH-2, DH-8, DH-6) may run beside
 this epic — not in this document.
 
 ## 6. Gates
@@ -271,26 +309,27 @@ The coai plan round runs ONCE for this document (epic `19/21` of the parent). A 
 branch, with this document's story section as `planText` plus what the previous round changed; every finding is
 resolved, rejections with reasons, in round one.
 
-## 6a. Plan round (coai, 2026-10-15)
+## 6a. Plan round and cadence consultation (coai, 2026-10-15)
 
 One round, two reviewers: **proceed** (4 gating against 6). All six findings accepted and written into §3: batches bounded
 by the command-line length as well as the count (0, 5), automount roots as a key with `foreignPointer` as the safe failure
-(1), the ACL rule about WRITE (2), absent is not zero for `reclaimable` (3), no user or system git configuration (4).
+(1), the ACL rule about WRITE (2), absent is not zero for `reclaimable` (3), no user or system git configuration (4). The cadence consultation `7cf11e9a` (epics 1–3) added decisions 9 (as
+verified), 11 and 12; its three points were checked against the ACLs, the artifact list and the extension's client.
 
 ## 7. Questions
 
 Asked first of the coai consultants (`3d4d02e6` on the split, `cabfc357` on decisions 1 and 2); taken above.
 What remains for the owner:
 
-- **Q-E19-1** — E19.S5 needs the extension to read the Windows binary's `status`. Build that narrow read inside E19 (a
-  `status --json` read in `WindowsCareClient`, its fake, a Windows outcome slot, polling — a slice of WR-E1, carved out
-  and named on both sides of the boundary), or leave E19.S5 blocked until WR-E1?
+- **Q-E19-1 — taken under an assumption (decision 12):** the narrow Windows `status` read is built inside E19 as E19.S2b.
+  The owner may overrule it before E19.S2b starts; the stories before it do not depend on the answer.
 
 ## 8. Definition of Done (this epic)
 
 - [ ] E19.S1–S4 merged, each with its RED tests watched failing, its break-it run, its coai code round resolved, the full
       daemon test executables and `npm test` green.
-- [ ] The parent's E19 done-when points 1, 2 (daemon half), 3 and 4 proven; point 2's panel half named as E19.S5's.
+- [ ] The parent's E19 done-when points 1–4 proven, E19.S2b and E19.S5 included; the visible-warning latency of decision 12
+      stated in README.
 - [ ] The parent plan's §3.2, §3.3, §3.9, §4 and §5 carry the deviations of §3 here; `todo/README.md` has this document's row;
       `plan-lifecycle` clean.
 - [ ] Docs per story (README, `module_daemon.md`, `module_vs_code.md`, `module_tests.md`, `architecture.md`).
