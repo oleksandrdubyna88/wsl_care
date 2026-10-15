@@ -99,9 +99,9 @@ public static class CleanupPreviews
     public static CleanupRow A5Row(DockerSnapshot snapshot, EffectiveConfig config, DateTimeOffset now, bool testcontainers) =>
         testcontainers
             ? Row("A5Testcontainers", "A5", $"Testcontainers containers stopped at least {Plural(config.Int(ConfigKeys.Containers.TestcontainersOlderThanHours), "hour")} ago, with their anonymous volumes", ConfigKeys.Auto.A5Testcontainers, config, ContainerBasis,
-                Reading.Combine(snapshot.Inventory, snapshot.Details, (inventory, details) => ContainerFigures(CleanupTargets.StoppedContainers(inventory, details, testcontainers: true, A5Cutoff(config, now, true)))), string.Empty)
+                Reading.Combine(snapshot.Inventory, snapshot.Details, (inventory, details) => ContainerFigures(CleanupTargets.StoppedContainers(inventory, details, testcontainers: true, A5Cutoff(config, now, true)), testcontainers: true)), string.Empty)
             : Row("A5", "A5", $"containers stopped at least {Plural(config.Int(ConfigKeys.Containers.StoppedOlderThanDays), "day")} ago, not Testcontainers, with the anonymous volumes they hold", ConfigKeys.Auto.A5, config, ContainerBasis,
-                Reading.Combine(snapshot.Inventory, snapshot.Details, (inventory, details) => ContainerFigures(CleanupTargets.StoppedContainers(inventory, details, testcontainers: false, A5Cutoff(config, now, false)))), string.Empty);
+                Reading.Combine(snapshot.Inventory, snapshot.Details, (inventory, details) => ContainerFigures(CleanupTargets.StoppedContainers(inventory, details, testcontainers: false, A5Cutoff(config, now, false)), testcontainers: false)), string.Empty);
 
     public static CleanupRow A6Row(DockerSnapshot snapshot, EffectiveConfig config, DateTimeOffset now, bool unused) =>
         unused
@@ -183,7 +183,8 @@ public static class CleanupPreviews
             Note("unattached volumes whose labels are unknown (not in docker system df -v): never selected", targets.LabelsUnknown.Select(t => t.Bytes)),
         ]);
 
-    private static RowFigures ContainerFigures(ContainerTargets targets)
+    /// <summary>A5's compose note carries the projects' names; A5Testcontainers has none — the compose split never applies to it.</summary>
+    private static RowFigures ContainerFigures(ContainerTargets targets, bool testcontainers)
     {
         var figures = Figures([.. targets.Selected.Select(t => t.Bytes)],
         [
@@ -192,10 +193,15 @@ public static class CleanupPreviews
             Note("volumes they hold whose labels are unknown (not in docker system df -v): not counted", targets.UnknownVolumes.Select(t => t.Bytes)),
             Note("stopped more recently than the limit", targets.Younger.Select(t => t.Bytes)),
             Note($"protected by the {DockerLabels.Keep}=true label", targets.Kept.Select(t => t.Bytes)),
+            .. testcontainers ? (RowNote[])[] : [Note(ComposeKeptNote, targets.ComposeKept.Select(t => t.Bytes)) with { Names = NamesOf(targets.ComposeProjects) }],
         ]);
         var volumeBytes = targets.AnonymousVolumes.Sum(v => v.Bytes.ValueOr(0));
         return figures with { Bytes = figures.Bytes + volumeBytes, Unsized = figures.Unsized + targets.AnonymousVolumes.Count(v => !v.Bytes.IsAvailable) };
     }
+
+    /// <summary>At most <see cref="NamesShown"/> names, then <c>more: N</c> for the rest — a long list never grows the report.</summary>
+    internal static IReadOnlyList<string> NamesOf(IReadOnlyList<string> names) =>
+        names.Count <= NamesShown ? names : [.. names.Take(NamesShown), Invariant($"more: {names.Count - NamesShown}")];
 
     private static RowFigures ImageFigures(ImageTargets targets, bool withNote) =>
         Figures([.. targets.Selected.Select(t => t.Bytes)], withNote ? [Note("created more recently than the limit", targets.Younger.Select(t => t.Bytes))] : []);

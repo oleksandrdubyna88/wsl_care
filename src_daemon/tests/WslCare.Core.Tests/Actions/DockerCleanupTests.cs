@@ -235,9 +235,9 @@ public sealed class DockerCleanupTests : IDisposable
 
         var run = await action.RunAsync(context, preview, commands, CancellationToken.None);
 
-        containers.Should().HaveCount(13);
+        containers.Should().HaveCount(12, "13 are stopped; one belongs to a compose project");
         run.Succeeded.Should().BeTrue(run.Failure);
-        run.Count.Should().Be(12);
+        run.Count.Should().Be(11);
         run.NotRemoved.Should().ContainSingle(n => n.Key == containers[0].Key).Which.Note.Should().StartWith("kept by Docker, in use");
         var goneVolumes = volumes.Where(v => !remaining.Contains(v.Name)).ToList();
         run.Removed.Where(r => r.Kind == "anonymous volume").Select(r => r.Name).Should().BeEquivalentTo(goneVolumes.Select(v => v.Name));
@@ -296,7 +296,7 @@ public sealed class DockerCleanupTests : IDisposable
         var labelled = await tc.PreviewAsync(context, world.Commands(tc, context), CancellationToken.None);
 
         others.Targets.Select(t => t.Key).Should().NotContain(details[0]).And.NotContain(details[1]);
-        others.Count.Should().Be(11);
+        others.Count.Should().Be(10);
         labelled.Targets.Where(t => t.Kind == "container").Select(t => t.Key).Should().Equal(details[1]);
     }
 

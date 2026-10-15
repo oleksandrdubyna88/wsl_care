@@ -47,8 +47,8 @@ public sealed class CleanupPreviewTests
         var preview = CleanupPreviews.Build(snapshot, seen, Config(AllAges), Now);
 
         Figures(Row(preview, "A4")).Should().BeEquivalentTo(new { Count = 3, Bytes = 641_400_000L, Unsized = 0 });
-        Figures(Row(preview, "A5")).Should().BeEquivalentTo(new { Count = 13, Bytes = 389_426_100L + 1_288_244_878L, Unsized = 0 }, "13 stopped containers, their layers and the 8 anonymous volumes they hold");
-        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("named volumes", StringComparison.Ordinal)).Count.Should().Be(6);
+        Figures(Row(preview, "A5")).Should().BeEquivalentTo(new { Count = 12, Bytes = 389_426_100L + 1_288_244_878L - 20_500L, Unsized = 0 }, "13 stopped containers less the one a compose project owns (its 20.5 kB layer), their layers and the 8 anonymous volumes they hold");
+        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("named volumes", StringComparison.Ordinal)).Count.Should().Be(5, "6 before the compose container (the holder of one of them) was split off");
         Figures(Row(preview, "A5Testcontainers")).Count.Should().Be(0, "no container carried the Testcontainers label — as on 2026-10-02");
         Figures(Row(preview, "A6")).Count.Should().Be(0, "no dangling image");
         Figures(Row(preview, "A6Unused")).Should().BeEquivalentTo(new { Count = 10, Bytes = 9_805_969_710L });
@@ -71,7 +71,7 @@ public sealed class CleanupPreviewTests
         a4.Count.Should().Be(0, "first seen now, and the timer's limit is one day");
         a4.Notes[0].Count.Should().Be(3);
         Figures(Row(preview, "A5")).Count.Should().Be(0, "the oldest stop is 2026-09-27, five days before the capture");
-        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(13);
+        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(12, "13 stopped, one of them a compose container kept before the age split");
         Figures(Row(preview, "A6Unused")).Count.Should().Be(8, "two of the ten unused images were built within the last 7 days");
         Row(preview, "A4").What.Should().Contain("1 day");
         Row(preview, "A5").Auto.Should().BeFalse();
@@ -152,7 +152,7 @@ public sealed class CleanupPreviewTests
         var preview = CleanupPreviews.Build(withTc, VolumeSeenRecord.Empty, Config(), Now);
 
         Figures(Row(preview, "A5Testcontainers")).Count.Should().Be(2, "stopped more than 2 hours ago");
-        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(11);
+        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(10);
     }
 
     // ---------- E21.S1: A5 keeps every compose container ----------

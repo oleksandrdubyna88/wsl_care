@@ -67,6 +67,6 @@ public sealed record ContainerDetail(
             DockerText.Field(row, "logPath"),
             DockerText.Field(row, "testcontainers") == "true",
             DockerText.Field(row, "keep") == "true",
-            string.Empty,
+            DockerText.Field(row, "compose"),
             DockerJson.Array(row, "mounts", m => new ContainerMount(DockerText.Field(m, "type"), DockerText.Field(m, "name"))));
 }

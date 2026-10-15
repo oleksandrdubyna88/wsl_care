@@ -135,6 +135,29 @@ has none.
 
 | the Windows runner's staged copy: `tasks stage`, `tasks stage --remove`, the sweep (WR-D2, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2, §3.7, §3.10 |
 
+## A5 keeps every compose container (E21.S1 = DH-2, 2026-10-15)
+
+A stopped container of a `docker compose` project is the project's, not the daemon's: A5 used to take it after
+`containers.stoppedOlderThanDays` and `docker rm -v` its anonymous volumes with it (measured 2026-10-15: 12 of 20
+compose-labelled containers on this machine were exited). Now:
+
+- `DockerCommands.InspectTemplate` reads ONE more label, between `keep` and `mounts`:
+  `"compose":{{json (index .Config.Labels "com.docker.compose.project")}}` — the project name only (the other compose labels carry host
+  paths). `ContainerDetail.ComposeProject` is empty when the key is absent (a line captured by the older template parses as before).
+- `CleanupTargets.StoppedContainers` splits the stopped containers of a project off FIRST — before the keep label and the age — but
+  ONLY for A5 (`testcontainers: false`): they go to `ContainerTargets.ComposeKept` (with the sorted distinct names in `ComposeProjects`),
+  never to `Selected`, `Younger` or `Kept`. A compose container that also carries `wsl-care.keep=true` counts once, as compose. A5Testcontainers
+  is unchanged: a Testcontainers compose module's containers carry `org.testcontainers` on purpose and it takes them. The engine re-previews
+  LIVE before a run through the same selection, so the row and the run cannot disagree.
+- A5's preview row gains the note `CleanupPreviews.ComposeKeptNote` (FIXED text "containers of a docker compose project (kept — compose
+  owns them)"; tests and the golden key on it) with `RowNote.Names`: at most five project names, then `more: N`. A5Testcontainers has no such note.
+  `wsl-care preview --all` prints the names under the A5 row, `--json` carries them as the note's `names` (omitted when empty); the
+  extension renders no notes today, so the panel shows only the counts.
+- `auto.A5` stays OFF; this is the precondition for ever turning it on, not the turning on.
+- Fixture: the one compose line of `tests/fixtures/docker/ubuntu-2026-10-02` is `container-17`, recaptured read-only on 2026-10-15 with the
+  product's argv (the redaction's `--recapture-inspect` mode; [2026-10-15_disk_hygiene_measurements.md](2026-10-15_disk_hygiene_measurements.md) § M-DH2).
+  Plan: [PLAN_disk_hygiene_windows_E21.md](../todo/PLAN_disk_hygiene_windows_E21.md) § E21.S1.
+
 ## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
 
 ```mermaid
