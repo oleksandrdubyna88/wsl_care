@@ -423,6 +423,7 @@ flowchart LR
     prev["LastFullRun.VirtualDiskHistory<br/>(newest first, lazy)"] --> vd
     vd --> facts["DiskFacts<br/>(judged once)"]
     facts --> rules["DiskRules<br/>disk.vhdxGap · disk.vhdxGrowth · disk.hostFree"]
+    sample -.-> vfree["VolumeFreeRules (E19.S1)<br/>disk.volumeFree · disk.lettered"]
     facts --> report["RunDetail.disk<br/>(DiskReport)"]
     facts --> slow["SlowParts.VirtualDisks<br/>(sizes, ~600 B)"]
     report --> status["status --json: disk<br/>(basis fullRun, run, age)"]
@@ -469,7 +470,7 @@ flowchart LR
   another distro, `none` by design, is outside it), `disk.vhdxGrowth` (warn above `disk.vhdxGrowthWarnGibPerDay`, 10; a known
   breach warns, otherwise `unknown` while any file has no growth yet), `disk.hostFree` (warn below `disk.hostFreeWarnGib`, 100, or
   below the KNOWN possible growth; `unknown` — never `ok` — while any file's possible growth is unknown, the free space still in
-  the value; one verdict over every volume, the worst level). The defaults are STARTING VALUES (README, key descriptions).
+  the value; one verdict over every volume, the worst level), and — E19.S1, below — `disk.volumeFree` over EVERY lettered volume. The defaults are STARTING VALUES (README, key descriptions).
 - **The wire** (`Collect/DiskReport.cs`, its own records): the run detail's `disk` and `status.disk` = `{available, reason,
   sampledAt, distroName, vhdx[{name, path, size, sparse, volume, mappedBy, note, guestUsed, gap, growthBytesPerDay,
   possibleGrowth}], volumes[{letter, size, free, disks, growthBytesPerDay, knownPossibleGrowthBytes, unknownGrowth}]}`; in
@@ -483,6 +484,50 @@ flowchart LR
 - **Known limit**: a distro cloned with `wsl --export` / `wsl --import` carries the old `{state}/distro-name.json`; until a root
   collect through `wsl.exe` records the new name, the clone's timer runs map the ORIGINAL distro's disk by mount (own review,
   2026-10-11 — not fixed: no unelevated fact ties a VHDX to the running filesystem).
+
+## `disk.volumeFree` — every lettered Windows volume (E19.S1, 2026-10-15) — a report
+
+`disk.hostFree` asks "can the VHDX files grow here" and sees only the volumes that HOST a virtual disk; D: filled to 0 bytes with no
+VHDX on it and nothing judged it. `Thresholds/VolumeFreeRules.cs` (PURE) judges `HealthSample.WindowsDisk.Facts.Volumes` — the
+`Get-Volume` figures already read — so it needs neither the Distros map nor Docker. `Evaluate(Reading<IReadOnlyList<WindowsVolume>>,
+VolumeFreeLimits)` returns a `VolumeFreeAssessment`: the verdict and the judgement of every volume beside it. `ThresholdRules.FromFullRun`
+spreads the verdict in right after `DiskRules`; `CollectRun` records the judgements as the detail's `disk.lettered`.
+
+```mermaid
+flowchart LR
+    sample["HealthSample.WindowsDisk.Facts.Volumes<br/>(Get-Volume, E15.S1)"] --> rule["VolumeFreeRules.Evaluate<br/>(PURE)"]
+    keys["disk.volumeFree* (7 keys)<br/>VolumeFreeLimits.From"] --> rule
+    rule --> verdict["Verdict disk.volumeFree<br/>(ThresholdRules.FromFullRun)"]
+    rule --> judged["VolumeJudgement[]<br/>letter · size · free · level · judgedBy"]
+    verdict --> detail["RunDetail.thresholds"]
+    judged --> lettered["RunDetail.disk.lettered<br/>(DiskReports.From)"]
+    detail --> status["status --json verdicts[]<br/>(basis fullRun, age)"]
+    lettered --> statusDisk["status --json disk.lettered"]
+    status --> bar["extension: critical only marks the bar"]
+    statusDisk --> bar
+```
+
+- **Levels, per volume — an OR, critical first**: `critical` when free < `disk.volumeFreeCriticalGib` (10) OR free % < `disk.volumeFreeCriticalPercent`
+  (3); `warn` under `disk.volumeFreeWarnGib` (30) OR `disk.volumeFreeWarnPercent` (10); a floor is a strict limit. AND would let the 195 GiB D:
+  run to about 19.5 GiB before warning; OR warns at 30 GiB. The GiB floors apply only to a volume of at least
+  `disk.volumeFreeAbsoluteMinSizeGib` (100); below that a volume is judged by percent alone (`judgedBy: percent`), so a 16 GiB volume with
+  12 GiB free is `ok` and never warns for ever. A volume under `disk.volumeFreeMinSizeGib` (8) or in `disk.volumeFreeIgnoreLetters` is listed with
+  `judgedBy: "not judged: <why>"` and takes no part in the level (the measured 29.7 MiB USB volume E: never warns).
+- **Across volumes — a rank of its own**: critical > warn > unknown > ok (`VolumeFreeRules.Rank`; `DiskRules.Rank` has only three ranks and would read
+  critical as warn). An unread size or free space is `unknown` with the reading's reason, never `ok`, and never hides a critical volume. When no volume
+  is judged, or the sample is unavailable, the verdict is `unknown` with a reason — a figure not read renders as nothing, never 0.
+- **The words**: the value names the WORST volume first (`D: 4.1 GiB free (2.1 %) — critical; C: 988.8 GiB free (41.2 %) — ok`; ordered by rank, then
+  free share); the limit is built from the keys (`warn < 30 GiB or < 10 %, critical < 10 GiB or < 3 % (GiB floors only on volumes of 100 GiB or more;
+  volumes under 8 GiB not judged)`); the reason says which rule judged each volume and which floor a breaching one is under.
+- **The keys** (`Config/ConfigKeys.Disk.cs`, all Display, STARTING VALUES): `disk.volumeFreeWarnGib` 30 [1..10240], `…CriticalGib` 10 [1..10240],
+  `…WarnPercent` 10 [1..90], `…CriticalPercent` 3 [1..90], `…MinSizeGib` 8 [1..1024], `…AbsoluteMinSizeGib` 100 [8..10240] and the list
+  `disk.volumeFreeIgnoreLetters` ([], members `^[A-Z]$`, at most 26). `NumberRules`: critical < warn for GiB and for percent, and
+  minSize ≤ absoluteMinSize (the machine layer breaking one is an error, the user layer a notice).
+- **The wire**: `disk.lettered[{letter, sizeBytes, freeBytes, freePercent, level, judgedBy}]` in the run detail and in `status --json`'s `disk` (same
+  `basis`), present even when the virtual disks could not be read; a figure not read is OMITTED (never 0) and its reason rides in `judgedBy`; absent in a
+  detail written before E19.S1. The extension reads it for the bar's mark and never parses the verdict's value text.
+- **Not built here**: the 5-minute Windows reading (E19.S2) and its read by the extension (E19.S2b/S5) — until then the figure is as old as the
+  distro's 4-hourly full run.
 
 ## The Windows runner's render (WR-D1 of PLAN_windows_runner.md, 2026-10-11)
 

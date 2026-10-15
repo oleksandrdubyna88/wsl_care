@@ -21,8 +21,9 @@ public sealed class ConfigKeyShapeTests
         lists.Should().NotBeEmpty("processes.families is a list key");
         // E14 S2c: the one OPEN list is bound by a declared member rule and a cap — never free text.
         // 2026-10-12: a second OPEN list, systemd.ignoredFailedUnits, bound by its own reviewed rule (SystemdUnitName) and a cap.
-        lists.Should().OnlyContain(k => k.Allowed.Count > 0 || ((k.Member is TextRule.McpProgramName || k.Member is TextRule.SystemdUnitName) && k.MaxMembers <= 32));
-        lists.Where(k => k.Allowed.Count == 0).Should().Equal([ConfigKeys.McpServers.Programs, ConfigKeys.Systemd.IgnoredFailedUnits]);
+        // 2026-10-15 (E19.S1): a third, disk.volumeFreeIgnoreLetters — one capital letter A-Z each, at most 26.
+        lists.Should().OnlyContain(k => k.Allowed.Count > 0 || ((k.Member is TextRule.McpProgramName || k.Member is TextRule.SystemdUnitName || (k.Member is TextRule.Matching && k.Name == ConfigKeys.Disk.VolumeFreeIgnoreLetters.Name)) && k.MaxMembers <= 32));
+        lists.Where(k => k.Allowed.Count == 0).Should().Equal([ConfigKeys.McpServers.Programs, ConfigKeys.Systemd.IgnoredFailedUnits, ConfigKeys.Disk.VolumeFreeIgnoreLetters]);
         ConfigKeys.Processes.Families.Allowed.Should().NotContain(ProcessFamilies.Other).And.NotContain(ProcessFamilies.AiAgents)
             .And.BeSubsetOf(ProcessFamilies.Catalogue.Select(f => f.Name));
     }
