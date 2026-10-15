@@ -180,6 +180,9 @@ with the admin-files-only signal over the owner's tree; if the cheap signal agre
   `*.assets.*`, `*.AssemblyInfo*.cs`, `*.GlobalUsings*.cs`, `*.g.cs`, `*.baml`, `*.ilk`, `*.exp`, `*.res`, `*.tlog`,
   `*.lastbuildstate`, `*.stamp`, `*.sourcelink.json` — the exact list is fixed by M6 against the owner's tree); ONE file
   outside it retains the whole candidate, named in the preview ("holds a file that is not a build artifact: local.db").
+  A file written more than `worktrees.artifactSkewMinutes` (10) after the newest `*.dll`/`*.exe`/`*.pdb` of its folder, and
+  any `*.db`, `*.sqlite*`, `*.mdf`, `*.ldf`, `*.env`, `.env*`, `*.pfx`, `*.key`, `*.pem`, also retains the candidate — a name is
+  no proof of regenerability (E19 stories §3 decision 11, 2026-10-15).
   `node_modules` is exempt from the content check — its contents are packages that `package.json` and the lockfile
   restore, and that is the owner's rule. The same check applies to A24Orphans, so an orphan's `bin` with a database in it
   stays even where git cannot be asked. RED: `A_bin_holding_a_sqlite_file_is_retained_and_names_it`,
@@ -440,7 +443,7 @@ only that way), `MachineOnly` (the user layer cannot set it at all), `Off` (an `
 | `disk.volumeFreeMinSizeGib` | 8 | 1–1024 | Display | |
 | `disk.volumeFreeAbsoluteMinSizeGib` | 100 | 8–10240 | Display | |
 | `disk.volumeFreeIgnoreLetters` | `[]` | ≤ 26 letters `A`–`Z` | Display | |
-| `worktrees.roots` | `[]` | ≤ `worktrees.maxRoots` absolute paths (§3.3's rule) | **MachineOnly** | names where deletion is admitted |
+| `worktrees.roots` | `[]` | ≤ `worktrees.maxRoots` absolute paths (§3.3's rule) | **UserOwned** (the user layer, judged at every use, as `archive.baseFolder`; changed 2026-10-15 by [the E19 stories](PLAN_disk_hygiene_windows_E19.md) §3: a MachineOnly key cannot be written by the user-run verb) | names where deletion is admitted |
 | `worktrees.maxRoots` | 8 | 1–32 | MachineOnly | |
 | `worktrees.idleDays` | 3 | 1–365 | Higher | a shorter idle loosens what is deleted |
 | `worktrees.cleanLocked` | false | — | **Off** (user layer cannot turn it on) | loosens what is deleted |
@@ -479,14 +482,14 @@ Every key: `ConfigKeys.*.cs`, `default.json`, the regenerated `contracts/config-
 - Never anything under `%TEMP%\claude\` (the owner's 2026-10-02 rule, WR-T1's hard-coded guard).
 - Never turn an `auto.*` key on by default; never write daemon config from the extension.
 - Never stop a process by image name; never kill anything at all — the sweep stops CONTAINERS by id, through Docker.
-- Never run a real cleanup, a real `git`, a real `docker` or a real task from a test; never weaken a tripwire, a recorder or
+- Never run a real cleanup, a real `docker` or a real task from a test, nor a real `git` against a real repository (a read-only `git` against a throw-away `testsToDelete-` repository the test builds is allowed, E19 stories §3); never weaken a tripwire, a recorder or
   a fake to make a test pass.
 
 ## 5. Stories (one pull request each)
 
 | id | title | side | files (reuse → new) | Fable own reviewer | depends on |
 |---|---|---|---|---|---|
-| DH-1 | `disk.volumeFree`: every lettered volume, warn/critical, GiB OR %, the critical mark on the bar (`withVolumeMark`, the exact id); the five `disk.volumeFree*` keys; the panel's `disk.hostC` "arrives in E7" row (`src_vs_code/src/panel/fieldMap.ts:140`) becomes the verdict row | distro + extension | `Thresholds/DiskRules.cs`, `ThresholdRules.cs` (spread), `Config/ConfigKeys.Disk.cs`, `ConfigKeys.Numbers.cs`, `default.json`, `contracts/config-keys.json`, `contracts/golden/head/status*.json`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts`, README | no | — |
+| DH-1 | `disk.volumeFree`: every lettered volume, warn/critical, GiB OR %, the critical mark on the bar (`withVolumeMark`, the exact id); the seven `disk.volumeFree*` keys (§3.9); the panel's `disk.hostC` "arrives in E7" row (`src_vs_code/src/panel/fieldMap.ts:140`) becomes the verdict row | distro + extension | `Thresholds/DiskRules.cs`, `ThresholdRules.cs` (spread), `Config/ConfigKeys.Disk.cs`, `ConfigKeys.Numbers.cs`, `default.json`, `contracts/config-keys.json`, `contracts/golden/head/status*.json`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts`, README | no | — |
 | DH-1b | the Windows watch reads every lettered volume's free space natively every 5 min and its `status` carries `disk.volumeFree` with `basis sample`; panel and bar take the newer of the two readings — straight after DH-1, because only the frequent reading closes the original failure | Windows + extension | `Core/Watch/WatchRun.cs`, `Status/*`, `statusBar/statusBarModel.ts`, `panel/fieldMap.ts` | no | DH-1, **WR-D4** (the Windows watch; DH-1b cannot ship before it); its extension half **WR-E1** (today `WindowsCareClient` runs the bundled exe with `--version` alone, `src_vs_code/src/client/WindowsCareClient.ts:17` — the panel reads a Windows `status` only through the client WR-E1 widens; added at the epic split, 2026-10-14) |
 | DH-2 | A5 keeps every compose container; the label in the inspect template and `ContainerDetail`; a compose fixture captured from a real `docker ps`/`inspect` (redacted) | distro | `Docker/DockerCommands.cs`, `ContainerDetail.cs`, `DockerInventory.cs`, `Preview/CleanupTargets.cs`, `Preview/CleanupPreview.cs`, fixtures, goldens | no | M4 |
 | DH-3 | the worktree report: `worktrees.*` keys, root validation and `worktrees roots set/clear` (stdin), the folder classifier (file reads only), the bounded walk that counts access errors, idle, the git resolver and the THREE read-only git templates (§3.4), "reclaimable" = only what A24/A24Orphans may delete, `worktrees scan --json`, `worktrees.json`, the Windows `status`'s `worktrees` + `worktrees.reclaimable` | Windows | `Core/Worktrees/` (new: `WorktreeRoots`, `FolderKinds`, `WorktreeScan`, `BuildOutputRule`, `GitQuestions`), `Files/TreeWalk.cs` (widened), `Processes/Policy/*` (templates, resolver), `Cli/Commands/WorktreesCommand.cs` (new), `Cli/CommandLine.cs`, `Status/*`, keys, contracts | **yes** (adds git, writes a key that admits deletion) | M1, M2 |
@@ -759,6 +762,10 @@ its code stage, so the record could not be corrected; this paragraph and the tex
 > Three epics, so the cornerstone quota is Q = ⌈2·3/5⌉ = 2. None of the three starts before the owner's go.
 
 ### E19 — See it (DH-1, DH-1b, DH-3)
+
+Stories: [PLAN_disk_hygiene_windows_E19.md](PLAN_disk_hygiene_windows_E19.md) (2026-10-15; E19.S1, S2, S2b — the narrow
+Windows `status` read carved out of WR-E1 — S5, S3, S4). DH-1b keeps the watch's 5-minute sample and gains a live fallback in the
+Windows `status` (its §3 decision 1).
 
 - **Goal.** The owner is warned before any lettered volume fills — within five minutes of the filling, not four hours — and
   can see, per root, where the space went: how many worktrees, how idle, how much build output, which folders git can no
