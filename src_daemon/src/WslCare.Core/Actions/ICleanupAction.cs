@@ -252,6 +252,10 @@ public interface ICleanupAction
     /// build still defers (<see cref="Engine.IdleDeferrals"/>).</summary>
     ConfigKey.IntKey? MaxDeferHours => null;
 
+    /// <summary>Whether a full check's timer pass (<c>collect</c>) includes this action. A23 does not: the Windows cleanup runs from its own
+    /// task (<c>act A23</c> with the timer trigger, WR-T2), and a full check must not list the whole temp folder for it.</summary>
+    bool InFullCheck => true;
+
     Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken);
 
     /// <summary>Whether the TIMER's trigger fired for this preview (a button runs regardless, plan §5).</summary>

@@ -251,5 +251,6 @@ public sealed class WindowsTempSelectionTests : IDisposable
         action.Sides.Should().Equal(WslCare.Core.Hosting.HostSide.Windows);
         action.Commands.Should().BeEmpty();
         action.Id.ButtonOnly.Should().BeFalse();
+        action.InFullCheck.Should().BeFalse("the cleanup has its own task; a full check does not list the temp folder for it");
     }
 }

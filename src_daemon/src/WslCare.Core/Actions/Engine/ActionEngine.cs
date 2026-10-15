@@ -157,7 +157,7 @@ public sealed class ActionEngine(EngineContext c)
         RecordAgentCpu(notes);
 
         // A button-only action is never even selected by the timer (plan §15q E7.S2b); the auto gate refuses it as well.
-        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id).Where(id => !id.ButtonOnly)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
+        var request = new ActRequest([.. c.Registry.Actions.Where(a => a.InFullCheck).Select(a => a.Id).Where(id => !id.ButtonOnly)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         return new TimerPass(true, string.Empty, pass.Dry.DryRun, pass.Dry.Reason, TargetUserReport.From(pass.Target), pass.Outcomes, notes, pass.Outcome)
         {

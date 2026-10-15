@@ -101,9 +101,14 @@ internal static class ActCommand
     /// <summary>A refusal of the whole request and its code; <c>null</c> when it may go on. Root FIRST: nothing else is
     /// asked of an unprivileged process (plan §15c #0).</summary>
     private static (ExitCode Code, string Message)? Refusal(Request.Act request, CliHost host, ConfigLoadResult loaded) =>
-        host.Paths.Side == Core.Hosting.HostSide.Windows
+        RunsOnWindows(request, host)
             ? Unbuilt(request, host) ?? OtherSide(request, host) ?? WindowsDetach(request) ?? Elevated(host) ?? ObserveOnly(request, loaded)
             : NotRoot(host) ?? Unbuilt(request, host) ?? OtherSide(request, host) ?? ObserveOnly(request, loaded);
+
+    /// <summary>Every action asked for runs on the Windows side, and so does this binary: only then does the Windows rule apply. A request
+    /// that holds a distro action keeps the distro's rules (root first), exactly as before WR-T1.</summary>
+    private static bool RunsOnWindows(Request.Act request, CliHost host) =>
+        host.Paths.Side == Core.Hosting.HostSide.Windows && request.Ids.All(id => host.Actions.Find(id)?.Sides.Contains(Core.Hosting.HostSide.Windows) == true);
 
     /// <summary>WR-T1: the Windows side's actions (A23) run in the person's OWN, unelevated process — the one rule is inverted from the
     /// distro's, where every act is root's. An elevated token is refused: it would delete as another account's authority and its

@@ -266,7 +266,7 @@ public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
                 e.Attributes.HasFlag(FileAttributes.ReparsePoint) ? EntryKind.Link : e.IsDirectory ? EntryKind.Directory : EntryKind.File,
                 e.IsDirectory ? 0 : e.Length,
                 e.LastWriteTimeUtc)
-            { CreatedUtc = e.CreationTimeUtc },
+        { CreatedUtc = e.CreationTimeUtc },
             new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = ignoreInaccessible, AttributesToSkip = 0, ReturnSpecialDirectories = false });
 
     public WriteAccess ProbeWriteAccess(string directory)

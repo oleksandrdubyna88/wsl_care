@@ -19,7 +19,7 @@ public sealed class ActWindowsTests
         new(windows.Paths, windows.Files, new FixedTimeProvider(), new RecordingCommandRunner())
         {
             Privilege = new ProcessPrivilege(elevated, elevated ? "this process is elevated" : "this process is not elevated"),
-            UserSid = () => OperatingSystem.IsWindows() ? System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value : string.Empty,
+            UserSid = () => windows.Files.OwnerSidOf(windows.Paths.TempDirectory),
         };
 
     [Fact]

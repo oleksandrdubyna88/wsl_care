@@ -1,4 +1,3 @@
-using System.Security.Principal;
 
 using FluentAssertions;
 
@@ -53,7 +52,15 @@ public sealed class WindowsTempEngineTests : IDisposable
         return folder;
     }
 
-    private static string RealSid => OperatingSystem.IsWindows() ? WindowsIdentity.GetCurrent().User!.Value : string.Empty;
+    /// <summary>The account that owns what this test creates: the user, or — on an elevated CI runner — the Administrators group.</summary>
+    private string RealSid
+    {
+        get
+        {
+            Directory.CreateDirectory(Temp);
+            return _host.Files.OwnerSidOf(Temp);
+        }
+    }
 
     private ActionEngine Engine(IFileSystem? files = null, string? sid = null, string userConfig = "{}")
     {

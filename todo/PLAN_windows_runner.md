@@ -1,6 +1,6 @@
 # PLAN — the Windows runner: two per-user scheduled tasks run the staged `wsl-care.exe` under one bounded supervisor
 
-> Status: **in progress, 2026-10-12 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 built (the archive body of `tasks run archive`: dry → `archive preview`, real → `archive run`, no run lock; *WR-D5 as built* in §14); WR-E1 built (the widened `WindowsCareClient`: the staged exe, `tasks render` / `stage` / `stage --remove` typed, the run reads; the strict fake learns them; *WR-E1 as built* in §14); WR-E2 onward not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
+> Status: **in progress, 2026-10-15 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 built (the archive body of `tasks run archive`: dry → `archive preview`, real → `archive run`, no run lock; *WR-D5 as built* in §14); WR-E1 built (the widened `WindowsCareClient`: the staged exe, `tasks render` / `stage` / `stage --remove` typed, the run reads; the strict fake learns them; *WR-E1 as built* in §14); WR-T1 built (A23 `windowsTemp`: the engine's first Windows action, the `temp.*` keys, `act` unelevated on the Windows side; *WR-T1 as built* and *the Fable own review* in §14); WR-E2 onward (except WR-T1) not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
 >
 > Related: [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b (A22 = S7b.3, the Windows stop; S7b.1 the ledger; S2b the watch), [PLAN_windows_care.md](PLAN_windows_care.md) §2 and W-A15 (E11), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) D9 (:3010–3017), [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md), [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a, §4 and its forward note), [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the task-registration precedent), [PLAN_pwsh_engine_windows_time.md](../research/PLAN_pwsh_engine_windows_time.md) (the engine rule, F1/F2), [2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md).
 >
@@ -789,3 +789,60 @@ not spell out:
   the code is the daemon's busy by contract, and busy is the fail-safe reading); the digest stream's error handling (findings 5, 7 —
   a Readable's async iterator rejects with the error and destroys the stream); trailing dots or spaces in LocalAppData (finding 6 —
   fails closed through the path comparison); `firstLine` splitting a capped buffer (finding 9).
+
+**WR-T1 as built (2026-10-15).** `Core/Actions/WindowsTemp/` (`WindowsTempAction`, `TempSettings` / `TempFacts`, `TempGlob`, `TempGuards`,
+`TempRoots`, `TempCursor`, `TempPlanner`, `TempJudge`, `TempScanner`, `TempBudget`, `TempRun`, `TempDeletion`), `Config/ConfigKeys.Temp.cs`
+(`temp.*`, `auto.A23`), `TextRule.TempGlobName`, `IFileSystem.OwnerSidOf` + `PhysicalFileSystem.Owner.cs`, `FileEntry.CreatedUtc`,
+`ActionPreview.Carry`, `ActionContext.UserSid` / `EngineContext.UserSid`, `ActCommand` (the Windows privilege rule), `ActionId`,
+`ActionRegistry`, `contracts/actions.json` and `config-keys.json` regenerated; the docs in [module_daemon.md](../research/module_daemon.md)
+§ *The Windows `%TEMP%` cleanup: A23* and [module_tests.md](../research/module_tests.md). Deviations and decisions the plan did not spell out:
+
+- **The root (the story's plan round 56c596c6, finding 2) — a deviation from §3.12's "the shell-folder API".** There is no shell known
+  folder for TEMP. The root is `LocalApplicationData` + `\Temp`, cross-checked with `GetTempPath` (via `WindowsEnvironment`): both must name
+  the same folder (case-insensitive, normalised) strictly inside the user's profile, else the preview REFUSES with the reason and nothing is
+  deleted. A redirected `TEMP` or a short 8.3 profile spelling is therefore a refusal, not a guess; widening that is a later decision.
+  It sits behind `IHostPaths` (the sandbox layout), so tests pass a sandbox root.
+- **The story's plan round (coai session 56c596c6, 2026-10-14): seven findings, all accepted.** (1) *Reparse before traversal*: a
+  candidate whose own listing attributes say reparse point is `Unknown` before any child is listed; every enumeration reports reparse
+  entries (`AttributesToSkip = 0`, so they are seen, never skipped or entered) and one inside a tree retains the tree. (2) The root, above.
+  (3) *The cursor always advances*: every candidate the run reaches is decided (deleted, retained, excluded, unknown) and the cursor moves
+  to the last, and a run that decides its first name after the wrap completes a pass (`PassesCompleted`, `PassStarted`, `PassDecided`).
+  (4) *The `claude` guard* compares the name (ordinal, ignore case; trailing separators, dots and spaces stripped as Win32 does) and the
+  canonical full path against `<root>\claude`, before any traversal; the deletion policy's `ClaudeTemp` root is the second line. (5) *A git
+  working folder* (a `.git` file or folder at its top) is retained "a git working folder - never deleted" whatever the allow-list. (6)
+  *The delete walk never follows*: each folder is listed without following, `ReadLink` is asked of each sub-folder just before entering
+  it, an entry that is or became a link stops the candidate ("a link appeared") and nothing beyond it is touched; every delete goes through
+  the deletion policy. (7) *Resume*: the interrupted candidate is retained when a remaining FILE is newer than the checkpoint's recorded
+  newest file time OR a remaining FOLDER was CREATED after the checkpoint (deleting children rewrites a folder's write time, never its
+  creation time) — a fresh subfolder created during the interruption retains it.
+- **`act` on the Windows side is unelevated (not root).** The plan said the engine's Windows path would be proved; `act` refused every
+  non-root process. On the Windows side the rule is inverted: an elevated process is refused (exit 81, "NOT elevated"; its files belong to
+  the Administrators group, which the owner check would not accept) and `--detach` is refused. `ActionContext.UserSid` carries the
+  account's SID; empty owns nothing. The distro's refusal message now names the side an action runs on ("A23 runs on the Windows host, not
+  on this side (the WSL binary)").
+- **A23 is not part of a full check's timer pass** (`ICleanupAction.InFullCheck`, default true, false for A23): `collect` on either side never lists it, so the Linux run records are unchanged and the cleanup runs only from its own `act A23` (the WR-T2 task). The Windows privilege rule applies only when EVERY action asked for runs on the Windows side; a request that holds a distro action keeps the distro's rules (root first, then the side refusal), exactly as before.
+- **`auto.A23` is ON by default** like A11/A19/A21: installing the cleanup task (WR-T2) is the opt-in, and `dryRun` plus the first week
+  still make the timer dry. The extension's `ACTION_IDS` / `BUTTON_ONLY_IDS` gained `A23` (`rootIds.test.ts` holds `ACTION_IDS` equal to
+  `actions.json`; no WSL cleanup op may act on it). Those TypeScript tests were NOT run (no `node_modules`, no installs).
+- **One extra key, `temp.maxTopLevelEntries`** (500000): a cut top-level listing has no stable order for the cursor, so a folder holding
+  more refuses whole. `temp.allowGlobs` is an open list (`TextRule.TempGlobName`, at most 32): a pattern is letters, digits, `. _ - * ?`,
+  may not match `claude` or a `testsToDelete-` name (the DH plan's boundary), so a key value can never name them; the selection refuses
+  both again regardless of the key.
+- **The timer does not scan names off the allow-list.** A timer trigger spends its budget on what it may delete (`NotAllowed`, unscanned);
+  every other trigger scans them for the "would be eligible if allowed" groups. Run-time costs are bounded by `temp.scanMaxNodes` /
+  `temp.scanMaxSeconds`, shared by one run's scans, plus a fresh budget per candidate for its re-validation.
+- **Re-validation is a stat of the candidate's own path plus a fresh scan** (`ReadLink`, `DirectoryLastWrite` / `FileSize`, then the same
+  `TempJudge`), never a re-listing of the 100 k-entry folder. A link now, a changed owner, a fresh file are `NotRemoved` "changed since the
+  preview"; a vanished one is "already gone".
+- **The checkpoint is written for folder candidates only** (a file is deleted by one call). A cancelled run keeps it and returns
+  `ActionRun.Interrupted`, which the engine records as `interrupted`; a killed run is swept by the engine's existing reconcile. Cursor
+  writes after each candidate (marker cleared, `Last` moved) and once at the end (the plan's `Last` and pass counters).
+- **The run detail** rides the existing `ActionRun`: `Count` = candidates deleted, `FreedBytes` = logical bytes of the files deleted
+  (the basis says "not disk space freed"), counts per outcome and per group in `Notes`, the first `preview.maxItems` in `Removed` /
+  `NotRemoved`. The preview's counts and per-pattern groups are `Facts`; exact paths on expand are WR-T2's `tasks preview cleanup`.
+- **No lease with A26 and no `tasks`/task/panel code** — WR-T2 / WR-T3 and DH-7. `wsl-care-test-*` stays on the allow-list (DH-8 renames
+  the harness later). WR-T2 should size `timer.runLimitMinutes` / `windowsTasks.cleanup*` against `temp.scanMaxSeconds` (120) plus the
+  delete walk, which has no time cap of its own (the supervisor's deadline and the cancellation end it; the checkpoint makes that safe).
+- **Tests.** 80 WindowsTemp tests in Core.Tests (an in-memory `%TEMP%` for the logic; the real engine and file system in a `TempRoot` sandbox on the Windows
+  legs), 4 Cli.Tests, 4 Scenarios; the break-it list is in `module_tests.md`. The elevated CI runner: the engine tests take the owner of
+  what they create as "the current account", the two Scenarios that need an unelevated child skip on an elevated account.

@@ -35,6 +35,6 @@ public static class TempRoots
 
         return rules.IsStrictlyUnder(shell, folders.UserProfile) && !rules.IsRoot(shell)
             ? new TempRootResult.Resolved(rules.Normalize(shell))
-            : new TempRootResult.Refused($"{shell} is not inside the user's profile {folders.UserProfile}, so nothing is deleted");
+            : new TempRootResult.Refused($"{shell} is not inside the user's profile folder, so nothing is deleted");
     }
 }

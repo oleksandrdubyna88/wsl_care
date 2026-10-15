@@ -29,6 +29,9 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
 
     public IdleRule Idle => IdleRule.Never;
 
+    /// <summary>Not part of a full check's timer pass: the cleanup has its own task (WR-T2).</summary>
+    public bool InFullCheck => false;
+
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Windows];
 
     public IReadOnlyList<CommandTemplate> Commands { get; } = [];
