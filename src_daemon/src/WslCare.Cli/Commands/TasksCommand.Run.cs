@@ -36,7 +36,7 @@ internal static partial class TasksCommand
         var archive = new Lazy<DryRunDecision>(() => ArchiveBody.Decide(loaded, host.Privilege.IsRoot, windows, host.Files, host.Clock.GetUtcNow()));
         return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config, () => archive.Value) switch
         {
-            Reading<WorkerLaunch>.Available launch => Supervised(request.Task, launch.Value, host.Supervisor, SayWindow(archive, stderr), cancellationToken),
+            Reading<WorkerLaunch>.Available launch => Started(request.Task, launch.Value, host.Supervisor, archive, stderr, cancellationToken),
             Reading<WorkerLaunch>.Unavailable refused => Refused(request.Task, refused.Reason, stderr),
             _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
         };
@@ -84,16 +84,17 @@ internal static partial class TasksCommand
         }
     }
 
-    /// <summary>The archive body's window, said once before its worker starts (WR-D5, §3.5): why it is a preview, or why it is a real
-    /// run. The decision exists only when the task was the archive (the watch never takes it).</summary>
-    private static TextWriter SayWindow(Lazy<DryRunDecision> archive, TextWriter stderr)
+    /// <summary>The start of a launch that exists: the archive body's window said first (WR-D5, §3.5: why it is a preview, or why it is
+    /// a real run — the decision the table already took for this launch), then the supervised run. Explicit per task, never inferred from
+    /// the decision's own state (the coai code round on WR-D5, finding 0); the watch takes no decision and says none.</summary>
+    private static int Started(WindowsTask task, WorkerLaunch launch, IWorkerSupervisor supervisor, Lazy<DryRunDecision> archive, TextWriter stderr, CancellationToken cancellationToken)
     {
-        if (archive.IsValueCreated)
+        if (task == WindowsTask.Archive)
         {
             Output.Note(stderr, $"tasks run {WindowsTask.Archive}: {ArchiveBody.Note(archive.Value)}");
         }
 
-        return stderr;
+        return Supervised(task, launch, supervisor, stderr, cancellationToken);
     }
 
     private static int Refused(WindowsTask task, string reason, TextWriter stderr)

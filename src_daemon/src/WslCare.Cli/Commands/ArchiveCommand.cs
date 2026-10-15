@@ -65,7 +65,7 @@ internal static class ArchiveCommand
     {
         if (json && host.Paths is Core.Hosting.WindowsHostPaths)
         {
-            Output.Note(stderr, $"archive preview: {Core.Scheduler.ArchiveBody.WouldMove(report)}; nothing was moved");
+            Output.Note(stderr, $"archive preview: {ArchivePreview.WouldMove(report)}; nothing was moved");
         }
     }
 

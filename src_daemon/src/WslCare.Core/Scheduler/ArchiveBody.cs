@@ -1,7 +1,4 @@
-using System.Globalization;
-
 using WslCare.Core.Actions.Engine;
-using WslCare.Core.Archive;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
@@ -46,11 +43,4 @@ public static class ArchiveBody
     public static string Note(DryRunDecision decision) => decision.DryRun
         ? $"a dry run ({decision.Reason}): the worker is \"archive preview\", which moves nothing; end the window with \"config set dryRun false\" once the week has passed"
         : $"a real run ({decision.Reason}): the worker is \"archive run\"";
-
-    /// <summary>The run-log sentence of a preview: what a real run would move now (enabled agents only — a disabled one never moves).</summary>
-    public static string WouldMove(ArchivePreviewReport report)
-    {
-        var due = report.Agents.Where(a => a.Enabled).ToList();
-        return string.Create(CultureInfo.InvariantCulture, $"would move {due.Sum(a => a.DueUnits)} session(s), {due.Sum(a => a.DueBytes)} bytes");
-    }
 }

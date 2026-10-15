@@ -701,3 +701,16 @@ supervisor kill (refuted — the OS releases `archive.lock`, `SideLease` takes o
 preview (the distro's `Decide` rule, which only ever errs towards more dry runs); an interrupted archive's recovery (the archive's own
 two-phase protocol, proven by `ArchiveRunFlows`' 14-point kill theory — a deadline kill is the same kill); the dry log's counts
 untested (refuted — `TasksRunArchiveBodyTests` and the Scenarios flow assert "would move 1 session(s), 14 bytes").
+
+**The coai code round on WR-D5 (session `ad924fee`, 2026-10-15)**: `proceed`, seven findings, five accepted, two rejected.
+
+- *Accepted, finding 6*: `holder.json` is written just AFTER `archive.lock` is taken, so a second run in that instant can read the
+  previous run's record — the busy answer now says "the last recorded holder: pid …, run …, since …", never a certainty
+  (`A_second_archive_during_a_run_is_refused_busy_naming_the_holder` tightened; the old wording reverted → red, restored → green).
+- *Accepted, finding 5 (and 2, 3)*: the "would move N session(s), M bytes" sentence is the preview's own, `ArchivePreview.WouldMove`
+  in `Core/Archive` — `archive preview` no longer depends on the task runner — and it sums in one pass.
+- *Accepted, finding 0*: the supervisor says the archive's window explicitly for the archive task (`TasksCommand.Started`), no longer
+  inferred from `Lazy.IsValueCreated` inside an argument. A refactor: the existing note tests hold it.
+- *Rejected*: the nested delegate in the table's entry (finding 1 — it is what keeps the table closed: the archive entry alone asks
+  for the decision, and only Core maps it to argv); the two prefixes in the log (finding 4 — each process names its own verb, as every
+  worker's stderr passes through the supervisor).

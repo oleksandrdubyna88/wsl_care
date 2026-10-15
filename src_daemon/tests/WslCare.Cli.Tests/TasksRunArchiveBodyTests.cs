@@ -152,7 +152,8 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
         var answer = supervisor.Workers.Should().ContainSingle().Subject.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last();
         var report = JsonSerializer.Deserialize(answer, WslCareJsonContext.Default.ArchiveRunReport)!;
         report.Outcome.Should().Be(RunOutcomes.Busy);
-        report.Stop.Should().Contain("pid 4242").And.Contain("run r-held");
+        report.Stop.Should().Contain("the last recorded holder: pid 4242", "holder.json is written just after the lock, so it may still name the previous run (the coai code round, finding 6)")
+            .And.Contain("run r-held");
     }
 
     [Fact]
