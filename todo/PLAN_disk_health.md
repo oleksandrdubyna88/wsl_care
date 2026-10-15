@@ -1589,8 +1589,15 @@ inside — the limits arrive as arguments, as `HostRules` takes `EffectiveConfig
 - **The Windows entry point**: `Processes/WindowsCommandLine.Split(string line) → IReadOnlyList<string>` — the inverse of
   `WindowsCommandLine.Of` (`Processes/WindowsCommandLine.cs:11-43`) with `CommandLineToArgvW`'s rules (a bare argv[0] up to the
   first space or its closing quote; `2n` backslashes before a quote → `n` backslashes; `2n+1` → `n` and a literal quote; a quote
-  toggles the quoted state). A property test holds `Split(Of(exe, args)) == [exe, ..args]` over a generated set (spaces, tabs,
-  quotes, trailing backslashes, empty arguments). Then the Windows side calls the SAME `CommandLineRedaction.Shown(Split(line))`.
+  toggles the quoted state). A property test holds `Split(Of(exe, args)) == [exe, ..args]` — parsing semantics over argument sequences that `Of` produced,
+  never a byte identity over arbitrary raw lines — over a generated set (spaces, tabs, quotes, trailing backslashes, empty
+  arguments), plus explicit vectors for `CommandLineToArgvW`'s edge cases (a backslash run before a closing quote, `""` inside a
+  quoted run, a trailing backslash, an empty argument, a quoted argv[0] with a space) (plan round, finding 0).
+  **The Windows guarantee is stated, not assumed** (plan round, finding 4): the rule judges arguments as `CommandLineToArgvW`
+  splits them. A program that parses its raw line differently (`--auth:'secret value'`) can carry a value the split does not
+  isolate, so a raw-line BACKSTOP runs after `Shown(Split(line))`: when the raw line holds a secret word followed by a separator
+  (`:`, `=`, whitespace, a quote) and the text after it survives in the shown result, the whole shown line becomes `<redacted>`.
+  A RED test uses a line with non-`CommandLineToArgvW` quoting. Then the Windows side calls the SAME `CommandLineRedaction.Shown(Split(line))`.
   E15.S6 is its first wire consumer; E9.S5's matcher (R5) keeps matching the raw line, it shows nothing.
 
 **2.1 Order of judgement, per argument** (`Judge(argument, previous)` — a `switch`, the first arm that fires decides; nothing is
@@ -1607,7 +1614,9 @@ judged twice and a value is never partly redacted):
    `auth`, `access_token` → `name=<redacted>`; the rest of the URL is shown. (A URL is judged here, before the path arm: it holds
    `/`.)
 6. A PATH → shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
-   `[A-Za-z0-9 ._~+@%:/\\-]` (so `/TelemetrySession:{"CollectorApiKey":…}` is NOT a path — it holds `{` and `"`). Paths carry
+   letters and digits of ANY script (`\p{L}`, `\p{N}`) plus space and `._~+@%:/\-()[],'&` (so `C:\Program Files (x86)\…`,
+   `/mnt/c/Users/Фёдор Иванов/…` and `D:\dev\a&b` are paths; `/TelemetrySession:{"CollectorApiKey":…}` is NOT — it holds `{`
+   and `"`) (plan round, finding 2; a RED case for each of the three paths). Paths carry
    programs, scripts and folders the view needs (R8); a secret used as a file NAME is a residual (§9).
 7. A secret WORD followed by a separator (`[:="']`) inside a positional (`CollectorApiKey":"…`, `Authorization: Bearer …`,
    `Server=…;Password=…` reached through arm 3) → `<redacted>` whole; the extent of a value inside a blob cannot be delimited,
