@@ -172,6 +172,7 @@ Elevated work and `collect-elevated` (PLAN_windows_care §2, §8a); logged-out r
 | the Windows engine path and the `%TEMP%` walk (`claude` guard, owner SID, reparse refusal, re-validated delete) | here, WR-T1 builds it first (A23) | [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (2026-10-14) REUSES it for A24/A24Orphans (worktree build output) and A26 (`testsToDelete-*` in `%TEMP%`, 1 h); if its DH-4 is ready first the shared core is extracted here, never copied |
 | `testsToDelete-*` names in `%TEMP%` | A23 never selects them (`temp.allowGlobs` may not match the prefix); its preview names them "the test-leftover sweep's" | A26 owns them |
 | the tasks `\wsl-care\worktrees-scan` (daily + on demand), `build-output`, `build-output-orphans`, `test-leftovers` (on demand only), each one fixed argv line, none taking the run lock | D1's definitions and D3's closed argv table grow by four lines; E3/E4 install and run them like the others; A26 shares A23's `%TEMP%` lease | PLAN_disk_hygiene_windows.md DH-5 |
+| the Windows watch (WR-D4) and its run-retention sweep | here (WR-D4) | PLAN_disk_hygiene_windows.md waits on it three times: DH-1b (every lettered volume's free space read by the watch every 5 minutes — the owner's priority after DH-1, 2026-10-14), DH-4 and DH-7 (their run details are retired by WR-D4's retention sweep); WR-E1 also gates the extension half of DH-1b and DH-3 |
 
 ### 3.12 The Windows `%TEMP%` cleanup — W-A2 on the runner (the owner's decision, 2026-10-11)
 
