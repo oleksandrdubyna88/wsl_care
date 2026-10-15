@@ -30,13 +30,13 @@ public static class ClockParsers
     /// printed none of them (a probe from before the story), printed one twice, or printed them in another shape. A tag printed
     /// empty inside the block is an empty value.</summary>
     public static Reading<PwshProbe> PwshProbe(IReadOnlyList<string> lines) =>
-        PwshTags.Any(tag => lines.Count(l => l.StartsWith(tag, StringComparison.Ordinal)) > 1)
+        HealthCommands.PwshTags.Any(tag => lines.Count(l => l.StartsWith(tag, StringComparison.Ordinal)) > 1)
             ? Reading.Missing<PwshProbe>(RepeatedPwshLine)
             : Shaped([.. lines.Select(l => l.Trim()).Where(l => l.Length > 0)]);
 
     /// <summary>
     /// Security review (Fable, S1): the pwsh block is read ONLY as the probe's own trailing block — the last four non-empty lines,
-    /// each in the script's order (<see cref="PwshTags"/>), with both Windows Time lines BEFORE it. The real probe prints that
+    /// each in the script's order (<see cref="HealthCommands.PwshTags"/>), with both Windows Time lines BEFORE it. The real probe prints that
     /// block last, in a second write after the flushed clock lines, so any other shape (one tag, the block out of order, a block
     /// before the Windows Time lines — a probe ended by its own user after the first flush, with a line break smuggled into the
     /// profile) is not the probe's, and is not read: 5.1 runs. No pwsh tag at all is a probe from before the story.
@@ -47,18 +47,18 @@ public static class ClockParsers
             : Block(TrailingBlock(lines));
 
     private static Reading<PwshProbe> Block(IReadOnlyList<string> values) =>
-        values.Count == PwshTags.Length
+        values.Count == HealthCommands.PwshTags.Count
             ? Reading.Of(new PwshProbe(values[0], values[1], values[2], values[3]))
             : Reading.Missing<PwshProbe>(NotTheTrailingPwshBlock);
 
-    private static bool IsPwshLine(string line) => PwshTags.Any(tag => line.StartsWith(tag, StringComparison.Ordinal));
+    private static bool IsPwshLine(string line) => HealthCommands.PwshTags.Any(tag => line.StartsWith(tag, StringComparison.Ordinal));
 
     /// <summary>The four values when the last four lines are the block in order and both Windows Time lines come before it; else none.</summary>
     private static IReadOnlyList<string> TrailingBlock(IReadOnlyList<string> lines)
     {
-        var start = lines.Count - PwshTags.Length;
-        return start >= 0 && Enumerable.Range(0, PwshTags.Length).All(i => lines[start + i].StartsWith(PwshTags[i], StringComparison.Ordinal)) && TimeLinesBefore(lines, start)
-            ? [.. Enumerable.Range(0, PwshTags.Length).Select(i => lines[start + i][PwshTags[i].Length..].Trim())]
+        var start = lines.Count - HealthCommands.PwshTags.Count;
+        return start >= 0 && Enumerable.Range(0, HealthCommands.PwshTags.Count).All(i => lines[start + i].StartsWith(HealthCommands.PwshTags[i], StringComparison.Ordinal)) && TimeLinesBefore(lines, start)
+            ? [.. Enumerable.Range(0, HealthCommands.PwshTags.Count).Select(i => lines[start + i][HealthCommands.PwshTags[i].Length..].Trim())]
             : [];
     }
 
@@ -73,7 +73,6 @@ public static class ClockParsers
     /// <summary>Security review (Fable, S1): the pwsh lines are not the probe's own trailing block.</summary>
     public const string NotTheTrailingPwshBlock = "the Windows clock probe's pwsh lines are not its trailing block after both Windows Time lines, in the script's order: they are not read";
 
-    private static readonly string[] PwshTags = [HealthCommands.PwshKnownFolderTag, HealthCommands.PwshEnvProgramFilesTag, HealthCommands.PwshMsiTag, HealthCommands.PwshSignatureTag];
 
 
     private static string? Tagged(IReadOnlyList<string> lines, string tag) =>

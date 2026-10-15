@@ -38,7 +38,11 @@ public static class PwshEngine
     public const string KnownFolder = @"C:\Program Files";
 
     /// <summary>Where the MSI installs PowerShell 7 — the folder <c>WindowsSystemDrive.Programs</c> names for <c>pwsh.exe</c>.</summary>
-    public const string MsiFile = KnownFolder + @"\PowerShell\7\pwsh.exe";
+    public const string MsiFile = KnownFolder + @"\" + HealthCommands.PwshMsiFolder + @"\" + HealthCommands.Pwsh;
+
+    /// <summary>The MSI's folder as the resolver names it on the mounted drive — relative to the drive's root, with <c>/</c>
+    /// (<c>Program Files/PowerShell/7</c>); built from <see cref="KnownFolder"/> and <see cref="HealthCommands.PwshMsiFolder"/>.</summary>
+    public static string MsiFolderOnTheDrive => (KnownFolder[3..] + @"\" + HealthCommands.PwshMsiFolder).Replace('\\', '/');
 
     /// <summary>The value of <c>pwsh.msi=</c> that is a real file, and of <c>pwsh.signature=</c> that is Microsoft's.</summary>
     private const string File = "file";

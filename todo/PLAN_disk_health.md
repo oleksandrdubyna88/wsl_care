@@ -1501,6 +1501,14 @@ skipped), Cli 427 (0 failed, 33 skipped), Scenarios 625 (6 failed, 11 skipped) �
 budgets stay red on the loaded machine (4.9 s against 2 s, 6.3 s against 3 s). They time nothing this story touches; CI is
 the authority for them. `dotnet format --verify-no-changes` and plan-lifecycle clean.
 
+**The coai security round (`proceed`, 2026-10-15)**, two findings accepted: the live test reads the pwsh tags from the ONE list
+(`HealthCommands.PwshTags`, which the parser's trailing-block rule uses too), and the MSI path relative to Program Files has ONE
+definition (`HealthCommands.PwshMsiFolder`) that the probe's look, `PwshEngine.MsiFile` and the resolver's folder
+(`PwshEngine.MsiFolderOnTheDrive` in `WindowsSystemDrive.Programs`) are built from; the probe's text is unchanged, byte for
+byte. A guard test holds the three equal (no red was possible: they were equal literals). Break-its: one site given its own
+literal again → the guard red; the definition itself changed → the three still agree (they cannot diverge) and only the pins
+of the real folder went red. After the change: Windows Core 2829 (0 failed, 89 skipped), Cli 427 (0 failed, 2 skipped).
+
 **Open.**
 - **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
   the first CI run on `windows-latest` is the evidence that the selection is safe to ship.

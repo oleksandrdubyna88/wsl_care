@@ -43,10 +43,21 @@ public static class HealthCommands
     /// else <c>unsigned:&lt;status&gt;|&lt;subject&gt;</c>; empty when there is no file.</summary>
     public const string PwshSignatureTag = "pwsh.signature=";
 
+    /// <summary>The four pwsh tags in the order the probe prints them — the ONE list the parser reads the trailing block by and the
+    /// live test checks (coai security round): a tag added to the probe is checked everywhere at once. Declared BEFORE
+    /// <see cref="ClockTags"/>: static members initialise in textual order.</summary>
+    public static IReadOnlyList<string> PwshTags { get; } = [PwshKnownFolderTag, PwshEnvProgramFilesTag, PwshMsiTag, PwshSignatureTag];
+
     /// <summary>Every TAGGED line the clock probe prints — read by tag, never counted as a position (an empty profile must not
     /// let a tag shift into its place).</summary>
-    public static IReadOnlyList<string> ClockTags { get; } =
-        [TimeServiceStatusTag, TimeServiceStartTypeTag, PwshKnownFolderTag, PwshEnvProgramFilesTag, PwshMsiTag, PwshSignatureTag];
+    public static IReadOnlyList<string> ClockTags { get; } = [TimeServiceStatusTag, TimeServiceStartTypeTag, .. PwshTags];
+
+    /// <summary>
+    /// Where the MSI installs PowerShell 7, relative to Program Files, in Windows' own spelling — the ONE definition (coai security
+    /// round) the probe's look, <see cref="PwshEngine.MsiFile"/> and the resolver's folder (<c>WindowsSystemDrive.Programs</c>)
+    /// are all built from, so the file verified, the file judged and the file started cannot name different places.
+    /// </summary>
+    public const string PwshMsiFolder = "PowerShell\\7";
 
     /// <summary>The module path pinned to <c>$PSHOME\Modules</c> by an assignment — no command to autoload — so every cmdlet an
     /// interop script uses comes from the administrator-only module folder, never from a user's Documents (the coordinator,
@@ -67,7 +78,7 @@ public static class HealthCommands
     /// </summary>
     public const string PwshLook =
         "$f = ''; $e = ''; $m = ''; $g = ''; try { $f = [string][Environment]::GetFolderPath('ProgramFiles'); $e = [string]$env:ProgramFiles; "
-        + "$i = Get-Item -LiteralPath ($f + '\\PowerShell\\7\\pwsh.exe') -Force -ErrorAction SilentlyContinue; "
+        + "$i = Get-Item -LiteralPath ($f + '\\" + PwshMsiFolder + "\\" + Pwsh + "') -Force -ErrorAction SilentlyContinue; "
         + "if ($null -eq $i) { $m = 'absent' } elseif (-not [string]::IsNullOrEmpty($i.LinkType)) { $m = 'link' } elseif ($i -isnot [IO.FileInfo]) { $m = 'directory' } elseif ($i.Length -le 0) { $m = 'empty' } "
         + "else { $m = 'file'; $a = Get-AuthenticodeSignature -LiteralPath $i.FullName; if ($a.Status -eq 'Valid' -and $a.SignerCertificate.Subject -like 'CN=Microsoft Corporation,*') { $g = 'signed' } else { $g = 'unsigned:' + $a.Status + '|' + $a.SignerCertificate.Subject } } } "
         + "catch { $m = 'error:' + $_.Exception.GetType().Name }";

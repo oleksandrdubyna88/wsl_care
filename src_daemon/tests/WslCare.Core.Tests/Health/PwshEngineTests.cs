@@ -61,6 +61,20 @@ public sealed class PwshEngineTests
         engine.Reason.Should().Contain("verified").And.Contain("CN=Microsoft Corporation").And.Contain(PwshEngine.MsiFile);
     }
 
+    /// <summary>Coai security round: the file the probe VERIFIES, the file the judgement NAMES and the folder the resolver STARTS
+    /// from are one relative path under Program Files — <see cref="HealthCommands.PwshMsiFolder"/> — so they cannot diverge.</summary>
+    [Fact]
+    public void The_probe_the_judgement_and_the_resolver_name_the_same_msi_path()
+    {
+        const string relative = HealthCommands.PwshMsiFolder + @"\" + HealthCommands.Pwsh;
+
+        HealthCommands.ClockScript.Should().Contain("($f + '\\" + relative + "')", "the probe looks at <known folder>\\<relative>");
+        PwshEngine.MsiFile.Should().Be(PwshEngine.KnownFolder + @"\" + relative, "the judgement names the same file");
+        (WindowsSystemDrive.Programs[HealthCommands.Pwsh] + "/" + HealthCommands.Pwsh).Should()
+            .Be((PwshEngine.KnownFolder[3..] + @"\" + relative).Replace('\\', '/'), "the resolver starts the same file on the drive");
+        WindowsSystemDrive.Programs[HealthCommands.Pwsh].Should().Be("Program Files/PowerShell/7", "the MSI's real folder, today");
+    }
+
     /// <summary>Final code round (finding 11): Windows compares folder names without case, so the known folder spelled
     /// <c>c:\program files</c> is the same folder the daemon maps — a trailing separator or another folder still is not.</summary>
     [Fact]

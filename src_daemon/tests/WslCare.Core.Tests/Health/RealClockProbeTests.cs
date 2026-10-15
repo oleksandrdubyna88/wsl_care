@@ -31,7 +31,8 @@ public sealed class RealClockProbeTests
         var exited = outcome.Should().BeOfType<CommandOutcome.Exited>("{0}", outcome).Which;
         exited.ExitCode.Should().Be(0, exited.Stderr.Text);
         var lines = exited.Stdout.Text.Split('\n').Select(l => l.Trim()).ToList();
-        foreach (var tag in new[] { HealthCommands.PwshKnownFolderTag, HealthCommands.PwshEnvProgramFilesTag, HealthCommands.PwshMsiTag, HealthCommands.PwshSignatureTag })
+        HealthCommands.PwshTags.Should().NotBeEmpty("the probe's pwsh block, the one list: a tag added there is checked here too");
+        foreach (var tag in HealthCommands.PwshTags)
         {
             lines.Count(l => l.StartsWith(tag, StringComparison.Ordinal)).Should().Be(1, "{0} is printed exactly once", tag);
         }
