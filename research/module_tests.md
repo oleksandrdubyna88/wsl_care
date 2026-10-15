@@ -4574,3 +4574,21 @@ and build-flags checks. `ci · extension` (unconditional, `windows-latest` and `
 the linter and `npm test` — the extension's unit, structural, bundle and client-scenario tests. The live smoke on the owner's machine runs at every release (E4 onwards) — `install.sh` for real
 and `POST_DEPLOY.md` against the installation — and so does the live contract with `WSL_CARE_REQUIRE_LIVE=1`
 (§ *The live contract*).
+
+### What each E19.S2b guarantee rests on (2026-10-15)
+
+The Windows `status` read of the bundled exe ([PLAN_disk_hygiene_windows_E19.md](../todo/PLAN_disk_hygiene_windows_E19.md) decision 12). RED first: the
+tests were written against stubs (`status()` answering a placeholder failure, `setWindowsStatus` writing nothing, the poller ignoring its `windows` source,
+the fake refusing `status --json`), so each failed for its real symptom, then the implementation made them green.
+
+| Guarantee | Held by | RED, and teeth |
+|---|---|---|
+| the Windows status is read through the bundled exe (absolute path, `status --json`, its own ceiling) and parsed exactly like the distro's, raw body kept | `windowsCareClient.test.ts` (*the windows status is read through the bundled exe and parsed like the distro's*; the Test-mode fake variant) | `{"kind":"unknownFailure","messages":["STUB"],"verb":"status"}` instead of an answered outcome |
+| every ending (timeout, exit 2 / 70 / other, unparseable, newer schema, refused start, closed runner, off Windows, non-local extension) is an outcome of a failure kind the client already has — nothing starts off Windows | `windowsCareClient.test.ts` (*a windows status that fails reads as the failure kinds…*, *off Windows, or for an extension not on a local disk…*) | `{kind:'unknownFailure',…} !== {kind:'timedOut', timeoutMs:12000}` against the stub |
+| the same tick reads the pair, the distro's first, and only where the client can start the exe; an unfocused window reads neither | `poller.test.ts` (*the windows slot is read on the same tick and only on windows*) | `[ 'status' ]` against the expected `[ 'status', 'windowsStatus' ]` |
+| a Windows failure — a returned one or a throw — leaves the distro outcome in its slot | `poller.test.ts` (*a windows status failure leaves the distro outcome untouched*) | the Windows slot empty: `undefined !== 'status'` |
+| WSL stopped still shows the Windows reading | `poller.test.ts` (*wsl stopped still reads the windows status*) | `undefined !== 'answered'` (the slot never filled) |
+| a panel Refresh reads the Windows status, the cleanup follower's `askStatus` does not; the slot is its own and survives a distribution switch | `poller.test.ts` (the last three tests of the block) | `setWindowsStatus` is not a member of the store (compile-level), then the stub's empty slot |
+| the client names no other verb than `status` and `--version`: it takes only `VERBS.status` / `VERBS.version`, spells no daemon word, imports no run-read table | `bundledExeStructure.test.ts` (*the client names no other verb…*, with a planted companion for each of the three scans) | `exactly status and version`: `[ 'version' ]` against `[ 'status', 'version' ]` before the client took `VERBS.status` |
+| the new ceiling sits strictly above the Windows status's worst case (the distro status's expression) at the defaults, at every setting's minimum and at every published limit's maximum; the two settings never follow each other | `ceilings.test.ts` (`windowsStatus` in the three loops, the minimum list, *E19.S2b: the bundled exe's status waits one MCP CPU window…*), `numbers.test.ts` (`package.json` equals the table) | compile-level (`'windowsStatus'` not a `HostCall`, `windowsStatusSeconds` not a setting) |
+| the strict fake answers `status --json` of EXACTLY the bundled path from the distro golden with `side: "windows"` (no Windows golden exists), scripts a failing exit, and still refuses every other argv | `fakeWsl.test.ts` (*E19.S2b: the fake answers…*; *the fake refuses any other argv…* — its old probe `status --json` is now an answered shape, so it probes `preview`, `doctor`, `status`, `status --json --detail`, `--version x`, `runs`) | `98 !== 0` — the fake's refusal of the unknown argv |

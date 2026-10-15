@@ -78,5 +78,5 @@ export function windowsClient(runner: (r: ProcessRequest) => Promise<ProcessResu
   const localAppData = options.localAppData === undefined ? LOCAL_APP_DATA : options.localAppData;
   const digest = options.digest ?? STAGED_DIGEST;
 
-  return new WindowsCareClient({ runner, platform: options.platform ?? 'win32', extension: EXTENSION, timeoutMs: () => 20_000, digestOf: () => Promise.resolve(digest), ...(localAppData === null ? {} : { localAppData }) });
+  return new WindowsCareClient({ runner, platform: options.platform ?? 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, digestOf: () => Promise.resolve(digest), ...(localAppData === null ? {} : { localAppData }) });
 }

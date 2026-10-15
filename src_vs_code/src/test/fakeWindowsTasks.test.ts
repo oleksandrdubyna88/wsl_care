@@ -28,7 +28,7 @@ async function within(input: ScenarioInput, body: (world: FakeWorld) => Promise<
 }
 
 function clientOn(world: FakeWorld): WindowsCareClient {
-  return new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
+  return new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
 }
 
 function exitOf(result: ProcessResult): { code: number; stdout: string; stderr: string } {

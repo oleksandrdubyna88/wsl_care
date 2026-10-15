@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { VerbOutcome } from '../client/outcome';
+import { WINDOWS_SIDE } from '../client/windowsStatus';
 import type { Verb } from '../client/verbs';
 import type { RunOptions } from '../client/WslCareClient';
 import { DEFAULT_REFRESH_SECONDS, effectiveSeconds, MIN_REFRESH_SECONDS, Poller, type Timers } from '../poll/poller';
@@ -229,4 +230,116 @@ test('M1 measured: status runs per window-day at the default 120 s and at the 30
   assert.equal(statusRunsOver(8, 120), 241, 'an 8-hour focused working day');
   assert.equal(statusRunsOver(24, 30), 2881, 'the floor, focused all day');
   assert.equal(statusRunsOver(0, 120), 1, 'focused for an instant: the one refresh on focus');
+});
+
+// ---- E19.S2b (todo/PLAN_disk_hygiene_windows_E19.md decision 12): the Windows `status` slot, read on the same tick ----
+
+const WINDOWS_DISTRO = WINDOWS_SIDE;
+
+/** The Windows reading as the bundled client hands it: the distro's golden with the side named, the way the fake answers it. */
+function windowsAnswer(): VerbOutcome {
+  return answered('status', { ...headBody('status'), side: 'windows' }, WINDOWS_DISTRO);
+}
+
+interface WindowsWorld extends World {
+  /** Every ask in the order it was made: `status` (the distro's) and `windowsStatus`. */
+  readonly order: string[];
+  usable: boolean;
+}
+
+function windowsWorld(distro: (verb: Verb) => VerbOutcome = okAnswer, windows: () => Promise<VerbOutcome> = () => Promise.resolve(windowsAnswer())): WindowsWorld {
+  const clock = new ManualClock();
+  const store = new OutcomeStore();
+  const calls: { verb: Verb; options: RunOptions }[] = [];
+  const order: string[] = [];
+  const w: { focused: boolean; seconds: unknown; usable: boolean } = { focused: true, seconds: undefined, usable: true };
+  const poller = new Poller({
+    run: (verb, options = {}) => { calls.push({ verb, options }); order.push(verb); return Promise.resolve(distro(verb)); },
+    store,
+    focused: () => w.focused,
+    refreshSeconds: () => w.seconds,
+    timers: clock,
+    target: () => '',
+    windows: { usable: () => w.usable, status: () => { order.push('windowsStatus'); return windows(); } },
+  });
+  return Object.assign(w, { poller, store, clock, calls, order });
+}
+
+test('the windows slot is read on the same tick and only on windows', async () => {
+  const w = windowsWorld();
+  w.poller.start();
+  await w.poller.settled();
+  assert.deepEqual(w.order, ['status', 'windowsStatus'], 'one tick asks both, the distro\'s first');
+  assert.equal(w.store.snapshot().status?.kind, 'answered');
+  assert.equal(w.store.snapshot().windowsStatus?.kind, 'answered');
+  w.clock.advance(DEFAULT_REFRESH_SECONDS * 1000 * 2);
+  await w.poller.settled();
+  assert.deepEqual(w.order, ['status', 'windowsStatus', 'status', 'windowsStatus', 'status', 'windowsStatus'], 'every interval tick asks the pair');
+
+  const notWindows = windowsWorld();
+  notWindows.usable = false;
+  notWindows.poller.start();
+  notWindows.clock.advance(DEFAULT_REFRESH_SECONDS * 1000);
+  await notWindows.poller.settled();
+  assert.deepEqual(notWindows.order, ['status', 'status'], 'a host that cannot run the bundled exe asks the distro alone');
+  assert.equal(notWindows.store.snapshot().windowsStatus, undefined, 'and the slot stays empty');
+
+  const unfocused = windowsWorld();
+  unfocused.focused = false;
+  await unfocused.poller.tick();
+  assert.deepEqual(unfocused.order, [], 'an unfocused window reads neither');
+});
+
+test('a windows status failure leaves the distro outcome untouched', async () => {
+  const failure = failed('status', { kind: 'timedOut', timeoutMs: 12_000 });
+  for (const windows of [() => Promise.resolve(failure), () => Promise.reject(new Error('the bundled client threw'))]) {
+    const w = windowsWorld(okAnswer, windows);
+    w.poller.start();
+    await w.poller.settled();
+    assert.equal(w.store.snapshot().status?.kind, 'answered', 'the distro\'s answer stands');
+    assert.equal(w.store.snapshot().windowsStatus?.kind === 'answered', false, 'the Windows slot holds the failure');
+    assert.equal(w.store.snapshot().windowsStatus?.verb, 'status');
+  }
+});
+
+test('wsl stopped still reads the windows status', async () => {
+  const w = windowsWorld((verb) => failed(verb, { kind: 'stopped', distro: 'Ubuntu' }));
+  w.poller.start();
+  await w.poller.settled();
+  assert.equal(w.store.snapshot().status?.kind, 'stopped');
+  assert.equal(w.store.snapshot().windowsStatus?.kind, 'answered', 'the Windows reading shows although the distribution is stopped');
+  assert.deepEqual(w.order, ['status', 'windowsStatus']);
+});
+
+test('a panel refresh reads the windows status beside the distro\'s; the cleanup follower\'s status question does not', async () => {
+  const w = windowsWorld();
+  await w.poller.refreshPanel();
+  await w.poller.settled();
+  assert.deepEqual(w.order.filter((a) => a !== 'preview' && a !== 'doctor'), ['status', 'windowsStatus']);
+  assert.equal(w.store.snapshot().windowsStatus?.kind, 'answered');
+  const follower = windowsWorld();
+  await follower.poller.askStatus();
+  assert.deepEqual(follower.order, ['status'], 'a follower asks every few seconds; the Windows read is the poll\'s');
+});
+
+test('the windows reading is not about the distribution: a changed target keeps it while the distro\'s outcomes go', async () => {
+  const store = new OutcomeStore();
+  store.set('status', okAnswer('status'));
+  store.setWindowsStatus(windowsAnswer());
+  store.clear();
+  assert.equal(store.snapshot().status, undefined);
+  assert.equal(store.snapshot().windowsStatus?.kind, 'answered');
+});
+
+test('the windows slot is its own: a distro status never lands in it, and a windows read never lands in the distro\'s', () => {
+  const store = new OutcomeStore();
+  const seen: unknown[] = [];
+  store.onChange((snapshot) => seen.push(snapshot.windowsStatus));
+  store.set('status', okAnswer('status'));
+  assert.equal(store.snapshot().windowsStatus, undefined);
+  store.setWindowsStatus(windowsAnswer());
+  const [distro, windows] = [store.snapshot().status, store.snapshot().windowsStatus];
+  assert.equal(distro?.kind === 'answered' && distro.distro, 'Ubuntu');
+  assert.equal(windows?.kind === 'answered' && windows.distro, WINDOWS_DISTRO);
+  assert.equal(seen.length, 2, 'listeners hear the Windows slot change too');
 });

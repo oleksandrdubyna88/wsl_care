@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { buildVersion } from './buildStamp';
 import { WslCareClient, type RunOptions } from './client/WslCareClient';
 import { WindowsCareClient } from './client/WindowsCareClient';
+import { ceilingMs } from './client/ceilings';
 import { BUNDLED_DAEMON } from './client/handshake';
 import { BundledHost } from './bundled/bundledHost';
 import { installDaemon } from './install/installDaemon';
@@ -146,14 +147,8 @@ function build(context: vscode.ExtensionContext): Parts {
   const cleanup = new CleanupController({ client, runner, now: () => performance.now(), sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }), numbers });
   const store = new OutcomeStore();
   const focus: { override: boolean | undefined } = { override: undefined };
-  const poller = new Poller({
-    run: (verb, options) => client.run(verb, options),
-    store,
-    focused: () => focus.override ?? vscode.window.state.focused,
-    refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
-    timers: REAL_TIMERS,
-    target: () => distroSettingText(distroSetting()),
-  });
+  const windowsClient = windowsClientOf(context, runner);
+  const poller = pollerOf(client, windowsClient, store, focus);
 
   const cleanRecorder = newCleanRecorder();
   // The extension's log (review C11): a fault at a button's detached edge is written here as well as told.
@@ -174,7 +169,7 @@ function build(context: vscode.ExtensionContext): Parts {
 
   return {
     testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
-    bundled: bundledHostOf(context, runner),
+    bundled: new BundledHost({ version: () => windowsClient.version(), pin: BUNDLED_DAEMON }),
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
 }
@@ -189,10 +184,31 @@ function bundledPanelActions(bundled: BundledHost): Pick<PanelActions, 'windowsD
   return { windowsDaemon: () => bundled.view(), onWindowsDaemonChange: (listener) => bundled.onChange(listener) };
 }
 
-function bundledHostOf(context: vscode.ExtensionContext, runner: ReturnType<typeof clientRunner>): BundledHost {
-  const client = new WindowsCareClient({ runner, platform: process.platform, extension: { scheme: context.extensionUri.scheme, fsPath: context.extensionUri.fsPath }, timeoutMs: () => numbers().versionSeconds * 1000 });
+/** The poller: the distribution's client, and — E19.S2b — the bundled Windows daemon's `status` on the same tick, only where its client can start the exe. */
+function pollerOf(client: WslCareClient, windowsClient: WindowsCareClient, store: OutcomeStore, focus: { readonly override: boolean | undefined }): Poller {
+  return new Poller({
+    run: (verb, options) => client.run(verb, options),
+    store,
+    focused: () => focus.override ?? vscode.window.state.focused,
+    refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
+    timers: REAL_TIMERS,
+    target: () => distroSettingText(distroSetting()),
+    windows: { usable: () => typeof windowsClient.exe() === 'string', status: () => windowsClient.status() },
+  });
+}
 
-  return new BundledHost({ version: () => client.version(), pin: BUNDLED_DAEMON });
+/**
+ * ONE client of the bundled exe, shared by the panel's Windows row (`--version`) and the poller (`status`, E19.S2b); the `status` ceiling is
+ * the `windowsStatus` call of `client/ceilings.ts`, read from the settings at every call.
+ */
+function windowsClientOf(context: vscode.ExtensionContext, runner: ReturnType<typeof clientRunner>): WindowsCareClient {
+  return new WindowsCareClient({
+    runner,
+    platform: process.platform,
+    extension: { scheme: context.extensionUri.scheme, fsPath: context.extensionUri.fsPath },
+    timeoutMs: () => numbers().versionSeconds * 1000,
+    statusTimeoutMs: () => ceilingMs(numbers(), { call: 'windowsStatus' }),
+  });
 }
 
 /**

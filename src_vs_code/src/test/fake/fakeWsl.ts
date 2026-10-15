@@ -68,11 +68,13 @@ export interface FakeScenario {
   readonly log?: string;
   /**
    * E7.S5a: the bundled Windows daemon's absolute path (`<extension>\bin\wsl-care.exe`) — started as EXACTLY this file, the fake
-   * answers `--version` with {@link bundledVersion} and refuses any other argv; any other non-`wsl.exe` file stays refused.
+   * answers `--version` with {@link bundledVersion} and (E19.S2b) `status --json`, and refuses any other argv; any other non-`wsl.exe` file stays refused.
    */
   readonly bundledExe?: string;
   /** What the bundled exe's `--version` prints. */
   readonly bundledVersion?: string;
+  /** E19.S2b: the bundled exe's `status --json` exits with this code and stderr instead of answering. */
+  readonly bundledStatusExit?: { readonly code: number; readonly stderr: string };
   /**
    * WR-E1: the STAGED copy's absolute path (`<stagingRoot><digest>wsl-care.exe`) — started as EXACTLY this file; the fake answers
    * `tasks render <watch|archive> --json` and the run reads for it and refuses any other argv. Another path stays refused.
@@ -433,6 +435,9 @@ export function windowsReply(scenario: FakeScenario, which: WindowsExe, argv: re
   if (which === 'bundled' && sameTail(argv, ['--version'])) {
     return { code: 0, stdout: Buffer.from(`${scenario.bundledVersion ?? '0.0.0+fake'}\r\n`, 'utf8') };
   }
+  if (which === 'bundled' && sameTail(argv, ['status', '--json'])) {
+    return bundledStatusReply(scenario);
+  }
 
   return tasksReply(scenario, which, argv) ?? windowsReadReply(scenario, argv) ?? { code: FAKE_EXIT.refused, stderr: `fake wsl-care.exe (${which}): not an argv the extension sends it: ${JSON.stringify(argv)}\n` };
 }
@@ -516,6 +521,19 @@ function windowsExeOf(scenario: FakeScenario, file: string | undefined): Windows
   }
 
   return scenario.stagedExe === file ? 'staged' : undefined;
+}
+
+/**
+ * E19.S2b: the bundled exe's `status --json`. No Windows golden exists (the daemon's scenario harness writes the `wsl` side only), so
+ * the answer is the distro's `status.json` golden with the one field that names the side — `side: "windows"` — set the way the Windows
+ * binary reports it; `bundledStatusExit` scripts a failing exit instead.
+ */
+function bundledStatusReply(scenario: FakeScenario): Reply {
+  if (scenario.bundledStatusExit !== undefined) {
+    return { code: scenario.bundledStatusExit.code, stderr: scenario.bundledStatusExit.stderr };
+  }
+
+  return { code: 0, stdout: Buffer.from(JSON.stringify({ ...readJson(path.join(scenario.answers, 'status.json')), side: 'windows' }), 'utf8') };
 }
 
 /** Whether the runner started this fake as an absolute `…\System32\wsl.exe` (the client's one launcher). */

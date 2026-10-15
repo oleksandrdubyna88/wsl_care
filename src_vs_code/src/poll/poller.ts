@@ -17,6 +17,11 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
  *   that call; the window is the ~50 ms between two `wsl.exe` starts (measured: each answers in 46–59 ms);
  * - the one call that MAY start it is "Start WSL and check": `startIfStopped` on `status`, a call the user asked for.
  *
+ * E19.S2b: on a Windows host the same tick (and a panel refresh) also reads the BUNDLED Windows daemon's `status` into its own slot
+ * (`OutcomeStore.windowsStatus`) — the 5-minute disk reading the bar needs. The two reads are independent: each is stored on its own
+ * answer, a failure of one never touches the other's slot (WSL stopped still shows the Windows reading), the Windows read is no
+ * business of the distribution target (a switch keeps it), and a window that is not focused reads neither.
+ *
  * Each `status` run opens one run-log file in the daemon (M1); the numbers per window-day are measured by
  * `poller.test.ts` over this very class and recorded in research/2026-10-04_extension_poll_churn.md.
  *
@@ -46,6 +51,17 @@ export interface PollerOptions {
   readonly timers: Timers;
   /** What the daemon is asked about — the `wslCare.distro` setting as the client reads it (empty = WSL's default). */
   readonly target: () => string;
+  /**
+   * The Windows `status` read (E19.S2b). `usable` is the client's own answer to "can the bundled exe run here" — off Windows, or for an
+   * extension not on a local disk, nothing is asked. Absent: the poller reads the distribution alone.
+   */
+  readonly windows?: WindowsStatusSource;
+}
+
+/** What the poller needs of the Windows `status` client. */
+export interface WindowsStatusSource {
+  readonly usable: () => boolean;
+  readonly status: () => Promise<VerbOutcome>;
 }
 
 /** The interval in whole seconds: the setting when it is a number, between the floor and one day; the default otherwise. */
@@ -120,7 +136,7 @@ export class Poller {
       return Promise.resolve();
     }
 
-    return this.track(this.ask(this.begin(), 'status').then(() => undefined));
+    return this.track(Promise.all([this.ask(this.begin(), 'status'), this.askWindows()]).then(() => undefined));
   }
 
   /**
@@ -152,7 +168,9 @@ export class Poller {
     const round = this.begin();
     this.options.store.setChecking(true);
     try {
-      const status = await this.ask(round, 'status', options);
+      const asking = this.ask(round, 'status', options);
+      void this.track(this.askWindows());
+      const status = await asking;
       await this.afterStatus(round, status);
     } finally {
       this.settle(round, () => this.options.store.setChecking(false));
@@ -179,6 +197,19 @@ export class Poller {
     this.settle(round, () => this.options.store.set(verb, outcome));
 
     return outcome;
+  }
+
+  /**
+   * The Windows `status` into its own slot — when the host can run the bundled exe. Never rejects and never reads the distribution's
+   * outcome: whatever it ends in (a thrown client included) is stored as the Windows reading and nothing else.
+   */
+  private async askWindows(): Promise<void> {
+    const windows = this.options.windows;
+    if (windows === undefined || !windows.usable()) {
+      return;
+    }
+    const outcome = await windows.status().catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb: 'status' }));
+    this.options.store.setWindowsStatus(outcome);
   }
 
   /** Starts a round: its number, after `observeTarget`. */

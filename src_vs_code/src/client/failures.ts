@@ -68,6 +68,14 @@ function byCode(code: number, messages: readonly string[]): Failure {
   }
 }
 
+/**
+ * What a non-zero exit of a daemon started DIRECTLY (not behind `wsl.exe`: the bundled Windows exe, E19.S2b) means — the daemon's own
+ * codes read exactly as `classifyExit` reads them, from its `wsl-care:` lines; none of the `wsl.exe` signatures can apply.
+ */
+export function classifyDirectExit(code: number, stderr: Buffer): Failure {
+  return byCode(code, daemonMessages(decodeWslText(stderr)));
+}
+
 /** What a non-zero exit of a daemon call means. */
 export function classifyExit(code: number, stdout: Buffer, stderr: Buffer, distro: string, daemonPath: string): Failure {
   if (code === WSL_EXE_FAILED) {
