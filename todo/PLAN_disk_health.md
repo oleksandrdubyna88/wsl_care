@@ -1,8 +1,8 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
 > Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
-> and E15.S6 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); E15.S7 being designed on its branch `feat/wc-e15s7-redaction` (*E15.S7 design* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> and E15.S6 onwards (E15.S7 aside) not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 
 > built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
 > not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
@@ -1527,3 +1527,336 @@ of the real folder went red. After the change: Windows Core 2829 (0 failed, 89 s
   the started file to the verified one but its path (administrator-only, and the window is seconds); `powershell.exe` (the
   probe) is still PATH-first; pwsh 7 reads the CurrentUser `powershell.config.json` and honours `DOTNET_STARTUP_HOOKS` /
   `CORECLR_PROFILER` — the same trust boundary as the user's own session, since interop runs every Windows program as that user.
+
+## E15.S7 design — the redaction rule widened (2026-10-15, branch `feat/wc-e15s7-redaction`)
+
+**Goal.** One pure function in `WslCare.Core` judges every command line the product shows or stores, on both binaries
+(§3.1's spine: two binaries, ONE rule set). Today's rule (`Collectors/Procfs/ProcessFiles.cs:133-151`) redacts only
+`--name=value` and `--name value` where the name holds one of eight words (`:100`). Everything else is shown as it is, cut to
+200 characters (`:126-130`) — `research/module_tests.md:4489-4491` says so in the "what it does not prove" list. The owner saw a
+creds config key in the sidebar (#87, this plan §1, the last table row). This story closes that gap on the daemon's side, and
+puts `program` + `argumentsShown` on the wire so the extension's half (E18.W1b, `:375`) can hide command lines by default.
+Read-only; nothing is acted on; no wire field is removed.
+
+### 1. The threat model, and the inventory of every road (mapped 2026-10-15 on `a432e970`)
+
+**What leaks today.** Any secret that is not the value of a flag whose NAME holds a secret word. Measured shapes:
+
+| Shape | Example (invented values) | Today |
+|---|---|---|
+| a secret in a POSITIONAL argument | `creds config cfgk_7Q…` (the creds CLI takes its config key positionally — `dew_flow_creds_for_devs/src_vs_code/src/configSnippetBodies.ts:72-74`; the key is `cfgk_` + 43 base64url characters, `configKey.ts:46-54`) | shown whole |
+| `NAME=value` with a secret word, no leading `-` | `env GITHUB_TOKEN=ghp_… gh pr list`, `docker run -e AWS_SECRET_ACCESS_KEY=…` | shown: `IsSecretAssignment` needs `-` first (`ProcessFiles.cs:144`) |
+| a secret inside a structured positional | VS Code's `/TelemetrySession:{"CollectorApiKey":"…"}` — the fixture had to be redacted BY HAND (`src_daemon/tests/fixtures/procfs/ubuntu-2026-10-02/SOURCE.txt:24-27`) | shown whole |
+| a credential inside a URL | `DATABASE_URL=postgres://app:Pa55@db/x`, `git clone https://user:ghp_…@github.com/…` | shown whole |
+| a creds-shaped token after an innocent flag | `curl -H "Authorization: Bearer eyJ…"`, `gh api -H "Authorization: token ghp_…"` | shown whole |
+| an innocent name with a secret value | `-u user:pass` (`curl`), `sshpass -p …`, `mysql -pSecret` | shown whole |
+
+**The inventory — every road by which a process command line reaches stored or displayed output.** Every road starts at ONE
+place: `ProcessCollector.Entry` builds `ProcessEntry.CommandLine` from the raw argv through `CommandLineText.Shown`
+(`Collectors/ProcessCollector.cs:152`). There is no second redaction and no second display text.
+
+| # | Road | Where it is written / shown | Rule applied |
+|---|---|---|---|
+| R1 | `status --json` → `vm.processes.top[].commandLine` and `vm.processes.mntWalkers[].commandLine` | `Status/StatusReports.cs:84-96`, `Status/StatusReport.cs:155-171`; the extension's two process tables (`src_vs_code/src/panel/rowRenderers.ts:36-43`, rows `holders.processes` / `holders.mnt`, `fieldMap.ts:132`, `:135`); the human `status` text prints name, pid and GiB only (`Cli/Commands/StatusCommand.cs:242-245`) | `Shown` |
+| R2 | `status --json` → `mcpServers.instances[].owner.commandLine` (the agent session that owns an MCP server) | `Mcp/McpInstances.cs:65-68` copies `process.CommandLine`; `Mcp/McpSample.cs:33-34`; `Status/McpServersReport.cs:74-81`; every full run's embedded sample (`McpServersReport.cs:6-8`) | `Shown` (the same string) |
+| R3 | action previews and run details: A11's items carry `"<family>, <user>, N h old: <commandLine>"` as the item's note (`Actions/Suspects/SuspectTermination.cs:142-147`, `ActionItem` `Actions/ICleanupAction.cs:98`); A3's build-server list and the idle gate's "busy builds" reasons copy `p.CommandLine` (`Actions/BuildServers/BuildServerShutdown.cs:167`, `:182`; `Actions/Engine/IdleGate.cs:80`) | `act --preview --json`, the run detail `{state}/runs/<day>/<runId>.json` (`Records/RunDetailStore.cs:30-34` — a file other accounts can read, `ProcessFiles.cs:90-91`), `runs show`, `logs --detail`, the panel's modal | `Shown` (copied) |
+| R4 | the golden `contracts/golden/head/status.json` — 52 `commandLine` strings in a PUBLIC repository, regenerated from the captured fixture (`research/module_tests.md:888-925`) | git | `Shown` + the by-hand fixture redactions + `FixtureIdentity` |
+| R5 | the Windows binary: `Win32ProcessTable.CommandLine` reads ONE process's line through a query-only handle (`Mcp/Win32ProcessTable.cs:82-100`) | read ONLY by the archive's in-use check (`Archive/InUseWindows.cs:79-87`, `:121-129`), which matches `Contains(id)` and emits the FIXED sentence `Liveness.OnItsCommandLine(pid)` (`Archive/Liveness.cs:55-57`); the Windows MCP owners carry exe names only (`Mcp/WindowsMcpOwners.cs:80-82`, `Status/WindowsMcpServersReport.cs:106-108`); a table that reads nothing answers "reads no command line" (`Mcp/WindowsMcp.cs:24-26`) | none needed TODAY: no Windows command line is on any wire. **E15.S6's `status.cpuSessions[].commandShown` (`:338`) is the first one** — the Windows binary must then hold the same rule, which is why S7 comes before S6 in §5 (`:383`) |
+| R6 | the distro archive's in-use scan joins a Claude Code line RAW in memory (`Archive/InUse.cs:148-151`) | matched (`Naming`, `:119-120`), never written | not a leak; stays |
+| R7 | raw-argv consumers that are NOT display: families (`ProcessCollector.cs:153`, `Collectors/ProcessFamilies.cs:11-17`), `Programs` / `Script` (`:158-159`), `IsUnderMnt` (`:174-176`), interop relays (`Collectors/Procfs/InteropRelays.cs:53-54`, `:66`), the never-list over the daemon's OWN argv | in memory | must NOT change — the rule is for display text only |
+| R8 | consumers of the SHOWN line as matching input: `AgentOrphans.Script` takes the word after the program when it starts with `/` (`Actions/Suspects/AgentOrphans.cs:176-177`); `IdleGate.IsBuild` and `BuildServerShutdown.IsDotnetBuild` split it on spaces (`IdleGate.cs:83-85`, `BuildServerShutdown.cs:169-173`); `BrowserAndHttpCaches.cs:248` and `EditorServerCleanup.cs:161` ask `Contains(<distro or folder text>)` | in memory | the widened rule must keep paths and program words intact, or these regress — a RED test holds each |
+
+Not roads: `/proc/[pid]/environ` is never read; `docker inspect`'s template leaves a container's environment and command inside
+the docker CLI (`Docker/DockerCommands.cs:31-35`); the daemon's logs carry its OWN argv through `CommandLine.Printable`
+(`Cli/Program.cs:173`), never another process's.
+
+**The one false positive already in the golden**: `--max-thinking-tokens <redacted>` (`contracts/golden/head/status.json:278`,
+`:305`) — "token" inside a count flag. Kept: the rule is deny by default, and a number lost is cheaper than a token shown.
+
+### 2. The rule — ONE pure function, both binaries
+
+New unit `WslCare.Core/Processes/Redaction/` (three files, each under 400 lines; no package, no I/O, no configuration read
+inside — the limits arrive as arguments, as `HostRules` takes `EffectiveConfig`):
+
+- `CommandLineRedaction.cs` — `Redact(IReadOnlyList<string> argv, RedactionLimits limits) → IReadOnlyList<string>` and
+  `Shown(argv, limits) → string` (joined, cut on a rune boundary, see §3). `CommandLineText.Redact` / `.Shown`
+  (`ProcessFiles.cs:125-134`) become one-line delegations with the limits from `Tuning.Current`, so the existing tests and every
+  caller of R1–R3 change nothing. `RedactionLimits(int SecretMinChars, int MaxJudgedArgChars, int ShownChars)` is a record.
+- `SecretShapes.cs` — the closed lists and the entropy test (§2.3, §2.4), `[GeneratedRegex]` as `ProcessFamilies.cs:65-75` does,
+  every pattern anchored and without nested quantifiers; a match runs under the `patterns.matchTimeoutMilliseconds` ceiling the
+  way `TextRule.Matching` does (`Config/KeyRules.cs:39-42`).
+- `ShownArguments.cs` — `program` and `argumentsShown` (§2.5).
+- **The Windows entry point**: `Processes/WindowsCommandLine.Split(string line) → IReadOnlyList<string>` — the inverse of
+  `WindowsCommandLine.Of` (`Processes/WindowsCommandLine.cs:11-43`) with `CommandLineToArgvW`'s rules (a bare argv[0] up to the
+  first space or its closing quote; `2n` backslashes before a quote → `n` backslashes; `2n+1` → `n` and a literal quote; a quote
+  toggles the quoted state). A property test holds `Split(Of(exe, args)) == [exe, ..args]` over a generated set (spaces, tabs,
+  quotes, trailing backslashes, empty arguments). Then the Windows side calls the SAME `CommandLineRedaction.Shown(Split(line))`.
+  E15.S6 is its first wire consumer; E9.S5's matcher (R5) keeps matching the raw line, it shows nothing.
+
+**2.1 Order of judgement, per argument** (`Judge(argument, previous)` — a `switch`, the first arm that fires decides; nothing is
+judged twice and a value is never partly redacted):
+
+1. `previous` is a secret FLAG (today's `IsSecretFlag`, `ProcessFiles.cs:147-148`, over the widened word list) → `<redacted>`.
+2. `previous` is a program-specific value flag (§2.3, the closed table) → `<redacted>`.
+3. The argument is `name=value` (with or without leading dashes; the name is the text before the first `=`, non-empty, of
+   `[A-Za-z0-9_.-]`, so `a==b` and `=x` are not assignments) → the name holds a secret word → `name=<redacted>`; else the VALUE is
+   judged by arms 4–8 as if it were a positional, and a value that fails gives `name=<redacted>` — never `name=abc<redacted>`.
+4. A creds shape anywhere in the text (§2.3) → `<redacted>`.
+5. A URL (`^[a-z][a-z0-9+.-]{1,15}://`) → its userinfo, when present, becomes `<redacted>` whole (`scheme://<redacted>@host/…`
+   — the user name goes too); each query parameter whose name holds a secret word, or is `sig`, `signature`, `key`, `code`,
+   `auth`, `access_token` → `name=<redacted>`; the rest of the URL is shown. (A URL is judged here, before the path arm: it holds
+   `/`.)
+6. A PATH → shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
+   `[A-Za-z0-9 ._~+@%:/\\-]` (so `/TelemetrySession:{"CollectorApiKey":…}` is NOT a path — it holds `{` and `"`). Paths carry
+   programs, scripts and folders the view needs (R8); a secret used as a file NAME is a residual (§9).
+7. A secret WORD followed by a separator (`[:="']`) inside a positional (`CollectorApiKey":"…`, `Authorization: Bearer …`,
+   `Server=…;Password=…` reached through arm 3) → `<redacted>` whole; the extent of a value inside a blob cannot be delimited,
+   so the blob goes.
+8. The high-entropy test (§2.4) → `<redacted>`.
+9. Otherwise shown — after control and format characters are replaced (§3).
+
+**2.2 Secret words** (substring match, case-insensitive, as today — `token`, `secret`, `password`, `passwd`, `apikey`, `api-key`,
+`api_key`, `credential`): widened with `passphrase`, `pwd`, `creds`, `auth` (covers `authorization`, `oauth`), `bearer`, `cookie`,
+`csrf`, `signature`, `private-key` / `private_key`, `access-key` / `access_key`, `client-secret` / `client_secret`; and `key`
+as a BOUNDED word only (`(^|[-_.])key($|[-_.=])`: `--key=`, `API_KEY=`, `-key`; not `--keyboard`, `--keep`). `public-key` is
+not exempted: a public key path redacted is harmless. `session`, `id`, `resume` are NOT secret words — session ids are what the
+archive's G1 and E15.S6 read (`InUseWindows.cs:76-78`, this plan `:261`). The list is CLOSED in code (§4 says why there is no
+key for it).
+
+**2.3 Creds-shaped tokens and program-specific flags** (closed lists in `SecretShapes`, each entry with its source in a
+comment):
+
+| Family | Pattern (anchored to a token boundary `(^|[^A-Za-z0-9])`) |
+|---|---|
+| GitHub | `gh[pousr]_[A-Za-z0-9]{20,}`, `github_pat_[A-Za-z0-9_]{20,}` |
+| OpenAI / Anthropic | `sk-[A-Za-z0-9_-]{16,}` (covers `sk-ant-…`, `sk-proj-…`) |
+| Stripe | `[sp]k_(live\|test)_[A-Za-z0-9]{16,}` |
+| Slack | `xox[abprs]-[A-Za-z0-9-]{10,}` |
+| AWS | `(AKIA\|ASIA)[0-9A-Z]{16}` |
+| Google | `AIza[0-9A-Za-z_-]{35}`, `ya29\.[0-9A-Za-z_-]+` |
+| GitLab / npm / PyPI / DigitalOcean / Hugging Face | `glpat-[A-Za-z0-9_-]{20,}`, `npm_[A-Za-z0-9]{36}`, `pypi-[A-Za-z0-9_-]{20,}`, `dop_v1_[a-f0-9]{64}`, `hf_[A-Za-z0-9]{20,}` |
+| SendGrid | `SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}` |
+| **CredsForDevs config key** | `cfgk_[A-Za-z0-9_-]{20,}` (`configKey.ts:46-54`) — the plan's RED |
+| JWT | `eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*` |
+| PEM / age | `-----BEGIN [A-Z ]*PRIVATE KEY`, `-----BEGIN `, `AGE-SECRET-KEY-1[A-Z0-9]{20,}` |
+| Basic-auth userinfo as a VALUE | `^[^:/@\s]{1,64}:[^\s@]{1,256}$` — only as the value of `-u`, `--user`, `--proxy-user`, `--credentials`, `--basic-auth` (so `systemd --user`, whose next word holds no `:`, is untouched) |
+
+Program-specific value flags (arm 2), keyed by `program` (§2.5): `sshpass` → `-p`; `mysql`, `mysqldump`, `mariadb`,
+`mariadb-dump` → `-p` and a token starting with `-p` longer than 2 characters becomes `-p<redacted>`; `curl`, `wget`, `git`,
+`gh` → `-u` / `--user` only when the next token has the userinfo shape above. Docker's `-p 8080:80` is a port map and is NOT in
+the table.
+
+**2.4 The high-entropy test** (arm 8, on a token that reached it — so no path, no URL, no assignment, no flag):
+
+- length ≥ `processes.secretMinChars` (20);
+- credential alphabet: every character in `[A-Za-z0-9+/=_-]`, a trailing run of `=` stripped first (base64 padding);
+- character classes present among {lowercase, UPPERCASE, digits, symbols `+/=_-`}: **at least three**, OR exactly one letter case
+  plus digits with the digits being **≥ 30 %** of the characters (a 32-hex Twilio / Mailchimp-shaped token has ~40 % digits; a
+  CamelCase identifier such as `sourceGeneratorExecutionPreference` has two classes and no digits);
+- Shannon entropy over the token's characters ≥ **3.5 bits per character** (random base62 of 20 characters measures 4.1–4.3;
+  `ubuntu-24.04-20260101` — three classes — measures about 3.3 and stays).
+
+The false positives, each exempted by shape and each a RED test that it is SHOWN:
+- **paths** — never reach the test (arm 6);
+- **GUIDs** `^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$` — Claude session ids (`--resume=<guid>`, `-r <guid>`); the
+  sidebar's row 11 shows one (`:261`);
+- **digests** — exactly 40 or 64 LOWERCASE hex characters (a git commit, a Docker container id as `containerd-shim … -id <64 hex>`
+  prints it). A 32-hex token is NOT exempt (it is the shape of several vendors' API keys; a VS Code `workspaceStorage/<32 hex>`
+  lives inside a path, which arm 6 keeps);
+- **npm specs** `^@?[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?@[a-z0-9.+-]+$` — `@playwright/mcp@latest`
+  (`status.json:548`);
+- **versions and dates** — digits with `.`, `-`, `:`, `+` only;
+- **base64 blobs** are NOT exempt: `-EncodedCommand <base64>` and a pasted blob are redacted. The daemon's own interop
+  scripts are compared by the never-list over the RAW argv (R7), so nothing of the daemon changes behaviour;
+- **URLs with credentials** are arm 5's: the userinfo goes, the host and path stay (a URL never reaches the entropy test).
+
+**2.5 `program` and `argumentsShown`** (`ShownArguments.Of(argv, redacted, limits)`):
+
+- `program` = `CommandLineText.FileNameOf(argv[0])` (`ProcessFiles.cs:119-120`: the file name, `.exe` stripped) — what
+  `Programs[0]` already is (`ProcessCollector.cs:158`); empty argv → the `/proc/[pid]/status` name, as `Programs` falls back
+  to it. `program` is never redacted: it is a file name (a program named after a secret is a residual, §9).
+- `argumentsShown` = the longest SAFE PREFIX of the arguments after the program, at most `processes.shownSafeArgs` (2) of them,
+  each after the rule. An argument is SAFE when ALL hold: the rule left it unchanged (no `<redacted>` in it); it is one of — a
+  flag without a value (`-x`, `--name`), a `--name=value` whose value passed, a path (arm 6), a GUID, an npm spec, or a plain
+  word of `[A-Za-z0-9._@:+-]` shorter than `secretMinChars`; and it is at most `processes.shownCommandChars` long. The FIRST
+  unsafe argument ends the prefix (so a value that follows a flag we do not know is never shown past the point where doubt
+  starts: `claude -p <prompt>` shows `["-p"]` and stops, because a prompt is free text). Empty arguments (node's title padding —
+  `status.json:548` carries the trailing spaces) are skipped and not counted.
+- `argumentsTotal` = the number of non-empty arguments after the program, so the view can say "+ N more" without the line.
+- Examples from the golden: `npm exec @playwright/mcp@latest` → `npm`, `["exec", "@playwright/mcp@latest"]`, 2;
+  `…/claude --output-format stream-json --verbose …` → `claude`, `["--output-format", "stream-json"]`, 9;
+  `…/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=…` → `agy`, `["--hub", "--hub-port=41790"]`, N;
+  `creds relay` → `creds`, `["relay"]`, 1; `creds config cfgk_…` → `creds`, `["config"]`, 2.
+
+### 3. Allow and deny decisions — deny by default
+
+| Decision | Rule |
+|---|---|
+| what is shown | the program; flags; paths; GUIDs; digests of 40 / 64 lowercase hex; npm specs; versions; short plain words; a URL's scheme, host, port and path |
+| what becomes `<redacted>` | the value of a secret flag or assignment; a creds-shaped token; a blob holding a secret word with a separator; a high-entropy token; a URL's userinfo and secret query values; a program-specific password value |
+| the replacement | always the single constant `<redacted>` (`ProcessFiles.cs:98`) — **never the value's length, never a prefix, never a suffix** (`abc…`, `***`, `gh…p_`); a RED test asserts the redacted text holds no 4-character substring of the value |
+| partial values | none: a value is replaced whole; `name=` keeps its name only when the name is `[A-Za-z0-9_.-]` |
+| no truncation leak | the join is cut AFTER redaction (as today, `ProcessFiles.cs:128-129`) — a cut can only shorten `<redacted>`; `argumentsShown` elements are never cut (an element over the cap is unsafe and ends the prefix); the cut lands on a rune boundary, never inside a surrogate pair, so `status --json` never carries an unpaired surrogate |
+| an argument over `processes.maxJudgedArgChars` (4096) | `<redacted>` whole, unjudged — a 4 KiB positional is a script or a blob, and a bounded input is what keeps every regex linear (`/proc/[pid]/cmdline` may be 2 MiB) |
+| Unicode | argv is UTF-8 with invalid bytes already replaced by U+FFFD (`Encoding.UTF8.GetString`, `ProcessFiles.cs:123`); letters of any script count as letters for the class test; the entropy test counts code points, not UTF-16 units |
+| control and format characters | every character of category `Cc` (NUL, tab, LF, ESC — terminal injection into `logs`, `runs show`), `Cf` (zero-width, U+202E RTL override — which could make `<redacted>` read otherwise) and `Cs` (a lone surrogate) is replaced by `?` in every shown argument. `CommandLine.Printable` (`Cli/CommandLine.cs:792-799`, `internal`, `Cc` only) MOVES to `WslCare.Core/Processes/Redaction/ShownText.cs` widened to `Cf` / `Cs`, and the CLI calls it there — reuse-first step 2.4, so there is one definition |
+| the extension | renders the string as text with its own cap (`src_vs_code/src/panel/format.ts:29-31`); the hostile-string tests (`src/test/panelPage.test.ts:98`, `src/test/panel/viewModel.test.ts:143`) keep passing unchanged |
+
+### 4. The configuration keys
+
+| Key | Shape | Default | Trust | Why |
+|---|---|---|---|---|
+| `processes.secretMinChars` | int 12–64 | 20 | `new(SafeDirection.Lower, MachineOnly: true)` — a SMALLER number redacts more; machine layer only, as `processes.shownCommandChars` (`Config/ConfigKeys.Processes.cs:32-33`), because a user layer must not loosen what root writes into a history other accounts read | the plan's row (`:339`); the detectors' common floor |
+| `processes.shownSafeArgs` | int 0–8 | 2 | `Lower`, `MachineOnly` — fewer is safer | the plan's row |
+| `processes.maxJudgedArgChars` | int 1024–65536 | 4096 | `Lower`, `MachineOnly` — a smaller bound redacts more and bounds every match | §3's regex bound; the inventory's rule "every number a key" (`:321-323`) |
+
+All three join `ConfigKeys.Processes`, the `NumberKeys` list (`Config/ConfigKeys.Numbers.cs:150-153`), `Config/default.json:71`'s
+block, group B of `NumbersAreConfigurationTests` (`Config/NumbersAreConfigurationTests.cs:62`), and `contracts/config-keys.json`
+(regenerated by `ContractFilesTests`, `config-keys.json:2722-2734` is the neighbour). `UserLayerTrustTests` gains the three.
+
+**No open list in this story.** The secret words and the creds shapes are closed in code. A user-widenable word list would need an
+OPEN `TextListKey` with a reviewed `TextRule` record (`Config/ConfigKey.cs:37-56`, `Config/KeyRules.cs:7-25`: no free text), AND
+a safe direction "a SUPERSET is safer" that `SafeDirection` (`KeyRules.cs:118-137`) does not have — `Subset` is the opposite.
+Adding an enum member for one key is a change to the trust model, and a list that can be SHORTENED weakens redaction. Recorded as
+the open tail: `processes.extraSecretWords` with `TextRule.SecretWord` (`^[a-z][a-z0-9_-]{2,31}$`, at most 32 members) and a
+`SafeDirection.Superset`, if the owner asks for it.
+
+### 5. The wire contract
+
+- **Additive.** `ProcessReport` (`Status/StatusReport.cs:155-171`) gains `program` (string), `argumentsShown` (string[]) and
+  `argumentsTotal` (int) after `commandLine`; `McpOwnerReport` (`Status/McpServersReport.cs:74`) gains `program` and
+  `argumentsShown`. `commandLine` STAYS — the plan's own rule, "no wire removal" (`StatusReport.cs:191-192`); its VALUE changes
+  only where the widened rule bites. `schemaVersion` stays 1 (`SchemaVersion.cs:9`): a field added, none moved or renamed. The
+  extension reads fields by key (`src_vs_code/src/panel/read.ts:31-33`) and ignores what it does not know.
+- **The goldens.** `contracts/golden/head/status.json` is regenerated on Linux (`research/module_tests.md:921-924`) and the diff
+  reviewed as a contract change: 52 entries gain the three fields; `commandLine` changes for the fixture's structured
+  `/TelemetrySession:` arguments (they become `<redacted>` whole — the by-hand `REDACTED` inside them no longer reaches the
+  golden) and nowhere else, which the review proves line by line. `GoldenContractTests` holds it afterwards. `status-limits.json`
+  is unchanged: nothing here is a limit the extension mirrors.
+- **The extension's consumers, and what must not break.** The extension half of #87 item 2 is E18.W1b (`:375`): the full view
+  shows `program` + `argumentsShown`, reveals the line per row. NOT this story. This story must leave the extension green without a
+  change: the process tables keep rendering `commandLine` (`rowRenderers.ts:36-38`); the status-bar model reads verdicts only; no
+  schema check refuses an unknown field (the head golden the extension's tests read is updated in the same PR, and its tests stay
+  green — the E15.S5 cross-boundary pattern, `:1024-1027`). E18.W3's export (`:377`) writes the daemon's redacted bytes, so it
+  inherits this rule for free.
+
+### 6. RED first — the list
+
+A new `Core.Tests/Processes/Redaction/CommandLineRedactionTests.cs`, each case named for the guarantee, and a fixture
+`src_daemon/tests/fixtures/redaction/realistic-leaks.txt` — INVENTED values in every real shape (a value is never a real secret;
+`FixturePrivacyTests` scans it like every fixture; a comment on each line says which arm must fire):
+
+1. **The plan's RED:** `creds config cfgk_<43 base64url>` → `creds config <redacted>`; `argumentsShown` is `["config"]`.
+2. `GITHUB_TOKEN=ghp_…` (no dash) → `GITHUB_TOKEN=<redacted>`; `env ANTHROPIC_API_KEY=sk-ant-… claude` → the key redacted,
+   `claude` shown.
+3. `docker run -e AWS_SECRET_ACCESS_KEY=… -e PGPASSWORD image` → the first value redacted; `PGPASSWORD` (no value) shown.
+4. `/TelemetrySession:{"CollectorApiKey":"…"}` → `<redacted>` whole (arm 7, not a path).
+5. `curl -u alice:Pa55w0rd https://x/` → `curl -u <redacted> https://x/`; `systemd --user --deserialize 48` unchanged.
+6. `curl -H "Authorization: Bearer eyJ….…"` → `curl -H <redacted>`; `gh api -H "Authorization: token ghp_…"` likewise.
+7. `git clone https://user:ghp_…@github.com/o/r` → `https://<redacted>@github.com/o/r`;
+   `DATABASE_URL=postgres://app:p@db/x` → `DATABASE_URL=<redacted>` (arm 3's value fails arm 5).
+8. `--password=x`, `--password x`, `-pSecret` under `mysql`, `sshpass -p x ssh host` → each value redacted; `docker run -p 8080:80`
+   unchanged.
+9. `node -e "const token='abc'; …"` → the script redacted (arm 7); `node -e "const net = require('net'); …"` (`status.json:656`)
+   unchanged.
+10. `dotnet exec x.dll --connectionString "Server=a;Password=b"` → `--connectionString <redacted>`.
+11. `claude --resume=<guid>` unchanged; `claude -r <guid>` unchanged; `claude -p "any text"` → `argumentsShown` is `["-p"]`.
+12. A bare 48-character base64url positional → `<redacted>`; the same token one character under `secretMinChars` with the key
+    set to its length → shown (the key is read, not a constant).
+13. Shown, each: `/home/user/.vscode-server/bin/<40 hex>/node`, `--add-dir=/home/user/git/project-tokenizer` (a path value with
+    "token" inside it stays — arm 3 judges the NAME `add-dir`, then the value by arm 6), `<40 hex>` bare, `<64 hex>` bare,
+    `@playwright/mcp@latest`, `ubuntu-24.04-20260101`, `sourceGeneratorExecutionPreference`, `rovodev-ide-vscode`.
+14. A 32-hex bare positional → `<redacted>`.
+15. **Never a prefix:** for every redacted case the output holds no 4-character substring of the value and no digit of its length.
+16. **No truncation leak:** a 300-character secret at the end of a line, cut at 200 → the line ends in `<redacted>` or a prefix of
+    that constant, never in a character of the secret; `shownCommandChars` set to 5 → `<reda`.
+17. **Rune boundary:** a cut that would split a surrogate pair ends before the pair; the JSON stays valid.
+18. **Control characters:** an argument holding ESC `[31m`, U+202E and a lone surrogate → `?` for each; the same test red when the
+    CLI's `Printable` and the Core one are two definitions (the CLI test asserts `CommandLine.Printable` IS `ShownText.Printable`).
+19. **R8 regressions:** `AgentOrphans.Script`, `IdleGate.IsBuild`, `IsDotnetBuild` over the captured fixture give what they gave
+    before the widening (a snapshot assertion on the fixture's 51 processes).
+20. **Both binaries, one rule:** `Split(Of(exe, args)) == [exe, ..args]` over a generated set; `Shown(Split(line))` of a Windows
+    `claude.exe --resume=<guid> -p "…"` equals the distro `Shown` of the same argv.
+21. **The wire:** the golden's 52 entries carry `program` / `argumentsShown` / `argumentsTotal`; the owner report carries the two;
+    `argumentsShown` never holds `<redacted>` and never more than `shownSafeArgs` elements; `shownSafeArgs` 0 → `[]`.
+22. **Keys:** a user layer that raises `secretMinChars` to 64 or `shownSafeArgs` to 8 is ignored with a notice (machine only); the
+    three are in `contracts/config-keys.json`.
+23. An argument of 5 000 characters → `<redacted>` without judging it; the test asserts the call returns within the pattern
+    ceiling against a pathological input (`a` × 4 096 followed by `!`).
+
+### 7. Break-its (product code, each restored byte for byte)
+
+| Line broken | Red test |
+|---|---|
+| arm 8 removed (no entropy test) | 1 (the key is caught by the prefix list) stays green, 12 and 14 red — so the prefix list and the entropy test are each proved alone |
+| the `cfgk_` shape removed with arm 8 kept | 1 still green by entropy, and a test with `secretMinChars` raised to 64 then red — the plan's RED does not rest on one arm |
+| arm 6's alphabet widened to accept `{` and `"` | 4 red |
+| `Redacted` replaced by `value[..4] + "…"` | 15 red |
+| the cut moved before `Redact` | 16 red |
+| `Split`'s backslash rule simplified | 20 red |
+| `Printable` not applied in `Shown` | 18 red |
+| `shownSafeArgs` ignored (3 shown) | 21 red |
+| `MachineOnly` dropped from a key | 22 red |
+
+### 8. Build order (small commits), test plan, docs, DoD
+
+Commits, each green on its own:
+1. `test(daemon): E15.S7 RED — the redaction fixture and the tests over stubs` (the 23 cases, the fixture, `Split` and
+   `ShownArguments` as stubs that throw `NotImplementedException` — each failure message names the symptom, never the stub).
+2. `feat(daemon): SecretShapes — the creds shapes, the secret words, the entropy test`.
+3. `feat(daemon): CommandLineRedaction — one rule, CommandLineText delegating; ShownText.Printable shared with the CLI`.
+4. `feat(daemon): the three processes.* keys` (+ `default.json`, `NumberKeys`, group B, `config-keys.json`, `UserLayerTrustTests`).
+5. `feat(daemon): program, argumentsShown, argumentsTotal on the wire` (`ProcessReport`, `McpOwnerReport`; goldens regenerated
+   on Linux, the diff reviewed).
+6. `feat(daemon): WindowsCommandLine.Split — the Windows binary's entry to the same rule` (round-trip property test).
+7. `docs: E15.S7 as built`.
+
+Test plan: Windows — Core, CLI, Scenarios; Linux (WSL, a NEW `/tmp/testsToDelete-wc-e15s7-<stamp>` folder, as E15.S5 did) —
+the goldens written, then `GoldenContractTests` green without a write, Core, CLI, Scenarios; the extension suite UNCHANGED and
+green (the proof the change is additive); lint, format, plan-lifecycle, the rules check. The RED messages of commit 1 and the
+break-its' messages go to `research/module_tests.md` *E15.S7*, with the suite totals.
+
+Docs to update in the same PR: `README.md:388` (the sentence "secret-looking values redacted (`--x=v`, `--x v`…)" → the widened
+rule and the two display fields); `research/module_daemon.md` (the process table's text and the `mcpServers` owner);
+`research/module_mcp_servers.md` (the owner's new fields); `research/architecture.md` (the E5.S0 contracts section: the additive
+fields, as E15.S5's correction did, `:1061-1063`); `research/module_tests.md:4489-4491` REWRITTEN — the bullet that says a secret
+in any other shape is shown as it is must say what the rule now catches and what §9 leaves; `contracts/config-keys.json`; this
+plan's *E15.S7 as built* and status line; `todo/README.md`.
+
+Definition of Done:
+- [ ] One function (`CommandLineRedaction.Shown`) behind every road R1–R4; `CommandLineText.Shown` / `.Redact` delegate to it.
+- [ ] The Windows entry (`WindowsCommandLine.Split` + the same `Shown`) exists with its round-trip test; E15.S6 names it as its
+      consumer.
+- [ ] The 23 RED cases were red for the named symptom, then green; the nine break-its were red, then green after a byte-equal restore.
+- [ ] `<redacted>` is the only replacement; no prefix, no length, no partial value; the cut is after the rule and on a rune boundary.
+- [ ] `argumentsShown` holds only safe arguments, at most `shownSafeArgs`, and never `<redacted>`.
+- [ ] The three keys are machine-only with `Lower` as the safe direction; `config-keys.json` regenerated.
+- [ ] The goldens regenerated on Linux, the `commandLine` diff reviewed line by line (only the `/TelemetrySession:` entries change).
+- [ ] The extension suite green WITHOUT a change; `schemaVersion` unchanged; `commandLine` still on the wire.
+- [ ] R8's matchers unchanged over the fixture (test 19).
+- [ ] `ShownText.Printable` is the ONE definition (the CLI's moved, not copied).
+- [ ] Docs listed above updated; `module_tests.md:4489-4491` rewritten.
+- [ ] The status line and `todo/README.md` moved from "being designed" to "built on its branch", then "merged (#N)".
+
+### 9. Residuals — what a regex cannot catch, stated plainly
+
+- **Free text.** A secret typed into a prompt (`claude -p "use key …"`, `-e <script>` without a secret word) is shown unless the
+  value alone is creds-shaped or high-entropy. `argumentsShown` stops at `-p`, so the full view hides it by default; the revealed
+  `commandLine` still has it.
+- **Short secrets.** A PIN, a short password (`-pHunter2` outside the mysql table), a 12-character token with no marker: below
+  `secretMinChars` and with no shape, they are shown. Lowering the key raises false positives; 20 is the detectors' floor.
+- **Passphrases of words** (`correct-horse-battery-staple`): two classes, low entropy — shown.
+- **Hex keys of 40 or 64 characters** are exempt as digests (git, Docker); a hex-encoded credential of exactly that length is
+  shown. A GitHub classic token from before the `ghp_` prefix (40 hex) is one; those are retired.
+- **A secret as a file name or a path component** (`/tmp/ghp_…`): arm 6 shows paths — unless the component is creds-shaped
+  (arm 4 runs before arm 6, so `/tmp/ghp_abc…` IS redacted whole; a plain-looking name is not).
+- **A secret split across two positionals**, or one whose flag is in another language's spelling (`--contraseña`), is shown.
+- **The process name and the cwd** (`ProcessReport.Name`, `.Cwd`) are not judged: a cwd names folders, not credentials; a process
+  named after a secret is a residual.
+- **Kernel ring lines** (`health.kernelLinesKept` × `health.kernelLineChars`, `Health/HealthCollector.cs:70-71`, `:180`) can echo a command line in
+  an OOM or segfault message; they do not pass through this rule. Named here; a follow-up may route them through `Shown` over a
+  split on spaces.
+- **History already written** keeps what the old rule showed: detail files under `{state}/runs/` are never rewritten (§3.2's
+  "raw files are never rewritten"); `runs.historyRetentionDays` retires them. The PR body says so.
+- **Not read, so not leaked:** `/proc/[pid]/environ`, Docker's container environment (`DockerCommands.cs:31-35`), the Windows
+  binary's command lines (R5, until E15.S6).
