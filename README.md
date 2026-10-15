@@ -620,6 +620,17 @@ no delete by command, no path under `~/git` or an AI agent's folder, …) and th
 component declared as a template runs. A tool run as the target user goes through `runuser -u <user> -- <full path>`
 with a clean environment.
 
+### Worktrees: git's questions
+
+For a build folder under a worktree root the Windows binary asks git three read-only questions: which working tree is this
+(`rev-parse --show-toplevel`), does it track a file inside (`ls-files`), and does an ignore rule cover it (`check-ignore`). A folder
+counts as reclaimable only when git confirms all three. Git runs with a clean environment (no home, no user or system
+configuration, discovery stopped at the root) and never changes a repository's index. It is the `git.exe` of `C:Program FilesGit`
+only when no non-administrator could replace it (or the one an administrator names in `worktrees.gitPath`, same rule), never one
+found on `PATH`. An orphan whose repository is still there reads "ignore rules confirmed; tracked files NOT checked". Keys:
+`worktrees.gitPath` (machine layer), `worktrees.gitTimeoutSeconds` (30), `worktrees.gitNamesPerCall` (64),
+`worktrees.gitCommandLineMaxChars` (7000). Measured behaviour: [research/2026-10-15_disk_hygiene_git_probe.md](research/2026-10-15_disk_hygiene_git_probe.md).
+
 Exit codes: 0 previewed / recorded · 1 not recorded · 2 usage (unknown or unbuilt action, the other side's action) ·
 3 an action failed · 75 busy · 76 wedged · 77 needs root · 78 observe-only (an invalid configuration layer) · 130 interrupted.
 

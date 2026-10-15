@@ -188,6 +188,45 @@ public abstract record SlotKind
         public override string Describe => "<the fixed Windows disk script>";
     }
 
+    /// <summary>
+    /// One path RELATIVE to the working directory the command runs in (E19.S4: a build folder's name for git to be asked about) —
+    /// <c>/</c>-separated, at most one trailing <c>/</c>, at most 260 characters, and never anything git or Windows could read as more than
+    /// a literal name: no leading <c>-</c>, no rooted or drive path, no backslash at all, no empty, <c>.</c> or <c>..</c> segment, no glob
+    /// character (<c>* ? [</c>), no pathspec magic (<c>:</c>, so no <c>:(</c>), no character Windows forbids in a name (<c>" &lt; &gt; |</c>), no
+    /// control character. Non-ASCII letters are fine. Git is asked with <c>check-ignore</c>, which refuses <c>--literal-pathspecs</c>, so THIS
+    /// shape is what makes a name a literal.
+    /// </summary>
+    public sealed record RelativeName : SlotKind
+    {
+        private static readonly char[] Forbidden = ['*', '?', '[', ':', '\\', '"', '<', '>', '|'];
+
+        public override bool Accepts(string value) =>
+            Checks.All(value, v => v.Length is > 0 and <= 260, v => v[0] != '-' && v[0] != '/', v => v.All(c => !char.IsControl(c)), v => v.IndexOfAny(Forbidden) < 0, HasOnlyPlainSegments);
+
+        private static bool HasOnlyPlainSegments(string value) =>
+            (value.EndsWith('/') ? value[..^1] : value).Split('/').All(segment => segment.Length > 0 && segment is not ("." or ".."));
+
+        public override string Describe => "<relative name>";
+    }
+
+    /// <summary>
+    /// A Windows drive path (<c>X:\…</c> or <c>X:/…</c>, at most 1 024 characters, no empty, <c>.</c> or <c>..</c> segment, no control
+    /// character, none of <c>* ? " &lt; &gt; |</c>, no colon but the drive's) — the repository an orphan's <c>.git</c> file pointed at, for
+    /// <c>git --git-dir=</c>. The slot holds the SHAPE; that the path is the one the classifier read from a <c>.git</c> file under a
+    /// configured root is the caller's to prove (the policy sees an argument, not where it came from).
+    /// </summary>
+    public sealed record AdminFolder : SlotKind
+    {
+        private static readonly char[] Forbidden = ['*', '?', '"', '<', '>', '|'];
+
+        public override bool Accepts(string value) =>
+            Checks.All(value, v => v.Length is > 3 and <= Config.TextRule.AbsolutePathOrEmpty.MaxLength, IsDrivePath, v => v.All(c => !char.IsControl(c)), v => v.IndexOfAny(Forbidden) < 0, v => v.IndexOf(':', 2) < 0, v => !Hosting.PathSpelling.HasBadSegment(v));
+
+        private static bool IsDrivePath(string value) => char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] is '\\' or '/';
+
+        public override string Describe => "<admin folder: a drive path>";
+    }
+
     /// <summary>One of a fixed set of values, compared exactly.</summary>
     public sealed record OneOf(IReadOnlyList<string> Values) : SlotKind
     {

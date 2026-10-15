@@ -4568,3 +4568,17 @@ and build-flags checks. `ci · extension` (unconditional, `windows-latest` and `
 the linter and `npm test` — the extension's unit, structural, bundle and client-scenario tests. The live smoke on the owner's machine runs at every release (E4 onwards) — `install.sh` for real
 and `POST_DEPLOY.md` against the installation — and so does the live contract with `WSL_CARE_REQUIRE_LIVE=1`
 (§ *The live contract*).
+
+### E19.S4 — git's three read-only questions (2026-10-15)
+
+| What it pins | Where |
+|---|---|
+| the two slot kinds (`A_relative_name_with_dot_dot_or_magic_is_refused`, 31 hostile names; an admin folder is a plain drive path), the four git templates (bare `git.exe`, isolating options first, allowed by the product policy, each argv matches only its own template), `The_git_templates_cannot_be_bent_into_prune_remove_or_clean` (18 bent argvs), the never-list asked before any template (`clean`, `worktree prune` as names), the protected-path rule left intact for an orphan's admin folder under `~/git` | `Core.Tests/Processes/Policy/GitTemplatesTests.cs` (the property suites cover the templates through `HostileInputs.Valid`) |
+| the ACL rule of decision 9 as a pure judge (administrators, SYSTEM and TrustedInstaller exempt; inherit-only and deny entries say nothing; a non-admin owner is a problem; ancestors allow creating an unrelated folder), the candidates list, `Git_is_never_taken_from_PATH` (control: the generic resolver WOULD take it), and the real-ACL legs `The_supported_Program_Files_git_is_accepted` (skips with no Git for Windows) and `A_git_in_a_user_writable_folder_is_refused` | `Core.Tests/Processes/GitExecutableTests.cs` |
+| the resolver constructor of the product runner: a refused argv never reaches the resolver; the resolver's answer is what is reported | `Core.Tests/Processes/ProcessCommandRunnerResolverTests.cs` |
+| the questions against a scripted `git.exe` printing what the real one printed: exit 1 an answer and 128 a refusal, a batch judged per line, a negation, a tracked file, a folder outside the root (nothing started), escape from the root, an empty answer, a timeout, a failed start and a cut output, a policy refusal, batches by count and by encoded length, the clean environment, backslash names, orphans | `Core.Tests/Worktrees/GitQuestionsTests.cs` |
+| the same against the REAL `git.exe` in `testsToDelete-` repositories: `The_clean_environment_is_enough_for_real_git`, `A_user_excludes_file_does_not_change_the_answer` (a fake HOME with `core.excludesFile` and `.config/git/ignore`; a control shows git leaks them without the isolation), `A_non_ascii_path_is_parsed` (control: git escapes by default), `The_scan_never_changes_the_index_time` (control: `git status` rewrites the index), the ceiling stopping discovery, orphans | `Core.Tests/Worktrees/GitQuestionsRealGitTests.cs` (helper `TestSupport/ThrowAwayGit.cs`, a `TempRoot` named `testsToDelete-...`) |
+| the four keys: ranges, defaults, `gitPath` machine-only | `Core.Tests/Config/WorktreeGitKeysTests.cs`, `NumbersAreConfigurationTests` |
+
+Not here (E19.S4 reconciliation after E19.S3 merges): `Reclaimable_counts_only_candidates_that_pass_every_check_and_names_the_rest`
+and the scan's call of `GitQuestions`.

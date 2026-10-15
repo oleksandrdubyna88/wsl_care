@@ -68,6 +68,11 @@ public sealed record CommandRequest
     /// its own.</summary>
     public Action<int> OnKilling { get; init; } = static _ => { };
 
+    /// <summary>The child's output is UTF-8 (git prints paths so — measured 2026-10-15 with a non-ASCII folder name); without it .NET decodes a
+    /// redirected stream with the console's OEM code page and a non-ASCII name no longer matches the name asked about. Off by default: every
+    /// other command keeps the decoding it always had.</summary>
+    public bool Utf8Output { get; init; }
+
     /// <summary>The command as a person would read it in a log — for messages only, never executed.</summary>
     public string Display => string.Join(' ', Argv);
 }

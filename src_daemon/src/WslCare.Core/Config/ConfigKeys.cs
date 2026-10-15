@@ -149,6 +149,7 @@ public static partial class ConfigKeys
         Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,
         Clock.MaxDriftSeconds,
         Logging.MinimumLevel, Logging.RetentionDays,
+        WorktreeGit.GitPath,
         .. NumberKeys(),
     ];
 

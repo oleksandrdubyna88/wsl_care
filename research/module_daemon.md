@@ -1067,3 +1067,52 @@ flowchart TB
 - **Not here**: no elevated refusal (the plan does not ask it; an elevated stage's copy may be owned by Administrators, and the
   render's no-link open then refuses it — not registrable, so nothing is registered); the extension's own digest compare and its
   `BUNDLED_DAEMON` check (§3.7) are WR-E3's.
+
+## Worktrees: git's three read-only questions (E19.S4 of PLAN_disk_hygiene_windows_E19.md, 2026-10-15)
+
+Measured behaviour is in [2026-10-15_disk_hygiene_git_probe.md](2026-10-15_disk_hygiene_git_probe.md); it overrides the command shapes
+the plan was written with (`check-ignore` runs without `-z` and without `--literal-pathspecs`).
+
+```mermaid
+flowchart LR
+  scan["worktree scan (E19.S3)"] -->|GitQuestion| gq["GitQuestions.AskAsync"]
+  gq --> gate{"folder beneath root?"}
+  gate -- no --> ret["Retained: outside the root"]
+  gate -- yes --> rp["rev-parse --show-toplevel"]
+  rp -- other top --> ret2["Retained: another repository"]
+  rp -- same --> ls["ls-files -z --cached"] --> ci["check-ignore -v -n"]
+  ci --> v["Confirmed or Retained per name"]
+  gq --> pol["ProcessCommandRunner + CommandPolicy.Product"]
+  pol --> ge["GitExecutable: Program Files + ACL, never PATH"]
+```
+
+- **The questions** (`Core/Worktrees/GitQuestions.cs`): `AskAsync(GitQuestion)` answers one `GitAnswer(name, GitVerdict)` per candidate. A
+  `GitQuestion` is the working directory (the candidates' parent), the relative names, the configured root and the kind: `GitFolder.Repository`
+  (working tree or submodule, with the top level it must be) or `GitFolder.Orphan` (the admin folder the classifier read from the `.git` file).
+  `GitVerdict.Confirmed(TrackedFilesChecked)` or `GitVerdict.Retained(reason)`; the reasons are `GitReasons` (one place, so the report can
+  group by them). The scan (E19.S3) is to call this for every candidate that passed the structural checks. **That wiring, and making
+  `worktrees.reclaimable` real, is NOT built yet** (reconciliation after S3 merges).
+- **Safety order**: the folder must be at or beneath the root by segments (`FolderBeneath`; the policy never judges a working directory);
+  no path on argv except an orphan's admin folder (the repository is the working directory, names are relative); `GIT_CEILING_DIRECTORIES`
+  is the root; `rev-parse` must name the expected top level or every candidate of the folder is retained; names are judged per line of
+  `check-ignore`, never by its exit code; a negation or a `::` line retains; 128, an undocumented exit, a cut output, a timeout and a policy
+  refusal each retain the whole call with git's own first line.
+- **Orphan**: `--git-dir=<admin> --work-tree=. check-ignore --no-index`: "ignore rules confirmed; tracked files NOT checked" when the admin
+  folder exists, "not confirmed by git" otherwise (nothing started).
+- **Batches** (`GitBatches`): bounded by `worktrees.gitNamesPerCall` (64) AND the encoded command line (`worktrees.gitCommandLineMaxChars`,
+  7000, measured with `WindowsCommandLine`); a name that cannot fit alone is retained "too long for one git call".
+- **Environment** (`GitEnvironment`): `SystemRoot`, `WINDIR`, `TEMP`, `TMP` copied; `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`,
+  `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=NUL`, `GIT_CEILING_DIRECTORIES`; no `HOME`/`USERPROFILE`/`XDG_CONFIG_HOME`; `-c core.excludesFile=`
+  in argv. The request also asks for UTF-8 output (`CommandRequest.Utf8Output`).
+- **Templates** (`ReadCommandTemplates.GitTopLevel`, `GitLsFiles`, `GitCheckIgnore`, `GitCheckIgnoreOrphan`): the bare `git.exe`, each beginning
+  `-c core.fsmonitor=false -c core.excludesFile= -c core.quotePath=false --no-optional-locks`. New slot kinds `SlotKind.RelativeName` (refuses
+  empty, leading `-` or `/`, `..`, `.` and empty segments, `* ? [ : \ " < > |`, control characters, over 260) and `SlotKind.AdminFolder` (a plain
+  drive path; that it is the classifier's value is the caller's to prove).
+- **Which `git.exe`** (`Processes/GitExecutable.cs`): candidates `%ProgramFiles%\Git\cmd\git.exe`, `%ProgramW6432%`'s, then the machine layer's
+  `worktrees.gitPath`; admitted only when the file exists, starts with `MZ`, and `IAdminOnlyPath` (real: `WindowsAdminOnlyPath` reading the
+  security descriptor with the managed `GetAccessControl`, AOT-safe) says no non-administrator can write, append, delete, re-permission or
+  take ownership of the file, create a file in its folder or in git's `mingw64\bin`, or delete or re-permission any ancestor to the volume root
+  (`AdminOnlyJudge`, pure). **Never `PATH`.** `ProcessCommandRunner` has a product constructor taking a resolver
+  (`ProductExecutables.Resolve`: `git.exe` through `GitExecutable`, everything else as before); the policy still judges the bare name first.
+- **Keys**: `worktrees.gitPath` (machine only), `worktrees.gitTimeoutSeconds` (30, 5..600), `worktrees.gitNamesPerCall` (64, 1..256),
+  `worktrees.gitCommandLineMaxChars` (7000, 1000..30000) in `Config/ConfigKeys.WorktreeGit.cs`.

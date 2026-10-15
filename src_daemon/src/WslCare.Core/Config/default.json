@@ -368,5 +368,11 @@
     "watchLogonDelaySeconds": 60,
     "archiveLogonDelayMinutes": 20,
     "archiveEveryHours": 4
+  },
+  "worktrees": {
+    "gitPath": "",
+    "gitTimeoutSeconds": 30,
+    "gitNamesPerCall": 64,
+    "gitCommandLineMaxChars": 7000
   }
 }

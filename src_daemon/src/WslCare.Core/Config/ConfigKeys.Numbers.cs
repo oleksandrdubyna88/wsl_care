@@ -209,5 +209,8 @@ public static partial class ConfigKeys
         Archive.LeaseSettleMilliseconds,
         Archive.KeptEntryDays,
         Archive.RestoredKeepDays,
+        WorktreeGit.TimeoutSeconds,
+        WorktreeGit.NamesPerCall,
+        WorktreeGit.CommandLineMaxChars,
     ];
 }

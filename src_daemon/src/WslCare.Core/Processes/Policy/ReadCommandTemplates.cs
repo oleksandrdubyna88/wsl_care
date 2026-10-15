@@ -2,6 +2,7 @@ using WslCare.Core.Config;
 using WslCare.Core.Docker;
 using WslCare.Core.Health;
 using WslCare.Core.Systemd;
+using WslCare.Core.Worktrees;
 
 namespace WslCare.Core.Processes.Policy;
 
@@ -81,6 +82,43 @@ public static class ReadCommandTemplates
         ConfigKeys.Health.WindowsDiskTimeoutSeconds,
         ConfigKeys.Health.OutputCapBytes);
 
+    /// <summary><c>git.exe rev-parse --show-toplevel</c> (E19.S4): which working tree git believes a folder is in. The bare
+    /// <c>git.exe</c> is judged; the file started is <see cref="Processes.GitExecutable"/>'s, never one found on <c>PATH</c>.
+    /// Declared BEFORE <see cref="All"/>.</summary>
+    public static CommandTemplate GitTopLevel { get; } = Machine(
+        "git-toplevel",
+        GitCommands.Executable,
+        [.. GitOptions, L("rev-parse"), L("--show-toplevel")],
+        ConfigKeys.WorktreeGit.TimeoutSeconds);
+
+    /// <summary><c>git.exe --literal-pathspecs ls-files -z --cached -- &lt;names&gt;</c>: the tracked files under 1 to
+    /// <c>worktrees.gitNamesPerCall</c> relative names.</summary>
+    public static CommandTemplate GitLsFiles { get; } = Machine(
+        "git-ls-files",
+        GitCommands.Executable,
+        [.. GitOptions, L("--literal-pathspecs"), L("ls-files"), L("-z"), L("--cached"), L("--"), GitNames],
+        ConfigKeys.WorktreeGit.TimeoutSeconds);
+
+    /// <summary><c>git.exe check-ignore -v -n -- &lt;names&gt;</c>: the rule that decides each name (one line per name).</summary>
+    public static CommandTemplate GitCheckIgnore { get; } = Machine(
+        "git-check-ignore",
+        GitCommands.Executable,
+        [.. GitOptions, L("check-ignore"), L("-v"), L("-n"), L("--"), GitNames],
+        ConfigKeys.WorktreeGit.TimeoutSeconds);
+
+    /// <summary>The orphan form: <c>--git-dir=&lt;admin folder&gt; --work-tree=. check-ignore --no-index -v -n -- &lt;names&gt;</c> from the
+    /// orphan's own folder. The admin folder is a path the classifier read from a <c>.git</c> file under a configured root (the caller
+    /// checks that); the slot holds its shape.</summary>
+    public static CommandTemplate GitCheckIgnoreOrphan { get; } = Machine(
+        "git-check-ignore-orphan",
+        GitCommands.Executable,
+        [.. GitOptions, S("adminFolder", new SlotKind.Prefixed(GitCommands.GitDirPrefix, new SlotKind.AdminFolder())), L("--work-tree=."), L("check-ignore"), L("--no-index"), L("-v"), L("-n"), L("--"), GitNames],
+        ConfigKeys.WorktreeGit.TimeoutSeconds);
+
+    private static IEnumerable<ArgPart> GitOptions => GitCommands.Options.Select(L);
+
+    private static ArgPart GitNames => new ArgPart.Repeat("name", new SlotKind.RelativeName(), 1, ConfigKeys.WorktreeGit.NamesPerCall.Max);
+
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
         .. new Func<ToolCommand>[]
@@ -107,6 +145,10 @@ public static class ReadCommandTemplates
             ConfigKeys.Docker.ListTimeoutSeconds),
         SystemctlShow,
         JournalSearch,
+        GitTopLevel,
+        GitLsFiles,
+        GitCheckIgnore,
+        GitCheckIgnoreOrphan,
     ];
 
     private static CommandTemplate Machine(string name, string executable, IReadOnlyList<ArgPart> parts, ConfigKey.IntKey timeoutSeconds) =>
