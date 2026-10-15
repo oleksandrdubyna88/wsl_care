@@ -134,12 +134,15 @@ public static class ConfigLoader
     private static void TakeBack(ConfigLayerFile file, NumberRules.Rule rule, EffectiveConfig config, IReadOnlyDictionary<string, ConfigEntry> before, LoadState state)
     {
         var set = rule.Keys.Where(k => state.Merged[k.Name].Layer == file.Layer && before.ContainsKey(k.Name)).Distinct().ToList();
+        // The sentence is said BEFORE the keys go back: `config` reads state.Merged live, so said afterwards it would name the values that
+        // stayed in force (a configured 40 reported as the default 10), not the ones the operator set (E19.S1 coai code round).
+        var says = rule.Says(config);
         foreach (var key in set)
         {
             state.Merged[key.Name] = before[key.Name];
         }
 
-        var message = set.Count == 0 ? rule.Says(config) : $"{rule.Says(config)} — not taken from this layer: {string.Join(", ", set.Select(k => k.Name))}";
+        var message = set.Count == 0 ? says : $"{says} — not taken from this layer: {string.Join(", ", set.Select(k => k.Name))}";
         if (file.Layer == ConfigLayer.User)
         {
             state.Notices.Add(new ConfigNotice(file, 0, (set.FirstOrDefault() ?? rule.Keys[0]).Name, message));

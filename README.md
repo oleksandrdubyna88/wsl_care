@@ -380,7 +380,7 @@ file); `dockerDf` — Docker's data disk, by the `docker system df` the run alre
 filesystem); `none` — another distro, whose filesystem is not mounted here. This distro is found by its NAME, never by size: a
 root `collect` started through `wsl.exe` (the panel's *Run full check now*) carries `WSL_DISTRO_NAME` and records it in
 `/var/lib/wsl-care/distro-name.json`; the timer's run, a systemd unit without that variable, reads it back. Until the name is
-recorded no distro is mapped, and the reason says how it becomes known. Three verdicts (none colours the status bar):
+recorded no distro is mapped, and the reason says how it becomes known. Four verdicts (only a CRITICAL `disk.volumeFree` marks the status bar, below; the other three never colour it):
 - `disk.vhdxGap` warns when a mapped file is more than `disk.vhdxGapWarnGib` (1–1024, 20) GiB larger than its guest uses. Its
   value reads "file − guest = gap"; a distro file that is not sparse gets the advice, as TEXT, of compaction with WSL stopped (`wsl --shutdown`, then `Optimize-VHD` or `diskpart compact vdisk`, as an administrator — wsl-care never compacts) and the warning that sparse VHD is NOT advised (WSL disabled it after data-corruption reports, and a sparse VHDX cannot be compacted).
 - `disk.vhdxGrowth` warns when a file grows faster than `disk.vhdxGrowthWarnGibPerDay` (1–1024, 10) GiB a day. Growth is the
@@ -390,11 +390,27 @@ recorded no distro is mapped, and the reason says how it becomes known. Three ve
 - `disk.hostFree` warns when a volume that holds virtual disks has less free than `disk.hostFreeWarnGib` (1–10240, 100) GiB, or
   less than the KNOWN possible growth of its files. While the possible growth of any file on it is unknown it is `unknown`, never
   `ok`: the value still shows the free space, and the reason counts the files whose growth is not known.
+- `disk.volumeFree` (E19.S1) judges EVERY lettered Windows volume — not only the ones that hold virtual disks — from the same Windows
+  disk sample, so D: running out of room is seen even when no VHDX lives there. Per volume it is an OR, critical first: **critical**
+  when less than `disk.volumeFreeCriticalGib` (1–10240, 10) GiB is free or less than `disk.volumeFreeCriticalPercent` (1–90, 3) %,
+  **warn** under `disk.volumeFreeWarnGib` (1–10240, 30) GiB or `disk.volumeFreeWarnPercent` (1–90, 10) %. The GiB floors apply only to
+  a volume of at least `disk.volumeFreeAbsoluteMinSizeGib` (8–10240, 100) GiB; a smaller volume is judged by percent alone, so a 16 GiB
+  volume with 12 GiB free does not warn for ever. A volume under `disk.volumeFreeMinSizeGib` (1–1024, 8) GiB — the keyboard's 29.7 MiB
+  USB stick — or whose letter is in `disk.volumeFreeIgnoreLetters` (a list of capital letters, none by default) is not judged; the
+  reason still lists it. Across volumes critical beats warn beats `unknown` beats `ok`: a volume whose size or free space could not
+  be read makes the verdict `unknown`, never `ok`, and never hides a critical one. The value names the worst volume first
+  (`D: 4.1 GiB free (2.1 %) — critical; C: 988.8 GiB free (41.2 %) — ok`). `status --json`'s `disk.lettered` lists every volume with its
+  figures, level and the rule that judged it (`gib-or-percent`, `percent`, or `not judged: <why>`). The distro's full run reads the volumes
+  (every four hours by default), so the figure is as old as the run — the bar's tooltip says how old. **The status bar** gains a mark only
+  when this verdict is critical: ` · D: low space` and the error colour, the tooltip's first line giving the volume's free space, its share
+  and the reading's age; a warn stays in the panel's *Disk* section (*Windows volumes: worst free*), and a mark never lowers the bar's level.
 
-The four defaults are STARTING VALUES; only one comes from a measurement (research/2026-10-10_disk.md): 20 GiB is under half of
+The four older defaults are STARTING VALUES; only one comes from a measurement (research/2026-10-10_disk.md): 20 GiB is under half of
 the 43.7 GiB gap measured on Ubuntu's VHDX (D2/D3), so that measured case warns; 100 GiB is about 4 % of the 2.4 TiB system
 volume (D1) — a floor, not a measured need; 10 GiB a day is not measured (D3 has only write volume, and writes are not growth —
-the first weeks of growth figures calibrate it); 1 h keeps the extrapolation factor at 24 or below. The Windows binary's
+the first weeks of growth figures calibrate it); 1 h keeps the extrapolation factor at 24 or below. The seven `disk.volumeFree*` defaults are STARTING VALUES too: D: was 30.6 GiB free four
+days before it hit 0 (D1), and a worktree's build output is about 1.7–2.4 GB, so 10 GiB is four or five builds; on the 2.4 TiB C: the 10 %
+floor warns at about 245 GiB, acceptable for a warning. The Windows binary's
 `status` says the distro reads the virtual disks, and its `host.vhdx` points at the distro's `status.disk`.
 
 **Before the evening** (E14 S5, a report: nothing acts on these):

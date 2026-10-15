@@ -294,7 +294,14 @@
     "vhdxGapWarnGib": 20,
     "vhdxGrowthWarnGibPerDay": 10,
     "hostFreeWarnGib": 100,
-    "growthMinHours": 1
+    "growthMinHours": 1,
+    "volumeFreeWarnGib": 30,
+    "volumeFreeCriticalGib": 10,
+    "volumeFreeWarnPercent": 10,
+    "volumeFreeCriticalPercent": 3,
+    "volumeFreeMinSizeGib": 8,
+    "volumeFreeAbsoluteMinSizeGib": 100,
+    "volumeFreeIgnoreLetters": []
   },
   "commands": {
     "outputCapBytes": 1048576,
