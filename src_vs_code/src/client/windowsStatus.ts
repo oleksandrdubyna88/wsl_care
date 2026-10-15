@@ -23,16 +23,6 @@ export function windowsStatusUnavailable(platform: string, reason: string): Verb
   return platform === 'win32' ? { kind: 'unknownFailure', code: undefined, messages: [reason], verb: 'status' } : { kind: 'notWindows', platform, verb: 'status' };
 }
 
-/** U+FEFF, the byte-order mark. */
-const BYTE_ORDER_MARK = 0xfeff;
-
-/** A console stream may start with a byte-order mark; JSON does not allow one. */
-function textOf(stdout: Buffer): string {
-  const text = stdout.toString('utf8');
-
-  return text.charCodeAt(0) === BYTE_ORDER_MARK ? text.slice(1) : text;
-}
-
 /**
  * A process that did not exit: the ceiling is the client's own `timedOut`; every other ending (a refused start, a signal, too much
  * output) is told in the sentence `windowsTasks.ts` gives it for every read of this exe — one wording, never a copy.
@@ -58,7 +48,7 @@ function exitedOutcome(result: Extract<ProcessResult, { kind: 'exited' }>): Verb
   if (code !== 0) {
     return { ...classifyDirectExit(code, result.stderr), verb: 'status' };
   }
-  const parsed = parseAnswer('status', textOf(result.stdout));
+  const parsed = parseAnswer('status', result.stdout.toString('utf8'));
 
   return 'kind' in parsed ? { ...parsed, verb: 'status' } : answeredOutcome(parsed);
 }

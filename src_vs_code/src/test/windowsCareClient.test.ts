@@ -124,9 +124,3 @@ test('off Windows, or for an extension not on a local disk, no status is read an
   }
   assert.equal((await client(recording(exited(0, '')).runner, 'linux').status()).kind, 'notWindows');
 });
-
-test('a byte-order mark before the JSON does not make a windows status unparseable', async () => {
-  const mark = String.fromCharCode(0xfeff);
-  const outcome = answeredStatus(await client(recording(exited(0, mark + JSON.stringify(windowsBody()))).runner).status());
-  assert.equal(outcome.answer.verb === 'status' && outcome.answer.body.side, 'windows');
-});

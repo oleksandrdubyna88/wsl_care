@@ -74,6 +74,8 @@ export interface FakeScenario {
   /** What the bundled exe's `--version` prints. */
   readonly bundledVersion?: string;
   /** E19.S2b: the bundled exe's `status --json` exits with this code and stderr instead of answering. */
+  /** E19.S2b review: milliseconds before the bundled exe's `status --json` answers — the exe that hangs, killed by the runner's ceiling. */
+  readonly bundledStatusDelayMs?: number;
   readonly bundledStatusExit?: { readonly code: number; readonly stderr: string };
   /**
    * WR-E1: the STAGED copy's absolute path (`<stagingRoot><digest>wsl-care.exe`) — started as EXACTLY this file; the fake answers
@@ -529,11 +531,12 @@ function windowsExeOf(scenario: FakeScenario, file: string | undefined): Windows
  * binary reports it; `bundledStatusExit` scripts a failing exit instead.
  */
 function bundledStatusReply(scenario: FakeScenario): Reply {
-  if (scenario.bundledStatusExit !== undefined) {
-    return { code: scenario.bundledStatusExit.code, stderr: scenario.bundledStatusExit.stderr };
-  }
+  const { bundledStatusDelayMs: delayMs, bundledStatusExit: exit } = scenario;
+  const reply: Reply = exit === undefined
+    ? { code: 0, stdout: Buffer.from(JSON.stringify({ ...readJson(path.join(scenario.answers, 'status.json')), side: 'windows' }), 'utf8') }
+    : { code: exit.code, stderr: exit.stderr };
 
-  return { code: 0, stdout: Buffer.from(JSON.stringify({ ...readJson(path.join(scenario.answers, 'status.json')), side: 'windows' }), 'utf8') };
+  return delayMs === undefined ? reply : { ...reply, delayMs };
 }
 
 /** Whether the runner started this fake as an absolute `…\System32\wsl.exe` (the client's one launcher). */

@@ -1,6 +1,6 @@
 # PLAN — E19 "See it": the stories of the first disk-hygiene epic (volume verdicts, the 5-minute Windows reading, the worktree report)
 
-> Status: **plan only, nothing implemented yet, 2026-10-15.** Scope: the stories of epic E19 of
+> Status: **in progress, 2026-10-15 — E19.S2b built (PR pending); the other stories not started.** Scope: the stories of epic E19 of
 > [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (DH-1, DH-1b, DH-3) — read-only, nothing in this epic
 > deletes. Written by the Opus judge per `.agents/conventions/common/subagent-models.md` (epic → stories); no story of E19
 > is a cornerstone (the parent's ledger: `Cornerstones: 2 of 2 — DH-4, DH-6`, both outside this epic).
@@ -24,7 +24,7 @@ below names which part it proves.
 | The recorded fixture's volumes: E: FAT 29.7 MiB; D: ReFS 195.3 GiB, 23.1 GiB free (11.8 %) → `warn` under the defaults; C: 41 % free; F: 62 % free | `tests/fixtures/health/windows-disk-2026-10-10/powershell-windows-disk.out`; M5 re-measured live 2026-10-15: E: removable FAT 0.03 GiB |
 | The status-bar mark pattern: `withGpuMark(view, mark)`, a mark never lowers the level; composed in `StatusBar.compose()` | `src_vs_code/src/statusBar/statusBarModel.ts:102,109-115`, `statusBar/statusBar.ts:52-54`, test `test/gpu.test.ts:187-196` |
 | The extension's typed `Verdict` drops `basis`; the raw body keeps it (`verdicts[id=…]` path syntax) | `src_vs_code/src/client/outcome.ts:7-13`, `client/handshake.ts:107-113`, `panel/jsonPath.ts` |
-| The extension reads NOTHING from the Windows binary but `--version`; WR-E1 (not built) widens the client, and even its read table has no `status`; the store has one `status` slot | `src_vs_code/src/client/WindowsCareClient.ts:96-103`, `PLAN_windows_runner.md` §3.8/§5 WR-E1, `src/state/outcomeStore.ts:11` |
+| **Until E19.S2b:** the extension reads NOTHING from the Windows binary but `--version`; WR-E1 (not built) widens the client, and even its read table has no `status`; the store has one `status` slot | `src_vs_code/src/client/WindowsCareClient.ts:96-103`, `PLAN_windows_runner.md` §3.8/§5 WR-E1, `src/state/outcomeStore.ts:11` |
 | The extension's poller reads only while the window is focused, every `wslCare.refreshSeconds` (120 s default, up to 86 400) | `src_vs_code/src/poll/poller.ts:8`, `package.json:173` |
 | The Windows watch (WR-D4) samples the Windows MCP servers and sweeps run retention under the run lock (busy → no sample), writes no run record, has no volume field | `Watch/WatchRun.Windows.cs:36-65`, `Watch/WatchRun.cs:66` |
 | The Windows `status` stamps sample verdicts `basis {sample, age 0}` (`StatusVerdicts.Sampled`); no sample verdict carries a real age yet | `Status/StatusVerdicts.cs:36-47`, `Cli/Commands/StatusCommand.cs:44,63-80` |
@@ -285,6 +285,16 @@ coai code round per story; the full test executables and `npm test` before the P
   reads the windows status`; `the client names no other verb than status and --version`.
 - **Files:** `src_vs_code/src/client/WindowsCareClient.ts`, `client/verbs.ts`, `state/outcomeStore.ts`, `poll/*`,
   `settings/numbers.ts`, `package.json`, `test/*`, `research/module_vs_code.md`, the runner plan's WR-E1 row.
+- **As built (2026-10-15, PR pending).** `WindowsCareClient.status()` beside `version()`; the typing of the result in
+  `client/windowsStatus.ts` (the same `parseAnswer` / `versionRefusal` / failure kinds as the distro's, `distro: 'Windows'`);
+  `OutcomeStore.windowsStatus` (optional; `clear()` keeps it); the poller's `windows` source, read on the same tick and on a
+  panel Refresh, **one read at a time** (a tick or Refresh that finds it running joins it: one start, one store write). Added by the
+  review: the hung-exe test (`windowsStatusTimeout.test.ts` — the ceiling ends it as the client's `timedOut`, the runner kills the
+  fake child, the distro slot is untouched), `focus regained reads the windows status at once`, the wiring scan
+  (`extensionWiring.test.ts`) and the host scenario, and the churn count (the Windows binary doubles the run logs per window-day:
+  [2026-10-04_extension_poll_churn.md](../research/2026-10-04_extension_poll_churn.md)). **OPEN:** the fake's Windows answer is the
+  distro `status.json` golden with `side: "windows"` — no Windows golden exists; E19.S5 needs a real Windows `status` golden from
+  the daemon's scenario harness before it renders `disk.volumeFree` from it.
 
 ### E19.S5 — the extension halves: the Windows reading in the bar and panel, the worktree row
 

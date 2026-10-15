@@ -265,6 +265,17 @@ function windowsWorld(distro: (verb: Verb) => VerbOutcome = okAnswer, windows: (
   return Object.assign(w, { poller, store, clock, calls, order });
 }
 
+/**
+ * Fires `count` interval ticks `everyMs` apart, letting each read finish before the next tick — as real timers do: the Windows read
+ * is shared while it runs, so ticks fired back to back in one synchronous step would join one read.
+ */
+async function advanceEach(w: World, everyMs: number, count: number): Promise<void> {
+  for (let i = 0; i < count; i += 1) {
+    w.clock.advance(everyMs);
+    await w.poller.settled();
+  }
+}
+
 test('the windows slot is read on the same tick and only on windows', async () => {
   const w = windowsWorld();
   w.poller.start();
@@ -272,8 +283,7 @@ test('the windows slot is read on the same tick and only on windows', async () =
   assert.deepEqual(w.order, ['status', 'windowsStatus'], 'one tick asks both, the distro\'s first');
   assert.equal(w.store.snapshot().status?.kind, 'answered');
   assert.equal(w.store.snapshot().windowsStatus?.kind, 'answered');
-  w.clock.advance(DEFAULT_REFRESH_SECONDS * 1000 * 2);
-  await w.poller.settled();
+  await advanceEach(w, DEFAULT_REFRESH_SECONDS * 1000, 2);
   assert.deepEqual(w.order, ['status', 'windowsStatus', 'status', 'windowsStatus', 'status', 'windowsStatus'], 'every interval tick asks the pair');
 
   const notWindows = windowsWorld();
@@ -342,4 +352,74 @@ test('the windows slot is its own: a distro status never lands in it, and a wind
   assert.equal(distro?.kind === 'answered' && distro.distro, 'Ubuntu');
   assert.equal(windows?.kind === 'answered' && windows.distro, WINDOWS_DISTRO);
   assert.equal(seen.length, 2, 'listeners hear the Windows slot change too');
+});
+
+// ---- E19.S2b review: the Windows read is shared while it runs, comes at once on focus, and is counted in the churn ----
+
+/** A Windows read the test finishes by hand — the exe that is still running. */
+function heldWindows(): { windows: () => Promise<VerbOutcome>; starts: () => number; finish: (outcome: VerbOutcome) => void } {
+  let starts = 0;
+  let release: (outcome: VerbOutcome) => void = () => undefined;
+  const held = new Promise<VerbOutcome>((resolve) => { release = resolve; });
+
+  return { windows: () => { starts += 1; return held; }, starts: () => starts, finish: (outcome) => release(outcome) };
+}
+
+test('a second tick while the windows read runs shares it — one start, one store write', async () => {
+  const held = heldWindows();
+  const w = windowsWorld(okAnswer, held.windows);
+  const writes: unknown[] = [];
+  w.store.onChange((snapshot) => { if (snapshot.windowsStatus !== undefined && writes.at(-1) !== snapshot.windowsStatus) { writes.push(snapshot.windowsStatus); } });
+  w.poller.start();
+  await Promise.resolve();
+  w.clock.advance(DEFAULT_REFRESH_SECONDS * 1000);
+  void w.poller.refreshPanel();
+  await Promise.resolve();
+  assert.equal(held.starts(), 1, 'a tick, an interval tick and a Refresh during the running read join it');
+  held.finish(windowsAnswer());
+  await w.poller.settled();
+  assert.equal(held.starts(), 1);
+  assert.equal(writes.length, 1, 'ONE store write — an older answer can never land after a newer one');
+  w.clock.advance(DEFAULT_REFRESH_SECONDS * 1000);
+  await w.poller.settled();
+  assert.equal(held.starts(), 2, 'once it has ended, the next tick starts a read of its own');
+});
+
+test('focus regained reads the windows status at once, without waiting for the interval', async () => {
+  const w = windowsWorld();
+  w.poller.start();
+  await w.poller.settled();
+  w.focused = false;
+  w.poller.focusChanged(false);
+  w.clock.advance(3_600_000);
+  await w.poller.settled();
+  assert.equal(w.order.filter((a) => a === 'windowsStatus').length, 1, 'an unfocused hour reads nothing');
+  const at = w.clock.now;
+  w.focused = true;
+  w.poller.focusChanged(true);
+  await w.poller.settled();
+  assert.deepEqual(w.order, ['status', 'windowsStatus', 'status', 'windowsStatus'], 'the pair again, before any interval has passed');
+  assert.equal(w.clock.now, at, 'no time passed since focus came back');
+});
+
+/** The bundled daemon's `status` runs over a simulated day — each one a run-log file of the Windows binary, beside the distribution's. */
+async function windowsStatusRunsOver(hoursFocused: number, seconds: number): Promise<number> {
+  const w = windowsWorld();
+  w.seconds = seconds;
+  w.poller.start();
+  await w.poller.settled();
+  await advanceEach(w, seconds * 1000, Math.floor((hoursFocused * 3600) / seconds));
+  w.focused = false;
+  w.poller.focusChanged(false);
+  w.clock.advance((24 - hoursFocused) * 3_600_000);
+  await w.poller.settled();
+
+  return w.order.filter((a) => a === 'windowsStatus').length;
+}
+
+test('E19.S2b churn, measured: the Windows binary adds the same number of status runs (= run-log files) per window-day as the distro\'s', async () => {
+  assert.equal(await windowsStatusRunsOver(24, 120), 721, 'a window focused all day: 720 interval polls + the one at focus');
+  assert.equal(await windowsStatusRunsOver(8, 120), 241);
+  assert.equal(await windowsStatusRunsOver(24, 30), 2881);
+  assert.equal(await windowsStatusRunsOver(0, 120), 1);
 });

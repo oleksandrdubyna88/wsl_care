@@ -85,3 +85,28 @@ here. The owner's choices remain those of the M1 section: accept, record a famil
 (or a new `status --running`), or change the interval (M6 allows 3–5 s; 5 s would make the 10-minute run 120 + 1).
 
 What is NOT measured: the daemon's wall time and bytes per `status` run on this machine (the daemon is not installed here).
+
+## E19.S2b: the Windows binary's own status run — measured 2026-10-15
+
+> Still for the OWNER, with §15g M1 above: S2b adds files, it adds no exception to the family logging rule.
+
+- **Subject:** branch `feat/wc-e19-s2b-windows-status-read`, `src_vs_code/src/poll/poller.ts` (`askWindows`).
+- **Method:** the real `Poller` over a simulated day on a manual clock, the Windows source a recording stub —
+  `poller.test.ts`, *E19.S2b churn, measured* — not computed by hand. What one Windows run writes is READ in the daemon's source,
+  not observed: the Windows binary writes ONE run log per run like the distro's (the family rule, a file per run), in its own state
+  folder, pruned by `logging.retentionDays` (14 by default) exactly as above.
+- **The policy:** on a Windows host the SAME tick (and each panel Refresh) also runs `status --json` of the bundled exe — one
+  read at a time (a tick that finds it running joins it, so no extra file). The cleanup follower's 4-second `status` is NOT
+  doubled: it asks the distribution alone. A stopped distribution no longer costs zero files on Windows — the Windows read does not
+  need WSL, which is the point (the 5-minute disk reading reaches the bar with WSL stopped).
+
+| Focused time in the day | `wslCare.refreshSeconds` | Windows `status` runs (added) | Distro `status` runs | Files kept at steady state, Windows side (× 14 days) |
+|---|---|---|---|---|
+| 24 h | 120 (default) | **721** | 721 (0 when WSL is stopped) | ~10 094 |
+| 8 h (a working day) | 120 (default) | **241** | 241 | ~3 374 |
+| 24 h | 30 (the floor) | **2 881** | 2 881 | ~40 334 |
+| an instant | 120 | **1** | 1 | — |
+
+So a Windows machine writes about twice the run logs the table above counts for the distribution alone (the distro's count is
+unchanged). The decision above (accept / exception / change the default) now covers both folders; changing
+`wslCare.refreshSeconds` halves or doubles both together.
