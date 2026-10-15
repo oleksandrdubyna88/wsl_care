@@ -1857,6 +1857,9 @@ Definition of Done:
   split on spaces.
 - **History already written** keeps what the old rule showed: detail files under `{state}/runs/` are never rewritten (§3.2's
   "raw files are never rewritten"); `runs.historyRetentionDays` retires them. The PR body says so.
+- **Not read, so not leaked:** `/proc/[pid]/environ`, Docker's container environment (`DockerCommands.cs:31-35`), the Windows
+  binary's command lines (R5, until E15.S6).
+
 ### 10. The designer's open questions, decided (2026-10-15, the orchestrator)
 
 1. 40/64-hex exemption → **removed** (deny by default; §2.4, RED 14).
@@ -1866,6 +1869,3 @@ Definition of Done:
 4. A user-widenable word list → **deferred** to the open tail (`processes.extraSecretWords` + `SafeDirection.Superset`); not
    needed for #87.
 5. Kernel ring lines → **a follow-up**, recorded in the open tail; not in this story.
-
-- **Not read, so not leaked:** `/proc/[pid]/environ`, Docker's container environment (`DockerCommands.cs:31-35`), the Windows
-  binary's command lines (R5, until E15.S6).
