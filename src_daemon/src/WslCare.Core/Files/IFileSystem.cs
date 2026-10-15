@@ -80,7 +80,12 @@ public abstract record FileSizeResult
     /// <param name="Bytes">Its length.</param>
     /// <param name="ModifiedAt">Its last write, UTC — how the health check tells a collector that still writes
     /// (sysstat, atop) from one that stopped.</param>
-    public sealed record Measured(long Bytes, DateTimeOffset ModifiedAt) : FileSizeResult;
+    public sealed record Measured(long Bytes, DateTimeOffset ModifiedAt) : FileSizeResult
+    {
+        /// <summary>When the file was CREATED, UTC (WR-T1: a file copied in with an old write time is told apart by it). The default is the
+        /// far future: a stat that does not say counts as brand new, which can only make a caller keep something.</summary>
+        public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.MaxValue;
+    }
 
     public sealed record Missing : FileSizeResult;
 
@@ -95,7 +100,11 @@ public abstract record DirectoryTimeResult
     {
     }
 
-    public sealed record Measured(DateTimeOffset ModifiedAt) : DirectoryTimeResult;
+    public sealed record Measured(DateTimeOffset ModifiedAt) : DirectoryTimeResult
+    {
+        /// <summary>When the folder was CREATED, UTC; the far future when not said (see <see cref="FileSizeResult.Measured.CreatedAt"/>).</summary>
+        public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.MaxValue;
+    }
 
     public sealed record Missing : DirectoryTimeResult;
 
@@ -402,6 +411,11 @@ public interface IFileSystem
     DeletionVerdict DeleteFile(string path, DeletionScope scope);
 
     DeletionVerdict DeleteDirectory(string path, DeletionScope scope);
+
+    /// <summary>Removes <paramref name="path"/> only when it holds NOTHING (WR-T1, the Fable own review M1): a non-recursive remove, so
+    /// anything that appeared after the caller's listing is never deleted unjudged. A folder that is not empty throws
+    /// <see cref="IOException"/> (the operating system's own answer); the deletion policy judges it like any delete.</summary>
+    DeletionVerdict DeleteEmptyDirectory(string path, DeletionScope scope);
 
     DeletionVerdict MoveFile(string from, string to, DeletionScope scope);
 

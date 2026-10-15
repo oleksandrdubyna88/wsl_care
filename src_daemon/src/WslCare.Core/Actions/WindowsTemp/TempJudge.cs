@@ -4,7 +4,12 @@ using WslCare.Core.Hosting;
 namespace WslCare.Core.Actions.WindowsTemp;
 
 /// <summary>One top-level entry of the temp folder, as its directory listing reports it.</summary>
-internal sealed record Candidate(string Name, string Path, EntryKind Kind, long Length, DateTimeOffset Written);
+/// <param name="Created">When it was created: the age is the later of its write time and its creation time.</param>
+internal sealed record Candidate(string Name, string Path, EntryKind Kind, long Length, DateTimeOffset Written, DateTimeOffset Created)
+{
+    /// <summary>The later of the write time and the creation time — a copy keeps the write time and takes a new creation time.</summary>
+    public DateTimeOffset Newest => Written >= Created ? Written : Created;
+}
 
 /// <summary>What the cleanup decided about one candidate.</summary>
 internal enum TempVerdict
@@ -102,8 +107,8 @@ internal sealed class TempJudge(IFileSystem files, PathRules rules, string root,
 
     private TreeScan Scan(Candidate candidate, TempBudget budget, CancellationToken token) =>
         candidate.Kind == EntryKind.File
-            ? new TreeScan.Measured(candidate.Written, candidate.Written, candidate.Length, false, DateTimeOffset.MinValue)
-            : TempScanner.Scan(files, rules, candidate.Path, candidate.Written, budget, token);
+            ? new TreeScan.Measured(candidate.Newest, candidate.Written, candidate.Length, false, DateTimeOffset.MinValue)
+            : TempScanner.Scan(files, rules, candidate.Path, candidate.Newest, budget, token);
 
     private Judgement Decide(Candidate candidate, string allowed, TreeScan.Measured scan, TempCheckpoint resume)
     {
@@ -134,7 +139,7 @@ internal sealed class TempJudge(IFileSystem files, PathRules rules, string root,
     {
         _ when allowed.Length == 0 => Judgement.Retained(TempVerdict.Changed, "changed while interrupted: it is no longer on the allow-list"),
         _ when scan.NewestFile > resume.NewestFileWrite => Judgement.Retained(TempVerdict.Changed, "changed while interrupted: a file is newer than the checkpoint"),
-        _ when scan.NewestFolderCreated > resume.CheckpointAt => Judgement.Retained(TempVerdict.Changed, "changed while interrupted: a folder was created after the checkpoint"),
+        _ when scan.NewestCreated > resume.CheckpointAt => Judgement.Retained(TempVerdict.Changed, "changed while interrupted: a file or folder was created after the checkpoint"),
         _ => new Judgement(TempVerdict.Eligible, "resumes an interrupted deletion", allowed, scan.Bytes, scan.NewestFile),
     };
 }

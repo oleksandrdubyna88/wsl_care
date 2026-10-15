@@ -18,7 +18,10 @@ public abstract record TempRootResult
 /// The root of the cleanup (PLAN_windows_runner.md §3.12; the story's plan round, finding 2). There is no shell known folder for
 /// TEMP, so the root is the shell folder LocalApplicationData plus <c>\Temp</c>, cross-checked against the process' temp path
 /// (<c>GetTempPath</c>): both must name the same folder, and it must lie strictly inside the user's profile — otherwise the run
-/// REFUSES with the reason and deletes nothing. (A redirected <c>TEMP</c>, or a short 8.3 spelling, is a refusal: fail closed.)
+/// REFUSES with the reason and deletes nothing. A <c>TEMP</c> / <c>TMP</c> that names ANOTHER folder, or a short 8.3 spelling of the
+/// profile, differs in spelling and is a refusal (fail closed). A junction AT <c>%LOCALAPPDATA%\Temp</c> that leads to another drive is
+/// NOT a refusal — both spellings agree, and the deletion policy and the delete walk judge the REAL path (the walk compares every
+/// path with the real root plus its relative path), so nothing outside the real temp folder can be reached.
 /// </summary>
 public static class TempRoots
 {

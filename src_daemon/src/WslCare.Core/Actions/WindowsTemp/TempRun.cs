@@ -43,6 +43,8 @@ internal sealed class TempTotals
 
     public int Gone { get; set; }
 
+    public int Unreadable { get; set; }
+
     public IReadOnlyDictionary<string, (int Count, long Bytes)> Groups => _groups;
 
     public void Deleted1(string group, long bytes)
@@ -68,6 +70,12 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
     private readonly List<ActionItem> _notRemoved = [];
     private bool _interrupted;
 
+    /// <summary>ONE budget for every re-validation scan of the run (the Fable own review m6): the delete phase's scans are bounded by the same
+    /// <c>temp.scanMaxNodes</c> / <c>temp.scanMaxSeconds</c> as the preview's, not a fresh allowance per candidate. A candidate that
+    /// cannot be re-validated inside what is left is retained. (The delete walk itself has no time cap of its own: the supervisor's
+    /// deadline and the cancellation end it, and the checkpoint makes that safe.)</summary>
+    private readonly TempBudget _budget = new(settings.ScanMaxNodes, settings.ScanMaxTime, context.Clock);
+
     public ActionRun Execute()
     {
         var scope = new DeletionScope(_root, "A23");
@@ -90,42 +98,64 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
         var now = context.Clock.GetUtcNow();
         var cursor = TempCursors.Read(context.Paths, context.Files);
         var resume = string.Equals(cursor.InProgress.Name, target.Key, StringComparison.OrdinalIgnoreCase) ? cursor.InProgress : TempCheckpoint.None;
-        if (!TryStat(target, out var candidate))
+        var stat = TryStat(target, out var candidate);
+        if (stat != StatKind.Found)
         {
-            _totals.Gone++;
-            _notRemoved.Add(new ActionItem(target.Kind, target.Name, null, "already gone"));
+            _totals.Gone += stat == StatKind.Gone ? 1 : 0;
+            _totals.Unreadable += stat == StatKind.Unreadable ? 1 : 0;
+            _notRemoved.Add(new ActionItem(target.Kind, target.Name, null, stat == StatKind.Gone ? "already gone" : "unreadable: its state could not be read, so it was not deleted"));
             return;
         }
 
-        var budget = new TempBudget(settings.ScanMaxNodes, settings.ScanMaxTime, context.Clock);
-        var again = new TempJudge(context.Files, context.Paths.Rules, _root, context.UserSid, settings, now, scanDisallowed: false).Judge(candidate, budget, token, resume);
+        var again = new TempJudge(context.Files, context.Paths.Rules, _root, context.UserSid, settings, now, scanDisallowed: false).Judge(candidate, _budget, token, resume);
         if (!again.IsEligible)
         {
             _totals.Changed++;
             _notRemoved.Add(new ActionItem(target.Kind, target.Name, null, $"changed since the preview: {again.Reason}"));
-            Moved(cursor, candidate.Name, keepInProgress: false);
+            Moved(cursor, candidate.Name, moveLast: resume.IsNone);
             return;
         }
 
-        Delete(candidate, again, cursor, scope, now);
+        Delete(candidate, again, cursor, scope, now, resume.IsNone);
     }
 
     /// <summary>The candidate as it is NOW, from a stat of its own path — never a listing of the whole folder.</summary>
-    private bool TryStat(ActionItem target, out Candidate candidate)
+    private enum StatKind
+    {
+        Found,
+        Gone,
+        Unreadable,
+    }
+
+    private StatKind TryStat(ActionItem target, out Candidate candidate)
     {
         var path = target.Name;
         var files = context.Files;
-        candidate = true switch
+        var none = new Candidate(string.Empty, path, EntryKind.File, 0, DateTimeOffset.MinValue, DateTimeOffset.MinValue);
+        (candidate, var kind) = true switch
         {
-            _ when files.ReadLink(path) is not LinkReadResult.NotALink => new Candidate(target.Key, path, EntryKind.Link, 0, DateTimeOffset.MinValue),
-            _ when files.DirectoryExists(path) && files.DirectoryLastWrite(path) is DirectoryTimeResult.Measured dir => new Candidate(target.Key, path, EntryKind.Directory, 0, dir.ModifiedAt),
-            _ when files.FileSize(path) is FileSizeResult.Measured file => new Candidate(target.Key, path, EntryKind.File, file.Bytes, file.ModifiedAt),
-            _ => new Candidate(string.Empty, path, EntryKind.File, 0, DateTimeOffset.MinValue),
+            _ when files.ReadLink(path) is not LinkReadResult.NotALink => (new Candidate(target.Key, path, EntryKind.Link, 0, DateTimeOffset.MinValue, DateTimeOffset.MinValue), StatKind.Found),
+            _ when files.DirectoryExists(path) => Folder(files.DirectoryLastWrite(path), target.Key, path, none),
+            _ => File(files.FileSize(path), target.Key, path, none),
         };
-        return candidate.Name.Length > 0;
+        return kind;
     }
 
-    private void Delete(Candidate candidate, Judgement judgement, TempCursor cursor, DeletionScope scope, DateTimeOffset now)
+    private static (Candidate, StatKind) Folder(DirectoryTimeResult stat, string name, string path, Candidate none) => stat switch
+    {
+        DirectoryTimeResult.Measured dir => (new Candidate(name, path, EntryKind.Directory, 0, dir.ModifiedAt, dir.CreatedAt), StatKind.Found),
+        DirectoryTimeResult.Unreadable => (none, StatKind.Unreadable),
+        _ => (none, StatKind.Gone),
+    };
+
+    private static (Candidate, StatKind) File(FileSizeResult stat, string name, string path, Candidate none) => stat switch
+    {
+        FileSizeResult.Measured file => (new Candidate(name, path, EntryKind.File, file.Bytes, file.ModifiedAt, file.CreatedAt), StatKind.Found),
+        FileSizeResult.Unreadable => (none, StatKind.Unreadable),
+        _ => (none, StatKind.Gone),
+    };
+
+    private void Delete(Candidate candidate, Judgement judgement, TempCursor cursor, DeletionScope scope, DateTimeOffset now, bool moveLast)
     {
         var isFolder = candidate.Kind == EntryKind.Directory;
         if (isFolder && Checkpoint(cursor, candidate, judgement, now) is { Length: > 0 } failure)
@@ -137,7 +167,7 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
 
         var done = isFolder
             ? TempDeletion.DeleteTree(context.Files, context.Paths.Rules, scope, candidate.Path, token)
-            : TempDeletion.DeleteFile(context.Files, scope, candidate.Path, candidate.Length);
+            : TempDeletion.DeleteFile(context.Files, context.Paths.Rules, scope, candidate.Path, candidate.Length);
         Account(candidate, judgement, done);
         if (done.Cancelled)
         {
@@ -145,7 +175,7 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
             return;
         }
 
-        Moved(TempCursors.Read(context.Paths, context.Files), candidate.Name, keepInProgress: false);
+        Moved(TempCursors.Read(context.Paths, context.Files), candidate.Name, moveLast);
     }
 
     /// <summary>Written, atomically, BEFORE the first delete inside the candidate. Empty when written.</summary>
@@ -174,9 +204,11 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
         : done.Cancelled ? "cut off by a cancellation; the next run takes it first"
         : $"kept in use: {done.Kept.Count} left ({string.Join("; ", done.Kept.Take(3))})";
 
-    /// <summary>The cursor past <paramref name="name"/>, the interrupted-candidate marker cleared.</summary>
-    private void Moved(TempCursor cursor, string name, bool keepInProgress) =>
-        TempCursors.Write(context.Paths, context.Files, cursor with { Last = name, InProgress = keepInProgress ? cursor.InProgress : TempCheckpoint.None });
+    /// <summary>The interrupted-candidate marker cleared and, unless <paramref name="moveLast"/> is false, the cursor past <paramref name="name"/>.
+    /// A RESUMED candidate belongs to an earlier pass: finishing it must not drag the cursor back to its (earlier) name (the Fable own
+    /// review m4), so its cursor keeps the position the run began at.</summary>
+    private void Moved(TempCursor cursor, string name, bool moveLast) =>
+        TempCursors.Write(context.Paths, context.Files, cursor with { Last = moveLast ? name : cursor.Last, InProgress = TempCheckpoint.None });
 
     private ActionRun Finish()
     {
@@ -196,7 +228,7 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
     }
 
     private string Counts() => string.Create(CultureInfo.InvariantCulture,
-        $"deleted {_totals.Deleted}, kept in use {_totals.KeptInUse}, changed {_totals.Changed}, refused {_totals.Refused}, already gone {_totals.Gone}; logical bytes {_totals.Bytes}");
+        $"deleted {_totals.Deleted}, kept in use {_totals.KeptInUse}, changed {_totals.Changed}, refused {_totals.Refused}, unreadable {_totals.Unreadable}, already gone {_totals.Gone}; logical bytes {_totals.Bytes}");
 
     private string ByGroup() => _totals.Groups.Count == 0
         ? "by group: none deleted"

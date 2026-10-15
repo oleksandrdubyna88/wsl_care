@@ -78,6 +78,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual DeletionVerdict DeleteDirectory(string path, DeletionScope scope) => inner.DeleteDirectory(path, scope);
 
+    public virtual DeletionVerdict DeleteEmptyDirectory(string path, DeletionScope scope) => inner.DeleteEmptyDirectory(path, scope);
+
     public virtual DeletionVerdict MoveFile(string from, string to, DeletionScope scope) => inner.MoveFile(from, to, scope);
 
     public virtual DeletionVerdict MoveDirectory(string from, string to, DeletionScope scope) => inner.MoveDirectory(from, to, scope);

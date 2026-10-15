@@ -20,7 +20,7 @@ public static class TempGlob
 
     private const int MaxLength = 64;
 
-    public const string Description = "a file-name pattern of at most 64 letters, digits, '.', '_', '-', '*' and '?' (no path separator) that matches neither \"claude\" nor a name starting with \"testsToDelete-\"";
+    public const string Description = "a file-name pattern of at most 64 letters, digits, '.', '_', '-', '*' and '?' (no path separator), starting with at least two literal characters, that matches neither \"claude\" nor any name starting with \"testsToDelete-\"";
 
     /// <summary>Whether <paramref name="name"/> matches <paramref name="pattern"/> as a whole, ignoring case.</summary>
     public static bool Matches(string pattern, string name)
@@ -58,10 +58,18 @@ public static class TempGlob
     public static string Problem(string pattern) => pattern switch
     {
         _ when pattern.Length is 0 or > MaxLength || pattern.Any(IsOutsideTheAlphabet) => $"not {Description}",
+        _ when !StartsWithLiterals(pattern) => $"\"{pattern}\" must start with at least two literal characters (not * or ?): a pattern that opens with a wildcard names far too much",
         _ when Matches(pattern, ClaudeName) => $"\"{pattern}\" would match \"{ClaudeName}\", the folder Claude Code keeps under the temp directory, which is never cleaned",
-        _ when Matches(pattern, TestLeftoverPrefix + "x") => $"\"{pattern}\" would match the test-leftover sweep's names ({TestLeftoverPrefix}…), which this cleanup never takes",
+        _ when CouldMatchWithPrefix(pattern, TestLeftoverPrefix) => $"\"{pattern}\" could match a name starting with {TestLeftoverPrefix} (the test-leftover sweep's), which this cleanup never takes",
         _ => string.Empty,
     };
+
+    private static bool StartsWithLiterals(string pattern) => pattern.Length >= 2 && pattern[0] is not ('*' or '?') && pattern[1] is not ('*' or '?');
+
+    /// <summary>Whether SOME name that starts with <paramref name="prefix"/> matches <paramref name="pattern"/> — exact, not sampled: such a name
+    /// exists exactly when some leading part of the pattern matches the whole prefix (whatever follows can then be spelled literally).</summary>
+    private static bool CouldMatchWithPrefix(string pattern, string prefix) =>
+        Enumerable.Range(1, pattern.Length).Any(length => Matches(pattern[..length], prefix));
 
     private static bool IsOutsideTheAlphabet(char c) => !(char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-' or '*' or '?');
 }

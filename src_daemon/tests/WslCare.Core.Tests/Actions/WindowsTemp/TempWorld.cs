@@ -107,11 +107,17 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
         return this;
     }
 
-    public TempWorld File(string relative, DateTimeOffset written, long length = 100, string owner = Sid)
+    public TempWorld File(string relative, DateTimeOffset written, long length = 100, string owner = Sid, DateTimeOffset? created = null)
     {
-        Add(Full(relative), EntryKind.File, written, owner, length);
+        Add(Full(relative), EntryKind.File, written, owner, length, created);
         return this;
     }
+
+    /// <summary>Paths whose <see cref="ResolvePath"/> answers somewhere else — a link swapped in under a path the walk already judged.</summary>
+    public Dictionary<string, string> Redirected { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Paths whose stat cannot be read (access denied).</summary>
+    public HashSet<string> Unreadable { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public TempWorld Link(string relative, DateTimeOffset written, string owner = Sid)
     {
@@ -176,12 +182,15 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
     public override string OwnerSidOf(string path) => _nodes.TryGetValue(Rules.Normalize(path), out var n) ? n.Owner : string.Empty;
 
     public override DirectoryTimeResult DirectoryLastWrite(string path) =>
-        _nodes.TryGetValue(Rules.Normalize(path), out var n) && n.Kind != EntryKind.File ? new DirectoryTimeResult.Measured(n.Written) : new DirectoryTimeResult.Missing();
+        Unreadable.Contains(Rules.Normalize(path)) ? new DirectoryTimeResult.Unreadable("access denied")
+        : _nodes.TryGetValue(Rules.Normalize(path), out var n) && n.Kind != EntryKind.File ? new DirectoryTimeResult.Measured(n.Written) { CreatedAt = n.Created } : new DirectoryTimeResult.Missing();
 
     public override FileSizeResult FileSize(string path) =>
-        _nodes.TryGetValue(Rules.Normalize(path), out var n) && n.Kind == EntryKind.File ? new FileSizeResult.Measured(n.Length, n.Written) : new FileSizeResult.Missing();
+        Unreadable.Contains(Rules.Normalize(path)) ? new FileSizeResult.Unreadable("access denied")
+        : _nodes.TryGetValue(Rules.Normalize(path), out var n) && n.Kind == EntryKind.File ? new FileSizeResult.Measured(n.Length, n.Written) { CreatedAt = n.Created } : new FileSizeResult.Missing();
 
-    public override RealPathResult ResolvePath(string path) => new RealPathResult.Resolved(Rules.Normalize(path));
+    public override RealPathResult ResolvePath(string path) =>
+        new RealPathResult.Resolved(Redirected.TryGetValue(Rules.Normalize(path), out var elsewhere) ? elsewhere : Rules.Normalize(path));
 
     public override void CreateDirectory(string path) => Add(path, EntryKind.Directory, Now, Sid);
 
@@ -197,6 +206,19 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
     public override DeletionVerdict DeleteFile(string path, DeletionScope scope) => Delete(path, scope, folder: false);
 
     public override DeletionVerdict DeleteDirectory(string path, DeletionScope scope) => Delete(path, scope, folder: true);
+
+    /// <summary>The non-recursive remove: a folder that still holds anything is the operating system's "directory not empty".</summary>
+    public override DeletionVerdict DeleteEmptyDirectory(string path, DeletionScope scope)
+    {
+        var key = Rules.Normalize(path);
+        if (_nodes.Keys.Any(k => Rules.IsStrictlyUnder(k, key)))
+        {
+            DeleteAsked.Add(key);
+            throw new IOException($"The directory is not empty : '{path}'");
+        }
+
+        return Delete(path, scope, folder: false);
+    }
 
     private DeletionVerdict Delete(string path, DeletionScope scope, bool folder)
     {

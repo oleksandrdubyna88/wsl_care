@@ -31,6 +31,7 @@ public sealed class ActWindowsTests
         var old = Path.Combine(windows.Paths.TempDirectory, "coai-old");
         Directory.CreateDirectory(old);
         Directory.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-30));
+        Directory.SetCreationTimeUtc(old, DateTime.UtcNow.AddDays(-30));
 
         var (exit, stdout, stderr) = CliRun.Over(Host(windows, elevated: false), "act", "A23", "--preview");
 
@@ -52,6 +53,18 @@ public sealed class ActWindowsTests
         stdout.Should().BeEmpty();
         stderr.Should().Contain("NOT elevated").And.Contain("Nothing was done");
         Directory.Exists(windows.Paths.StateDirectory).Should().BeFalse("no run lock, no state: the refusal came first");
+    }
+
+    [Fact]
+    public void An_unelevated_windows_request_that_also_holds_a_distro_action_is_refused_naming_the_side_not_needs_root()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var windows = new SandboxHost("act-a23-mixed");
+
+        var (exit, _, stderr) = CliRun.Over(Host(windows, elevated: false), "act", "A23,A4", "--confirm");
+
+        exit.Should().Be((int)ExitCode.Usage, stderr);
+        stderr.Should().Contain("A4 runs inside the WSL distro").And.NotContain("needs root");
     }
 
     [Fact]

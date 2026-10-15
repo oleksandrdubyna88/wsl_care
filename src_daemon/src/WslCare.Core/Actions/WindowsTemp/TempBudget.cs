@@ -13,7 +13,4 @@ internal sealed class TempBudget(int maxNodes, TimeSpan maxTime, TimeProvider cl
     public bool Exhausted => Remaining == 0 || OutOfTime();
 
     public void Spend(int nodes) => _used += nodes;
-
-    /// <summary>A fresh budget with the same limits — what one candidate's re-validation scan gets.</summary>
-    public TempBudget Fresh() => new(maxNodes, maxTime, clock);
 }

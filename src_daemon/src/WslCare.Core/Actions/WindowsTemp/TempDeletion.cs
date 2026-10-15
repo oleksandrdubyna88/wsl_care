@@ -13,10 +13,17 @@ namespace WslCare.Core.Actions.WindowsTemp;
 internal sealed record TreeDeletion(long Bytes, IReadOnlyList<string> Kept, string Stop, bool Cancelled, bool Emptied);
 
 /// <summary>
-/// The delete walk of one candidate (PLAN_windows_runner.md §3.12; the story's plan round, finding 6): it enumerates each folder
-/// WITHOUT following reparse points and checks each entry as it goes — an entry that is, or has become, a link stops the candidate
-/// ("a link appeared"), and nothing beyond it is touched. Every delete goes through <see cref="IFileSystem"/>, so the deletion policy
-/// judges it. A sharing violation or any other I/O failure is kept and counted, never retried in the same run.
+/// The delete walk of one candidate (PLAN_windows_runner.md §3.12; the story's plan round, finding 6; the Fable own review M1, M4): it
+/// enumerates each folder WITHOUT following reparse points and checks each entry as it goes — an entry that is, or has become, a link
+/// stops the candidate ("a link appeared"), and nothing beyond it is touched. Before EVERY delete the path's REAL location is asked
+/// for and must be where the walk expects it (the real temp root plus the entry's relative path): a link swapped in anywhere on the
+/// way after the entry was listed stops the candidate. A folder is removed only when EMPTY (<see cref="IFileSystem.DeleteEmptyDirectory"/>,
+/// never recursively), so whatever appeared after the listing is never deleted unjudged: the folder stays, counted "kept in use".
+/// Every delete goes through <see cref="IFileSystem"/> and so the deletion policy. A sharing violation or any other I/O failure is kept
+/// and counted, never retried in the same run.
+/// <para><b>Residual, stated:</b> the real-path check and the delete are two calls — a swap between them is not excluded, because the
+/// seam has no handle-relative delete (<c>NtSetInformationFile</c> on an open handle). The window is microseconds, the deletion policy
+/// still judges the path, and what a swap could reach is limited to what this account may delete anyway.</para>
 /// </summary>
 internal static class TempDeletion
 {
@@ -28,9 +35,9 @@ internal static class TempDeletion
     }
 
     /// <summary>One file — a top-level entry that is a file.</summary>
-    public static TreeDeletion DeleteFile(IFileSystem files, DeletionScope scope, string path, long length)
+    public static TreeDeletion DeleteFile(IFileSystem files, PathRules rules, DeletionScope scope, string path, long length)
     {
-        var walk = new Walk(files, PathRules.Windows, scope, CancellationToken.None);
+        var walk = new Walk(files, rules, scope, CancellationToken.None);
         var gone = walk.File(path, length);
         return new TreeDeletion(walk.Bytes, walk.Kept, walk.Stop, false, gone);
     }
@@ -38,6 +45,7 @@ internal static class TempDeletion
     private sealed class Walk(IFileSystem files, PathRules rules, DeletionScope scope, CancellationToken token)
     {
         private readonly List<string> _kept = [];
+        private readonly string _realRoot = files.ResolvePath(scope.Root) is RealPathResult.Resolved resolved ? resolved.Path : string.Empty;
 
         public long Bytes { get; private set; }
 
@@ -69,7 +77,7 @@ internal static class TempDeletion
         private bool Entry(FileEntry entry, string path) => entry.Kind switch
         {
             EntryKind.Link => Halt($"a link appeared: {path}"),
-            EntryKind.Directory => files.ReadLink(path) is LinkReadResult.NotALink ? Folder(path) : Halt($"a link appeared: {path}"),
+            EntryKind.Directory => files.ReadLink(path) is LinkReadResult.NotALink && InPlace(path) ? Folder(path) : Halt($"a link appeared: {path}"),
             _ => File(path, entry.Length),
         };
 
@@ -79,8 +87,20 @@ internal static class TempDeletion
             return false;
         }
 
+        /// <summary>Whether <paramref name="path"/> really is where its spelling puts it: the real temp root plus the same relative path.
+        /// A path that resolves anywhere else — a link anywhere on the way — is not this walk's to delete.</summary>
+        private bool InPlace(string path) =>
+            _realRoot.Length > 0
+            && files.ResolvePath(path) is RealPathResult.Resolved real
+            && rules.PathEquals(real.Path, rules.Join(_realRoot, [.. rules.Segments(path).Skip(rules.Segments(scope.Root).Count)]));
+
         public bool File(string path, long length)
         {
+            if (!InPlace(path))
+            {
+                return Halt($"a link appeared: {path} no longer resolves to where it was listed");
+            }
+
             try
             {
                 if (files.DeleteFile(path, scope) is DeletionVerdict.Refused refused)
@@ -100,9 +120,14 @@ internal static class TempDeletion
 
         private bool RemoveFolder(string path)
         {
+            if (!InPlace(path))
+            {
+                return Halt($"a link appeared: {path} no longer resolves to where it was listed");
+            }
+
             try
             {
-                return files.DeleteDirectory(path, scope) is DeletionVerdict.Refused refused ? Halt($"the deletion policy refused {path}: {refused.Reason}") : true;
+                return files.DeleteEmptyDirectory(path, scope) is DeletionVerdict.Refused refused ? Halt($"the deletion policy refused {path}: {refused.Reason}") : true;
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {

@@ -26,7 +26,9 @@ public sealed class WindowsTempFlows
         var path = Path.Combine(folder, file);
         File.WriteAllText(path, "scratch");
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-daysOld));
+        File.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-daysOld));
         Directory.SetLastWriteTimeUtc(folder, DateTime.UtcNow.AddDays(-daysOld));
+        Directory.SetCreationTimeUtc(folder, DateTime.UtcNow.AddDays(-daysOld));
         return folder;
     }
 

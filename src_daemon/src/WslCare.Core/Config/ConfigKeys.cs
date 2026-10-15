@@ -70,8 +70,9 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.BoolKey A21 = new("auto.A21") { Trust = KeyTrust.Off };
 
         /// <summary>A23, the Windows <c>%TEMP%</c> cleanup (PLAN_windows_runner.md §3.12, WR-T1): ON by default like the other timer
-        /// actions — installing the cleanup task is the opt-in, and the daemon's dry-run rules (<c>dryRun</c>, the first week) still
-        /// govern what the timer actually deletes.</summary>
+        /// actions — installing the cleanup task is the opt-in. What the timer actually deletes is still governed by <c>dryRun</c> AND by A23's
+        /// OWN first dry week (<c>first-timer-run-A23.json</c>, started by the first timer run that reaches A23's deletion gate): the common
+        /// stamp the Windows watch and the archive body start never opens A23 (the Fable own review M3).</summary>
         public static readonly ConfigKey.BoolKey A23 = new("auto.A23") { Trust = KeyTrust.Off };
     }
 

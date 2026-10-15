@@ -139,7 +139,7 @@ public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
         try
         {
             var info = new FileInfo(path);
-            return info.Exists ? new FileSizeResult.Measured(info.Length, new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) : NotAFile(path);
+            return info.Exists ? new FileSizeResult.Measured(info.Length, new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) { CreatedAt = new DateTimeOffset(info.CreationTimeUtc, TimeSpan.Zero) } : NotAFile(path);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -168,7 +168,7 @@ public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
         try
         {
             var info = new DirectoryInfo(path);
-            return info.Exists ? new DirectoryTimeResult.Measured(new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) : new DirectoryTimeResult.Missing();
+            return info.Exists ? new DirectoryTimeResult.Measured(new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) { CreatedAt = new DateTimeOffset(info.CreationTimeUtc, TimeSpan.Zero) } : new DirectoryTimeResult.Missing();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -623,6 +623,9 @@ public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
 
     public DeletionVerdict DeleteDirectory(string path, DeletionScope scope) =>
         Act(Judge(FileOperation.Delete, path, string.Empty, scope).Verdict, () => Directory.Delete(path, recursive: true));
+
+    public DeletionVerdict DeleteEmptyDirectory(string path, DeletionScope scope) =>
+        Act(Judge(FileOperation.Delete, path, string.Empty, scope).Verdict, () => Directory.Delete(path, recursive: false));
 
     public DeletionVerdict MoveFile(string from, string to, DeletionScope scope) =>
         Act(Judge(FileOperation.Move, from, to, scope).Verdict, () => File.Move(from, to));

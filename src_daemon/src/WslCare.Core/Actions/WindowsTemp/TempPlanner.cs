@@ -94,7 +94,7 @@ internal static class TempPlanner
         public void Decide(FileEntry entry, bool resumes, TempCheckpoint checkpoint)
         {
             token.ThrowIfCancellationRequested();
-            var candidate = new Candidate(entry.Name, context.Paths.Rules.Join(root, entry.Name), entry.Kind, entry.Length, entry.LastWriteUtc);
+            var candidate = new Candidate(entry.Name, context.Paths.Rules.Join(root, entry.Name), entry.Kind, entry.Length, entry.LastWriteUtc, entry.CreatedUtc);
             var judgement = judge.Judge(candidate, budget, token, resumes ? checkpoint : TempCheckpoint.None);
             _entries.Add(new PlannedEntry(candidate, judgement, resumes));
             _eligible += judgement.IsEligible ? 1 : 0;

@@ -32,6 +32,10 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
     /// <summary>Not part of a full check's timer pass: the cleanup has its own task (WR-T2).</summary>
     public bool InFullCheck => false;
 
+    /// <summary>A23 keeps its own first dry week (<c>first-timer-run-A23.json</c>): the common stamp is started by the Windows watch and the
+    /// archive body, so it would open deletion on the first A23 run without any dry week of its own.</summary>
+    public string DryWindowStamp => "A23";
+
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Windows];
 
     public IReadOnlyList<CommandTemplate> Commands { get; } = [];

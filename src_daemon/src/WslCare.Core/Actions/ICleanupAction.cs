@@ -256,6 +256,11 @@ public interface ICleanupAction
     /// task (<c>act A23</c> with the timer trigger, WR-T2), and a full check must not list the whole temp folder for it.</summary>
     bool InFullCheck => true;
 
+    /// <summary>The name of this action's OWN dry-run week stamp (<c>first-timer-run-&lt;name&gt;.json</c>), or empty — every action but A23 —
+    /// for the common one. An action that deletes on a schedule of its own must not be opened by a week another run's timer started
+    /// (the Windows watch and the archive body start the common one): "the first week is dry" has to be true FOR it.</summary>
+    string DryWindowStamp => string.Empty;
+
     Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken);
 
     /// <summary>Whether the TIMER's trigger fired for this preview (a button runs regardless, plan §5).</summary>

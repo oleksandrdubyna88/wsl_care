@@ -42,11 +42,13 @@ public sealed class WindowsTempEngineTests : IDisposable
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, "scratch");
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-days));
+            File.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-days));
         }
 
         foreach (var dir in Directory.EnumerateDirectories(folder, "*", SearchOption.AllDirectories).Append(folder))
         {
             Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow.AddDays(-daysOld));
+            Directory.SetCreationTimeUtc(dir, DateTime.UtcNow.AddDays(-daysOld));
         }
 
         return folder;
@@ -118,6 +120,35 @@ public sealed class WindowsTempEngineTests : IDisposable
         done.Detail.DryRun.Should().BeTrue("the first week of the timer is dry whatever dryRun says");
         done.Detail.Actions.Should().ContainSingle().Which.Status.Should().Be(ActionStatus.DryRun);
         Directory.Exists(old).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_dry_week_stamp_another_run_wrote_never_opens_deletion_for_a23_which_starts_its_own_week()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var old = Make("coai-old", 30, ("a.txt", 30));
+        Directory.CreateDirectory(_host.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(_host.Paths), $$"""{ "schemaVersion": 1, "at": "{{DateTimeOffset.UtcNow.AddDays(-30):O}}" }""");
+
+        var done = Done(await Engine(userConfig: """{ "dryRun": false }""").ExecuteAsync(Run(RunTrigger.Timer), TestContext.Current.CancellationToken));
+
+        done.Detail.Actions.Should().ContainSingle().Which.Status.Should().Be(ActionStatus.DryRun, "the common stamp is the watch's or the archive's week, not A23's");
+        Directory.Exists(old).Should().BeTrue();
+        File.Exists(DryRunWindow.File(_host.Paths, "A23")).Should().BeTrue("A23's own week started now");
+    }
+
+    [Fact]
+    public async Task An_a23_week_that_has_passed_lets_the_timer_delete_with_dry_run_off()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var old = Make("coai-old", 30, ("a.txt", 30));
+        Directory.CreateDirectory(_host.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(_host.Paths, "A23"), $$"""{ "schemaVersion": 1, "at": "{{DateTimeOffset.UtcNow.AddDays(-30):O}}" }""");
+
+        var done = Done(await Engine(userConfig: """{ "dryRun": false }""").ExecuteAsync(Run(RunTrigger.Timer), TestContext.Current.CancellationToken));
+
+        done.Detail.Actions.Should().ContainSingle().Which.Status.Should().Be(ActionStatus.Ran);
+        Directory.Exists(old).Should().BeFalse();
     }
 
     [Fact]

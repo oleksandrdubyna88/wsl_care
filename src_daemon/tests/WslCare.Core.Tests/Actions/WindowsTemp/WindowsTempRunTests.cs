@@ -109,6 +109,133 @@ public sealed class WindowsTempRunTests : IDisposable
         _world.Exists("coai-a").Should().BeTrue();
     }
 
+    // ---------- the Fable own review ----------
+
+    [Fact]
+    public async Task A_file_that_appears_after_the_last_delete_survives_and_the_folder_is_kept_not_empty()
+    {
+        _world.Dir("coai-a", Old).File(@"coai-a\f", Old);
+        _world.AfterDelete = deleted =>
+        {
+            if (deleted.EndsWith(@"\f", StringComparison.OrdinalIgnoreCase))
+            {
+                _world.File(@"coai-a\fresh.txt", Fresh);
+            }
+        };
+
+        var (_, run) = await Both();
+
+        run.Count.Should().Be(0, "the folder was not empty when it came to be removed");
+        _world.Exists(@"coai-a\fresh.txt").Should().BeTrue("the removal is never recursive: what appeared after the listing is not deleted unjudged");
+        _world.Exists("coai-a").Should().BeTrue();
+        run.Notes.Should().Contain(n => n.Contains("kept in use 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_fresh_file_created_during_the_interruption_retains_the_candidate()
+    {
+        _world.Dir("coai-half", Fresh, created: Old).File(@"coai-half\left.txt", Old);
+        _world.File(@"coai-half\copied-in.txt", Old, created: TempWorld.Now.AddMinutes(-5));
+        InProgress("coai-half", Old, TempWorld.Now.AddHours(-1));
+
+        var (preview, _) = await Both();
+
+        preview.Count.Should().Be(0, "a FILE created after the checkpoint (write time kept old by a copy) did not exist when the candidate was judged");
+        _world.Exists("coai-half").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_path_that_resolves_elsewhere_stops_the_candidate_before_anything_beyond_it_is_deleted()
+    {
+        _world.Dir("coai-a", Old).File(@"coai-a\a-first.txt", Old).Dir(@"coai-a\sub", Old).File(@"coai-a\sub\inner.txt", Old);
+        _world.AfterDelete = deleted =>
+        {
+            if (deleted.EndsWith("a-first.txt", StringComparison.OrdinalIgnoreCase))
+            {
+                _world.Redirected[_world.Full(@"coai-a\sub")] = @"C:\elsewhere\sub";
+            }
+        };
+
+        var (_, run) = await Both();
+
+        run.Count.Should().Be(0);
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain("a link appeared");
+        _world.DeleteAsked.Should().NotContain(p => p.EndsWith("inner.txt", StringComparison.OrdinalIgnoreCase), "the real path of the folder is not where it was judged");
+        _world.Exists(@"coai-a\sub\inner.txt").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_file_whose_real_path_is_elsewhere_is_not_deleted()
+    {
+        _world.Dir("coai-a", Old).File(@"coai-a\a-first.txt", Old).File(@"coai-a\b.txt", Old);
+        _world.AfterDelete = deleted =>
+        {
+            if (deleted.EndsWith("a-first.txt", StringComparison.OrdinalIgnoreCase))
+            {
+                _world.Redirected[_world.Full(@"coai-a\b.txt")] = @"C:\elsewhere\b.txt";
+            }
+        };
+
+        var (_, run) = await Both();
+
+        run.Count.Should().Be(0);
+        _world.DeleteAsked.Should().NotContain(p => p.EndsWith("b.txt", StringComparison.OrdinalIgnoreCase));
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain("a link appeared");
+    }
+
+    [Fact]
+    public async Task Resuming_an_interrupted_candidate_never_moves_the_cursor_back_to_its_name()
+    {
+        _world.Dir("coai-a", Old, created: Old).File(@"coai-a\left.txt", Old);
+        _world.Dir("coai-n", Old).File(@"coai-n\f", Old);
+        _world.WriteCursor(TempCursor.Fresh with { Last = "coai-m", InProgress = new TempCheckpoint("coai-a", Old, TempWorld.Now.AddHours(-1), TempWorld.Sid) });
+        string? lastWhileSecondRuns = null;
+        _world.AfterDelete = deleted =>
+        {
+            if (deleted.EndsWith(@"coai-n\f", StringComparison.OrdinalIgnoreCase))
+            {
+                lastWhileSecondRuns = _world.Cursor().Last;
+            }
+        };
+
+        await Both();
+
+        _world.Exists("coai-a").Should().BeFalse("the resumed candidate was finished");
+        lastWhileSecondRuns.Should().Be("coai-m", "finishing an earlier pass' candidate must not drag the cursor back to its name");
+    }
+
+    [Fact]
+    public async Task A_target_whose_stat_cannot_be_read_is_unreadable_not_already_gone()
+    {
+        _world.File("stage-a.log", Old, 10);
+
+        var (_, run) = await Both(between: _ => _world.Unreadable.Add(_world.Full("stage-a.log")));
+
+        run.Count.Should().Be(0);
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain("unreadable").And.NotContain("already gone");
+        run.Notes.Should().Contain(n => n.Contains("unreadable 1", StringComparison.Ordinal) && n.Contains("already gone 0", StringComparison.Ordinal));
+        _world.Exists("stage-a.log").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_revalidation_scans_share_one_budget_so_the_delete_phase_is_bounded()
+    {
+        foreach (var name in new[] { "coai-a", "coai-b" })
+        {
+            _world.Dir(name, Old).File($@"{name}\f1", Old).File($@"{name}\f2", Old);
+        }
+
+        var calls = 0;
+        var action = new WindowsTempAction(c => calls++ == 0 ? TempSettings.From(c.Config) : TempSettings.From(c.Config) with { ScanMaxNodes = 3 });
+        var context = _world.Context();
+        var preview = await action.PreviewAsync(context, _world.Commands(action, context), TestContext.Current.CancellationToken);
+        var run = await action.RunAsync(context, preview, _world.Commands(action, context), TestContext.Current.CancellationToken);
+
+        preview.Count.Should().Be(2);
+        run.Count.Should().Be(1, "the first candidate's re-validation spent the run's whole budget");
+        _world.Exists("coai-b").Should().BeTrue("the second could not be re-validated within it, so it is retained");
+    }
+
     [Fact]
     public async Task The_run_detail_counts_outcomes_and_logical_bytes()
     {

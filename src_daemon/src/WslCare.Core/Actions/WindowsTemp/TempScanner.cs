@@ -15,8 +15,8 @@ internal abstract record TreeScan
     /// <param name="NewestFile">The newest write time of any FILE inside it.</param>
     /// <param name="Bytes">The summed length of its files (logical bytes).</param>
     /// <param name="HoldsGit">A <c>.git</c> file or folder sits at its top.</param>
-    /// <param name="NewestFolderCreated">The newest CREATION time of any folder inside it (not its own).</param>
-    public sealed record Measured(DateTimeOffset Newest, DateTimeOffset NewestFile, long Bytes, bool HoldsGit, DateTimeOffset NewestFolderCreated) : TreeScan;
+    /// <param name="NewestCreated">The newest CREATION time of any file or folder inside it (not its own).</param>
+    public sealed record Measured(DateTimeOffset Newest, DateTimeOffset NewestFile, long Bytes, bool HoldsGit, DateTimeOffset NewestCreated) : TreeScan;
 
     /// <summary>The tree could not be judged — a reparse point inside, the budget, an unreadable folder.</summary>
     public sealed record Retained(string Reason) : TreeScan;
@@ -42,7 +42,7 @@ internal static class TempScanner
             }
         }
 
-        return new TreeScan.Measured(state.Newest, state.NewestFile, state.Bytes, state.HoldsGit, state.NewestFolderCreated);
+        return new TreeScan.Measured(state.Newest, state.NewestFile, state.Bytes, state.HoldsGit, state.NewestCreated);
     }
 
     /// <summary>One folder: listed within the budget, its entries taken in. Empty when it was taken in; otherwise why the tree is retained.</summary>
@@ -57,7 +57,7 @@ internal static class TempScanner
         budget.Spend(listed.Entries.Count);
         foreach (var entry in listed.Entries)
         {
-            if (Take(entry, rules.Join(at, entry.Name), at == top, state, pending) is { Length: > 0 } reparse)
+            if (Take(entry, rules.Join(at, entry.Name), state, pending) is { Length: > 0 } reparse)
             {
                 return reparse;
             }
@@ -66,20 +66,22 @@ internal static class TempScanner
         return string.Empty;
     }
 
-    private static string Take(FileEntry entry, string path, bool atTop, Walk state, Stack<string> pending)
+    private static string Take(FileEntry entry, string path, Walk state, Stack<string> pending)
     {
-        state.HoldsGit |= atTop && entry.Name == ".git";
+        // WR-T1 (the Fable own review m3): a .git marker at ANY depth, whatever its case, retains the tree — a repository nested in a
+        // scratch folder is somebody's working copy.
+        state.HoldsGit |= string.Equals(entry.Name, ".git", StringComparison.OrdinalIgnoreCase);
+        state.NewestCreated = Max(state.NewestCreated, entry.CreatedUtc);
         switch (entry.Kind)
         {
             case EntryKind.Link:
                 return $"it holds a reparse point ({entry.Name}), which is never followed";
             case EntryKind.Directory:
-                state.Newest = Max(state.Newest, entry.LastWriteUtc);
-                state.NewestFolderCreated = Max(state.NewestFolderCreated, entry.CreatedUtc);
+                state.Newest = Max(state.Newest, Max(entry.LastWriteUtc, entry.CreatedUtc));
                 pending.Push(path);
                 return string.Empty;
             default:
-                state.Newest = Max(state.Newest, entry.LastWriteUtc);
+                state.Newest = Max(state.Newest, Max(entry.LastWriteUtc, entry.CreatedUtc));
                 state.NewestFile = Max(state.NewestFile, entry.LastWriteUtc);
                 state.Bytes += entry.Length;
                 return string.Empty;
@@ -98,6 +100,6 @@ internal static class TempScanner
 
         public bool HoldsGit { get; set; }
 
-        public DateTimeOffset NewestFolderCreated { get; set; } = DateTimeOffset.MinValue;
+        public DateTimeOffset NewestCreated { get; set; } = DateTimeOffset.MinValue;
     }
 }

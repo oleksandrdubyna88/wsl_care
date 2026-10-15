@@ -164,6 +164,33 @@ public sealed class WindowsTempSelectionTests : IDisposable
         preview.What.Should().Contain("test-leftover sweep");
     }
 
+    [Fact]
+    public async Task A_file_with_an_old_write_time_but_a_fresh_creation_time_is_young()
+    {
+        _world.Dir("coai-a", Old).File(@"coai-a\copied.txt", Old, created: Fresh);
+        _world.Dir("coai-b", Old, created: Fresh).File(@"coai-b\f", Old, created: Old);
+        _world.Dir("coai-c", Old).Dir(@"coai-c\sub", Old, created: Fresh).File(@"coai-c\sub\f", Old, created: Old);
+
+        var preview = await Preview();
+
+        Fact(preview, TempFacts.Eligible).Should().Be(0, "age is the later of a write time and a creation time, files and folders alike");
+        Fact(preview, TempFacts.Young).Should().Be(3);
+    }
+
+    [Theory]
+    [InlineData(@"coai-a\sub\.git")]
+    [InlineData(@"coai-a\x\y\.GIT")]
+    public async Task A_git_marker_at_any_depth_retains_the_tree_whatever_its_case(string marker)
+    {
+        _world.Dir("coai-a", Old).Dir(marker, Old).File(marker + @"\HEAD", Old);
+
+        var preview = await Preview();
+
+        Fact(preview, TempFacts.Eligible).Should().Be(0);
+        Fact(preview, TempFacts.Excluded).Should().Be(1);
+        preview.What.Should().Contain("git working folder");
+    }
+
     [Theory]
     [InlineData(".git", true)]
     [InlineData(".git", false)]
