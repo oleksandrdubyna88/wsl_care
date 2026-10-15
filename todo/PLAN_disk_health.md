@@ -1660,9 +1660,10 @@ The false positives, each exempted by shape and each a RED test that it is SHOWN
 - **paths** — never reach the test (arm 6);
 - **GUIDs** `^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$` — Claude session ids (`--resume=<guid>`, `-r <guid>`); the
   sidebar's row 11 shows one (`:261`);
-- **digests** — exactly 40 or 64 LOWERCASE hex characters (a git commit, a Docker container id as `containerd-shim … -id <64 hex>`
-  prints it). A 32-hex token is NOT exempt (it is the shape of several vendors' API keys; a VS Code `workspaceStorage/<32 hex>`
-  lives inside a path, which arm 6 keeps);
+- **digests are NOT exempt** (decided 2026-10-15, deny by default): a bare 32-, 40- or 64-hex positional is redacted — a
+  pre-`ghp_` GitHub token is 40 hex, and a hex-encoded key of any length looks exactly like a digest. A digest inside a PATH
+  (`.vscode-server/bin/<40 hex>/node`, `workspaceStorage/<32 hex>`) is kept by arm 6; a bare container id or commit in a
+  shown line becomes `<redacted>`, a cost accepted;
 - **npm specs** `^@?[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?@[a-z0-9.+-]+$` — `@playwright/mcp@latest`
   (`status.json:548`);
 - **versions and dates** — digits with `.`, `-`, `:`, `+` only;
@@ -1692,7 +1693,7 @@ The false positives, each exempted by shape and each a RED test that it is SHOWN
 
 | Decision | Rule |
 |---|---|
-| what is shown | the program; flags; paths; GUIDs; digests of 40 / 64 lowercase hex; npm specs; versions; short plain words; a URL's scheme, host, port and path |
+| what is shown | the program; flags; paths; GUIDs; npm specs; versions; short plain words; a URL's scheme, host, port and path |
 | what becomes `<redacted>` | the value of a secret flag or assignment; a creds-shaped token; a blob holding a secret word with a separator; a high-entropy token; a URL's userinfo and secret query values; a program-specific password value |
 | the replacement | always the single constant `<redacted>` (`ProcessFiles.cs:98`) — **never the value's length, never a prefix, never a suffix** (`abc…`, `***`, `gh…p_`); a RED test asserts the redacted text holds no 4-character substring of the value |
 | partial values | none: a value is replaced whole; `name=` keeps its name only when the name is `[A-Za-z0-9_.-]` |
@@ -1764,9 +1765,8 @@ A new `Core.Tests/Processes/Redaction/CommandLineRedactionTests.cs`, each case n
 12. A bare 48-character base64url positional → `<redacted>`; the same token one character under `secretMinChars` with the key
     set to its length → shown (the key is read, not a constant).
 13. Shown, each: `/home/user/.vscode-server/bin/<40 hex>/node`, `--add-dir=/home/user/git/project-tokenizer` (a path value with
-    "token" inside it stays — arm 3 judges the NAME `add-dir`, then the value by arm 6), `<40 hex>` bare, `<64 hex>` bare,
-    `@playwright/mcp@latest`, `ubuntu-24.04-20260101`, `sourceGeneratorExecutionPreference`, `rovodev-ide-vscode`.
-14. A 32-hex bare positional → `<redacted>`.
+    "token" inside it stays — arm 3 judges the NAME `add-dir`, then the value by arm 6), `@playwright/mcp@latest`, `ubuntu-24.04-20260101`, `sourceGeneratorExecutionPreference`, `rovodev-ide-vscode`.
+14. A 32-hex, a 40-hex and a 64-hex bare positional → each `<redacted>` (no digest exemption).
 15. **Never a prefix:** for every redacted case the output holds no 4-character substring of the value and no digit of its length.
 16. **No truncation leak:** a 300-character secret at the end of a line, cut at 200 → the line ends in `<redacted>` or a prefix of
     that constant, never in a character of the secret; `shownCommandChars` set to 5 → `<reda`.
@@ -1846,8 +1846,7 @@ Definition of Done:
 - **Short secrets.** A PIN, a short password (`-pHunter2` outside the mysql table), a 12-character token with no marker: below
   `secretMinChars` and with no shape, they are shown. Lowering the key raises false positives; 20 is the detectors' floor.
 - **Passphrases of words** (`correct-horse-battery-staple`): two classes, low entropy — shown.
-- **Hex keys of 40 or 64 characters** are exempt as digests (git, Docker); a hex-encoded credential of exactly that length is
-  shown. A GitHub classic token from before the `ghp_` prefix (40 hex) is one; those are retired.
+- **Bare hex digests are lost** (a container id, a commit) — the price of redacting every bare hex token; inside a path they stay.
 - **A secret as a file name or a path component** (`/tmp/ghp_…`): arm 6 shows paths — unless the component is creds-shaped
   (arm 4 runs before arm 6, so `/tmp/ghp_abc…` IS redacted whole; a plain-looking name is not).
 - **A secret split across two positionals**, or one whose flag is in another language's spelling (`--contraseña`), is shown.
@@ -1858,5 +1857,15 @@ Definition of Done:
   split on spaces.
 - **History already written** keeps what the old rule showed: detail files under `{state}/runs/` are never rewritten (§3.2's
   "raw files are never rewritten"); `runs.historyRetentionDays` retires them. The PR body says so.
+### 10. The designer's open questions, decided (2026-10-15, the orchestrator)
+
+1. 40/64-hex exemption → **removed** (deny by default; §2.4, RED 14).
+2. Secret words as substrings → **kept** (`--max-thinking-tokens` keeps losing its number; a lost number is cheaper than a shown
+   token).
+3. History already written → **no sweep**; `runs.historyRetentionDays` retires it; the PR body says so.
+4. A user-widenable word list → **deferred** to the open tail (`processes.extraSecretWords` + `SafeDirection.Superset`); not
+   needed for #87.
+5. Kernel ring lines → **a follow-up**, recorded in the open tail; not in this story.
+
 - **Not read, so not leaked:** `/proc/[pid]/environ`, Docker's container environment (`DockerCommands.cs:31-35`), the Windows
   binary's command lines (R5, until E15.S6).
