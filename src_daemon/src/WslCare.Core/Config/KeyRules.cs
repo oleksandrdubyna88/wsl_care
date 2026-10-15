@@ -79,6 +79,24 @@ public abstract record TextRule
         private static bool IsShareName(string server, string share) => server.Length > 0 && share.Length > 0 && server is not ("?" or ".");
     }
 
+    /// <summary>A Windows absolute path on a LOCAL drive (<c>worktrees.roots</c>' members, E19.S3): <c>X:\…</c> — a drive letter, a colon, a
+    /// backslash, then at least one folder — of at most <see cref="AbsolutePathOrEmpty.MaxLength"/> characters, no control character, no
+    /// <c>/…</c> path, no share (<c>\\server\share</c>), no device path (<c>\\?\…</c>), no empty, <c>.</c> or <c>..</c> segment. Never empty:
+    /// an empty list is the empty list, not an empty member. Whether the drive is FIXED and the folder is one is the reader's judgement
+    /// (<c>Worktrees.WorktreeRoots</c>), at <c>worktrees roots set</c> and at every scan.</summary>
+    public sealed record WindowsLocalPath : TextRule
+    {
+        public override string Describe => $"a Windows path on a local drive (X:\\…), at most {AbsolutePathOrEmpty.MaxLength} characters, with no share, no device path, no control character and no empty, . or .. segment";
+
+        public override string Problem(string value) => IsLocalDrivePath(value) ? string.Empty : $"not {Describe}";
+
+        private static bool IsLocalDrivePath(string value) =>
+            value.Length is >= 3 && value.Length <= AbsolutePathOrEmpty.MaxLength
+            && char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] == '\\'
+            && !value.Contains('/') && !value.Any(char.IsControl)
+            && !Hosting.PathSpelling.HasBadSegment(value);
+    }
+
     /// <summary>Empty, or an HTTPS address under the ONE rule the command slot holds too
     /// (<see cref="Processes.Policy.HttpsUrls"/>, PLAN_windows_time_guard.md D2) — <c>clock.referenceUrl</c>. Its own record
     /// rather than <see cref="Matching"/>: a pattern key is read by no daemon code, and this one is the argv of root's curl.</summary>

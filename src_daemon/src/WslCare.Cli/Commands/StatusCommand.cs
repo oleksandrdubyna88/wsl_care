@@ -13,6 +13,7 @@ using WslCare.Core.Mcp;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
 using WslCare.Core.Thresholds;
+using WslCare.Core.Worktrees;
 
 namespace WslCare.Cli.Commands;
 
@@ -73,10 +74,13 @@ internal static class StatusCommand
         var ledger = new WindowsCpuLedger.Kept(host.Files, McpCpuLedgerPlace.ForWindowsStatus(windows, host.Privilege.IsRoot), host.WindowsBoot);
         var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait, ledger).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
         var advice = VmmemAdvice.For(sample.Host.Bind(h => h.VmmemWorkingSetBytes), sample.Host.Bind(h => h.Memory), wslConfig, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb));
+        var (worktrees, worktreesVerdict) = WorktreesStatus.From(config.TextList(ConfigKeys.Worktrees.Roots), new WorktreeReportStore(windows, host.Files).Read(), WorktreeSettings.From(config), host.Clock.GetUtcNow());
         return report with
         {
             WindowsMcpServers = WindowsMcpServersReport.From(mcp),
             Host = advice.Length == 0 ? report.Host : report.Host with { VmmemAdvice = advice },
+            Worktrees = worktrees,
+            Verdicts = [.. report.Verdicts ?? [], worktreesVerdict],
         };
     }
 
@@ -115,6 +119,11 @@ internal static class StatusText
             text.AppendLine(WindowsMcpServers(windows));
         }
 
+        if (report.Worktrees is { } worktrees)
+        {
+            text.AppendLine(Worktrees(worktrees));
+        }
+
         if (report.InteropRelays is { } relays)
         {
             text.AppendLine(InteropRelays(relays));
@@ -143,6 +152,14 @@ internal static class StatusText
         { Available: true } => Invariant($"windows mcp servers: {mcp.Count} ({mcp.IdleCount} idle, {mcp.OrphanedCount} orphaned), {Number(mcp.CpuCores!)} cores{CpuBases((mcp.Instances ?? []).Select(i => i.CpuBasis), mcp.WindowMilliseconds)}, {Gib(mcp.Held!)} private ({mcp.MemoryRead} read)")
             + string.Concat((mcp.Owners ?? []).Take(TopShown).Select((o, i) => Invariant($"{(i == 0 ? "; " : ", ")}{o.Count} under {o.Parent}"))),
         _ => $"windows mcp servers: unavailable ({mcp.Reason})",
+    };
+
+    /// <summary>One line (E19.S3, the Windows binary): <c>worktrees: 5 worktrees (1 locked), 1 orphan, 4 build-output folders (3.0 GiB present), scanned 2 h ago</c>
+    /// — or why there is no scan to read.</summary>
+    private static string Worktrees(WorktreesSection section) => section switch
+    {
+        { Available: true } => Invariant($"worktrees: scanned {section.Basis.ScannedAt:yyyy-MM-dd HH:mm}Z, {TimeSpan.FromSeconds(section.Basis.AgeSeconds ?? 0).TotalHours:0.0} h ago{(section.Stale ? ", STALE" : string.Empty)}; {section.Report!.Roots.Sum(r => r.Worktrees)} worktrees, {section.Report.Roots.Sum(r => r.Orphans)} orphans"),
+        _ => $"worktrees: {section.Reason}",
     };
 
     /// <summary>One line (E14 S7b.2, the distro): <c>windows mcp relays: 3 (1 re-parented); the timer stops client-gone relays: on (wsl-care

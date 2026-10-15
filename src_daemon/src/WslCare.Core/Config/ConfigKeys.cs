@@ -153,6 +153,7 @@ public static partial class ConfigKeys
         Systemd.IgnoredFailedUnits,
         Disk.VolumeFreeIgnoreLetters,
         Archive.OlderThanDays, Archive.WindowsIdleDays, Archive.ClockSkewMinutes, Archive.BaseFolder, Archive.Agents,
+        Worktrees.Roots, Worktrees.ProjectFileExtensions, Worktrees.BuildArtifactPatterns, Worktrees.WslAutomountRoots,
         Idle.CpuPercent, Idle.Minutes,
         Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,
         Clock.MaxDriftSeconds,

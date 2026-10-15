@@ -7,6 +7,7 @@ using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
 using WslCare.Core.Json;
+using WslCare.Core.Worktrees;
 
 namespace WslCare.Cli.Commands;
 
@@ -51,6 +52,7 @@ internal static class ConfigCommand
             { Trust.MachineOnly: true } => Output.Refuse(stderr, $"{key.Name} is set only in the machine layer (/etc/wsl-care/config.json, as root); the user layer would be ignored. Nothing was written."),
             ConfigKey.AgentListKey agents => SetAgents(agents, value, host, stdout, stderr),
             _ when key == ConfigKeys.Archive.BaseFolder => SetBaseFolder(key, value, host, stdout, stderr),
+            _ when key == ConfigKeys.Worktrees.Roots => SetRoots(key, value, host, stdout, stderr),
             _ => Checked(key, ConfigValidation.Parse(key, value), host, stdout, stderr),
         };
 
@@ -74,6 +76,24 @@ internal static class ConfigCommand
         ConfigValidation.Parse(key, value) is ValueCheck.Ok && value.Length > 0 && ArchiveCommand.Judge(host, value) is { Accepted: false } refused
             ? Output.Refuse(stderr, $"{key.Name}: refused ({refused.Rule}): {refused.Refusal}. Nothing was written.")
             : Checked(key, ConfigValidation.Parse(key, value), host, stdout, stderr);
+
+    /// <summary><c>config set worktrees.roots &lt;path&gt;[,&lt;path&gt;…]</c> (E19.S3), the CLI duplicate of <c>worktrees roots set</c>: the same root rules, judged
+    /// by the Windows binary (the distro's has no such folders), every refusal naming its rule, and nothing written on any of them.</summary>
+    private static int SetRoots(ConfigKey key, string value, CliHost host, TextWriter stdout, TextWriter stderr)
+    {
+        if (host.Paths is not WindowsHostPaths)
+        {
+            return Output.Refuse(stderr, $"{key.Name} is the Windows binary's: set it with wsl-care.exe worktrees roots set. Nothing was written.");
+        }
+
+        var check = ConfigValidation.Parse(key, value);
+        var refused = check is ValueCheck.Ok { Value: ConfigValue.TextList list }
+            ? WorktreeRoots.Judge(host.Paths, host.Files, WorktreeRoots.ThisMachinesDrive, host.LoadConfig().Config.Int(ConfigKeys.Worktrees.MaxRoots), list.Values).FirstOrDefault(v => !v.Accepted)
+            : null;
+        return refused is not null
+            ? Output.Refuse(stderr, $"{key.Name}: refused ({refused.Rule}): {refused.Reason}. Nothing was written.")
+            : Checked(key, check, host, stdout, stderr);
+    }
 
     private static int Checked(ConfigKey key, ValueCheck check, CliHost host, TextWriter stdout, TextWriter stderr) => check switch
     {

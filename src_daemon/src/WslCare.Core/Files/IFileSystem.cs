@@ -196,6 +196,20 @@ public abstract record TreeMeasure
 
         /// <summary>Every file counted, when the rules asked to list them (<see cref="TreeRules.ListFiles"/>); empty otherwise.</summary>
         public IReadOnlyList<TreeFile> Listed { get; init; } = [];
+
+        /// <summary>How many entries the enumeration could not open (access denied and the like), counted when the rules asked for it
+        /// (<see cref="TreeRules.CountDenied"/>) — a figure that is 0 for every other walk, which ignores what it cannot open. Any count
+        /// above 0 means the figures are a lower bound: an unreadable subtree may hold a fresh write (E19.S3).</summary>
+        public int Denied { get; init; }
+
+        /// <summary>The full path of every entry (file or folder) whose name is in <see cref="TreeRules.ReportNames"/>, at most
+        /// <see cref="TreeRules.ReportNamesMax"/> of them; empty for a walk that asked for none.</summary>
+        public IReadOnlyList<string> Found { get; init; } = [];
+
+        /// <summary>The newest last write among every entry the walk SAW (files and folders, a folder it declined to enter included),
+        /// when the rules asked to track it (<see cref="TreeRules.TrackNewest"/>); <see cref="DateTimeOffset.MinValue"/> when it saw
+        /// none, or was not asked.</summary>
+        public DateTimeOffset NewestWriteUtc { get; init; } = DateTimeOffset.MinValue;
     }
 
     public sealed record Missing : TreeMeasure;

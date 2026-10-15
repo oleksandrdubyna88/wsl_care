@@ -859,6 +859,52 @@ flowchart LR
 - **Not built here**: a vmmem line in the distro's disk script. With it the full run can judge `host.vmmem` again
   (`FullRunVerdicts` gains it); it waits for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
 
+## The worktree report (E19.S3 of PLAN_disk_hygiene_windows_E19.md, 2026-10-15) — read-only, no git
+
+The Windows binary's `worktrees roots set | roots clear | scan`: where the space of a developer's git worktrees went, without starting git and without deleting
+anything (DH-3 part 1 of [PLAN_disk_hygiene_windows.md](../todo/PLAN_disk_hygiene_windows.md) §3.3; git's three read-only questions and a real "reclaimable" are E19.S4).
+
+```mermaid
+flowchart TD
+    set["worktrees roots set (stdin)"] --> judge["WorktreeRoots.Judge<br/>shape, fixed drive, folder, no link,<br/>profile, protected places, overlap, max"]
+    judge -- "any refused" --> none["exit 2, nothing written<br/>a verdict per path"]
+    judge -- "all accepted" --> write["UserConfigWriter: worktrees.roots"]
+    scan["worktrees scan"] --> again["Judge again, every root"]
+    again --> kinds["FolderKinds.Classify per child<br/>pointer files only"]
+    kinds --> walk["FolderWalk: outside build output<br/>CountDenied + newest write<br/>then each build folder alone"]
+    walk --> rule["BuildOutputRule.Retention<br/>extension list, never-artifacts, skew"]
+    rule --> report["WorktreeReports.From -> worktrees.json<br/>atomic, DeletionScope(state, worktrees)"]
+    report --> status["status: worktrees + worktrees.reclaimable = unknown"]
+```
+
+**Roots.** `worktrees.roots` is a USER key like `archive.baseFolder` (E19 stories §3 decision 3): an invalid hand-edited value is a notice, and a root that breaks a rule
+is refused where it is used — at `roots set` AND at the start of every scan, with its reason in the report. `maxRoots` and the lists that widen what a cleanup may delete
+(`buildArtifactPatterns`, `wslAutomountRoots`) are machine-only. The folders arrive on stdin through `StdinList` (never on argv); the shared request is
+`contracts/requests/worktrees-roots-set-stdin.json`.
+
+**Classifier** (`Worktrees/FolderKinds.cs`, file reads only through `ReadUserFile`: capped, no link on the way). A `.git` FILE names an admin folder (`gitdir:`); the admin
+folder's own `gitdir` must point back (case and slash blind) → `worktree` (a `locked` file → the locked flag with its capped text); a missing admin folder or one pointing
+elsewhere → `orphan`; a pointer that cannot be read → `unreadable`, never an orphan. `/mnt/<letter>/…` pointers (a worktree made in WSL) translate through
+`worktrees.wslAutomountRoots` (`DistroPaths`, the inverse of `HealthCollector.InDistro`); any other POSIX or share path is `foreignPointer`, a live worktree that is never a
+candidate. A `.git` folder is a `mainClone`, no `.git` is `notGit`; the name prefix `testsToDelete-` is a flag.
+
+**Walk.** `TreeRules` gained `CountDenied` (a `FileSystemEnumerator<T>` subclass whose `ContinueOnError` counts and continues; `TreeMeasure.Measured.Denied`), `SkipDirectory`,
+`ReportNames` and `TrackNewest`; every other caller keeps the delegate enumerable that ignores what it cannot open. A worktree is walked OUTSIDE its build-output folders (a
+`bin`/`obj` beside a file whose extension is in `projectFileExtensions`, a top-most `node_modules` beside a `package.json`), then each build folder alone under what is left
+of the budget. **Idle** = now minus the newest of the outside writes (files and folders), each build folder's OWN write time, the folder's own, and for a worktree its admin
+`HEAD`, `index`, `logs/HEAD`; a future write, a budget that ran out (`scanMaxEntries`, `scanMaxSeconds`, shared fairly per root) or any denied entry makes it `unknown`, never idle.
+
+**Build output** (`BuildOutputRule`, the M6 census of 321 real worktrees): a candidate is retained whole when it holds a nested `.git`, its walk did not finish or met a denied
+entry, or — for `bin`/`obj` — a file that is not a build artifact: by EXTENSION (`worktrees.buildArtifactPatterns`: extensions, `none` for extensionless runtime files,
+`obj:.cs` for generated sources), never a glob (`*.sqlite*` matched `Microsoft.Data.Sqlite.dll`); `.db .sqlite .sqlite3 .db-wal .db-shm .mdf .ldf .pfx .key .pem` and
+`.env`/`.env.*` are never artifacts; a file written more than `artifactSkewMinutes` after its folder's newest `.dll/.exe/.pdb` is the application's. The first offender is
+named. `node_modules` is exempt.
+
+**Report and status.** `worktrees.json` (`schemaVersion`, `scannedAt`, per root counts, idle, build output by bucket with the retained groups, named retentions, top folders
+by name) is written atomically under a `DeletionScope(StateDirectory, "worktrees")` as `VolumeSeen` is; a killed scan's own stale temp file is removed at the next start.
+`reclaimable` is `{available: false, reason}` — absent is not zero. The Windows `status` reads the file into `worktrees` (basis `{source: scan, scannedAt, ageSeconds}`,
+`stale` past `reportMaxAgeDays`) and the verdict `worktrees.reclaimable`, always `unknown`. `act`'s other-side refusal now names the side the action runs on.
+
 ## Story history (moved from architecture.md, 2026-10-12)
 
 What E4 built — the installer and the units (E4.S1) and the release pipeline (E4.S2) — moved here from
