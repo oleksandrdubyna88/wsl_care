@@ -124,7 +124,13 @@ public sealed class CollectFlows
 
         status.Exit.Should().Be((int)ExitCode.Ok, status.Stderr);
         var verdicts = JsonSerializer.Deserialize(status.Stdout, WslCareJsonContext.Default.StatusReport)!.Verdicts ?? [];
-        verdicts.Select(v => v.Id).Should().Equal(report.Detail.Thresholds.Select(t => t.Id), "status answers every threshold id the run recorded, in its order (plan §15g B1)");
+        // E15.S5 code round: the Windows binary also judges host.vmmem over its own sample — an id no full run judges (its disk script
+        // reads no vmmem) — and adds it after the carried verdicts, before the MCP servers' own; the distro's status answers exactly
+        // the run's ids.
+        string[] sampledOnly = home.Paths.Side == Core.Hosting.HostSide.Windows ? ["host.vmmem"] : [];
+        var runIds = report.Detail.Thresholds.Select(t => t.Id).ToList();
+        string[] expected = [.. runIds.TakeWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal)), .. sampledOnly, .. runIds.SkipWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal))];
+        verdicts.Select(v => v.Id).Should().Equal(expected, "status answers every threshold id the run recorded, in its order (plan §15g B1)");
         var carried = verdicts.Where(v => v.Basis?.Source == Core.Thresholds.VerdictSource.FullRun).ToList();
         carried.Should().NotBeEmpty();
         carried.Select(v => v with { Basis = null }).Should().Equal(

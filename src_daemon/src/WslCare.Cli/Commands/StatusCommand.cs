@@ -36,12 +36,14 @@ internal static class StatusCommand
         var last = LastFullRun.From(history, now);
         // One detail file read: the newest full run's verdicts AND its disk section (E15.S2).
         var fullRun = FullRunVerdicts.Read(host.Paths, host.Files, history);
+        // E15.S5: the Windows binary reads .wslconfig for its vmmem advice AND its host.vmmem verdict — one read, one input.
+        var hostWslConfig = HostWslConfig(host);
         var report = StatusReports.From(sample, last, loaded) with
         {
             // The follower's summary, never the raw day files: status's cost must not grow with the starts recorded (gate finding #8).
             ContainerStarts = new ContainerStartsStore(host.Paths, host.Files).ReadSummary(now),
             Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
-            Verdicts = [.. StatusVerdicts.From(sample, fullRun, loaded.Config, now), .. StatusVerdicts.Sampled(McpVerdicts.From(mcp, loaded.Config), sample.SampledAt)],
+            Verdicts = [.. StatusVerdicts.From(sample, fullRun, loaded.Config, now, hostWslConfig), .. StatusVerdicts.Sampled(McpVerdicts.From(mcp, loaded.Config), sample.SampledAt)],
             ProductVersion = Program.VersionText,
             Actions = ThisSidesActions(host),
             Capabilities = Capabilities.All,
@@ -53,14 +55,14 @@ internal static class StatusCommand
             InteropRelays = host.Paths is LinuxHostPaths ? InteropRelaysReport.From(sample.Vm.Bind(vm => vm.Processes), host.Paths, host.Files, loaded.Config) : null,
             Disk = host.Paths is LinuxHostPaths ? StatusDisk.From(fullRun, now) : StatusDisk.OnWindows,
         };
-        report = WithWindowsSide(report, host, sample, loaded.Config, cancellationToken);
+        report = WithWindowsSide(report, host, sample, hostWslConfig, loaded.Config, cancellationToken);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
     }
 
     /// <summary>E14 S7a, the Windows binary only: its own side's MCP servers (read-only — a Toolhelp snapshot and query-only handles,
     /// across the same CPU window) and, when vmmemWSL holds more than <c>wslConfig.vmmemAdviceGb</c>, the reclaim advice (text, never
     /// acted on). The distro's binary carries neither.</summary>
-    private static StatusReport WithWindowsSide(StatusReport report, CliHost host, ProbeSample sample, EffectiveConfig config, CancellationToken cancellationToken)
+    private static StatusReport WithWindowsSide(StatusReport report, CliHost host, ProbeSample sample, Reading<WslConfigAudit> wslConfig, EffectiveConfig config, CancellationToken cancellationToken)
     {
         if (host.Paths is not WindowsHostPaths windows)
         {
@@ -70,7 +72,6 @@ internal static class StatusCommand
         // E14 S7b.1: S1's ledger on the Windows side — this user's own file; an elevated status reads it and writes nothing.
         var ledger = new WindowsCpuLedger.Kept(host.Files, McpCpuLedgerPlace.ForWindowsStatus(windows, host.Privilege.IsRoot), host.WindowsBoot);
         var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait, ledger).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
-        var wslConfig = Reading.Of(HealthCollector.AuditWslConfig(host.Files, windows.WslConfigFile));
         var advice = VmmemAdvice.For(sample.Host.Bind(h => h.VmmemWorkingSetBytes), sample.Host.Bind(h => h.Memory), wslConfig, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb));
         return report with
         {
@@ -78,6 +79,11 @@ internal static class StatusCommand
             Host = advice.Length == 0 ? report.Host : report.Host with { VmmemAdvice = advice },
         };
     }
+
+    /// <summary>The Windows binary's <c>.wslconfig</c> audit (a file read, no process); the distro's binary says the full run reads it.</summary>
+    private static Reading<WslConfigAudit> HostWslConfig(CliHost host) => host.Paths is WindowsHostPaths windows
+        ? Reading.Of(HealthCollector.AuditWslConfig(host.Files, windows.WslConfigFile))
+        : Reading.Missing<WslConfigAudit>(StatusVerdicts.WslConfigReadByFullRun);
 
     /// <summary>The ids this binary's registry holds for its own side, in the order a run takes them (plan §15f #3).</summary>
     private static IReadOnlyList<string> ThisSidesActions(CliHost host) =>

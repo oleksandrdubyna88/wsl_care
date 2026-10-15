@@ -1,8 +1,8 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b built on its branch `feat/wc-install-distro-name` (*E15.S2b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
-> not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 built on its branch `feat/wc-e15s5-host-memory` (*E15.S5 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> and E15.S6 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -945,3 +945,202 @@ status budget at 4.6 s under load; a pid reused in the umask flow). Both passed 
 **Open — the extension's follow-up (design point 3).** `INSTALL_COMMAND` (`src_vs_code/src/install/installCommand.ts:44`)
 pins the `install.sh` of a RELEASED tag, and a released `install.sh` refuses an unknown argument. So the extension adds
 `--distro-name "$WSL_DISTRO_NAME"` only after a daemon release ships this change. Not changed here.
+
+## E15.S5 design — Windows memory pressure, one rule on both roads (2026-10-12, branch `feat/wc-e15s5-host-memory`)
+
+**Goal.** Three host verdicts, judged by ONE pure function, on whichever road has the facts:
+- `host.commit` — Windows' commit charge against its commit limit.
+- `host.compression` — the Memory Compression process's working set.
+- `host.vmmem` — the WSL VM's working set as Windows sees it.
+
+Read-only: nothing is acted on.
+
+**The two roads (mapped 2026-10-12):**
+- **The Windows binary's `status`.** `Collectors/WindowsProbe.cs` already calls `GlobalMemoryStatusEx`. `ullTotalPageFile` is the
+  commit limit, and `ullAvailPageFile` is what can still be committed, so charge = total − available. That is the same quantity as
+  the full run's `CommittedBytes` / `CommitLimit`. Neither field is read today (`Win32Counters.Memory`, `WindowsProbe.cs:64-70`).
+  `VmmemWorkingSet()` is read; Memory Compression is not.
+- **The distro's full run.** E15.S1's disk script gives `WindowsDiskFacts.CommitBytes`, `CommitLimitBytes` and
+  `CompressionBytes`. It gives no vmmem figure.
+
+**1. Facts.** `Health/HostMemoryFacts.cs` holds `HostMemoryFacts(Reading<long> CommitBytes, Reading<long> CommitLimitBytes,
+Reading<long> CompressionBytes, Reading<long> VmmemBytes, Reading<long> HostTotalBytes)`. It has two builders:
+- `FromProbe(HostSample)` (Windows);
+- `FromWindowsDisk(WindowsDiskSample)` (the full run). Here `VmmemBytes` is unknown, with the reason "vmmemWSL is read by the
+  Windows binary's status".
+
+The Windows sample gains `HostSample.Commit` (from `TotalPageFile` / `AvailablePageFile`) and `HostSample.CompressionBytes`
+(`Process.GetProcessesByName("Memory Compression")` from the kernel's snapshot, as `vmmemWSL` is read: nothing is started, and
+no handle is opened). `IWindowsCounters` gains the two readers, and its test fakes follow. Each reader fails ALONE (plan
+round): a `GlobalMemoryStatusEx` failure makes only `Commit` unknown. For Memory Compression, no process, a process that exits
+between the listing and the read, or a refused read makes only `CompressionBytes` unknown, with the exception named. The status
+goes on, and a test plants each failure.
+
+**2. The one rule** (`Thresholds/HostRules.cs`, PURE): `Verdicts(HostMemoryFacts, EffectiveConfig)`.
+- `host.commit`: warn above `thresholds.hostCommitWarnPercent` (80); critical above `thresholds.hostCommitCriticalPercent` (90);
+  the value is "charge of limit = %".
+- `host.compression`: warn above `thresholds.hostCompressionWarnGb` (8 GiB).
+- `host.vmmem`: warn above the EXISTING `wslConfig.vmmemAdviceGb` (one number for one idea). The reason is
+  `VmmemAdvice.For(...)`'s text, so the advice and the verdict cannot disagree.
+- An unread figure is `unknown` with its reason, never `ok`.
+- Load-time rule: critical > warn. A layer that inverts them is refused, by the existing coupled-limits check (`NumberRules`).
+
+**3. Where each road judges:**
+- **Full run:** `HostRules` is spread into `ThresholdRules.FromFullRun` over `FromWindowsDisk(inputs.Health.WindowsDisk)`, so the
+  distro's `status` carries these verdicts with `basis: fullRun` and their age.
+- **Windows binary:** `StatusVerdicts.From` judges `HostRules` over `FromProbe(sample.Host)` with `basis: sample`. A sampled
+  verdict REPLACES the carried full-run verdict of the same id, because the newer, direct reading wins. So a `status` never lists
+  an id twice. The distro's binary has no host sample and keeps the carried ones.
+
+**4. Keys:** `thresholds.hostCommitWarnPercent` (50–99, 80), `thresholds.hostCommitCriticalPercent` (51–100, 90),
+`thresholds.hostCompressionWarnGb` (1–256, 8). These are display keys, with a coupled rule warn < critical. The defaults are
+PROVISIONAL starting values (plan round). Measured on the owner's machine, 4.4 h after boot under heavy agent load
+([2026-10-12_host_memory.md](../research/2026-10-12_host_memory.md)):
+- commit was 68.8 %, the SAME on both roads (perf counter and `MEMORYSTATUSEX`, to 0.01 %);
+- compression was 6.0 GiB;
+- vmmem was 18.9 GiB.
+
+So the defaults stay quiet on a normal heavy day. The records of every full run calibrate them later.
+
+**5. Extension:** `src_vs_code/src/statusBar/statusBarModel.ts` `RELEVANT_VERDICT_PREFIXES` gains `host.`, per the plan's stated
+assumption ("`host.*` verdicts colour the status bar"). Tests: `statusBar.test.ts`.
+
+**6. RED first:**
+- 86 % warns.
+- 91 % is critical.
+- 79.9 % is ok.
+- A limit of 0 or an unread charge is `unknown`.
+- 8.1 GiB of compression warns.
+- vmmem above `wslConfig.vmmemAdviceGb` warns, and its reason is the advice text.
+- **The same function on both bases:** equal figures built through `FromProbe` and through `FromWindowsDisk` give the same verdicts
+  (vmmem aside).
+- The Windows status lists `host.commit` once, with `basis: sample`, even when its history carries a full-run one.
+- The distro status carries the full-run `host.*` verdicts.
+- `GlobalMemoryStatusEx`'s page-file fields map to charge and limit (a fake counter).
+- The status bar colours on `host.commit` warn.
+- **Across the boundary** (plan round): the extension's status-bar model reads the HEAD GOLDEN `status.json` that the real
+  daemon writes (the captured full run answers the disk script, so it carries `host.commit` / `host.compression` with
+  `basis: fullRun`), and colours from those verdicts. The id or the shape of a verdict cannot drift between the two halves
+  unseen. `module_tests` records the flow.
+
+Break-its on the edges and on the replacement. Docs: README (the keys), `module_daemon`, `module_vs_code`, `module_tests`, the
+as-built section.
+
+**Out of scope, recorded:** a vmmem line in the distro's disk script. That would let the full run judge `host.vmmem` too. It
+waits until E15.S1b (which changes that script) has merged.
+
+## E15.S5 as built (2026-10-12, branch `feat/wc-e15s5-host-memory`)
+
+**What shipped.** The design above, in full. `Health/HostMemoryFacts.cs` (the facts, two builders), `Thresholds/HostRules.cs`
+(the ONE pure rule: `host.commit`, `host.compression`, `host.vmmem`), `Collectors/ProcessWorkingSets.cs` (the working-set reader
+that fails alone), `HostCommit` and the two new `HostSample` members, `IWindowsCounters.Commit()` / `CompressionWorkingSet()`, the
+three `thresholds.*` keys with their coupled rule, `HostRules` spread into `ThresholdRules.FromFullRun` after `disk.hostFree`, the
+replacement rule in `StatusVerdicts.From`, and `host.` in the extension's `RELEVANT_VERDICT_PREFIXES`. Nothing is acted on.
+
+**Deviations (the smallest sound change each time):**
+- `HostMemoryFacts` carries a sixth member, the `.wslconfig` audit, and both builders take it. `host.vmmem`'s reason is
+  `VmmemAdvice.For`'s text, and that text needs the audit; with it, the verdict and the Windows status's `host.vmmemAdvice` have
+  the SAME input. `status` on Windows reads `.wslconfig` ONCE and hands that audit to both (`StatusVerdicts.From` gained an
+  overload with it; the old signature passes the "status does not read it" reason, as before).
+- `VmmemAdvice.For` was widened with an overload over the host's RAM in bytes (the facts hold a `Reading<long>`, not a
+  `HostMemory`); the old overload delegates to it, so there is one text.
+- `host.vmmem`'s level follows the advice (warn exactly when the advice speaks). They cannot disagree by construction.
+- `ProcessWorkingSets.Sum` reads `vmmemWSL` too (reuse: one reader for both process names). So `vmmemWSL` now also fails alone;
+  before, a `vmmemWSL` that exited between the listing and the read threw out of `status`.
+- `Memory()` and `Commit()` each make their own `GlobalMemoryStatusEx` call, so one failure costs one figure.
+- The replacement is unconditional: on the Windows binary a sampled `host.*` verdict replaces the carried one even when the sample
+  is `unknown` (the Windows binary's own state holds no full run that judges these; the newer, direct reading wins). A sampled id
+  the full run does not judge would be added after the carried ones (none today).
+- The `status --json` `host` block is unchanged; the new figures travel as the verdicts' values.
+- The extension's head golden now colours the bar warn: its captured full run (2026-10-10) read 9.86 GiB of Memory Compression,
+  above the provisional 8. The status-bar tests that colour one verdict at a time start from that golden with `host.compression`
+  set to ok (`calm()`), so each keeps its teeth.
+- ~~No architecture.md change~~ — wrong, corrected in the code round: #129 split most of architecture.md into the module docs,
+  but its section *The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)* stays there, and it now carries
+  the E15.S5 rule (the Windows side's sampled `host.*`, the replacement, the appended `host.vmmem`, the bar).
+- **The full run judges no `host.vmmem`** (code round and own review, below): only `host.commit` and `host.compression` come from
+  `FromWindowsDisk` (`HostRules.FullRunVerdicts`); all three come from `FromProbe` (`HostRules.Verdicts`). "The same function on
+  both bases" now reads: the same `Commit` and `Compression` functions judge both roads; vmmem is the Windows binary's alone.
+
+**Tests, RED first** (every message and break-it is in `module_tests.md`, *E15.S5*): 25 of 242 Core checks and the CLI check red
+against stubs, each for the named reason (no verdicts; `host.commit` at index -1; an empty `host.commit` list; the coupled layer
+not refused; the charge read as the available figure; the planted exceptions escaping; the processes not released); the
+extension 3 of 18 red (*actual: 'none', expected: 'warn'*). Seven break-its on product code, each restored byte for byte and
+green again: the commit and compression edges, the replacement, the reader's catch, the coupled rule, the Windows status without
+its audit, and `host.commit` excluded from the bar.
+
+**Suites** (2026-10-12, a heavily loaded machine): Windows — Core 2654 (2573 passed, 81 skipped, 0 failed), CLI 392 (390, 2
+skipped), Scenarios 609 (325 passed, 283 skipped, 1 failed: `StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget…`
+at 3.55 s against its 3 s budget; alone it passed 2 of 3 runs, 4.15 s the third; the two new process snapshots cost about 17 ms and
+43 ms on this machine, so the budget is lost to the load, not to them — CI is the authority); Linux (WSL Ubuntu, one
+folder `/tmp/wc-e15s5-linux-20261012T184227Z`) — the seven status goldens regenerated there and `GoldenContractTests` green (7);
+Core 2654 (2626 passed, 27 skipped, 1 failed: `ClockGuardTests.A_wall_clock_that_jumps_during_the_measurement_voids_it` read
++7199.9 s for +7200.0 s under load, green on a rerun, 44 of 44), CLI 392 (379 passed, 13 skipped), Scenarios 609 (602 passed, 5
+skipped, 2 failed: the two `FixturePrivacyTests`, because the run's `HOME` folder was named `home` and the test takes `$HOME`'s
+name as a user name; with another folder name both are green, 57 of 57); the extension 1250 (1247 passed,
+1 skipped, 2 failed: two `fakeWsl.test` cases that timed out at 15 s under load and pass alone, 49 of 49); lint, format and
+plan-lifecycle clean.
+
+**After the rebase onto `origin/main` (90b36369)**, everything again: Windows — Core 2749 (2668 passed, 81 skipped), CLI 410
+(408, 2 skipped), Scenarios 616 (332 passed, 284 skipped), 0 failed; Linux (the same folder) — the goldens unchanged
+(`GoldenContractTests` green without a write), Core 2749 (1 failed: the same `ClockGuardTests` case, green alone, 45 of 45), CLI
+410 (391 passed, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the extension 1250 (1249 passed, 1 skipped); lint,
+format and plan-lifecycle clean.
+
+**Code round and own review (2026-10-12).** Three fixes and two checks, each fix red first.
+- **The distro's `host.vmmem` was permanently `unknown`** (own review, confidence 80). The full run reads no vmmem, so every distro
+  `status` carried `host.vmmem: unknown`, the status bar's tooltip listed it forever, and `CollectRun` wrote it into every run's
+  history as a warning. The full-run road now judges commit and compression only (`HostRules.FullRunVerdicts`, spread into
+  `ThresholdRules.FromFullRun`). On the Windows binary the sampled `host.vmmem` replaces nothing and is appended after the carried
+  verdicts (after `npm.cache`), once. The seven Linux status goldens were regenerated.
+- **Only the Windows side samples the host** (coai finding 2). `StatusVerdicts` judges `HostRules` only when `ProbeSample.Side` is
+  `Windows`. A distro sample that ever carried a host part keeps the carried `host.*` verdicts, unchanged.
+- **architecture.md** (coai finding 0): the E5.S0 verdicts section gained the E15.S5 rule (see the corrected deviation above).
+- **Checked, no change**: (a) `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
+  daemon sets no job commit limit (WR-D3's job is `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` alone), so they are the system's — now said
+  in `HostCommit.FromPageFile`'s remarks. (b) The coupled rule makes a machine-layer contradiction an error (observe-only) and a
+  user-layer one a notice. That is how EVERY coupled rule and every invalid value behaves (`ConfigLoader.HoldRules` /
+  `ApplyEntry`); there is no softer path for display keys (a display key out of range in the machine layer is an error too), and
+  no other display warn/critical pair has a coupled rule. So the rule stays as it is.
+
+Red (8 of 40 Core checks, 1 of 19 extension checks): *Expected HostRules.FullRunVerdicts(Facts(), Config()).Select(v => v.Id) to be
+equal to {"host.commit", "host.compression"}, but {"host.commit", "host.compression", "host.vmmem"} contains 1 item(s) too many*; *Expected
+ids {…} to not contain "host.vmmem" because the full run does not read vmmem, so it judges none*; *Expected ids.IndexOf("host.vmmem") to
+be 36, but found 31*; *Expected Find(verdicts, "host.commit") to be* the carried verdict (the distro sample's host part had replaced
+it); *Expected warnings … not to contain* a `host.vmmem` record (the collect's history line); the extension: *The input was expected
+to not match the regular expression /host.vmmem: unknown/. Input: '… host.vmmem: unknown — …'*. Break-its (product code, each
+restored byte for byte): `ThresholdRules` back to `HostRules.Verdicts` → 6 red (the full-run list, the history line, the distro
+status, the Windows order and position); the `Side: HostSide.Windows` arm removed → *A_distro_sample_with_a_host_part_keeps_the_carried_host_verdicts*
+red.
+
+The Windows suite then found one more test to follow the contract: `Scenarios/CollectFlows` compared the Windows status's ids
+with the run's exactly; it now expects the sampled `host.vmmem` after the carried verdicts, before the MCP servers' own.
+
+**Suites of the code round** (rebased onto `origin/main` 47dbc1fa, 2026-10-14; the machine still heavily loaded): Windows — Core
+2753 (2672 passed, 81 skipped), CLI 410 (408, 2 skipped), Scenarios 616 (330 passed, 284 skipped, 2 failed: two
+`FetchWindowsDaemonFlows` cases whose Git-bash script did not exit within 60 s; the class alone is green, 43 of 43; an earlier
+run under heavier load lost 27 cases the same way, all time limits); Linux, a NEW folder
+`/tmp/testsToDelete-wc-e15s5-20261014T193812Z` — the goldens unchanged (`GoldenContractTests` green without a write), Core 2753
+(2714 passed, 39 skipped), CLI 410 (391, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the goldens themselves
+were written in `/tmp/wc-e15s5-round2-linux-20261012T202048Z` (its suites: one `StatusFlows` time budget, 3.10 s for 3 s at a
+load average of 35); the extension 1251 (1250 passed, 1 skipped); lint, format, plan-lifecycle and the rules check clean.
+Rebased again onto `origin/main` 0d9be6a3 (WR-D2, the disk-hygiene plan; no status, threshold or contract file changed) and
+re-run in full, 0 failed everywhere: Windows — Core 2783 (2702 passed, 81 skipped), CLI 424 (422, 2 skipped), Scenarios 621 (335
+passed, 286 skipped); Linux, a NEW folder `/tmp/testsToDelete-wc-e15s5-20261014T205832Z` — goldens unchanged, Core 2783 (2714, 69
+skipped), CLI 424 (394, 30 skipped), Scenarios 621 (613, 8 skipped); the extension 1251 (1250, 1 skipped); lint, format,
+plan-lifecycle and the rules check clean.
+Then onto `b741a934` (WR-D4) and `28ebdeed` (a plan-only change), on a machine at 100 % CPU (Linux load average 40–60):
+Windows Core 2791 and CLI 428, 0 failed; Linux (`/tmp/testsToDelete-wc-e15s5-20261014T212844Z`) Core 2791 and CLI 428, 0 failed,
+the golden check green. The last runs (`/tmp/testsToDelete-wc-e15s5-20261015T075131Z` on Linux): Windows Scenarios 624 — 64 failed,
+all but a few `TimeoutException`s (a built CLI or Git-bash child that did not exit or made no progress in time); its 25 classes
+re-run together: 212, 2 failed; Linux Scenarios 624 — 7 failed, the four classes re-run one at a time: `DetachFlows`,
+`GoldenContractTests` (the golden that read `dead` for `live` under load is green, 7 of 7) and `ReadContractFlows` green, the
+two `StatusFlows` time budgets still over (4.1 s for 2 s, 5.6 s for 3 s); the extension 1251 — 84 failed, every one in a
+process-spawning file (`fakeWsl`, the flow scenarios, `runner`, `engineHost`, …), each of the twelve files green alone; lint,
+format, plan-lifecycle and the rules check clean. Left red under this load, all time limits: the Windows
+`StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget…` (4–10 s for 3 s; it was green on `0d9be6a3`), the
+Linux `StatusFlows` budgets, and `FetchWindowsDaemonFlows.A_download_that_hangs_is_ended_at_its_attempt_limit…` (a 2 s attempt
+limit, untouched here). CI is the authority for these.
+
+**Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
+that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.

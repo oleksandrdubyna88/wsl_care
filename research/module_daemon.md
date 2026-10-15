@@ -132,6 +132,7 @@ has none.
 | the Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) §3.1, the measurement [2026-10-10_disk.md](2026-10-10_disk.md) |
 | the Windows runner's render: `tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek` (WR-D1, 2026-10-11) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2–§3.7 |
 | the Windows runner's supervisor: `tasks run`, the Job Object, exit 84 (WR-D3, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.3 |
+| Windows memory pressure: `host.commit` / `host.compression` / `host.vmmem`, `Thresholds/HostRules`, `Health/HostMemoryFacts` (E15.S5, 2026-10-12) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) *E15.S5 design*, the measurement [2026-10-12_host_memory.md](2026-10-12_host_memory.md) |
 
 | the Windows runner's staged copy: `tasks stage`, `tasks stage --remove`, the sweep (WR-D2, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2, §3.7, §3.10 |
 
@@ -683,6 +684,70 @@ flowchart TD
   lease refuses a live holder by name (`another archive run holds the side (host …, pid …, run …, since …)`, exit 1). Either answer is
   the worker's own code, which the supervisor passes through.
 - **The window is said once** before the worker starts: `a dry run (<why>)` or `a real run (<why>)` (`ArchiveBody.Note`).
+
+## Windows memory pressure, one rule on both roads (E15.S5, 2026-10-12) — a report
+
+Three host verdicts, judged by ONE pure function over one set of facts, on whichever road has the facts. Read-only: nothing is
+acted on, no new command runs, and the never-list is untouched.
+
+```mermaid
+flowchart LR
+    subgraph windows["the Windows binary's status"]
+        gmse["GlobalMemoryStatusEx<br/>(one call per reader)"] --> mem["HostSample.Memory"]
+        gmse --> commit["HostSample.Commit<br/>limit = ullTotalPageFile<br/>charge = limit − ullAvailPageFile"]
+        procs["Process.GetProcessesByName<br/>(a snapshot; nothing started)"] --> ws["ProcessWorkingSets.Sum<br/>vmmemWSL · Memory Compression"]
+    end
+    subgraph distro["the distro's full run"]
+        script["Windows disk script (E15.S1)<br/>commit= · compression="] --> wdf["WindowsDiskFacts"]
+    end
+    mem --> probe["HostMemoryFacts.FromProbe"]
+    commit --> probe
+    ws --> probe
+    wdf --> disk["HostMemoryFacts.FromWindowsDisk<br/>(vmmem unknown)"]
+    probe --> rules["Thresholds/HostRules.Verdicts<br/>commit · compression · vmmem<br/>(PURE)"]
+    disk --> fr["Thresholds/HostRules.FullRunVerdicts<br/>commit · compression<br/>(the same functions)"]
+    rules -- "Windows side only<br/>basis: sample" --> sv["StatusVerdicts.From<br/>a sampled verdict REPLACES<br/>the carried one of the same id;<br/>host.vmmem is appended"]
+    fr -- "ThresholdRules.FromFullRun<br/>(after disk.hostFree)" --> detail["run detail verdicts"]
+    detail -- "carried, basis: fullRun + age" --> sv
+```
+
+- **The facts** (`Health/HostMemoryFacts.cs`): `CommitBytes`, `CommitLimitBytes`, `CompressionBytes`, `VmmemBytes`,
+  `HostTotalBytes` and the `.wslconfig` audit, each a `Reading`. `FromProbe(HostSample, audit)` is the Windows binary's road;
+  `FromWindowsDisk(WindowsDiskSample, audit)` is the full run's, where vmmem and the host RAM are unknown ("vmmemWSL is read by the
+  Windows binary's status"). `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
+  daemon sets no job commit limit (WR-D3's job is kill-on-close only), so they are the system's. The two roads read the same commit quantity: on 2026-10-12 the perf counter and `MEMORYSTATUSEX`
+  agreed to 0.01 %.
+- **The readers fail ALONE** (`Collectors/WindowsProbe.cs`, `Collectors/ProcessWorkingSets.cs`). `Memory()` and `Commit()` each
+  make their own `GlobalMemoryStatusEx` call, so a failure costs only that figure. `ProcessWorkingSets.Sum` reads vmmemWSL and
+  Memory Compression from the process snapshot: no process, a process that exits between the listing and the read
+  (`InvalidOperationException`), a refused read (`Win32Exception`, `UnauthorizedAccessException`) or a failed listing makes only
+  that figure unavailable, with the exception named, and every listed process is released. (Before E15.S5 a vmmemWSL that exited
+  between the two steps threw out of `status`.)
+- **The rule** (`Thresholds/HostRules.cs`, PURE): `host.commit` ("charge of limit = %", warn above
+  `thresholds.hostCommitWarnPercent`, 80; critical above `thresholds.hostCommitCriticalPercent`, 90; a limit of 0 is `unknown`);
+  `host.compression` (warn above `thresholds.hostCompressionWarnGb`, 8 GiB); `host.vmmem` (warn above the existing
+  `wslConfig.vmmemAdviceGb`, and its reason IS `VmmemAdvice.For`'s text — the level follows the advice, so they cannot disagree).
+  An unread figure is `unknown` with its reason, never `ok`. `VmmemAdvice.For` gained an overload over the host's RAM in bytes;
+  the old one delegates to it.
+- **Where each road judges.** The full run: `HostRules.FullRunVerdicts` — `host.commit` and `host.compression` only, by the same
+  functions — is spread into `ThresholdRules.FromFullRun` after the disk verdicts, so the distro's `status` carries those two with
+  `basis: fullRun` and their age. It judges no `host.vmmem` (code round and own review, 2026-10-12): its script reads no vmmem,
+  and a verdict that could only be `unknown` sat in every distro status, the status bar's tooltip and every run's history line.
+  The Windows binary, and ONLY the Windows side (`ProbeSample.Side`; a distro sample that ever carried a host part keeps the
+  carried verdicts): `StatusVerdicts.From` judges `HostRules.Verdicts` (all three) over its own sample with `basis: sample`. A
+  sampled verdict REPLACES the carried full-run verdict of the same id, in that verdict's place — the newer, direct reading wins
+  — and one nothing carried (`host.vmmem`) is appended after the carried ones (after `npm.cache`); a `status` never lists an id
+  twice. `status` reads `.wslconfig` once on Windows and hands the same audit to
+  the advice and to the verdict.
+- **The keys** (`Config/ConfigKeys.Thresholds.cs`, display trust): `thresholds.hostCommitWarnPercent` (50–99, 80),
+  `thresholds.hostCommitCriticalPercent` (51–100, 90), `thresholds.hostCompressionWarnGb` (1–256, 8). A coupled rule in
+  `NumberRules` refuses a layer whose critical value is not above its warn value: as with every coupled rule and every invalid
+  value, a machine-layer contradiction is an error (observe-only) and a user-layer one a notice (the value not taken). No softer
+  path exists for display keys — a display key out of range in the machine layer is an error too — so this rule follows the
+  existing ones (checked in the code round, 2026-10-12). The defaults are PROVISIONAL starting values
+  (a heavy afternoon: commit 68.8 %, compression 6.0 GiB, vmmem 18.9 GiB); the full runs' records calibrate them.
+- **Not built here**: a vmmem line in the distro's disk script. With it the full run can judge `host.vmmem` again
+  (`FullRunVerdicts` gains it); it waits for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
 
 ## Story history (moved from architecture.md, 2026-10-12)
 

@@ -36,7 +36,7 @@ public sealed class NumbersAreConfigurationTests
         "thresholds.wslMemoryCriticalPercent", "processes.topCount",
         "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.maxDeferHours", "archive.minFreeGb",
         "archive.copyBufferKib", "disk.eventsSinceDays", "disk.vhdxGapWarnGib", "disk.vhdxGrowthWarnGibPerDay", "disk.hostFreeWarnGib",
-        "disk.growthMinHours", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
+        "disk.growthMinHours", "thresholds.hostCommitWarnPercent", "thresholds.hostCommitCriticalPercent", "thresholds.hostCompressionWarnGb", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
     ];
 
     /// <summary>The inventory's group B (root-safety limits) — machine-layer-only keys.</summary>
@@ -114,6 +114,7 @@ public sealed class NumbersAreConfigurationTests
     [InlineData("""{ "timer": { "lateSlackMinutes": 10, "randomizedDelayMinutes": 9, "accuracyMinutes": 1 } }""", "timer.lateSlackMinutes")]
     [InlineData("""{ "agentCpu": { "maxBytes": 16384 } }""", "agentCpu.maxBytes")]
     [InlineData("""{ "requests": { "maxBytes": 65536 } }""", "requests.maxBytes")]
+    [InlineData("""{ "thresholds": { "hostCommitWarnPercent": 90, "hostCommitCriticalPercent": 90 } }""", "thresholds.hostCommitCriticalPercent")]
     public void Coupled_limits_that_contradict_each_other_refuse_the_layer_naming_the_rule(string machine, string named)
     {
         var result = Load(machine);

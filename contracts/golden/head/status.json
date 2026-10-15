@@ -2282,6 +2282,32 @@
       }
     },
     {
+      "id": "host.commit",
+      "level": "ok",
+      "value": "103.4 of 145.6 GiB = 71.0 %",
+      "limit": "warn > 80 %, critical > 90 % of the commit limit (thresholds.hostCommitWarnPercent, thresholds.hostCommitCriticalPercent)",
+      "reason": "Windows' commit charge against its commit limit: when the charge reaches the limit, allocations fail",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "host.compression",
+      "level": "warn",
+      "value": "9.86 GiB",
+      "limit": "warn > 8 GiB (thresholds.hostCompressionWarnGb)",
+      "reason": "memory Windows compressed instead of paging it out (the Memory Compression process's working set)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "docker.A4",
       "level": "ok",
       "value": "3 volumes, 0.64 GB",

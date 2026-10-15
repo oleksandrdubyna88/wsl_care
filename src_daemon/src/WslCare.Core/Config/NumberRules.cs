@@ -80,6 +80,10 @@ public static class NumberRules
         new([ConfigKeys.Events.SegmentMinutes, ConfigKeys.Events.SegmentSlackSeconds, ConfigKeys.Commands.MaxTimeoutHours],
             c => (I(c, ConfigKeys.Events.SegmentMinutes) * SecondsPerMinute) + I(c, ConfigKeys.Events.SegmentSlackSeconds) + CeilingMarginSeconds <= I(c, ConfigKeys.Commands.MaxTimeoutHours) * SecondsPerHour,
             c => $"{ConfigKeys.Events.SegmentMinutes.Name} ({I(c, ConfigKeys.Events.SegmentMinutes)}) with {ConfigKeys.Events.SegmentSlackSeconds.Name} ({I(c, ConfigKeys.Events.SegmentSlackSeconds)}) and {CeilingMarginSeconds} s must fit under {ConfigKeys.Commands.MaxTimeoutHours.Name} ({I(c, ConfigKeys.Commands.MaxTimeoutHours)}): the event stream's ceiling is a command's"),
+        // E15.S5: host.commit's critical edge is above its warn edge, or the critical arm can never be reached.
+        new([ConfigKeys.Thresholds.HostCommitCriticalPercent, ConfigKeys.Thresholds.HostCommitWarnPercent],
+            c => I(c, ConfigKeys.Thresholds.HostCommitCriticalPercent) > I(c, ConfigKeys.Thresholds.HostCommitWarnPercent),
+            c => $"{ConfigKeys.Thresholds.HostCommitCriticalPercent.Name} ({I(c, ConfigKeys.Thresholds.HostCommitCriticalPercent)}) must be above {ConfigKeys.Thresholds.HostCommitWarnPercent.Name} ({I(c, ConfigKeys.Thresholds.HostCommitWarnPercent)}): a critical commit share at or below the warning one is never reached"),
         new([ConfigKeys.Events.RetryMaxSeconds, ConfigKeys.Events.RetryFirstSeconds],
             c => I(c, ConfigKeys.Events.RetryMaxSeconds) >= I(c, ConfigKeys.Events.RetryFirstSeconds),
             c => $"{ConfigKeys.Events.RetryMaxSeconds.Name} must be at least {ConfigKeys.Events.RetryFirstSeconds.Name}"),

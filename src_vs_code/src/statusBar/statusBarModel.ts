@@ -6,7 +6,8 @@ import { at, unavailableAncestor } from '../panel/jsonPath';
 /**
  * The status bar (plan §7.2; §15g B1), as a pure function of the newest `status` outcome:
  * `WSL RAM <used>% · swap <x>G · <n> containers`, coloured by the worst RELEVANT verdict — the verdicts about what the
- * bar shows (memory and swap, and the kernel's allocation-failure / OOM alerts, which are memory events). A daemon that
+ * bar shows (memory and swap, and the kernel's allocation-failure / OOM alerts, which are memory events), a busy machine, and
+ * Windows' own memory pressure. A daemon that
  * predates `verdicts` leaves the bar uncoloured and says so in the tooltip; a figure the daemon could not read is `?`,
  * never 0. Every failure is its short state (`failureText`); a stopped distribution is "WSL stopped" — the client made
  * no call that would start it.
@@ -20,8 +21,9 @@ export interface BarView {
   readonly level: BarLevel;
 }
 
-/** E14 S6: `pressure.` (cpu / io PSI, the daemon's "machine busy" rule) colours the bar too — a busy machine is what it shows. */
-export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.', 'pressure.'];
+/** E14 S6: `pressure.` (cpu / io PSI, the daemon's "machine busy" rule) colours the bar too — a busy machine is what it shows.
+ * E15.S5: `host.` (Windows memory pressure: `host.commit`, `host.compression`, `host.vmmem`) too — the memory behind the VM. */
+export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.', 'pressure.', 'host.'];
 
 /** E14 S5: `memory.committed` warns of what the kernel PROMISED, not of a state the bar shows — the panel lists it, the bar does not. */
 export const BAR_EXCLUDED_VERDICT_IDS: readonly string[] = ['memory.committed'];

@@ -80,7 +80,7 @@ public sealed class ProbeTests
         var json = JsonSerializer.Serialize(
             StatusReports.From(
                 new ProbeSample(HostSide.Windows, FixedTimeProvider.DefaultNow, TimeSpan.FromMilliseconds(12), Reading.Missing<VmSample>(WindowsProbe.VmIsTheOtherBinary),
-                    Reading.Of(new HostSample(Reading.Of(new HostMemory(100, 40)), Reading.Missing<VolumeUsage>("no drive"), Reading.Missing<long>("no vmmemWSL process: the WSL VM is not running")))),
+                    Reading.Of(new HostSample(Reading.Of(new HostMemory(100, 40)), Reading.Missing<VolumeUsage>("no drive"), Reading.Missing<long>("no vmmemWSL process: the WSL VM is not running"), Reading.Missing<HostCommit>("not read"), Reading.Missing<long>("not read")))),
                 Slow(),
                 Defaults()),
             WslCareJsonContext.Default.StatusReport);
@@ -115,7 +115,7 @@ public sealed class ProbeTests
     {
         using var root = new TempRoot("win");
         var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
-        var probe = new WindowsProbe(new PhysicalFileSystem(paths), paths, new FakeCounters(Reading.Of(new HostMemory(91L << 30, 5L << 30)), Reading.Of(21L << 30)), new FixedTimeProvider());
+        var probe = new WindowsProbe(new PhysicalFileSystem(paths), paths, new FakeCounters(Reading.Of(new HostMemory(91L << 30, 5L << 30)), Reading.Of(21L << 30), Reading.Of(new HostCommit(100L << 30, 145L << 30)), Reading.Of(6L << 30)), new FixedTimeProvider());
 
         var sample = probe.Sample(CancellationToken.None);
 
@@ -124,6 +124,8 @@ public sealed class ProbeTests
         var host = sample.Host.Should().BeOfType<Reading<HostSample>.Available>().Subject.Value;
         host.Memory.Should().Be(Reading.Of(new HostMemory(91L << 30, 5L << 30)));
         host.VmmemWorkingSetBytes.Should().Be(Reading.Of(21L << 30));
+        host.Commit.Should().Be(Reading.Of(new HostCommit(100L << 30, 145L << 30)));
+        host.CompressionBytes.Should().Be(Reading.Of(6L << 30));
         host.SystemDrive.Should().BeOfType<Reading<VolumeUsage>.Available>().Which.Value.Path.Should().Be(paths.SystemDrive);
     }
 
@@ -150,10 +152,60 @@ public sealed class ProbeTests
     private static LastSlowParts Slow() =>
         new(Reading.Missing<AgedPart<ContainerStatsSample>>(LastFullRun.NoFullRunYet), Reading.Missing<AgedPart<WindowsClockSample>>(LastFullRun.NoFullRunYet));
 
-    private sealed class FakeCounters(Reading<HostMemory> memory, Reading<long> vmmem) : IWindowsCounters
+    /// <summary>E15.S5, plan round: each reader fails ALONE — a failed <c>GlobalMemoryStatusEx</c> for the commit makes only
+    /// <c>Commit</c> unknown, a failed compression read only <c>CompressionBytes</c>; the sample goes on.</summary>
+    [Fact]
+    public void A_failed_commit_read_and_a_failed_compression_read_each_cost_only_their_own_figure()
+    {
+        using var root = new TempRoot("win-alone");
+        var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
+        var failed = new FakeCounters(
+            Reading.Of(new HostMemory(91L << 30, 5L << 30)),
+            Reading.Of(21L << 30),
+            Reading.Missing<HostCommit>("GlobalMemoryStatusEx failed with Win32 error 8"),
+            Reading.Missing<long>("the working set of Memory Compression could not be read: Win32Exception: Access is denied"));
+
+        var host = new WindowsProbe(new PhysicalFileSystem(paths), paths, failed, new FixedTimeProvider()).Sample(CancellationToken.None)
+            .Host.Should().BeOfType<Reading<HostSample>.Available>().Subject.Value;
+
+        host.Commit.Should().BeOfType<Reading<HostCommit>.Unavailable>().Which.Reason.Should().Contain("GlobalMemoryStatusEx");
+        host.CompressionBytes.Should().BeOfType<Reading<long>.Unavailable>().Which.Reason.Should().Contain("Win32Exception");
+        host.Memory.Should().Be(Reading.Of(new HostMemory(91L << 30, 5L << 30)));
+        host.VmmemWorkingSetBytes.Should().Be(Reading.Of(21L << 30));
+    }
+
+    /// <summary>E15.S5: <c>MEMORYSTATUSEX</c>'s page-file fields — <c>ullTotalPageFile</c> is the limit, the charge is the total less
+    /// <c>ullAvailPageFile</c>. The figures are the 2026-10-12 measurement (research/2026-10-12_host_memory.md): 68.8 %.</summary>
+    [Fact]
+    public void The_page_file_fields_map_to_the_commit_charge_and_limit()
+    {
+        var commit = HostCommit.FromPageFile(totalPageFile: 156_356_161_536, availablePageFile: 48_856_334_336);
+
+        commit.Should().Be(new HostCommit(107_499_827_200, 156_356_161_536));
+        Math.Round(100.0 * commit.ChargeBytes / commit.LimitBytes, 1).Should().Be(68.8);
+    }
+
+    [Fact]
+    public void The_real_windows_counters_read_this_hosts_commit_charge_below_its_limit()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "GlobalMemoryStatusEx exists on Windows only");
+        if (OperatingSystem.IsWindows())
+        {
+            var commit = new Win32Counters().Commit().Should().BeOfType<Reading<HostCommit>.Available>().Subject.Value;
+
+            commit.LimitBytes.Should().BeGreaterThan(commit.ChargeBytes).And.BeGreaterThan(1L << 30);
+            commit.ChargeBytes.Should().BePositive();
+        }
+    }
+
+    private sealed class FakeCounters(Reading<HostMemory> memory, Reading<long> vmmem, Reading<HostCommit> commit, Reading<long> compression) : IWindowsCounters
     {
         public Reading<HostMemory> Memory() => memory;
 
         public Reading<long> VmmemWorkingSet() => vmmem;
+
+        public Reading<HostCommit> Commit() => commit;
+
+        public Reading<long> CompressionWorkingSet() => compression;
     }
 }
