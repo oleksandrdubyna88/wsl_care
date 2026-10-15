@@ -39,9 +39,9 @@ The scenarios, the brief and the security judgement are Fable's: §4 below.
 - **Depends on:** E19.S3 (classifier, scan rule, `worktrees.*` keys) and E19.S4 (git questions — the git checks are RE-PROVEN
   at delete time per §4 B.1's R0–R6, not only at scan time); M6 (the artifact list, measured 2026-10-15); the E19 stories'
   decisions 4, 5 and 11 (names on argv, no user git config, the artifact time skew).
-- **Order with WR-T1:** DH-4 builds the shared Windows engine path FIRST — the per-side privilege rule, the `ITreeRemoval` seam
-  and the handle primitives (§4 B.3/B.5) — named so WR-T1's A23 consumes them; the runner plan's WR-T1 row says so in the
-  same commit (both sides). Never two copies, and never "instead": WR-T1 still builds A23 on it.
+- **Order with WR-T1 (corrected 2026-10-15, §4b):** WR-T1 is ahead and ships the per-side privilege rule (exit 81) and A23's
+  path-based delete walk FIRST; DH-4 consumes the rule unchanged and extracts the walk into the handle-based `ITreeRemoval`
+  seam (§4 B.3), moving A23 onto it in the same PR. Never two copies; whoever merges second reconciles.
 - **The run lock:** `act` keeps taking THE run lock (the engine's own, `ActionEngine.cs:88`); while a clean runs, the Windows
   watch answers busy and writes no volume sample — E19.S2's live fallback in the Windows `status` covers that gap. The
   parent's "none takes the run lock" (§3.5) is amended for `act`-bodied tasks.
@@ -752,6 +752,53 @@ Round for the gate's epic 2/3: **proceed** (3 gating against 6). All three accep
    `FileDispositionInfo` (allowed here: not an agent folder), where a read-only file is kept and named, never its attribute
    changed. M-DH4-1 (ReFS POSIX delete on D:) is measured in the story before the default is relied on. RED:
    `A_root_on_a_fat_volume_is_refused`, `An_unsupported_posix_disposition_falls_back_and_keeps_read_only_files`.
+
+## 4b. Risk consultation for story 2.1 and WR-T1's state (2026-10-15) — binding on §4 and §4a
+
+The gate ordered a risk consultation on 2.1 (consultation `681ae837`); its five points were checked against this document and
+the code, and WR-T1 (`feat/wc-wr-t1-windows-temp`, in review) was read. Where these and §4/§4a differ, these win:
+
+1. **The privilege rule is WR-T1's, not a second one.** WR-T1 already ships it: `ActCommand.RunsOnWindows` (every asked action is
+   a Windows one) → `Elevated(host)` refuses an elevated process with 81 before the lock, and `ActionContext.UserSid` carries the
+   person's SID. §A.1's `ActPrivilege` and §B.5.1 are SUPERSEDED: A24/A24Orphans declare `Sides = [Windows]` and consume that
+   rule unchanged; tests 56/59 are WR-T1's (`ActWindowsTests`), DH-4 adds only `A24_on_an_elevated_process_is_refused_with_81`.
+   §A.1's SYSTEM belt-and-braces check is offered to WR-T1's review, not built here. Exit 81 says "unelevated, not SYSTEM" — not
+   "the original operator": another account that runs it reads ITS OWN `%LOCALAPPDATA%` config, roots and state, so there is no
+   cross-user path (consultation point 4; no change). The idle gate (§B.5.2, "CPU use is unknown") needs no rule: A24 is
+   `TimerOnly`, a button run never asks it.
+2. **One removal walk, built here, with WR-T1 moved onto it.** WR-T1's `TempDeletion` is a PATH-based walk (`ReadLink` before
+   descent, `IFileSystem.DeleteFile`/`DeleteDirectory`). DH-4 does not write a second one beside it: the shared MECHANICS go to
+   `Files/Removal/` (`ITreeRemoval`, §B.3, handle-based), and the PR that adds them moves `TempDeletion`'s body onto them in the
+   same change, keeping A23's semantics through an option (`OnLink.Stop` — A23 stops the candidate at a link; A24 removes the
+   link entry itself, `OnLink.RemoveTheLink`). ADMISSION stays per action — `BuildOutputFacts`, the artifact list and the tag
+   policy are A24's; A23's scratch names and its stricter "any link stops" are A23's (consultation point 5). The runner plan's
+   rows say WR-T1 builds the privilege rule and A23's walk FIRST and DH-4 extracts the walk (both sides, this commit). WR-T1's
+   `WindowsTemp*` tests (`WindowsTempRunTests`, `WindowsTempEngineTests`, `WindowsTempSelectionTests`) stay green unchanged — that is the extraction's proof.
+3. **The delete pass deletes only what the verify pass saw** (consultation point 1: a `bin\local.db`, a nested `.git` or a new
+   file created between R3 and the delete would otherwise be removed, since B.3.2 enumerates again and checks containment only).
+   The verify pass records a MANIFEST — per entry its identity (volume serial + 128-bit file id, `FILE_ID_INFO` read on the
+   handle), kind, length, last write. The delete pass deletes an entry only when its handle's identity, kind, length and last
+   write equal the manifest's; an entry not in the manifest, or changed, is KEPT and counted `changed` (the candidate ends
+   `PartlyRemoved`), and the never-artifact extensions and `.git` rule are asked again per entry. Residual, named in README: a
+   `git add -f` of an already-verified build-output file inside the seconds between R4 and that file's delete is not seen (git's
+   index takes no lock we can hold); R4 runs immediately before the delete pass to keep that window to one candidate.
+   RED: `A_file_created_after_the_verify_pass_is_kept`, `A_nested_git_created_after_the_verify_pass_is_kept`,
+   `A_file_changed_after_the_verify_pass_is_kept`.
+4. **Nothing being removed can be renamed out of the root** (consultation point 2: `OpenToChangeWindows` shares DELETE, so another
+   process may rename an opened child elsewhere on the volume after its final-path check, and the disposition would then remove
+   it there). The delete pass opens every entry through a new `BeneathWrites.OpenToRemoveWindows` — `DELETE | READ_ATTRIBUTES`
+   (folders add `FILE_LIST_DIRECTORY`), share READ | WRITE, **never DELETE**, `OPEN_REPARSE_POINT | BACKUP_SEMANTICS` — and
+   keeps each folder's handle open through its children's pass (the post-order stack holds every folder between the candidate and
+   the entry), so neither the entry nor any folder above it can be renamed while it is removed (the archive's measured fact for
+   `HoldFolderWindows`); the final-path check runs on that handle and the disposition is set through it. A sharing violation on
+   that open → kept "in use". §4a item 1's re-opened candidate uses the same open. **M-DH4-2, measured in the story before the
+   code relies on it:** a file and an empty folder opened without share-delete are disposed through their own handle (POSIX and
+   classic); a rename of a held entry or of a held folder's child folder from another process fails with 32. RED:
+   `An_entry_renamed_outside_the_root_during_the_delete_pass_is_not_deleted_there` (a recording fake that renames between the
+   check and the disposition: the rename must be refused), `A_held_folder_cannot_be_renamed_while_its_children_are_removed`.
+5. **The tag policy holds** (consultation point 3): WCI, cloud, AppExecLink and every unknown or unreadable tag are already
+   retained by §A.4 and checked again in B.3.2; refusing every reparse point would retain clean candidates with an ordinary
+   junction. No change; the proof stays tests 21–25 plus "a tag that appears after the verify pass is never traversed".
 
 ## 5. Order and gates
 
