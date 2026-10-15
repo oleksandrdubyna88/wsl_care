@@ -58,7 +58,7 @@ test('the rows the E5 verbs cannot fill say "arrives in E#" with why — never b
     assert.equal(shown.state, 'arrives');
     assert.equal(shown.value, `arrives in ${row.arrives} — ${row.why}`);
   }
-  assert.deepEqual(FIELD_MAP.filter(isArriving).map((r) => r.arrives).sort(), ['E6', 'E6', 'E6', 'E7', 'E7', 'E7', 'E7'], 'E6.S3 filled Last cleanup; the logs rows are E6.S4; E15.S2 filled the virtual disks');
+  assert.deepEqual(FIELD_MAP.filter(isArriving).map((r) => r.arrives).sort(), ['E6', 'E6', 'E6', 'E7', 'E7', 'E7'], 'E6.S3 filled Last cleanup; the logs rows are E6.S4; E15.S2 filled the virtual disks; E19.S1 filled the Windows volumes (disk.volumes replaced the arriving C: row)');
 });
 
 test('the head goldens\' own available:false figures read "unavailable — <reason>": the npm folder, A8\'s cleanup row', () => {
@@ -129,6 +129,29 @@ test('figures over the head golden read as the daemon measured them', () => {
   assert.match(rowOf(view, 'health.clockJumps').value, /875 in 4\.0 h/);
   assert.equal(rowOf(view, 'health.configError').value, 'none');
   assert.equal(rowOf(view, 'cleanup.rows').items.length, 8);
+});
+
+test('the disk.volumes row (E19.S1) reads disk.volumeFree: the worst volume, its level and how old the reading is', () => {
+  const body = headBody('status');
+  const verdicts = (body.verdicts as Record<string, unknown>[]).filter((v) => v.id !== 'disk.volumeFree');
+  verdicts.push({ id: 'disk.volumeFree', level: 'critical', value: 'D: 4.1 GiB free (2.1 %) — critical', limit: 'x', reason: 'D is nearly full', basis: { source: 'fullRun', runId: 'r', ageSeconds: 1800 } });
+  body.verdicts = verdicts;
+
+  const row = rowOf(buildPanelView(snapshot({ ...goldenOutcomes(), status: answered('status', body) })), 'disk.volumes');
+
+  assert.equal(row.label, 'Windows volumes: worst free');
+  assert.equal(row.level, 'critical');
+  assert.equal(row.value, 'D: 4.1 GiB free (2.1 %) — critical — measured by the full run, 30 min ago (D is nearly full)');
+});
+
+test('without the verdict (an older daemon) the disk.volumes row says to update the daemon — it is not a made-up figure', () => {
+  const body = headBody('status');
+  body.verdicts = (body.verdicts as Record<string, unknown>[]).filter((v) => v.id !== 'disk.volumeFree');
+
+  const row = rowOf(buildPanelView(snapshot({ ...goldenOutcomes(), status: answered('status', body) })), 'disk.volumes');
+
+  assert.notEqual(row.state, 'arrives');
+  assert.match(row.value, /update the daemon/i);
 });
 
 test('slow parts carry their age: the container stats and the folder walk say which full run measured them', () => {

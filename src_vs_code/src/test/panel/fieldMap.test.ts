@@ -48,3 +48,9 @@ test('the field map is well-formed: unique ids, known sections, every section ha
     assert.ok(row.why.length > 0, row.id);
   }
 });
+
+test('the Windows volumes row (E19.S1) reads the disk.volumeFree verdict of status, and no "C: free" row arrives any more', () => {
+  const row = FIELD_MAP.find((r) => r.id === 'disk.volumes');
+  assert.deepEqual(row, { section: 'disk', id: 'disk.volumes', label: 'Windows volumes: worst free', verb: 'status', path: 'verdicts[id=disk.volumeFree]', kind: 'verdict' });
+  assert.equal(FIELD_MAP.some((r) => r.id === 'disk.hostC'), false);
+});

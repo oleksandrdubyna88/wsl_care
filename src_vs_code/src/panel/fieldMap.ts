@@ -137,7 +137,7 @@ export const FIELD_MAP: readonly FieldRow[] = [
   read('swap', 'swap.total', 'Swap total', 'status', 'vm.memory.swapTotal', 'gib'),
   arriving('swap', 'swap.trend', 'Swap trend today', 'E6', NEEDS_LOGS),
   read('disk', 'disk.distro', 'The distribution\'s / file system', 'status', 'vm.disk', 'disk'),
-  arriving('disk', 'disk.hostC', 'C: free', 'E7', NEEDS_PROBE),
+  read('disk', 'disk.volumes', 'Windows volumes: worst free', 'status', 'verdicts[id=disk.volumeFree]', 'verdict'),
   read('disk', 'disk.vhdx', 'Virtual disks: file − guest = gap (E15.S2)', 'status', 'verdicts[id=disk.vhdxGap]', 'verdict'),
   read('folders', 'folders.sizes', 'Big folders (the daily walk)', 'status', 'folders', 'folders'),
   read('containers', 'containers.now', 'Running now', 'status', 'vm.containers', 'containersNow'),
