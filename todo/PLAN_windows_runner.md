@@ -691,3 +691,4 @@ Decisions the plan did not spell out:
   build: M1 `Expected supervisor.Launches to be equal to {"archive", "preview", "--json"}, but {"archive", "run", "--json"} differs at
   index 1`; m1 `Expected Lines(stderr) {…} to have an item matching l.Contains("an elevated process", Ordinal)`; M3 `Expected
   report.Stop "another archive run of this side holds its lock" to contain "pid 4242"`. Each restored byte for byte (`cmp`).
+- **Suites**: Core 2759 (2678 passed, 81 skipped), Cli 432 (430, 2), LiveContract 28 (12, 16), Scenarios 624 (the Linux legs skip). One Scenarios run had `FetchWindowsDaemonFlows...(shape: "bin-dll")` time out under load (1 min 1 s); the class run alone passes 43/43 and D5 does not touch it. M2 is a compile-time guarantee (the table takes a `DryRunDecision`; `ArchiveBody.Choice` is gone), so its proof is that nothing outside Core can build the argv.
