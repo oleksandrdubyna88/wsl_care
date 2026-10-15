@@ -113,6 +113,12 @@ function daemonWordsSpelled(text: string): string[] {
   return stringLiteralsOf(text).filter((literal) => DAEMON_WORDS.has(literal));
 }
 
+/**
+ * What WR-E1 (the staged exe, `tasks` and the Windows run reads) takes from `verbs.ts` besides the table: the tails and ceilings it
+ * builds there. The name of a verb TABLE (`RUN_READ_VERBS`, `RUN_READ_NAMES`) is not among them — the words stay in `verbs.ts`.
+ */
+const WR_E1_VERB_IMPORTS: readonly string[] = ['RUN_READ_TIMEOUT_MS', 'runReadTail', 'TASKS_DEFAULT_TIMEOUT_MS', 'TASKS_REMOVE_TAIL', 'TASKS_STAGE_TAIL', 'tasksRenderTail', 'WINDOWS_READ_NAMES', 'type RunReadName', 'type TaskName', 'type WindowsRunRead'];
+
 /** What the source takes from `./verbs` besides the table itself. */
 function otherVerbImports(text: string): string[] {
   return [...text.matchAll(/import\s*\{([^}]*)\}\s*from\s*'\.\/verbs'/g)].flatMap((m) => (m[1] ?? '').split(',').map((name) => name.trim())).filter((name) => name !== '' && name !== 'VERBS');
@@ -123,7 +129,7 @@ test('the client names no other verb than status and --version', () => {
   assert.ok(verbsTaken(client).length > 0, 'the scan is alive: the client takes its tails from VERBS');
   assert.deepEqual([...new Set(verbsTaken(client))].sort(), [...ALLOWED_VERBS].sort(), 'exactly status and version');
   assert.deepEqual(daemonWordsSpelled(client), [], 'it spells no daemon word itself — only verbs.ts does');
-  assert.deepEqual(otherVerbImports(client), [], 'and takes no run-read table, no tail builder');
+  assert.deepEqual(otherVerbImports(client).filter((name) => !WR_E1_VERB_IMPORTS.includes(name)), [], 'and takes from verbs.ts only the tail builders WR-E1 built — never a verb table of its own');
 });
 
 test('the verb scan finds a planted second verb, a planted literal and a planted run-read import', () => {
