@@ -2,7 +2,7 @@
 
 > Status: **plan only, nothing implemented yet, 2026-10-14 — coai plan round 1: proceed; the owner's answers to Q1–Q4 and the
 > own review written in, plan round 2 (§12a); the epics split by Fable, 2026-10-14 (E19–E21, cornerstones DH-4 and DH-6,
-> `## Epics`); implementation waits for the owner's go.** Scope: the daemon's disk verdicts (`Thresholds/`), a
+> `## Epics`); the owner's go for E19 on 2026-10-15, for E20 and E21 the same day; stories documents for all three.** Scope: the daemon's disk verdicts (`Thresholds/`), a
 > Windows-side worktree scanner and two Windows-side cleanup actions (`Core/Worktrees/` new, `Core/Actions/`), the Docker
 > cleanup's selection (`Preview/CleanupTargets.cs`), a test-leftover sweep on both sides, this repository's own test-temp
 > prefix, and the extension's panel rows and buttons for all of it. The split into epics is `## Epics` (the last section):
@@ -809,6 +809,9 @@ Windows `status` (its §3 decision 1).
 
 ### E20 — Clean it (DH-4, DH-5)
 
+Stories: [PLAN_disk_hygiene_windows_E20.md](PLAN_disk_hygiene_windows_E20.md) (2026-10-15; E20.S1 = DH-4, cornerstone, with
+Fable's security judgement on how a Windows action runs unelevated; E20.S2 = DH-5, waits for the runner's WR-E1..E4/T2).
+
 - **Goal.** One button frees the idle worktrees' build output, a second the orphaned folders' — each with a dry-run preview,
   run by the owner's own task — and the deletion policy refuses, by itself, everything under a root that is not an admitted
   `bin` / `obj` / `node_modules` candidate.
@@ -855,6 +858,9 @@ Windows `status` (its §3 decision 1).
 
 ### E21 — Test leftovers and A5 (DH-2, DH-8, DH-6, DH-7, DH-9)
 
+Stories: [PLAN_disk_hygiene_windows_E21.md](PLAN_disk_hygiene_windows_E21.md) (2026-10-15; E21.S1 = DH-2, S2 = DH-8, S3 = DH-6
+cornerstone, S4 = DH-7 waits for WR-T1 or E20's extracted engine path, S5 = DH-9).
+
 - **Goal.** Everything a test run names `testsToDelete-…` is swept — containers, volumes and networks in the distro, `%TEMP%`
   folders on Windows — only when no test run is in flight on EITHER side and never younger than an hour; A5 can be automated
   because it never selects a compose container; this repository's own tests leave prefixed folders; the plan closes.
@@ -898,7 +904,7 @@ Windows `status` (its §3 decision 1).
 and DH-6, DH-3 after M1/M2; WR-D4 and WR-E1 next, then DH-1b (the priority path **DH-1 → WR-D4 → DH-1b**); WR-T1; E20 (DH-4,
 then DH-5 after WR-E3/E4); E21's DH-7; DH-9. The plan is promoted when DH-7 and DH-1b have shipped (§13).
 
-Cornerstones: 2 of 2 — DH-4, DH-6 (DH-4: the deletion boundary — the only code that removes files under a configured root,
+Cornerstones: 2 of 2 — DH-4 (= E20.S1), DH-6 (= E21.S3) (DH-4: the deletion boundary — the only code that removes files under a configured root,
 and the policy's deny-by-default is what makes every other path there safe; DH-6: `TestRuns.Judge`, the one in-flight
 contract both binaries and both sweeps rely on, with no second check behind it). Q = ⌈2·E/5⌉ = 2 for E = 3; a third mark
 goes to the operator, not into this file.

@@ -305,7 +305,7 @@ this epic — not in this document.
 
 ## 6. Gates
 
-The coai plan round runs ONCE for this document (epic `19/21` of the parent). A code round runs per story on its
+The coai plan round runs ONCE for this document (the gate's epic `1/3` — the gate numbers the parent's three epics 1-based). A code round runs per story on its
 branch, with this document's story section as `planText` plus what the previous round changed; every finding is
 resolved, rejections with reasons, in round one.
 
