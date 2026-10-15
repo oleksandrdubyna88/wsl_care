@@ -1129,6 +1129,18 @@ re-run in full, 0 failed everywhere: Windows — Core 2783 (2702 passed, 81 skip
 passed, 286 skipped); Linux, a NEW folder `/tmp/testsToDelete-wc-e15s5-20261014T205832Z` — goldens unchanged, Core 2783 (2714, 69
 skipped), CLI 424 (394, 30 skipped), Scenarios 621 (613, 8 skipped); the extension 1251 (1250, 1 skipped); lint, format,
 plan-lifecycle and the rules check clean.
+Then onto `b741a934` (WR-D4) and `28ebdeed` (a plan-only change), on a machine at 100 % CPU (Linux load average 40–60):
+Windows Core 2791 and CLI 428, 0 failed; Linux (`/tmp/testsToDelete-wc-e15s5-20261014T212844Z`) Core 2791 and CLI 428, 0 failed,
+the golden check green. The last runs (`/tmp/testsToDelete-wc-e15s5-20261015T075131Z` on Linux): Windows Scenarios 624 — 64 failed,
+all but a few `TimeoutException`s (a built CLI or Git-bash child that did not exit or made no progress in time); its 25 classes
+re-run together: 212, 2 failed; Linux Scenarios 624 — 7 failed, the four classes re-run one at a time: `DetachFlows`,
+`GoldenContractTests` (the golden that read `dead` for `live` under load is green, 7 of 7) and `ReadContractFlows` green, the
+two `StatusFlows` time budgets still over (4.1 s for 2 s, 5.6 s for 3 s); the extension 1251 — 84 failed, every one in a
+process-spawning file (`fakeWsl`, the flow scenarios, `runner`, `engineHost`, …), each of the twelve files green alone; lint,
+format, plan-lifecycle and the rules check clean. Left red under this load, all time limits: the Windows
+`StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget…` (4–10 s for 3 s; it was green on `0d9be6a3`), the
+Linux `StatusFlows` budgets, and `FetchWindowsDaemonFlows.A_download_that_hangs_is_ended_at_its_attempt_limit…` (a 2 s attempt
+limit, untouched here). CI is the authority for these.
 
 **Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
 that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.
