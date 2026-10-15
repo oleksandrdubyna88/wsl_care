@@ -1,7 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
 > Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 built on its branch `feat/wc-e15s5-host-memory` (*E15.S5 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
 > and E15.S6 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 
 > built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
