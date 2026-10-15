@@ -11,7 +11,7 @@ public sealed record SystemDriveMount(string MountPoint, uint DeviceMajor, uint 
 /// <summary>
 /// Where the distro sees the Windows system drive and whether WSL interop can run a Windows program at all — the inputs of
 /// the fallback <see cref="ExecutableResolver"/> takes for the closed list <see cref="Programs"/> (the clock probe's
-/// <c>powershell.exe</c>, nothing else) when <c>PATH</c> does not name the program. The files themselves are checked by
+/// <c>powershell.exe</c> and, since E15.S1b, the MSI <c>pwsh.exe</c> for the disk script; nothing else) when <c>PATH</c> does not name the program. The files themselves are checked by
 /// <see cref="SystemDriveFiles"/>.
 /// </summary>
 /// <remarks>
@@ -68,14 +68,28 @@ public static class WindowsSystemDrive
 
     /// <summary>
     /// The CLOSED list of Windows programs looked up on the system drive when PATH does not name them, each with its folder
-    /// relative to the drive's root. A name not here is looked up on PATH alone, exactly as before.
+    /// relative to the drive's root. A name not here is looked up on PATH alone, exactly as before. Compared without case, as
+    /// <see cref="FixedFolderOnly"/> is (security review, Fable extra b): the drive is case-insensitive, so <c>Pwsh.exe</c> is the
+    /// same program, found in the same one folder.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> Programs { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
+    public static IReadOnlyDictionary<string, string> Programs { get; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         // Where Windows installs Windows PowerShell 5.1 (%SystemRoot%\System32\WindowsPowerShell\v1.0) — the folder WSL's
         // own interop PATH names for it.
         [HealthCommands.PowerShell] = "Windows/System32/WindowsPowerShell/v1.0",
+        // E15.S1b: where the MSI installs PowerShell 7 (%ProgramFiles%\PowerShell\7) — administrator-only, like System32; the
+        // clock probe verifies the file's signature there before the daemon asks for it (PwshEngine). Never the Store package's
+        // folder, never the alias under a user's profile.
+        [HealthCommands.Pwsh] = PwshEngine.MsiFolderOnTheDrive,
     };
+
+    /// <summary>
+    /// The programs that come ONLY from their fixed folder in <see cref="Programs"/> — never from PATH (E15.S1b): the MSI
+    /// <c>pwsh.exe</c>, which the clock probe verified at that folder. On PATH a <c>pwsh.exe</c> is the Store package's alias
+    /// in the user's <c>WindowsApps</c> as often as not; the daemon never starts it. <c>powershell.exe</c> keeps PATH first. Compared
+    /// without case (code round): the drive's 9p share is case-insensitive, so <c>Pwsh.exe</c> is the same Windows file.
+    /// </summary>
+    public static IReadOnlyList<string> FixedFolderOnly { get; } = [HealthCommands.Pwsh];
 
     /// <summary>The system drive's letter — <see cref="Drive"/>'s first character.</summary>
     private static readonly char DriveLetter = Drive[0];

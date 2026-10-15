@@ -19,6 +19,9 @@ public sealed class HealthTests : IDisposable
 
     public void Dispose() => _root.Dispose();
 
+    /// <summary>Windows PowerShell 5.1, as the judgement answers it for a probe that verified nothing.</summary>
+    private static readonly InteropEngine WindowsPowerShell = new(InteropEngineKind.WindowsPowerShell, "a test that is not about the engine");
+
     private static T Value<T>(Reading<T> reading)
     {
         reading.Should().BeOfType<Reading<T>.Available>(reading.ReasonOrEmpty);
@@ -153,10 +156,153 @@ public sealed class HealthTests : IDisposable
         var runner = new RecordingCommandRunner().Script(WindowsDiskCommands.WindowsDisk.Argv,
             new CommandOutcome.Exited(0, new CapturedText(WindowsDiskFixture.Answer, false), CapturedText.Empty, TimeSpan.FromMilliseconds(3316)));
 
-        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(WindowsDiskFixture.CapturedAt), TestContext.Current.CancellationToken);
+        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(WindowsDiskFixture.CapturedAt), WindowsPowerShell, TestContext.Current.CancellationToken);
 
         Value(sample.Elapsed).Should().Be(TimeSpan.FromMilliseconds(3316));
         Value(sample.Facts).MalformedLines.Should().Be(0);
+    }
+
+    /// <summary>E15.S1b S4: a full run whose clock probe VERIFIED the MSI pwsh (the capture's answer with the two verdict lines a
+    /// machine with the MSI build prints, derived) starts the disk script ONCE under the bare <c>pwsh.exe</c>, never under
+    /// <c>powershell.exe</c>, after the clock probe — and the sample keeps the file the RUNNER started (code round: one source).</summary>
+    [Fact]
+    public async Task A_verified_probe_starts_the_disk_script_under_pwsh_and_the_sample_keeps_the_file_the_runner_started()
+    {
+        const string started = "/mnt/x/Program Files/PowerShell/7/pwsh.exe";
+        var answer = new CommandOutcome.Exited(0, new CapturedText(WindowsDiskFixture.Answer, false), CapturedText.Empty, TimeSpan.FromSeconds(3)) { StartedFrom = started };
+        var (health, argv) = await CollectWithClockAsync(RecordingCommandRunner.Exited(0, PwshEngineFixture.Verified), (WindowsDiskCommands.WindowsDiskUnderPwsh, answer));
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv)).Should().Be(1, "once per full run, under pwsh");
+        argv.Should().NotContain(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv), "never also under powershell.exe");
+        argv.FindIndex(a => a.SequenceEqual(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv)).Should().BeGreaterThan(argv.FindIndex(a => a.SequenceEqual(HealthCommands.WindowsClock.Argv)));
+        Value(health.WindowsDisk.Engine).Kind.Should().Be(InteropEngineKind.Msi);
+        health.WindowsDisk.StartedFrom.Should().Be(started, "the detail names the file that was really started, as the drive's mount names it");
+        Value(health.WindowsDisk.Facts).MalformedLines.Should().Be(0, "the scripted answer was read");
+    }
+
+    [Fact]
+    public async Task The_captured_probe_without_an_msi_pwsh_starts_the_disk_script_under_powershell_with_the_reason()
+    {
+        var (health, argv) = await CollectWithClockAsync(RecordingCommandRunner.Exited(0, PwshEngineFixture.Answer), Answers(WindowsDiskCommands.WindowsDisk));
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1);
+        argv.Should().NotContain(a => a[0] == HealthCommands.Pwsh, "the probe saw no MSI pwsh");
+        var engine = Value(health.WindowsDisk.Engine);
+        engine.Should().Match<InteropEngine>(e => e.Kind == InteropEngineKind.WindowsPowerShell && e.Program == HealthCommands.PowerShell);
+        engine.Reason.Should().Contain("absent");
+    }
+
+    [Fact]
+    public async Task A_failed_clock_probe_still_runs_the_disk_script_under_powershell_and_says_pwsh_was_not_verified()
+    {
+        var (health, argv) = await CollectWithClockAsync(RecordingCommandRunner.Exited(1, stderr: "interop is off"), Answers(WindowsDiskCommands.WindowsDisk));
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "one failure never ends a run (plan §5)");
+        Value(health.WindowsDisk.Engine).Reason.Should().Contain("did not verify");
+    }
+
+    /// <summary>Code round (own review #2): the probe verified the MSI file, but the daemon cannot start <c>pwsh.exe</c> — the
+    /// system-drive lookup refused it (virtiofs, several C: mounts, a non-root ancestor, interop off) or timed out. Before the
+    /// fixed-folder rule 5.1 would have run; now the 5.1 script runs ONCE more and the engine says why.</summary>
+    [Fact]
+    public async Task A_verified_msi_pwsh_that_cannot_be_started_falls_back_to_windows_powershell_once_and_says_why()
+    {
+        var refused = new CommandOutcome.FailedToStart("pwsh.exe is started only from its one fixed folder on the Windows system drive, never from PATH; not started from the Windows system drive: /mnt/c is a virtiofs mount");
+        var (health, argv) = await CollectWithClockAsync(
+            RecordingCommandRunner.Exited(0, PwshEngineFixture.Verified),
+            (WindowsDiskCommands.WindowsDiskUnderPwsh, refused),
+            (WindowsDiskCommands.WindowsDisk, RecordingCommandRunner.Exited(0, WindowsDiskFixture.Answer)));
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv)).Should().Be(1);
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "5.1 runs once instead");
+        Value(health.WindowsDisk.Facts).MalformedLines.Should().Be(0, "the 5.1 answer was read");
+        var engine = Value(health.WindowsDisk.Engine);
+        engine.Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
+        engine.Reason.Should().Contain("could not be started").And.Contain("virtiofs");
+        // Final code round (finding 4): the command RUN on fallback is the command whose answer is READ — Under(the engine kept).
+        var diskRuns = argv.Where(a => a[0] is HealthCommands.Pwsh or HealthCommands.PowerShell && !a.SequenceEqual(HealthCommands.WindowsClock.Argv)).ToList();
+        diskRuns[^1].Should().Equal(WindowsDiskCommands.Under(engine).Argv, "the executed and the parsed command come from one expression");
+    }
+
+    /// <summary>Final code round (finding 7): the MSI pwsh could not be started and the 5.1 fallback could not be started either. The
+    /// sample is unavailable and ITS reason names the 5.1 failure; the engine's reason claims only that 5.1 was TRIED — never
+    /// that it ran.</summary>
+    [Fact]
+    public async Task When_the_fallback_fails_too_the_sample_names_the_51_failure_and_the_engine_never_claims_51_ran()
+    {
+        var (health, argv) = await CollectWithClockAsync(
+            RecordingCommandRunner.Exited(0, PwshEngineFixture.Verified),
+            (WindowsDiskCommands.WindowsDiskUnderPwsh, new CommandOutcome.FailedToStart("not started from the Windows system drive: /mnt/c is a virtiofs mount")),
+            (WindowsDiskCommands.WindowsDisk, new CommandOutcome.FailedToStart("no interop for powershell.exe")));
+
+        argv.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "5.1 is tried once");
+        health.WindowsDisk.Facts.IsAvailable.Should().BeFalse();
+        health.WindowsDisk.Facts.ReasonOrEmpty.Should().Contain("powershell.exe could not be started").And.Contain("no interop for powershell.exe");
+        var engine = Value(health.WindowsDisk.Engine);
+        engine.Reason.Should().NotContain("ran instead", "5.1 did not run").And.Contain("tried instead").And.Contain("virtiofs");
+    }
+
+    [Fact]
+    public async Task Only_a_failed_start_of_the_msi_pwsh_falls_back_a_timeout_and_a_failed_51_do_not()
+    {
+        var timedOut = new CommandOutcome.TimedOut(CapturedText.Empty, CapturedText.Empty, TimeSpan.FromSeconds(30));
+        var (underPwsh, argvPwsh) = await CollectWithClockAsync(RecordingCommandRunner.Exited(0, PwshEngineFixture.Verified), (WindowsDiskCommands.WindowsDiskUnderPwsh, timedOut));
+        var (under51, argv51) = await CollectWithClockAsync(RecordingCommandRunner.Exited(0, PwshEngineFixture.Answer), (WindowsDiskCommands.WindowsDisk, new CommandOutcome.FailedToStart("no interop")));
+
+        argvPwsh.Should().NotContain(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv), "pwsh started and ran out of time: running 5.1 too would double the ceiling");
+        Value(underPwsh.WindowsDisk.Engine).Kind.Should().Be(InteropEngineKind.Msi);
+        argv51.Count(a => a.SequenceEqual(WindowsDiskCommands.WindowsDisk.Argv)).Should().Be(1, "5.1 has nothing to fall back to");
+        under51.WindowsDisk.Facts.IsAvailable.Should().BeFalse();
+    }
+
+    /// <summary>Code round: the clock probe writes and flushes its clock lines BEFORE the pwsh look, so a look that hangs past the
+    /// probe's ceiling costs the engine choice, never the clock reading — the timed-out answer's complete lines are read.</summary>
+    [Fact]
+    public async Task A_clock_probe_that_times_out_during_the_pwsh_look_still_measures_the_clock_and_verifies_no_pwsh()
+    {
+        var clockLines = string.Join('\n', PwshEngineFixture.Answer.Split('\n').Where(l => !l.StartsWith("pwsh.", StringComparison.Ordinal)));
+        var timedOut = new CommandOutcome.TimedOut(new CapturedText(clockLines.TrimEnd('\n') + "\n", false), CapturedText.Empty, TimeSpan.FromSeconds(10));
+        var runner = new RecordingCommandRunner().Script(HealthCommands.WindowsClock.Argv, timedOut);
+
+        var sample = await HealthCollector.MeasureWindowsClockAsync(runner, new FixedTimeProvider(PwshEngineFixture.CapturedAt), TestContext.Current.CancellationToken);
+
+        sample.Measured.Should().BeTrue(sample.Unavailable);
+        sample.Pwsh.ReasonOrEmpty.Should().Contain("did not finish");
+        PwshEngine.Choose(sample).Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
+    }
+
+    /// <summary>Security review (Fable, extra a): a kill that lands in the middle of the SECOND write leaves a partial line after the
+    /// flushed clock lines. The partial tail is dropped and the clock is still read; the pwsh look stays unread.</summary>
+    [Fact]
+    public async Task A_clock_probe_killed_in_the_middle_of_the_pwsh_lines_still_measures_the_clock()
+    {
+        var clockLines = string.Join('\n', PwshEngineFixture.Answer.Split('\n').Where(l => !l.StartsWith("pwsh.", StringComparison.Ordinal))).TrimEnd('\n') + "\n";
+        var timedOut = new CommandOutcome.TimedOut(new CapturedText(clockLines + "pwsh.knownFolder=C:\\Program Files\npwsh.envProgram", false), CapturedText.Empty, TimeSpan.FromSeconds(10));
+        var runner = new RecordingCommandRunner().Script(HealthCommands.WindowsClock.Argv, timedOut);
+
+        var sample = await HealthCollector.MeasureWindowsClockAsync(runner, new FixedTimeProvider(PwshEngineFixture.CapturedAt), TestContext.Current.CancellationToken);
+
+        sample.Measured.Should().BeTrue(sample.Unavailable);
+        sample.Pwsh.ReasonOrEmpty.Should().Contain("did not finish", "on a timeout the pwsh look is never read, complete lines or not");
+    }
+
+    private static (ToolCommand Command, CommandOutcome Outcome) Answers(ToolCommand disk) => (disk, RecordingCommandRunner.Exited(0, WindowsDiskFixture.Answer));
+
+    /// <summary>A full run over the sandbox whose clock probe answers <paramref name="clock"/> and whose disk commands answer as
+    /// <paramref name="disks"/> say; every argv asked for, in order.</summary>
+    private async Task<(HealthSample Health, List<IReadOnlyList<string>> Argv)> CollectWithClockAsync(CommandOutcome clock, params (ToolCommand Command, CommandOutcome Outcome)[] disks)
+    {
+        var paths = new LinuxHostPaths(LinuxEnvironment.Sandboxed(_root.Path));
+        var runner = HealthFixture.Script(new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("not scripted") })
+            .Script(HealthCommands.WindowsClock.Argv, clock);
+        foreach (var (command, outcome) in disks)
+        {
+            runner.Script(command.Argv, outcome);
+        }
+
+        var health = await new HealthCollector(runner, new PhysicalFileSystem(paths), paths, new FixedTimeProvider(PwshEngineFixture.CapturedAt)).CollectAsync(PwshEngineFixture.CapturedAt.AddHours(-4), TestContext.Current.CancellationToken);
+
+        return (health, [.. runner.Requests.Select(r => r.Argv)]);
     }
 
     public static TheoryData<string, CommandOutcome, string> FailedDiskScripts() => new()
@@ -174,7 +320,7 @@ public sealed class HealthTests : IDisposable
     {
         var runner = new RecordingCommandRunner().Script(WindowsDiskCommands.WindowsDisk.Argv, outcome);
 
-        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(), TestContext.Current.CancellationToken);
+        var sample = await HealthCollector.MeasureWindowsDiskAsync(runner, new FixedTimeProvider(), WindowsPowerShell, TestContext.Current.CancellationToken);
 
         sample.Facts.IsAvailable.Should().BeFalse(what);
         sample.Facts.ReasonOrEmpty.Should().Contain(reason, what);

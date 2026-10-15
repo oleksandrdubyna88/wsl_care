@@ -29,15 +29,36 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// The Windows disk facts (E15.S1): the second fixed interop script, once, under its own ceiling — its tree killed past it by
     /// the runner — parsed by tag. A script that could not start, timed out, exited non-zero, was refused or printed a cut
     /// answer leaves the WHOLE sample unavailable with that reason; its run time is kept only for an answer that was read.
+    /// E15.S1b: the script runs under <paramref name="engine"/> (<see cref="WindowsDiskCommands.Under"/>); the sample keeps the
+    /// engine — chosen before the run, so it is kept also when the script failed — and the file the runner really started.
+    /// Code round: a verified MSI pwsh that could not be STARTED (the fixed-folder lookup refused it or did not answer) falls
+    /// back to Windows PowerShell 5.1 once, and the engine says why — before the fixed-folder rule 5.1 would have run.
     /// </summary>
-    public static async Task<WindowsDiskSample> MeasureWindowsDiskAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken)
+    public static async Task<WindowsDiskSample> MeasureWindowsDiskAsync(ICommandRunner runner, TimeProvider clock, InteropEngine engine, CancellationToken cancellationToken)
     {
-        var command = WindowsDiskCommands.WindowsDisk;
         var at = clock.GetUtcNow();
-        var outcome = await runner.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false);
-        var facts = ToolAnswers.Read(command, outcome).Bind(stdout => WindowsDiskParsers.Parse(stdout, WindowsDiskCommands.EventsMaxRead, WindowsDiskCommands.EventsSinceDays));
-        return new WindowsDiskSample(at, Elapsed(outcome, facts), facts);
+        var (used, outcome) = await RunDiskAsync(runner, engine, cancellationToken).ConfigureAwait(false);
+        var facts = ToolAnswers.Read(WindowsDiskCommands.Under(used), outcome).Bind(stdout => WindowsDiskParsers.Parse(stdout, WindowsDiskCommands.EventsMaxRead, WindowsDiskCommands.EventsSinceDays));
+        return new WindowsDiskSample(at, Elapsed(outcome, facts), facts) { Engine = Reading.Of(used), StartedFrom = outcome.StartedFrom };
     }
+
+    /// <summary>The script under <paramref name="engine"/>; when that is the MSI pwsh and it failed to START, the fallback engine's
+    /// script once instead. The command RUN is always <c>Under(the engine returned)</c> — the command whose answer is read (final
+    /// code round, finding 4).</summary>
+    private static async Task<(InteropEngine Used, CommandOutcome Outcome)> RunDiskAsync(ICommandRunner runner, InteropEngine engine, CancellationToken cancellationToken)
+    {
+        var outcome = await RunUnderAsync(runner, engine, cancellationToken).ConfigureAwait(false);
+        if (outcome is not CommandOutcome.FailedToStart failed || engine.Kind != InteropEngineKind.Msi)
+        {
+            return (engine, outcome);
+        }
+
+        var fallback = PwshEngine.NotStartable(failed.Reason);
+        return (fallback, await RunUnderAsync(runner, fallback, cancellationToken).ConfigureAwait(false));
+    }
+
+    private static Task<CommandOutcome> RunUnderAsync(ICommandRunner runner, InteropEngine engine, CancellationToken cancellationToken) =>
+        runner.RunAsync(WindowsDiskCommands.Under(engine).ToRequest(), cancellationToken);
 
     private static Reading<TimeSpan> Elapsed(CommandOutcome outcome, Reading<WindowsDiskFacts> facts) =>
         outcome is CommandOutcome.Exited exited && facts.IsAvailable ? Reading.Of(exited.Elapsed) : Reading.Missing<TimeSpan>(facts.ReasonOrEmpty);
@@ -64,8 +85,10 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         var mark = ClockMark.Now(clock);
         var (clockSample, profile) = await WindowsClockAsync(linux, cancellationToken).ConfigureAwait(false);
         var reference = await ClockReferences.MeasureAsync(commands, clock, mark, cancellationToken).ConfigureAwait(false);
-        // E15.S1: after the clock probe and its reference, so its seconds never sit between the two clocks' readings.
-        var disk = await MeasureWindowsDiskAsync(commands, clock, cancellationToken).ConfigureAwait(false);
+        // E15.S1: after the clock probe and its reference, so its seconds never sit between the two clocks' readings. E15.S1b: under
+        // the engine the clock probe's look chose (PwshEngine), the MSI pwsh placed under this distro's automount root.
+        var engine = PwshEngine.Choose(clockSample);
+        var disk = await MeasureWindowsDiskAsync(commands, clock, engine, cancellationToken).ConfigureAwait(false);
         var uptime = ProcText.Read(files, $"{linux.ProcRoot}/uptime").Bind(HealthParsers.Uptime);
         var jumpsBack = await TimeJumpsBackAsync(uptime, cancellationToken).ConfigureAwait(false);
         var failedUnits = (await RunAsync(SystemdCommands.FailedUnits, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.FailedUnits);
@@ -225,15 +248,35 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         var called = clock.GetUtcNow();
         var outcome = await runner.RunAsync(HealthCommands.WindowsClock.ToRequest(), cancellationToken).ConfigureAwait(false);
         var launched = outcome.StartedAt.ValueOr(called);
-        var answer = ToolAnswers.Read(HealthCommands.WindowsClock, outcome).Bind(HealthParsers.WindowsClock);
+        var answer = ClockAnswer(outcome);
         return answer is Reading<WindowsClockAnswer>.Available { Value: var probe }
             ? new WindowsClockSample(launched, (probe.ProcessStartedAt - launched).TotalSeconds, (probe.PrintedAt - probe.ProcessStartedAt).TotalSeconds, string.Empty)
             {
                 WindowsProfile = probe.Profile,
                 TimeService = probe.TimeService is Reading<WindowsTimeService>.Available { Value: var service } ? service : null,
+                Pwsh = probe.Pwsh,
             }
             : new WindowsClockSample(clock.GetUtcNow(), 0, 0, answer.ReasonOrEmpty);
     }
+
+    /// <summary>Code round: the pwsh look of a probe that ran past its ceiling, said once.</summary>
+    public const string PwshLookTimedOut = "the Windows clock probe did not finish its pwsh look within its ceiling, so no pwsh was verified";
+
+    /// <summary>
+    /// The probe's answer. Code round: the probe WRITES and FLUSHES its clock lines before the pwsh look, so a probe that ran
+    /// past its ceiling still answered the clock when its captured WHOLE lines parse — a partial last line (a kill in the middle of
+    /// the second write) is dropped (security review, Fable extra a) — the pwsh look is then unread (<see cref="PwshLookTimedOut"/>)
+    /// and Windows PowerShell 5.1 runs the disk script. Anything else is read as before.
+    /// </summary>
+    private static Reading<WindowsClockAnswer> ClockAnswer(CommandOutcome outcome) => outcome switch
+    {
+        CommandOutcome.TimedOut { Stdout.Text: var text } when HealthParsers.WindowsClock(WholeLines(text)) is Reading<WindowsClockAnswer>.Available { Value: var answer } =>
+            Reading.Of(answer with { Pwsh = Reading.Missing<PwshProbe>(PwshLookTimedOut) }),
+        _ => ToolAnswers.Read(HealthCommands.WindowsClock, outcome).Bind(HealthParsers.WindowsClock),
+    };
+
+    /// <summary>The text up to and including its last line feed — a partial last line dropped; empty when there is no whole line.</summary>
+    private static string WholeLines(string text) => text[..(text.LastIndexOf('\n') + 1)];
 
     private WindowsClockSample ClockUnavailable(string reason) => new(clock.GetUtcNow(), 0, 0, reason);
 }

@@ -198,7 +198,7 @@ public sealed class CollectFlows
     {
         DockerCommands.Executable => DockerCommands.IsReadVerb(call.Argv),
         SystemdCommands.Systemctl or SystemdCommands.Journalctl or SystemdCommands.Timedatectl => SystemdCommands.IsReadVerb(call.Argv),
-        "powershell" => HealthCommands.FixedScripts.Any(script => call.Argv.SequenceEqual(script.Arguments)),
+        "powershell" or "pwsh" => HealthCommands.FixedScripts.Any(script => Tool(script.Executable) == call.Tool && call.Argv.SequenceEqual(script.Arguments)),
         HealthCommands.Snap => call.Argv.SequenceEqual(HealthCommands.SnapList.Arguments),
         HealthCommands.Curl => Core.Processes.Policy.ReadCommandTemplates.ClockReference.Matches(call.Argv),
         _ => false,
