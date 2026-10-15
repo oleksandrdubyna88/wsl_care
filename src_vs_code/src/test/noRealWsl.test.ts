@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import { spawnRunner } from '../process/runner';
 import { wslExecutable } from '../wsl/wslExecutable';
-import { commandWords, isMachineChange, isWslLauncher, MUTATING, refusalOf, revealed, TASK_TRIPWIRE_MESSAGE, TRIPWIRE_MESSAGE } from './support/noRealWsl';
+import { commandWords, isMachineChange, isWslCareExe, isWslLauncher, MUTATING, refusalOf, revealed, TASK_TRIPWIRE_MESSAGE, TRIPWIRE_MESSAGE, WSL_CARE_TRIPWIRE_MESSAGE } from './support/noRealWsl';
 
 /**
  * Plan §16 E5.S1 acceptance: "no test can reach the real wsl.exe (asserted)". The tripwire is loaded by the runner
@@ -105,4 +105,24 @@ test('PLAN_gpu_health.md D7: a device change is refused too — Enable-/Disable-
   assert.equal(isMachineChange(POWERSHELL, ['-NoProfile', '-EncodedCommand', encoded]), true, 'an encoded payload is decoded and judged');
   assert.throws(() => childProcess.spawnSync('pnputil.exe', ['/enable-device', 'x']), new RegExp(TASK_TRIPWIRE_MESSAGE));
   assert.equal(isMachineChange(POWERSHELL, ['-Command', 'Get-PnpDevice -Class Display; Get-CimInstance -ClassName Win32_VideoController']), false, 'reading the devices is not a change');
+});
+
+// ---- WR-E1 own review m4: a real wsl-care.exe must never start from a test either ----
+
+test('starting a real wsl-care.exe from a test throws before anything starts — bundled, staged, bare, through a shell', () => {
+  for (const name of ['C:\\Users\\user\\.vscode\\extensions\\pub.ai-os-care-0.5.0-win32-x64\\bin\\wsl-care.exe', `C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\${'0123456789abcdef'.repeat(4)}\\wsl-care.exe`, 'wsl-care.exe', 'WSL-CARE.EXE', '/opt/wsl-care/bin/wsl-care']) {
+    assert.equal(isWslCareExe(name), true, name);
+    assert.throws(() => childProcess.spawnSync(name, ['--version']), new RegExp(WSL_CARE_TRIPWIRE_MESSAGE), name);
+  }
+  assert.throws(() => childProcess.execFileSync('wsl-care.exe', ['tasks', 'stage', '--json']), new RegExp(WSL_CARE_TRIPWIRE_MESSAGE));
+  assert.throws(() => childProcess.execSync('wsl-care.exe --version'), new RegExp(WSL_CARE_TRIPWIRE_MESSAGE));
+  assert.throws(() => childProcess.spawnSync('wsl-care.exe --version', { shell: true }), new RegExp(WSL_CARE_TRIPWIRE_MESSAGE));
+  assert.throws(() => childProcess.spawnSync('cmd.exe', ['/c', 'wsl-care.exe', '--version']), new RegExp(WSL_CARE_TRIPWIRE_MESSAGE));
+});
+
+test('the wsl-care.exe tripwire names the program by its base name only: the fake\'s requested file (data), a folder of that name and other programs are left alone', () => {
+  for (const name of [process.execPath, 'node', 'wsl-care.exe.bak', 'my-wsl-care.exe', 'C:\\wsl-care.exe\\other.exe', 'wsl-care-fake.exe', 'wsl.exe']) {
+    assert.equal(isWslCareExe(name), false, name);
+  }
+  assert.equal(refusalOf('node', ['fakeWsl.js', 'tasks', 'stage', '--json']), undefined, 'the fake runner starts node and passes the exe only as data');
 });

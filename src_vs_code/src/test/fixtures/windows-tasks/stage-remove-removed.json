@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "outcome": "removed",
+  "reason": "",
+  "root": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin",
+  "rootRemoved": false,
+  "removed": [
+    {
+      "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "path": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "why": "a staged copy"
+    }
+  ],
+  "kept": [
+    {
+      "digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "path": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "why": "its exe is still executing"
+    }
+  ],
+  "untouched": [
+    "notes.txt"
+  ]
+}

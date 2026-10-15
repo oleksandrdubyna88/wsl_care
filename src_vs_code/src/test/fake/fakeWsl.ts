@@ -23,6 +23,11 @@
  * config set archive.baseFolder <v>`, where `<v>` is empty or exactly the folder the scenario's `check-base` answer accepted.
  * Every other `config` argv — another key, `config reset`, `-u root` before it — is still refused.</p>
  *
+ * <p><b>Since WR-E1, the Windows exes</b> — the bundled one (`bundledExe`) and the staged copy (`stagedExe`), each started as EXACTLY the
+ * scenario's absolute path: `--version` (bundled), `tasks stage --json` and `tasks stage --remove --json` (bundled only), `tasks render
+ * <watch|archive> --json` (staged only) and the five Windows run reads (both). Everything else — `tasks run`, a `--timer`, a missing
+ * `--json`, the right argv on the wrong exe — is refused (98).</p>
+ *
  * <p>The four verbs are written out HERE, independently of the product's `VERBS`: the fake is the oracle of the plan's
  * decision (§15f #5), so a verb added to the client without a decision added here fails rather than passing because
  * both read one list.</p>
@@ -69,6 +74,13 @@ export interface FakeScenario {
   /** What the bundled exe's `--version` prints. */
   readonly bundledVersion?: string;
   /**
+   * WR-E1: the STAGED copy's absolute path (`<stagingRoot><digest>wsl-care.exe`) — started as EXACTLY this file; the fake answers
+   * `tasks render <watch|archive> --json` and the run reads for it and refuses any other argv. Another path stays refused.
+   */
+  readonly stagedExe?: string;
+  /** WR-E1: the `tasks` answers of the Windows exes (bundled and staged); absent, every `tasks` argv is refused. */
+  readonly tasks?: FakeTasks;
+  /**
    * A `-d` to a stopped distribution STARTS it, as the real `wsl.exe` does — for the one call the user asks for
    * ("Start WSL and check", `startIfStopped`). Off by default: then such a `-d` is refused (95), because no other
    * call may start the VM. When on, the fake rewrites its scenario file so the distribution runs from then on.
@@ -90,6 +102,31 @@ export interface FakeScenario {
   readonly archiveListExit?: number;
   /** E10.S1: `config set archive.baseFolder <v>` exits with this code and stderr instead of writing. */
   readonly configExit?: { readonly code: number; readonly stderr: string };
+}
+
+/** One scripted answer of a `tasks` call: the fixture file it prints (in {@link FakeTasks.folder}), its exit code, and its stderr. */
+export interface FakeTaskAnswer {
+  readonly file?: string;
+  readonly code: number;
+  readonly stderr?: string;
+}
+
+/**
+ * WR-E1: how the Windows exes answer `tasks`. The render answers are the daemon's own golden (`contracts/golden/windows-tasks-render.json`,
+ * written by the daemon's contract tests), picked by the golden entry's `name`; the stage answers are fixtures written from the daemon's
+ * `StageReport` / `StageRemoveReport` records (no golden exists for them yet).
+ */
+export interface FakeTasks {
+  /** The folder of the stage fixtures. */
+  readonly folder: string;
+  /** The render golden's file. */
+  readonly renderGolden: string;
+  /** `tasks render`: the golden entry each task answers (default: the two "from the staged copy" entries), or a scripted exit (2: wrong side, 78: configuration in error). */
+  readonly render?: { readonly watch?: string; readonly archive?: string; readonly exit?: FakeTaskAnswer };
+  /** `tasks stage --json`; default `stage-staged.json`, exit 0. */
+  readonly stage?: FakeTaskAnswer;
+  /** `tasks stage --remove --json`; default `stage-remove-removed.json`, exit 0. */
+  readonly remove?: FakeTaskAnswer;
 }
 
 /** The root calls' scripted answers (E6.S2); absent, every root call of the closed set answers as the goldens do. */
@@ -382,11 +419,103 @@ export function decide(scenario: FakeScenario, argv: readonly string[], stdin: B
   return listReply(scenario, argv) ?? daemonReply(scenario, argv);
 }
 
-/** E7.S5a: the bundled exe answers `--version` alone — the one verb the extension sends it. */
-export function bundledReply(scenario: FakeScenario, argv: readonly string[]): Reply {
-  return argv.length === 1 && argv[0] === '--version'
-    ? { code: 0, stdout: Buffer.from(`${scenario.bundledVersion ?? '0.0.0+fake'}\r\n`, 'utf8') }
-    : { code: FAKE_EXIT.refused, stderr: `fake wsl-care.exe: only --version is ever sent to the bundled exe, not ${JSON.stringify(argv)}\n` };
+// ---- E7.S5a / WR-E1: the Windows exes — the bundled one and the staged copy ----
+
+/** Which of the two Windows exes the runner started. */
+export type WindowsExe = 'bundled' | 'staged';
+
+/**
+ * What a Windows exe answers: E7.S5a's `--version` (the bundled exe alone), WR-E1's `tasks` argv (see {@link tasksReply}) and the five
+ * run reads the Windows pages use (`runs show`, `runs`, `logs`, `archive status`, `archive list`) — on both exes. Everything else is
+ * refused, naming the exe and the argv.
+ */
+export function windowsReply(scenario: FakeScenario, which: WindowsExe, argv: readonly string[]): Reply {
+  if (which === 'bundled' && sameTail(argv, ['--version'])) {
+    return { code: 0, stdout: Buffer.from(`${scenario.bundledVersion ?? '0.0.0+fake'}\r\n`, 'utf8') };
+  }
+
+  return tasksReply(scenario, which, argv) ?? windowsReadReply(scenario, argv) ?? { code: FAKE_EXIT.refused, stderr: `fake wsl-care.exe (${which}): not an argv the extension sends it: ${JSON.stringify(argv)}\n` };
+}
+
+/** The five reads of the Windows side: `archive status` / `archive list` (never `preview` or `check-base`) and the three run reads. */
+function windowsReadReply(scenario: FakeScenario, argv: readonly string[]): Reply | undefined {
+  const archive = argv[0] === 'archive' && (argv[1] === 'status' || argv[1] === 'list') ? archiveReadOf(argv) : undefined;
+  if (archive !== undefined) {
+    const code = argv[1] === 'list' ? (scenario.archiveListExit ?? 0) : 0;
+    return { code, stdout: fs.readFileSync(path.join(scenario.answers, archive(scenario))), ...delay(scenario) };
+  }
+  const runRead = runReadOf(argv);
+
+  return runRead === undefined ? undefined : runReadAnswer(scenario, runRead);
+}
+
+/** The golden entry each task's render answers unless the scenario names another. */
+const DEFAULT_RENDER = { watch: 'watch from the staged copy', archive: 'archive from the staged copy' } as const;
+
+/**
+ * `tasks stage --json` and `tasks stage --remove --json` (the BUNDLED exe's) and `tasks render <watch|archive> --json` (the STAGED
+ * copy's) — word for word, each on its own exe. `tasks run` is not here: it is the scheduled task's action, never the extension's, and
+ * a `--timer` anywhere is refused like every unknown word. Absent a `tasks` scenario every `tasks` argv is refused.
+ */
+function tasksReply(scenario: FakeScenario, which: WindowsExe, argv: readonly string[]): Reply | undefined {
+  if (argv[0] !== 'tasks') {
+    return undefined;
+  }
+  const tasks = scenario.tasks;
+  if (tasks === undefined) {
+    return refuseTasks(which, argv, 'the scenario scripts no tasks answers');
+  }
+  if (which === 'bundled' && sameTail(argv, ['tasks', 'stage', '--json'])) {
+    return taskAnswer(tasks.folder, tasks.stage ?? { file: 'stage-staged.json', code: 0 });
+  }
+  if (which === 'bundled' && sameTail(argv, ['tasks', 'stage', '--remove', '--json'])) {
+    return taskAnswer(tasks.folder, tasks.remove ?? { file: 'stage-remove-removed.json', code: 0 });
+  }
+  const task = renderTaskOf(argv);
+
+  return which === 'staged' && task !== undefined ? renderReply(tasks, task) : refuseTasks(which, argv, 'not a tasks argv this exe is asked');
+}
+
+function refuseTasks(which: WindowsExe, argv: readonly string[], why: string): Reply {
+  return { code: FAKE_EXIT.refused, stderr: `fake wsl-care.exe (${which}): ${why}: ${JSON.stringify(argv)}\n` };
+}
+
+/** `tasks render <watch|archive> --json` — exactly four words — or not one. */
+function renderTaskOf(argv: readonly string[]): 'watch' | 'archive' | undefined {
+  const [verb, sub, task, json, ...rest] = argv;
+
+  return verb === 'tasks' && sub === 'render' && (task === 'watch' || task === 'archive') && json === '--json' && rest.length === 0 ? task : undefined;
+}
+
+function taskAnswer(folder: string, answer: FakeTaskAnswer): Reply {
+  return { code: answer.code, ...(answer.file === undefined ? {} : { stdout: fs.readFileSync(path.join(folder, answer.file)) }), ...(answer.stderr === undefined ? {} : { stderr: answer.stderr }) };
+}
+
+/** The render golden's entry — or the scripted exit. */
+function renderReply(tasks: FakeTasks, task: 'watch' | 'archive'): Reply {
+  if (tasks.render?.exit !== undefined) {
+    return taskAnswer(tasks.folder, tasks.render.exit);
+  }
+  const name = tasks.render?.[task] ?? DEFAULT_RENDER[task];
+  const golden = readJson(tasks.renderGolden);
+  const entry = (golden.answers as Record<string, unknown>[]).find((e) => e.name === name);
+  if (entry === undefined) {
+    return { code: FAKE_EXIT.refused, stderr: `fake wsl-care.exe: the render golden has no entry named ${JSON.stringify(name)}\n` };
+  }
+
+  return { code: 0, stdout: Buffer.from(JSON.stringify(entry.answer), 'utf8') };
+}
+
+/** Which Windows exe the runner started — EXACTLY the scenario's absolute path for it, nothing like it (another digest, a `..`) — or none. */
+function windowsExeOf(scenario: FakeScenario, file: string | undefined): WindowsExe | undefined {
+  if (file === undefined) {
+    return undefined;
+  }
+  if (scenario.bundledExe === file) {
+    return 'bundled';
+  }
+
+  return scenario.stagedExe === file ? 'staged' : undefined;
 }
 
 /** Whether the runner started this fake as an absolute `…\System32\wsl.exe` (the client's one launcher). */
@@ -431,8 +560,9 @@ async function main(): Promise<void> {
   if (scenario.log !== undefined) {
     fs.appendFileSync(scenario.log, `${JSON.stringify({ argv, file: file ?? null, ...(stdin.length > 0 ? { stdin: stdin.toString('utf8') } : {}) })}\n`);
   }
-  if (scenario.bundledExe !== undefined && file === scenario.bundledExe) {
-    emit(bundledReply(scenario, argv));
+  const windows = windowsExeOf(scenario, file);
+  if (windows !== undefined) {
+    emit(windowsReply(scenario, windows, argv));
     return;
   }
   if (!isSystemWsl(file)) {

@@ -48,6 +48,27 @@ test('the exe-name scan finds a planted path, and ignores a sentence that mentio
   assert.deepEqual(exeNamers([{ file: 'prose.ts', text: "const note = 'read by wsl-care.exe on the Windows side (E7.S3)';" }]), []);
 });
 
+// ---- WR-E1 (PLAN_windows_runner.md §6 E1): the STAGED exe is named only by WindowsCareClient, too ----
+
+test('the staged exe is named only by WindowsCareClient: no module but the client builds a path ending in wsl-care.exe — the answers module and the verbs included', () => {
+  const namers = exeNamers(sources());
+  assert.deepEqual(namers, [CLIENT]);
+  for (const module of ['src/client/windowsTasks.ts', 'src/client/verbs.ts', 'src/client/runReadChecks.ts']) {
+    assert.ok(sources().some((s) => s.file === module), `the scan reads ${module}`);
+    assert.equal(namers.includes(module), false, module);
+  }
+});
+
+test('the exe-name scan finds a planted STAGED path — joined from a digest, a template over the staging folder, a concatenation — and ignores a folder name', () => {
+  const planted: Source[] = [
+    { file: 'src/windowsTasks/flow.ts', text: "const exe = path.win32.join(stagingRoot, digest, 'wsl-care.exe');" },
+    { file: 'src/windowsTasks/other.ts', text: 'const exe = `${stagingRoot}\\\\${digest}\\\\wsl-care.exe`;' },
+    { file: 'src/windowsTasks/third.ts', text: "const exe = stagingRoot + '/' + digest + '/wsl-care.exe';" },
+    { file: 'src/windowsTasks/folder.ts', text: 'const folder = path.win32.join(stagingRoot, digest);' },
+  ];
+  assert.deepEqual(exeNamers(planted), ['src/windowsTasks/flow.ts', 'src/windowsTasks/other.ts', 'src/windowsTasks/third.ts']);
+});
+
 function reachesBundled(source: Source): boolean {
   return importsOf(source.text).some((spec) => spec.includes('WindowsCareClient') || spec.includes('/bundled/'));
 }

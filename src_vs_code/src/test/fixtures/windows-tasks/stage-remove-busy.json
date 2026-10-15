@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "outcome": "busy",
+  "reason": "another run holds the run lock C:\\Users\\user\\AppData\\Local\\wsl-care\\wsl-care.lock; nothing was done — try again (it is never waited on)",
+  "root": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin",
+  "rootRemoved": false,
+  "removed": [],
+  "kept": [],
+  "untouched": []
+}
