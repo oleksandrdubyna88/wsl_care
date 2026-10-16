@@ -32,7 +32,8 @@ import { clientRunner, type WslCareTestApi } from './testApi';
 import { fileInfoOf } from './powershell/elevatedEngine';
 import { EngineHost } from './powershell/engineHost';
 import { engineQueryFor, newEngineRecorder, type EngineRecorder } from './powershell/engineRecorder';
-import { WindowsTimeGuardHost } from './windowsTime/guardHost';
+import { SchedulerHost } from './windowsTasks/schedulerHost';
+import { WindowsTimeGuardHost, type GuardUi } from './windowsTime/guardHost';
 import { sweepPending } from './windowsTime/guardPending';
 import type { GuardOptions } from './windowsTime/guardTask';
 import { guardUiFor, newGuardRecorder, type GuardRecorder } from './windowsTime/guardUi';
@@ -113,6 +114,8 @@ interface Parts {
   readonly windowsTime: WindowsTimeRecorder;
   readonly guardRecorder: GuardRecorder;
   readonly guard: WindowsTimeGuardHost;
+  /** The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2) — the guard's and the Windows tasks' part alike. */
+  readonly scheduler: SchedulerHost;
   /** Which PowerShell runs the Windows Time runs elevated (PLAN_pwsh_engine_windows_time.md §11 R3). */
   readonly engine: EngineHost;
   readonly engineRecorder: EngineRecorder;
@@ -164,12 +167,14 @@ function build(context: vscode.ExtensionContext): Parts {
   const guardRecorder = newGuardRecorder();
   const engineRecorder = newEngineRecorder();
   const engine = engineHostOf(testMode, engineRecorder);
-  const guard = windowsTimeGuard(context, testMode, guardRecorder, engine);
+  const guardUi = guardUiFor(testMode, guardRecorder, runnerFor({ kind: 'real' }), context.subscriptions);
+  const scheduler = schedulerOf(guardUi);
+  const guard = windowsTimeGuard(context, guardUi, scheduler, engine);
   const archiveRecorder = newArchiveRecorder();
   const archive = archiveHostOf(testMode, client, runner, store, host, archiveRecorder, log);
 
   return {
-    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
+    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, scheduler, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
     bundled: new BundledHost({ version: () => windowsClient.version(), pin: BUNDLED_DAEMON }),
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
@@ -251,20 +256,29 @@ function engineHostOf(testMode: boolean, recorder: EngineRecorder): EngineHost {
  * wsl.exe; a recorder in Test mode), and its install / remove run ONE elevated PowerShell each — the engine `engine` chose.
  * A pending run past its deadline is swept at activation, so nothing stays "waiting" after a crash.
  */
-function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, recorder: GuardRecorder, engine: EngineHost): WindowsTimeGuardHost {
+function windowsTimeGuard(context: vscode.ExtensionContext, ui: GuardUi, scheduler: SchedulerHost, engine: EngineHost): WindowsTimeGuardHost {
   void sweepPending(context.globalState, Date.now());
 
   return new WindowsTimeGuardHost({
     env: process.env,
     options: guardOptions,
     opTimeoutMs: () => numbers().windowsTimeGuardSeconds * 1000,
-    queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000,
-    ui: guardUiFor(testMode, recorder, runnerFor({ kind: 'real' }), context.subscriptions),
+    ui,
+    scheduler,
     durable: context.globalState,
     nowUtcMs: () => Date.now(),
     formatInstant: (iso) => new Date(iso).toLocaleString(),
     engine,
   });
+}
+
+/**
+ * The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2): through the guard's UNELEVATED query runner (the real one,
+ * or the recorder in Test mode), bounded by `wslCare.timeouts.windowsTimeGuardQuerySeconds`; the guard and the Windows tasks'
+ * part both consume it.
+ */
+function schedulerOf(ui: GuardUi): SchedulerHost {
+  return new SchedulerHost({ env: process.env, queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000, query: ui.query });
 }
 
 /** Two subscriptions as one: the guard's part re-renders on Task Scheduler's answers AND on the engine read's (D6). */

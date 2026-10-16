@@ -1,8 +1,7 @@
-import { notAnsweredWords, type NotAnswered } from '../process/notAnswered';
 import type { ProcessResult } from '../process/runner';
-import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
-import { durationSeconds, GUARD_EXIT, guardSummary, type GuardOptions } from './guardTask';
+import { parseSchedulerAnswer, schedulerReadOf, taskOf, type Channel, type SchedulerRead, type TaskRead } from '../windowsTasks/schedulerAnswer';
+import { durationSeconds, GUARD_EXIT, GUARD_NAME, guardSummary, type GuardOptions } from './guardTask';
 import { FAILURES } from './windowsTimeFix';
 
 /**
@@ -10,9 +9,13 @@ import { FAILURES } from './windowsTimeFix';
  * into ONE closed state, and the line and buttons derived from it — pure, so every row of the plan's table is a unit test.
  * The truth is Task Scheduler's (re-read on every panel open and refresh); the only thing this window adds is the pending
  * elevated run it persisted itself (`guardPending.ts`), so a reload shows the same answer (`common.durable-status`).
+ *
+ * Since WR-E2 (PLAN_windows_runner.md §3.8) the query is the ONE read of every task under `\wsl-care`
+ * (`windowsTasks/schedulerAnswer.ts` parses it): the guard is one of the tasks listed, read out by its NAME, so its state here
+ * is a function of that read and nothing else.
  */
 
-export type Channel = 'enabled' | 'disabled' | 'unknown';
+export type { Channel };
 
 export type GuardState =
   | { readonly kind: 'unknown'; readonly reason: string }
@@ -32,76 +35,51 @@ export type GuardState =
 
 export const NOT_ASKED: GuardState = { kind: 'unknown', reason: 'checking…' };
 
-interface Tagged {
-  readonly tags: ReadonlyMap<string, string>;
-  readonly summary: readonly string[];
+/** Task Scheduler's `SCHED_S_TASK_HAS_NOT_RUN`. */
+const NOT_RUN_YET = 0x41303;
+
+/** A task that answered, as the guard's `present`: a never-run task carries `never` and Task Scheduler's own "not run yet" code. */
+function presentState(task: Extract<TaskRead, { kind: 'present' }>, channel: Channel): GuardState {
+  const { lastRun } = task;
+
+  return {
+    kind: 'present',
+    enabled: task.enabled,
+    lastRunUtc: lastRun.kind === 'never' ? 'never' : lastRun.utc,
+    lastResult: lastRun.kind === 'never' ? NOT_RUN_YET : lastRun.result,
+    summary: task.summary,
+    channel,
+  };
 }
 
-const SUMMARY_TAG = 'summary:';
-
-/** A `name=value` line's tag; the FIRST occurrence of a name wins (a value printed twice is never re-read). */
-function tagOf(line: string, tags: Map<string, string>): void {
-  const at = line.indexOf('=');
-  const name = line.slice(0, at);
-  if (at > 0 && !tags.has(name)) {
-    tags.set(name, line.slice(at + 1).trim());
+function stateOfTask(task: TaskRead, read: Extract<SchedulerRead, { kind: 'read' }>): GuardState {
+  switch (task.kind) {
+    case 'absent':
+      return { kind: 'absent', channel: read.channel, ...(read.stampLeft ? { stampLeft: true } : {}) };
+    case 'unreadable':
+      return task.hresult === undefined ? { kind: 'unknown', reason: task.reason } : { kind: 'unreadable', hresult: task.hresult, channel: read.channel };
+    default:
+      return presentState(task, read.channel);
   }
 }
 
-function tagged(stdout: string): Tagged {
-  const tags = new Map<string, string>();
-  const lines = stdout.split(/\r?\n/).filter((l) => l.trim() !== '');
-  lines.filter((l) => !l.startsWith(SUMMARY_TAG)).forEach((line) => tagOf(line, tags));
-
-  return { tags, summary: lines.filter((l) => l.startsWith(SUMMARY_TAG)).map((l) => l.slice(SUMMARY_TAG.length)) };
-}
-
-function tag(t: Tagged, name: string): string {
-  return t.tags.get(name) ?? '';
-}
-
-function channelOf(value: string | undefined): Channel {
-  return value === 'enabled' || value === 'disabled' ? value : 'unknown';
-}
-
-const INTEGER = /^-?\d+$/;
-
-function present(t: Tagged, channel: Channel): GuardState {
-  const result = tag(t, 'lastResult');
-  if (!INTEGER.test(result) || tag(t, 'lastRunUtc') === '') {
-    return { kind: 'unknown', reason: 'the Task Scheduler query answered without the last run' };
+/** The ONE read as the guard's state: its task read out of the folder's tasks by name, or why the read gave no answer. */
+export function guardStateFromRead(read: SchedulerRead, task: string = GUARD_NAME): GuardState {
+  if (read.kind === 'unknown') {
+    return read.cause === 'checking' ? NOT_ASKED : { kind: 'unknown', reason: read.reason };
   }
 
-  return { kind: 'present', enabled: tag(t, 'enabled') === 'True', lastRunUtc: tag(t, 'lastRunUtc'), lastResult: Number(result) >>> 0, summary: t.summary, channel };
+  return stateOfTask(taskOf(read, task), read);
 }
-
-const BY_GUARD: Readonly<Record<string, (t: Tagged, channel: Channel) => GuardState>> = {
-  absent: (t, channel) => ({ kind: 'absent', channel, ...(tag(t, 'stamp') === 'present' ? { stampLeft: true } : {}) }),
-  unreadable: (t, channel) => ({ kind: 'unreadable', hresult: tag(t, 'hresult') || '?', channel }),
-  present,
-};
 
 /** The query's stdout as one state; anything outside the tagged shape is `unknown` with the reason, never a guess. */
-export function parseGuardAnswer(stdout: string): GuardState {
-  const t = tagged(stdout);
-  const read = Object.hasOwn(BY_GUARD, tag(t, 'guard')) ? BY_GUARD[tag(t, 'guard')] : undefined;
-
-  return read === undefined ? { kind: 'unknown', reason: 'the Task Scheduler query printed no answer' } : read(t, channelOf(t.tags.get('channel')));
-}
-
-/** Why this query did not answer — the shared wording (`process/notAnswered.ts`). */
-function notAnswered(result: NotAnswered): string {
-  return notAnsweredWords(result, 'the Task Scheduler query', 'wslCare.timeouts.windowsTimeGuardQuerySeconds');
+export function parseGuardAnswer(stdout: string, task: string = GUARD_NAME): GuardState {
+  return guardStateFromRead(parseSchedulerAnswer(stdout), task);
 }
 
 /** The query's process result as one state. */
 export function guardStateOf(result: ProcessResult): GuardState {
-  if (result.kind !== 'exited') {
-    return { kind: 'unknown', reason: notAnswered(result) };
-  }
-  const code = signed32(result.code);
-
-  return code === 0 ? parseGuardAnswer(result.stdout.toString('utf8')) : { kind: 'unknown', reason: `the Task Scheduler query exited ${code}` };
+  return guardStateFromRead(schedulerReadOf(result));
 }
 
 /** Task Scheduler's own result codes the guard's last run can carry, beside the guard's exits (D8 o9). */

@@ -4,8 +4,9 @@ import { test } from 'node:test';
 import type { ProcessResult } from '../process/runner';
 import { clearPending, PENDING_KEY, readPending, sweepPending, writePending } from '../windowsTime/guardPending';
 import { finishedBy, guardStateOf, guardView, lastResultText, parseGuardAnswer, summariesMatch, type GuardState } from '../windowsTime/guardState';
-import { durationSeconds, guardSummary, type GuardOptions } from '../windowsTime/guardTask';
+import { durationSeconds, GUARD_NAME, guardSummary, type GuardOptions } from '../windowsTime/guardTask';
 import { MapStore } from './support/memento';
+import { schedulerStdout } from './support/schedulerAnswers';
 
 /**
  * What the panel says about the Windows Time guard (PLAN_windows_time_task.md D5, D8): every row of the plan's status table
@@ -15,19 +16,18 @@ import { MapStore } from './support/memento';
 const OPTIONS: GuardOptions = { setAutomaticStart: true, everyHours: 4, minMinutesBetweenStarts: 10, delaySeconds: 60, timeLimitMinutes: 5 };
 const LOCAL = (iso: string): string => `<${iso}>`;
 
-function answer(lines: readonly string[]): string {
-  return `${lines.join('\r\n')}\r\n`;
-}
-
+/** The ONE query's answer (WR-E2) with the guard's task among the folder's tasks — `schedulerStdout`, never typed by hand. */
 function presentAnswer(overrides: { enabled?: string; lastRunUtc?: string; lastResult?: string; summary?: readonly string[]; channel?: string } = {}): string {
-  return answer([
-    'guard=present',
-    `enabled=${overrides.enabled ?? 'True'}`,
-    `lastRunUtc=${overrides.lastRunUtc ?? '2026-10-08T09:43:20.0000000Z'}`,
-    `lastResult=${overrides.lastResult ?? '0'}`,
-    ...(overrides.summary ?? guardSummary(OPTIONS)).map((l) => `summary:${l}`),
-    `channel=${overrides.channel ?? 'enabled'}`,
-  ]);
+  return schedulerStdout({
+    channel: overrides.channel ?? 'enabled',
+    tasks: [{
+      name: GUARD_NAME,
+      enabled: overrides.enabled ?? 'True',
+      lastRunUtc: overrides.lastRunUtc ?? '2026-10-08T09:43:20.0000000Z',
+      lastResult: overrides.lastResult ?? '0',
+      summary: overrides.summary ?? guardSummary(OPTIONS),
+    }],
+  });
 }
 
 function exited(stdout: string, code = 0): ProcessResult {
@@ -39,22 +39,32 @@ function viewOf(state: GuardState, options: GuardOptions = OPTIONS): ReturnType<
 }
 
 test('the query\'s answers become one closed state each — never a guess', () => {
-  assert.deepEqual(parseGuardAnswer(answer(['guard=absent', 'channel=enabled'])), { kind: 'absent', channel: 'enabled' });
-  assert.deepEqual(parseGuardAnswer(answer(['guard=unreadable', 'hresult=0x80070005', 'channel=disabled'])), { kind: 'unreadable', hresult: '0x80070005', channel: 'disabled' });
+  assert.deepEqual(parseGuardAnswer(schedulerStdout({ channel: 'enabled' })), { kind: 'absent', channel: 'enabled' }, 'a folder without the guard\'s task');
+  assert.deepEqual(parseGuardAnswer(schedulerStdout({ channel: 'enabled', folder: 'absent' })), { kind: 'absent', channel: 'enabled' }, 'no folder at all (0x80070002)');
+  assert.deepEqual(parseGuardAnswer(schedulerStdout({ channel: 'disabled', folder: { unreadable: '0x80070005' } })), { kind: 'unreadable', hresult: '0x80070005', channel: 'disabled' });
   const present = parseGuardAnswer(presentAnswer({ lastResult: '-2147216609' }));
   assert.equal(present.kind, 'present');
   assert.equal(present.kind === 'present' ? present.lastResult : 0, 0x8004131f, 'a negative HRESULT is read as the unsigned code Task Scheduler means');
   assert.deepEqual(present.kind === 'present' ? present.summary : [], guardSummary(OPTIONS));
   assert.equal(parseGuardAnswer('').kind, 'unknown');
-  assert.equal(parseGuardAnswer(answer(['guard=present', 'enabled=True'])).kind, 'unknown', 'present without a last run is not read as installed');
-  assert.equal(parseGuardAnswer(answer(['guard=absent'])).kind === 'absent' && (parseGuardAnswer(answer(['guard=absent'])) as { channel: string }).channel, 'unknown');
+  const bare = parseGuardAnswer(schedulerStdout({ tasks: [{ name: GUARD_NAME }] }));
+  assert.equal(bare.kind, 'unknown', 'a task that answered without its definition is not read as installed');
+  assert.equal(parseGuardAnswer(schedulerStdout({ channel: 'unknown' })).kind === 'absent' && (parseGuardAnswer(schedulerStdout({ channel: 'unknown' })) as { channel: string }).channel, 'unknown');
+});
+
+test('the guard is read out of the folder\'s tasks BY NAME — its neighbours change nothing about it', () => {
+  const neighbours = schedulerStdout({ tasks: [{ name: 'watch', enabled: 'False', summary: ['principal=x'] }, { name: GUARD_NAME, summary: guardSummary(OPTIONS) }, { name: 'archive', unreadable: '0x80070005' }] });
+  assert.equal(parseGuardAnswer(neighbours).kind, 'present');
+  assert.equal(parseGuardAnswer(neighbours, 'watch').kind, 'present', 'the parser takes the task\'s name');
+  assert.deepEqual(parseGuardAnswer(neighbours, 'archive'), { kind: 'unreadable', hresult: '0x80070005', channel: 'enabled' });
+  assert.deepEqual(parseGuardAnswer(neighbours, 'cleanup'), { kind: 'absent', channel: 'enabled' });
 });
 
 test('a query that did not answer is unknown, with its reason', () => {
   assert.match(JSON.stringify(guardStateOf({ kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) })), /did not answer within 30 s \(wslCare\.timeouts\.windowsTimeGuardQuerySeconds\)/);
   assert.match(JSON.stringify(guardStateOf({ kind: 'failedToStart', reason: 'ENOENT' })), /could not start: ENOENT/);
-  assert.match(JSON.stringify(guardStateOf(exited('guard=absent', 1))), /exited 1/);
-  assert.deepEqual(guardStateOf(exited('guard=absent\r\nchannel=enabled\r\n')), { kind: 'absent', channel: 'enabled' });
+  assert.match(JSON.stringify(guardStateOf(exited('folder=absent', 1))), /exited 1/);
+  assert.deepEqual(guardStateOf(exited(schedulerStdout({ channel: 'enabled' }))), { kind: 'absent', channel: 'enabled' });
 });
 
 test('the panel line per row of the status table (D5): not installed → Install; installed as these settings → Remove', () => {

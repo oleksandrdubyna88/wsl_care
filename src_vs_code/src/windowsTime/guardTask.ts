@@ -216,7 +216,7 @@ export const SUMMARY_FUNCTION = [
   "0 { 'trigger=event enabled=' + $t.Enabled + ' delay=' + $t.Delay + ' subscription=' + $t.Subscription }",
   "1 { 'trigger=time enabled=' + $t.Enabled + ' interval=' + $t.Repetition.Interval }",
   "8 { 'trigger=boot enabled=' + $t.Enabled + ' delay=' + $t.Delay }",
-  "9 { 'trigger=logon enabled=' + $t.Enabled + ' delay=' + $t.Delay }",
+  "9 { 'trigger=logon enabled=' + $t.Enabled + ' delay=' + $t.Delay + ' interval=' + $t.Repetition.Interval }",
   "default { 'trigger=' + $t.Type } } };",
   "$s = $Definition.Settings; 'settings limit=' + $s.ExecutionTimeLimit + ' instances=' + $s.MultipleInstances + ' whenAvailable=' + $s.StartWhenAvailable + ' battery=' + $s.DisallowStartIfOnBatteries + ' enabled=' + $s.Enabled;",
   "foreach ($a in $Definition.Actions) { 'action type=' + $a.Type + ' path=' + $a.Path + ' args=' + $a.Arguments }",
@@ -250,7 +250,7 @@ export function guardSummary(options: GuardOptions): readonly string[] {
   return [
     'principal=S-1-5-18 logon=5 level=1',
     `trigger=boot enabled=True delay=${delay}`,
-    `trigger=logon enabled=True delay=${delay}`,
+    `trigger=logon enabled=True delay=${delay} interval=`,
     `trigger=time enabled=True interval=PT${options.everyHours}H`,
     `trigger=event enabled=True delay=${delay} subscription=${STOP_QUERY}`,
     `trigger=event enabled=True delay=${delay} subscription=${START_TYPE_QUERY}`,

@@ -1,4 +1,5 @@
 import * as childProcess from 'node:child_process';
+import * as path from 'node:path';
 
 /**
  * The runner seam — the ONE module of the extension that starts a process (`structure.test.ts` fails when any other
@@ -34,6 +35,13 @@ export interface ProcessRequest {
    * variables into the distribution, and the Windows user's choice of them must not shape a root daemon's environment.
    */
   readonly withoutEnv?: readonly string[];
+  /**
+   * When the run ends by its ceiling (or its output bound), end the child's whole PROCESS TREE, not only the child (WR-E2,
+   * PLAN_windows_runner.md plan round 4fc3f328 finding 8): on Windows `taskkill /PID <pid> /T /F` by absolute path — by the pid
+   * of THIS child, never by image name — then `child.kill()` as before. Off Windows, or without a usable `SystemRoot`, only the
+   * child is killed. Absent: the child alone, as every other caller always had it.
+   */
+  readonly killTree?: boolean;
 }
 
 export type ProcessResult =
@@ -62,6 +70,36 @@ export function signed32(code: number): number {
   return code > 0x7fffffff ? code - 0x100000000 : code;
 }
 
+/**
+ * The program and argv that end `pid` and everything it started: `<SystemRoot>\System32\taskkill.exe /PID <pid> /T /F` — by
+ * ABSOLUTE path and by PID (the pid of the child this runner started and still holds), never `/IM`, never by image name. `undefined`
+ * when no safe request can be made: a pid that is not a positive integer, or a `SystemRoot` that is not a local drive path.
+ */
+export function treeKillRequest(pid: number, systemRoot: string | undefined): { readonly file: string; readonly args: readonly string[] } | undefined {
+  const usable = Number.isInteger(pid) && pid > 0 && systemRoot !== undefined && /^[A-Za-z]:[\\/]/.test(systemRoot);
+
+  return usable ? { file: path.win32.join(systemRoot, 'System32', 'taskkill.exe'), args: ['/PID', String(pid), '/T', '/F'] } : undefined;
+}
+
+/**
+ * Ends `child`'s tree (Windows only), THEN calls `thenKill` — the plain `child.kill()` that stays as the net: `taskkill /T` walks
+ * the tree from the child's pid, so the child must still be there when it starts, and a failure to start it is simply "kill the child".
+ */
+function endTree(child: childProcess.ChildProcess, thenKill: () => void): void {
+  const request = process.platform === 'win32' && child.pid !== undefined ? treeKillRequest(child.pid, process.env.SystemRoot) : undefined;
+  if (request === undefined) {
+    thenKill();
+    return;
+  }
+  try {
+    const killer = childProcess.spawn(request.file, [...request.args], { shell: false, windowsHide: true, stdio: 'ignore' });
+    killer.on('error', thenKill);
+    killer.on('exit', thenKill);
+  } catch {
+    thenKill();
+  }
+}
+
 type Stream = 'stdout' | 'stderr';
 
 /** One child's run: the streams it wrote, and how the run ended. */
@@ -70,7 +108,7 @@ class Run {
   private readonly sizes: Record<Stream, number> = { stdout: 0, stderr: 0 };
   private ending: ProcessResult | undefined;
 
-  constructor(private readonly child: childProcess.ChildProcess, private readonly done: (result: ProcessResult) => void) {}
+  constructor(private readonly child: childProcess.ChildProcess, private readonly done: (result: ProcessResult) => void, private readonly killTree = false) {}
 
   take(stream: Stream, chunk: Buffer): void {
     this.sizes[stream] += chunk.length;
@@ -104,7 +142,12 @@ class Run {
       return;
     }
     this.ending = ending;
-    this.child.kill();
+    const kill = (): void => { this.child.kill(); };
+    if (this.killTree) {
+      endTree(this.child, kill);
+    } else {
+      kill();
+    }
     setTimeout(() => this.done(ending), KILL_GRACE_MS).unref();
   }
 }
@@ -164,7 +207,7 @@ function once(resolve: (result: ProcessResult) => void): { settle: (result: Proc
 
 function watch(child: childProcess.ChildProcess, request: ProcessRequest, resolve: (result: ProcessResult) => void): void {
   const ending = once(resolve);
-  const run = new Run(child, ending.settle);
+  const run = new Run(child, ending.settle, request.killTree === true);
   ending.arm(setTimeout(() => run.timedOut(request.timeoutMs), request.timeoutMs));
   child.stdout?.on('data', (chunk: Buffer) => run.take('stdout', chunk));
   child.stderr?.on('data', (chunk: Buffer) => run.take('stderr', chunk));

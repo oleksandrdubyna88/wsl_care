@@ -23,6 +23,7 @@ export function newGuardRecorder(): GuardRecorder {
   return {
     shown: [], prompts: [], requests: [], queries: [], reports: [], answer: false,
     result: { kind: 'exited', code: 0, stdout: NOTHING, stderr: NOTHING },
-    queryResult: { kind: 'exited', code: 0, stdout: Buffer.from('guard=absent\r\nchannel=enabled\r\n'), stderr: NOTHING },
+    // The ONE Task Scheduler read (WR-E2): a machine where the `\wsl-care` folder does not exist — nothing installed.
+    queryResult: { kind: 'exited', code: 0, stdout: Buffer.from('channel=enabled\r\nstamp=absent\r\nuser=S-1-5-21-1000000000-2000000000-3000000000-1001\r\nfolder=absent\r\n'), stderr: NOTHING },
   };
 }
