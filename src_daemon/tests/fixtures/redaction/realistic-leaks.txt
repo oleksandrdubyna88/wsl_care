@@ -1,0 +1,30 @@
+# E15.S7 - command lines in every real shape a secret takes (todo/PLAN_disk_health.md, "E15.S7 design", section 1).
+# Every value is INVENTED; none is a credential of any service. FixturePrivacyTests scans this file like every fixture.
+# Format, one case per line, tab-separated:  <arm that must fire> TAB <argv as a JSON array> TAB <the shown line, redacted, uncut>
+# The arm numbers are the design's section 2.1 as amended 2026-10-16 (arm 4 a URL, arm 5 the creds shape, arm 7 a secret word inside a blob).
+#
+# a secret in a POSITIONAL argument: the creds CLI takes its config key positionally (cfgk_ + 43 base64url characters)
+arm5	["creds","config","{CFGK}"]	creds config <redacted>
+# NAME=value with a secret word and no leading dash
+arm3	["env","GITHUB_TOKEN={GHP}","gh","pr","list"]	env GITHUB_TOKEN=<redacted> gh pr list
+arm3	["env","ANTHROPIC_API_KEY={SKANT}","claude"]	env ANTHROPIC_API_KEY=<redacted> claude
+arm3	["docker","run","-e","AWS_SECRET_ACCESS_KEY=wJalrXUtnInventedK7MDENGbPxRfiCYinvented","-e","PGPASSWORD","image"]	docker run -e AWS_SECRET_ACCESS_KEY=<redacted> -e PGPASSWORD image
+# a secret inside a structured positional: VS Code's telemetry session
+arm7	["/usr/share/code/code","/TelemetrySession:{\"CollectorApiKey\":\"invented-collector-value\"}"]	/usr/share/code/code <redacted>
+# a credential inside a URL
+arm4	["git","clone","https://alice:{GHP}@git.example.invalid/o/r"]	git clone https://<redacted>@git.example.invalid/o/r
+arm3	["env","DATABASE_URL=postgres://app:Inv3nted@db.example.invalid/x","psql"]	env DATABASE_URL=<redacted> psql
+arm4	["curl","https://files.example.invalid/a.tgz?X-Amz-Signature=inventedSignature0123&dl=1"]	curl https://files.example.invalid/a.tgz?X-Amz-Signature=<redacted>&dl=1
+# a creds-shaped token after an innocent flag
+arm5	["curl","-H","Authorization: Bearer {JWT}","https://api.example.invalid/"]	curl -H <redacted> https://api.example.invalid/
+arm5	["gh","api","-H","Authorization: token {GHP}","/user"]	gh api -H <redacted> /user
+# an innocent name with a secret value
+arm2	["curl","-u","alice:Pa55w0rdInvented","https://api.example.invalid/"]	curl -u <redacted> https://api.example.invalid/
+arm2	["sshpass","-p","Inv3ntedPass","ssh","host.example.invalid"]	sshpass -p <redacted> ssh host.example.invalid
+arm2	["mysql","-pInv3ntedPass","-h","db.example.invalid"]	mysql -p<redacted> -h db.example.invalid
+arm1	["tool","--password","Inv3ntedPass","--port","80"]	tool --password <redacted> --port 80
+arm3	["tool","--password=Inv3ntedPass","--port=80"]	tool --password=<redacted> --port=80
+arm7	["node","-e","const token='inventedvalue'; console.log(token)"]	node -e <redacted>
+arm7	["dotnet","exec","x.dll","--connectionString","Server=db;Password=Inv3nted"]	dotnet exec x.dll --connectionString <redacted>
+# a bare high-entropy positional (the arm 8 entropy test, no prefix to catch it)
+arm8	["tool","q7Hn2Vx9LmT4bKd8RzY3wPc6Jf1sGa5UeN0oXiBlZrMt4Kd9"]	tool <redacted>
