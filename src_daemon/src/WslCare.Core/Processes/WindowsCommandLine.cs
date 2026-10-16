@@ -23,12 +23,18 @@ public static class WindowsCommandLine
         return line.ToString();
     }
 
-    /// <summary>E15.S7 — STUB (the RED commit): the inverse of <see cref="Of"/>.</summary>
-    public static IReadOnlyList<string> Split(string line) => [line];
+    /// <summary>The arguments <c>CommandLineToArgvW</c> splits a line into — the inverse of <see cref="Of"/> (E15.S7; see
+    /// <see cref="WindowsArgv"/> for the rules).</summary>
+    public static IReadOnlyList<string> Split(string line) => WindowsArgv.Split(line);
 
-    /// <summary>E15.S7 — STUB (the RED commit): the Windows binary's entry to the one rule.</summary>
-    public static string Shown(string line, Redaction.RedactionLimits limits) => line.Length <= limits.ShownChars ? line : line[..limits.ShownChars];
-
+    /// <summary>The Windows binary's entry to the ONE redaction rule (E15.S7): the line is split as Windows splits it, judged by
+    /// <see cref="Redaction.CommandLineRedaction"/>, and the raw-line backstop (<see cref="Redaction.RawLineBackstop"/>) redacts the whole
+    /// shown line when a secret the split cannot isolate (<c>--auth:'a b'</c>) survived as arguments. E15.S6 is its first wire consumer.</summary>
+    public static string Shown(string line, Redaction.RedactionLimits limits)
+    {
+        var redacted = Redaction.CommandLineRedaction.Redact(Split(line), limits);
+        return Redaction.CommandLineRedaction.Line(Redaction.RawLineBackstop.Fires(line, redacted) ? [Redaction.CommandLineRedaction.Redacted] : redacted, limits);
+    }
     private static void Append(StringBuilder line, string argument)
     {
         if (argument.Length > 0 && argument.IndexOfAny([' ', '\t', '"']) < 0)

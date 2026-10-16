@@ -74,7 +74,7 @@ public sealed partial class WindowsRedactionTests
         var line = WindowsCommandLine.Of(exe, ["--resume=" + SessionGuid, "-p", "any text with spaces", "--max-thinking-tokens", "0"]);
 
         WindowsCommandLine.Shown(line, Limits).Should().Be(Shown(exe, "--resume=" + SessionGuid, "-p", "any text with spaces", "--max-thinking-tokens", "0"));
-        CommandLineRedaction.Shown(WindowsCommandLine.Split(line), Limits).Should().Contain("--resume=" + SessionGuid).And.Contain("--max-thinking-tokens <redacted>");
+        CommandLineRedaction.Redact(WindowsCommandLine.Split(line), Limits).Should().Contain("--resume=" + SessionGuid).And.ContainInOrder("--max-thinking-tokens", "<redacted>");
     }
 
     [Fact]

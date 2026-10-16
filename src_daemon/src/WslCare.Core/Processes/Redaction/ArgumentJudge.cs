@@ -36,9 +36,11 @@ internal static class ArgumentJudge
         yield return Positional(argument, limits);
     }
 
-    /// <summary>Arm 1: the previous argument is a secret FLAG (<c>--password x</c>). Today's rule, over the widened word list.</summary>
+    /// <summary>Arm 1: the previous argument is a secret FLAG (<c>--password x</c>) — today's rule over the widened word list. A flag is a
+    /// name with no value in it: <c>--auth:my secret value</c> (one argument, a blob judged on its own) does not make the NEXT argument
+    /// secret, or <c>--port</c> after it would be lost.</summary>
     private static Verdict AfterASecretFlag(string previous) =>
-        previous.StartsWith('-') && !previous.Contains('=') && SecretShapes.NamesASecret(previous) ? Verdict.Is(Redacted) : Verdict.Pass;
+        SafeShapes.IsFlagWithoutValue(previous) && SecretShapes.NamesASecret(previous) ? Verdict.Is(Redacted) : Verdict.Pass;
 
     /// <summary>Arm 2: the program's own password flags (<c>sshpass -p</c>, <c>mysql -pSECRET</c>, <c>curl -u user:pass</c>).</summary>
     private static Verdict ProgramSpecific(string argument, string previous, string program) =>
