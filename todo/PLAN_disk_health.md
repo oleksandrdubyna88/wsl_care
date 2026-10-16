@@ -1,7 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
 > Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b merged (#151, *E15.S1b as built*); E15.S10 designed on its branch `feat/wc-e15s10-defender-cpu` (*E15.S10 design* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
 > and E15.S6 onwards not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 
 > built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
@@ -1527,3 +1527,133 @@ of the real folder went red. After the change: Windows Core 2829 (0 failed, 89 s
   the started file to the verified one but its path (administrator-only, and the window is seconds); `powershell.exe` (the
   probe) is still PATH-first; pwsh 7 reads the CurrentUser `powershell.config.json` and honours `DOTNET_STARTUP_HOOKS` /
   `CORECLR_PROFILER` — the same trust boundary as the user's own session, since interop runs every Windows program as that user.
+
+## E15.S10 design — Defender's CPU, recorded every full run; the full run's vmmem line (2026-10-16, branch `feat/wc-e15s10-defender-cpu`)
+
+**Goal.** Every full run records how much CPU Windows Defender's engine (`MsMpEng`) used since the previous full run, from two
+reads of the SAME process, and judges it (`host.defenderCpu`). The record is the "before" half of E16.S5's saving line (*Exclude
+development folders from Defender*), which needs at least 7 days of it before a change. Read-only: nothing about Defender is
+changed, and nothing is elevated. A second, separate sub-part (§B) closes E15.S5's open tail: the Windows disk script gains a
+vmmem line, so the full run judges `host.vmmem` too.
+
+Measured first ([2026-10-16_defender_cpu_cost.md](../research/2026-10-16_defender_cpu_cost.md)): under Windows PowerShell 5.1 a
+cold read costs 1.2–2.1 s (8.1 s for the first one after the WMI provider starts); a warm one 0.36–0.48 s; `-Filter` saves
+transfer, not enumeration. One reading showed MsMpEng averaging 0.76 cores over 36 h on this development machine.
+
+### A. Defender's CPU
+
+**A1. The third fixed script** (`Health/DefenderCpuCommands.cs`, new):
+
+- `DefenderCpu` = `new ToolCommand(HealthCommands.PowerShell, "powershell-defender-cpu", ["-NoProfile", "-NonInteractive",
+  "-Command", Script], Ceiling, Cap)`, the shape of `WindowsDiskCommands.WindowsDisk` (`Health/WindowsDiskCommands.cs:105`).
+- `Script` = `HealthCommands.ModulePathPin` (`Health/HealthCommands.cs:67`) first, then the filtered CIM read of
+  `Win32_PerfRawData_PerfProc_Process` where `Name='MsMpEng'`, printing ONE line `defender=<PercentProcessorTime>|<Timestamp_Sys100NS>|<IDProcess>|<ElapsedTime>`
+  or `defender.error=<exception type>` / `defender.none=` (no such process), written through the UTF-8 road
+  `HealthCommands.Utf8WriteStart … Utf8WriteEnd` (`Health/HealthCommands.cs:88-95`) as every fixed script prints since E15.S1b.
+  ASCII-only, no double quote, a single-quoted filter.
+- **Engine: Windows PowerShell 5.1 only.** The script needs no module (CIM is built in), so the reason the disk script runs under
+  the MSI pwsh (the Storage cmdlets, E15.S1b) does not apply; a pwsh variant would add a fourth member to the closed set for no
+  measured gain. `PwshEngine` is not consulted.
+- **Its own ceiling** `health.defenderCpuTimeoutSeconds` (5–60, default 15; machine-only, `SafeDirection.Lower`, the shape of
+  `health.windowsDiskTimeoutSeconds`, `Config/ConfigKeys.Health.cs:15`). `RunBudget` sums every `*TimeoutSeconds` key
+  (`Config/RunBudget.cs:22`), so the full run's budget grows with no further change.
+- **It runs AFTER the disk script** (`Health/HealthCollector.cs:91`), so a slow Defender read never costs the disk facts: the disk
+  script is one sample, and a shared ceiling would put both at risk (plan row; risk consultation for epic 1, 2026-10-11).
+- **The closed set.** `HealthCommands.FixedScripts` (`Health/HealthCommands.cs:155`) gains `DefenderCpuCommands.DefenderCpu`; the
+  never-list and the read-command templates follow it as they followed the disk script. RED: the set admits exactly the new
+  script, and a one-word variant (`-Filter "Name='MsMpEng2'"`) is still refused.
+
+**A2. The facts and the pure rule** (`Health/DefenderCpu.cs`, new, PURE):
+
+- `DefenderReading(long CpuTicks100ns, long Timestamp100ns, int Pid, long StartMarker)` — one parsed line.
+- `DefenderCpu.Between(DefenderReading previous, DefenderReading now) → Reading<DefenderUsage>`, where
+  `DefenderUsage(double Cores, TimeSpan Covered)`:
+  - **the same process** is the same `Pid` AND the same `StartMarker` (the process start instant, on the FILETIME clock). Windows
+    reuses pids, and an engine update restarts MsMpEng without a reboot; the start marker tells them apart.
+  - **Deviation from the plan row, recorded:** the row also keys on "the same boot id", as `Mcp/McpCpuLedger.cs:104-115` keys its
+    entries on the DISTRO's boot. MsMpEng lives on WINDOWS, whose boot the distro cannot read cheaply, and the distro's boot changes
+    on every WSL restart while Defender runs on. The absolute start marker already distinguishes one Windows boot's MsMpEng from
+    another's, so the key is (pid, start marker); the distro's boot id is NOT part of it.
+  - anything else — another pid, the same pid with a different start marker (even with a LARGER counter), a decreasing counter, a
+    non-positive timestamp interval, a missing line — gives `Missing("Defender restarted — a new baseline")` or the read's own
+    reason; it never invents usage.
+  - `Cores = ΔCpuTicks / ΔTimestamp` (both in 100 ns; CPU summed over all cores, so the ratio is cores).
+- `DefenderCpu.Week(IReadOnlyList<DefenderSpan> spans) → DefenderWeek(double CoreHoursPerWeek, double CoveredHours, bool Extrapolated)`
+  — the spans of the last 7 days summed; restart gaps add no covered hours; when the covered hours are below 168 the figure says it
+  is extrapolated from them.
+
+**A3. The ledger** `{state}/defender-cpu.jsonl` (new, `Health/DefenderCpuLedger.cs`): one line per full run — the reading and, when
+there was a same-process previous reading, the span (start, end, cores). Appended, never rewritten; lines older than
+`defender.localRetentionDays` (30–1000, default 400, machine-only) are dropped when the file is next written (a temp file and an
+atomic replace, `IFileSystem` as `RunDetailStore` does). The previous reading is the newest line's. Until E17.S1 takes it over as a
+statistics record, this file is the only store. A missing or malformed file is "no baseline", never an error.
+
+**A4. On the wire:**
+
+- `status.defender` — `{coresAverage, coreHoursPerWeek, coveredHours, extrapolated, basis: fullRun, runId, evaluatedAt, ageSeconds}`
+  carried from the newest full run's detail, exactly as `status.disk` is (`Status/StatusDisk.cs:17`); on the Windows binary
+  `unavailable` with "read by the distro's full run". Additive; `schemaVersion` stays 1.
+- `host.defenderCpu` — a verdict, warn when `coresAverage` > `thresholds.defenderCoresWarn` (0.1–8.0, default 1.0, display key);
+  `unknown` with the reason when there is no span (first run, a restart, a failed read). It joins `HostRules`' full-run list
+  (`Thresholds/HostRules.cs:39`), right after `host.vmmem` (§B), so it is spread into `ThresholdRules.FromFullRun`
+  (`Thresholds/ThresholdRules.cs:150`) and carried by `status` with its basis and age.
+- The extension shows nothing new in this story: the `host.` prefix already colours the bar (E15.S5) and the panel's row for
+  Defender is E16.S5's. The HEAD golden gains the section and the verdict (`unknown`: the fixture has one read).
+
+### B. The full run's vmmem line (E15.S5's open tail)
+
+- `Health/WindowsDiskCommands.cs:201-202` gains, beside `Compression`, a `Vmmem` part:
+  `try { $p=@(Get-Process -Name 'vmmemWSL' -ErrorAction Stop); $o.Add('vmmem='+[string](($p | Measure-Object WorkingSet64 -Sum).Sum)) } catch { $o.Add('vmmem.error='+$_.Exception.GetType().Name) }`
+  — the kernel's process snapshot, no handle opened, the same reading the Windows binary's `ProcessWorkingSets.Sum` takes. No
+  process gives the error line (`ProcessCommandException`), never 0. The tags `VmmemTag` / `VmmemErrorTag` join the script's join
+  (`:135`) and the parser's tag list (`Health/WindowsDiskParsers.cs:29`); `WindowsDiskFacts` (`Health/WindowsDiskSample.cs:67`)
+  gains `Reading<long> VmmemBytes`, parsed like `compression` (`WindowsDiskParsers.cs:57`).
+- `HostMemoryFacts.FromWindowsDisk` (`Health/HostMemoryFacts.cs:44-49`) reads it instead of `Missing(VmmemReadByWindows)`.
+- `HostRules.FullRunVerdicts` (`Thresholds/HostRules.cs:39`) becomes all three (`host.commit`, `host.compression`, `host.vmmem`),
+  and `Verdicts` (`:33-34`) is then the same list — ONE list on both roads again.
+- **The Windows replacement still holds.** `StatusVerdicts.Replaced` (`Status/StatusVerdicts.cs:65`) puts a sampled verdict in the
+  carried one's place; `host.vmmem` is now carried, so on Windows it moves from "appended once after the carried list" (E15.S5) to
+  its carried position, still exactly once. A RED pins the new position.
+- The Linux status goldens are regenerated; the captured disk-script answer gains a vmmem line (an invented, plausible value).
+
+### C. RED first
+
+1. Two reads of one process 10 s apart that added 10.3 core-seconds → 1.03 cores, covered 10 s.
+2. A pid change → no difference ("Defender restarted — a new baseline").
+3. The same pid, a different start marker, a LARGER counter → no difference.
+4. A decreasing counter → no difference; a non-positive timestamp interval → no difference.
+5. A missing `defender=` line → unavailable with the reason, never 0; `defender.none=` → "MsMpEng is not running".
+6. A stalled Defender script past its ceiling → the disk facts stay available, the Defender sample reports its own timeout, and
+   its child is killed (the runner's tree kill, a recording runner asserts it).
+7. The closed set admits exactly the new script and refuses a one-word variant.
+8. The week: two spans of 12 h each over 7 days → covered 24 h, extrapolated true; a restart gap adds no hours.
+9. The ledger: a line older than the retention is dropped at the next write; a malformed line is skipped and named.
+10. `host.defenderCpu`: 1.01 cores warns, 1.0 is ok, no span is `unknown`; the key moves the edge.
+11. `status.defender` carried with its run and age; the Windows binary says the distro reads it.
+12. **§B:** the disk script prints `vmmem=`; a missing process prints `vmmem.error=`; `FromWindowsDisk` reads it; the full run
+    judges `host.vmmem`; the Windows status lists `host.vmmem` once, at its carried position.
+
+**Break-its** (product code, each restored): the start-marker check removed (3 red); the decreasing-counter guard removed (4 red);
+the Defender read moved before the disk script with one shared ceiling (6 red); the closed set widened to a prefix match (7 red);
+`>` → `>=` in the verdict (10 red); `FromWindowsDisk` back to `Missing` (12 red).
+
+### D. Build order, test plan, docs, DoD
+
+Commits: (1) RED over stubs; (2) `DefenderCpu` + ledger; (3) the script, its key and the closed set; (4) the collector step after
+the disk script, the run detail, `status.defender`, `host.defenderCpu`; (5) §B the vmmem line through to `HostRules`; (6) goldens
+and `contracts/config-keys.json`; (7) docs and the as-built record.
+
+Tests: Windows Core / CLI / Scenarios; Linux in a NEW `/tmp/testsToDelete-wc-e15s10-<stamp>` (goldens written, then checked
+without the write); the extension suite and its host scenarios unchanged and green; format, plan-lifecycle, rules. One heavy run at
+a time on this machine.
+
+Docs: README (the keys, `status.defender`, the vmmem line), `research/module_daemon.md`, `research/module_tests.md`, the E5.S0
+contracts section of `research/architecture.md` (the additive section), this plan's *E15.S10 as built*, status line, `todo/README.md`.
+
+DoD:
+- [ ] The third script is in the closed set, runs under 5.1 after the disk script with its own ceiling, and a stall costs only itself.
+- [ ] Usage is computed only between two reads of the same (pid, start marker); every other pair is a new baseline.
+- [ ] `{state}/defender-cpu.jsonl` keeps 400 days; `status.defender` and `host.defenderCpu` carried with basis and age.
+- [ ] The full run judges `host.vmmem`; the Windows status lists it once at its carried position.
+- [ ] Every RED was red for its symptom, then green; every break-it red, then green after a byte-equal restore.
+- [ ] Goldens regenerated on Linux; the extension green without a change.
