@@ -26,7 +26,11 @@ public static class CommandLineRedaction
     }
 
     /// <summary>The argv as one line: redacted, joined, then cut to <see cref="RedactionLimits.ShownChars"/>.</summary>
-    public static string Shown(IReadOnlyList<string> argv, RedactionLimits limits) => Cut(string.Join(' ', Redact(argv, limits)), limits.ShownChars);
+    public static string Shown(IReadOnlyList<string> argv, RedactionLimits limits) => Line(Redact(argv, limits), limits);
+
+    /// <summary>Arguments the rule already judged, joined and cut — for a caller that needs both the arguments and the line and must not
+    /// judge twice.</summary>
+    public static string Line(IReadOnlyList<string> redacted, RedactionLimits limits) => Cut(string.Join(' ', redacted), limits.ShownChars);
 
     /// <summary>The first <paramref name="chars"/> characters, ending before a surrogate pair the cut would split.</summary>
     internal static string Cut(string line, int chars) =>

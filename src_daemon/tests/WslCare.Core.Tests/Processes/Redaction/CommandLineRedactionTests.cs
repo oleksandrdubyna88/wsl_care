@@ -207,7 +207,9 @@ public sealed class CommandLineRedactionTests
     [InlineData("ubuntu-24.04-20260101")]
     [InlineData("sourceGeneratorExecutionPreference")]
     [InlineData("rovodev-ide-vscode")]
-    public void Paths_npm_specs_versions_and_plain_identifiers_are_shown_as_they_are(string argument)
+    [InlineData("--sourceGeneratorExecutionPreference")]
+    [InlineData("--devKitDependencyPath")]
+    public void Paths_npm_specs_versions_flags_and_plain_identifiers_are_shown_as_they_are(string argument)
     {
         Shown("tool", argument).Should().Be("tool " + argument);
     }

@@ -157,6 +157,7 @@ public sealed class SecretShapesTests
     [InlineData("rovodev-ide-vscode", "under the floor")]
     [InlineData("20260101120000-20260101120000", "digits and symbols are no letters")]
     [InlineData("@playwright/mcp@latest-and-greater", "an npm spec holds @")]
+    [InlineData("--sourceGeneratorExecutionPreference", "a flag name is no value: its dashes are a symbol class, its CamelCase two more")]
     public void A_name_a_version_a_guid_or_a_phrase_is_not_high_entropy(string token, string because)
     {
         HighEntropy.Looks(token, Limits.SecretMinChars).Should().BeFalse(because);

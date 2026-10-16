@@ -93,7 +93,7 @@ public static class StatusReports
         new(
             e.Pid, e.ParentPid, e.User, e.Name, e.State.ToString(), e.RssAnonBytes, e.RssShmemBytes, e.HeldBytes,
             Number(e.Age.Map(a => Math.Round(a.TotalSeconds))), Number(e.CpuSeconds.Map(c => Math.Round(c, 2))), Text(e.Cwd),
-            e.CommandLine, e.Family, e.Orphaned, e.HasTty, e.UnderMnt);
+            e.CommandLine, e.Program, e.ArgumentsShown, e.ArgumentsTotal, e.Family, e.Orphaned, e.HasTty, e.UnderMnt);
 
     private static ContainersReport Containers(Reading<ContainerSet> reading) => reading switch
     {

@@ -24,7 +24,11 @@ internal static class HighEntropy
 
     /// <summary>Whether <paramref name="token"/> looks like a credential nothing else recognised.</summary>
     public static bool Looks(string token, int minChars) =>
-        token.Length >= minChars && !SafeShapes.IsGuid(token) && LooksRandom(token.TrimEnd('='));
+        token.Length >= minChars && !IsExempt(token) && LooksRandom(token.TrimEnd('='));
+
+    /// <summary>A GUID (a session id) and a flag name (<c>--sourceGeneratorExecutionPreference</c>: its dashes are a symbol class and its
+    /// CamelCase two more, so it would pass for a credential) are exempt; a flag is no VALUE, and the rule judges what follows it.</summary>
+    private static bool IsExempt(string token) => SafeShapes.IsGuid(token) || SafeShapes.IsFlagWithoutValue(token);
 
     private static bool LooksRandom(string body) => InAlphabet(body) && Mixed(body) && Bits(body) >= MinEntropyBits;
 
