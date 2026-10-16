@@ -780,9 +780,15 @@ internal static class CommandLine
             .AppendLine("Settings are read from three layers, each overriding the last: the embedded defaults, the machine")
             .AppendLine("file, and the user file that \"config set\" writes. \"config get\" names the layer behind every value.")
             .AppendLine()
-            .Append($"This build answers only the commands above; \"act\" holds these actions: {string.Join(", ", Core.Actions.ActionRegistry.Product.Actions.Select(a => a.Id.Text))}.")
+            .AppendLine($"This build answers only the commands above; \"act\" holds these actions: {ActionsOf(inDistro: true)}.")
+            .Append($"On the Windows host, \"act\" holds: {ActionsOf(inDistro: false)}.")
             .ToString();
     }
+
+    /// <summary>The ids of the actions that run inside the WSL distro, or of those that run on the Windows host (WR-T1: A23) — one line
+    /// each, so whatever reads the distro's line (the release smoke previews from it) meets only that side's actions.</summary>
+    private static string ActionsOf(bool inDistro) =>
+        string.Join(", ", Core.Actions.ActionRegistry.Product.Actions.Where(a => a.Sides.Contains(Core.Hosting.HostSide.Wsl) == inDistro).Select(a => a.Id.Text));
 
     /// <summary>
     /// User text echoed back in an error message, with control characters replaced, so a refusal

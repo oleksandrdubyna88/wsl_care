@@ -925,3 +925,11 @@ action with its own week); 2 the two refusal orders are by design, and m8 fixed 
 `Link`; 5 the scanner never deletes and the walk re-checks; 6 the per-entry real-path check is M4's guarantee; 7 the cursor written per
 decided candidate is crash safety; 9 one glob matcher in one assembly; 12 the top-level listing is bounded by `temp.maxTopLevelEntries`
 and the wrap needs the sort.
+
+**WR-T1, CI's Linux legs (2026-10-16).** Two places took "every action this build holds" as "every action that previews here", and
+the first Windows action broke both on the WSL binary (A23 is refused there, exit 2, naming the side): `Scenarios/ActFlows`'
+all-actions preview now previews this side's actions and asserts the other side's refusal separately; and `--help`'s
+`"act" holds these actions:` line — which the release smoke (`.github/scripts/smoke-daemon.sh`, `smoke_act_preview`) previews from —
+now names the WSL distro's actions only, with the Windows host's on their own line (`On the Windows host, "act" holds: A23.`). Test
+`ActCommandTests.The_help_names_the_windows_hosts_actions_on_their_own_line` (red first; break-it: A23 back on the distro's line →
+red). On the Windows binary the smoke still expects exit 2: the distro's actions are refused there, as before.
