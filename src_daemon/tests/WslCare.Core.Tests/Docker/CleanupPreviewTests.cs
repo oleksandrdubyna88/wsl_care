@@ -5,6 +5,7 @@ using WslCare.Core.Config;
 using WslCare.Core.Docker;
 using WslCare.Core.Preview;
 using WslCare.Core.Processes;
+using WslCare.Core.Tests.Actions;
 using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Docker;
@@ -46,8 +47,8 @@ public sealed class CleanupPreviewTests
         var preview = CleanupPreviews.Build(snapshot, seen, Config(AllAges), Now);
 
         Figures(Row(preview, "A4")).Should().BeEquivalentTo(new { Count = 3, Bytes = 641_400_000L, Unsized = 0 });
-        Figures(Row(preview, "A5")).Should().BeEquivalentTo(new { Count = 13, Bytes = 389_426_100L + 1_288_244_878L, Unsized = 0 }, "13 stopped containers, their layers and the 8 anonymous volumes they hold");
-        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("named volumes", StringComparison.Ordinal)).Count.Should().Be(6);
+        Figures(Row(preview, "A5")).Should().BeEquivalentTo(new { Count = 12, Bytes = 389_426_100L + 1_288_244_878L - 20_500L, Unsized = 0 }, "13 stopped containers less the one a compose project owns (its 20.5 kB layer), their layers and the 8 anonymous volumes they hold");
+        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("named volumes", StringComparison.Ordinal)).Count.Should().Be(5, "6 before the compose container (the holder of one of them) was split off");
         Figures(Row(preview, "A5Testcontainers")).Count.Should().Be(0, "no container carried the Testcontainers label — as on 2026-10-02");
         Figures(Row(preview, "A6")).Count.Should().Be(0, "no dangling image");
         Figures(Row(preview, "A6Unused")).Should().BeEquivalentTo(new { Count = 10, Bytes = 9_805_969_710L });
@@ -70,7 +71,7 @@ public sealed class CleanupPreviewTests
         a4.Count.Should().Be(0, "first seen now, and the timer's limit is one day");
         a4.Notes[0].Count.Should().Be(3);
         Figures(Row(preview, "A5")).Count.Should().Be(0, "the oldest stop is 2026-09-27, five days before the capture");
-        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(13);
+        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(12, "13 stopped, one of them a compose container kept before the age split");
         Figures(Row(preview, "A6Unused")).Count.Should().Be(8, "two of the ten unused images were built within the last 7 days");
         Row(preview, "A4").What.Should().Contain("1 day");
         Row(preview, "A5").Auto.Should().BeFalse();
@@ -151,7 +152,95 @@ public sealed class CleanupPreviewTests
         var preview = CleanupPreviews.Build(withTc, VolumeSeenRecord.Empty, Config(), Now);
 
         Figures(Row(preview, "A5Testcontainers")).Count.Should().Be(2, "stopped more than 2 hours ago");
-        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(11);
+        Figures(Row(preview, "A5")).Notes.Single(n => n.What.StartsWith("stopped more recently", StringComparison.Ordinal)).Count.Should().Be(10);
+    }
+
+    // ---------- E21.S1: A5 keeps every compose container ----------
+
+    /// <summary>The ONE compose container of the captured fixture — <c>container-17</c>, a real exited container of a compose project
+    /// whose inspect line was recaptured with the current template on 2026-10-15 (SOURCE.txt); its project reads <c>project-1</c>.</summary>
+    private const string FixtureComposeId = "e7d0c1a808e8b14812ad04c299797e0dbe711998226a28b5da451ff59743fdca";
+
+    private static RowNote ComposeNote(CleanupRow row) =>
+        Figures(row).Notes.Should().ContainSingle(n => n.What == CleanupPreviews.ComposeKeptNote, "the row says how many compose containers it keeps and names their projects").Subject;
+
+    private static ContainerTargets StoppedOf(DockerSnapshot snapshot, bool testcontainers, string userLayer = AllAges) =>
+        CleanupTargets.StoppedContainers(snapshot.Inventory.ValueOr(null!), snapshot.Details.ValueOr([]), testcontainers, CleanupPreviews.A5Cutoff(Config(userLayer), Now, testcontainers));
+
+    [Fact]
+    public async Task A5_keeps_a_stopped_container_of_a_compose_project_and_names_the_project()
+    {
+        var snapshot = await CapturedAsync();
+
+        var a5 = Row(CleanupPreviews.Build(snapshot, VolumeSeenRecord.Empty, Config(AllAges), Now), "A5");
+
+        Figures(a5).Count.Should().Be(12, "13 containers are stopped at limit zero; one of them belongs to a compose project and is never selected");
+        var note = ComposeNote(a5);
+        note.Count.Should().Be(1);
+        note.Names.Should().Equal("project-1");
+        var targets = StoppedOf(snapshot, testcontainers: false);
+        targets.Selected.Select(t => t.Id).Should().NotContain(FixtureComposeId);
+        targets.ComposeKept.Select(t => t.Id).Should().Equal(FixtureComposeId);
+        targets.ComposeProjects.Should().Equal("project-1");
+        targets.Younger.Select(t => t.Id).Should().NotContain(FixtureComposeId, "a compose container is not 'too young' either: it is split off before the age");
+    }
+
+    [Fact]
+    public async Task A5_names_at_most_five_projects_and_counts_the_rest()
+    {
+        var snapshot = await CapturedAsync();
+        var details = snapshot.Details.ValueOr([]);
+        var stopped = details.Where(d => d.Stopped && d.ComposeProject.Length == 0).Take(8).Select(d => d.Id).ToList();
+        string[] projects = ["p1", "p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+        var marked = stopped.Zip(projects).ToDictionary(z => z.First, z => z.Second);
+        var many = snapshot with { Details = Reading.Of<IReadOnlyList<ContainerDetail>>([.. details.Select(d => marked.TryGetValue(d.Id, out var p) ? d with { ComposeProject = p } : d)]) };
+
+        var note = ComposeNote(Row(CleanupPreviews.Build(many, VolumeSeenRecord.Empty, Config(AllAges), Now), "A5"));
+
+        note.Count.Should().Be(9, "eight marked containers and the fixture's own");
+        // The names sort ordinally; five are shown and the rest is a count (p6, p7 and the fixture's project-1).
+        note.Names.Should().Equal("p1", "p2", "p3", "p4", "p5", "more: 3");
+    }
+
+    [Fact]
+    public async Task A5Testcontainers_still_takes_a_labelled_compose_module_container()
+    {
+        var snapshot = await CapturedAsync();
+        var details = snapshot.Details.ValueOr([]);
+        var module = details.First(d => d.Stopped && d.ComposeProject.Length == 0 && d.StoppedSince.ValueOr(Now) <= Now.AddHours(-3));
+        var withModule = snapshot with { Details = Reading.Of<IReadOnlyList<ContainerDetail>>([.. details.Select(d => d.Id == module.Id ? d with { Testcontainers = true, ComposeProject = "module-stack" } : d)]) };
+
+        var preview = CleanupPreviews.Build(withModule, VolumeSeenRecord.Empty, Config(), Now);
+
+        Figures(Row(preview, "A5Testcontainers")).Count.Should().Be(1, "a Testcontainers compose module's containers carry the org.testcontainers label ON PURPOSE — A5Testcontainers takes them");
+        Figures(Row(preview, "A5Testcontainers")).Notes.Should().NotContain(n => n.What == CleanupPreviews.ComposeKeptNote, "the compose split belongs to A5 alone");
+        StoppedOf(withModule, testcontainers: true, "{}").ComposeKept.Should().BeEmpty();
+        // The module container is Testcontainers, so A5 never sees it; the fixture's own compose container is A5's.
+        ComposeNote(Row(preview, "A5")).Names.Should().Equal("project-1");
+    }
+
+    [Fact]
+    public async Task A_container_without_the_label_is_selected_as_before()
+    {
+        var snapshot = await CapturedAsync();
+        var plain = snapshot.Details.ValueOr([]).First(d => d.Stopped && d.ComposeProject.Length == 0 && !d.KeptByLabel && !d.Testcontainers);
+
+        var targets = StoppedOf(snapshot, testcontainers: false);
+
+        targets.Selected.Select(t => t.Id).Should().Contain(plain.Id).And.HaveCount(12);
+        targets.ComposeKept.Should().ContainSingle("only the fixture's own compose container is split off; an unlabelled one is selected exactly as before");
+    }
+
+    [Fact]
+    public async Task A_compose_container_with_the_keep_label_counts_once_as_compose()
+    {
+        var snapshot = await CapturedAsync(new DockerWorld(keepContainer: FixtureComposeId).Runner);
+
+        var a5 = Row(CleanupPreviews.Build(snapshot, VolumeSeenRecord.Empty, Config(AllAges), Now), "A5");
+
+        ComposeNote(a5).Count.Should().Be(1, "the stronger reason wins: compose owns it");
+        Figures(a5).Notes.Single(n => n.What.Contains(DockerLabels.Keep, StringComparison.Ordinal)).Count.Should().Be(0, "it is not counted a second time as kept by label");
+        Figures(a5).Count.Should().Be(12);
     }
 
     [Fact]
