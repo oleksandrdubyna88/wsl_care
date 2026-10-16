@@ -1585,7 +1585,13 @@ transfer, not enumeration. One reading showed MsMpEng averaging 0.76 cores over 
 **A3. The ledger** `{state}/defender-cpu.jsonl` (new, `Health/DefenderCpuLedger.cs`): one line per full run — the reading and, when
 there was a same-process previous reading, the span (start, end, cores). Appended, never rewritten; lines older than
 `defender.localRetentionDays` (30–1000, default 400, machine-only) are dropped when the file is next written (a temp file and an
-atomic replace, `IFileSystem` as `RunDetailStore` does). The previous reading is the newest line's. Until E17.S1 takes it over as a
+atomic replace, `IFileSystem` as `RunDetailStore` does — the temp file is created IN `{state}`, beside the ledger, never in
+`/tmp`, so the replace is a same-directory rename and never crosses a filesystem; plan round, finding 6). The previous reading is
+the newest line's. **Its size, projected** (plan round, findings 3 and 8): the timer starts a full run at most once an hour
+(`timer.periodHours` 1–24, `Config/ConfigKeys.Timer.cs:14`), and a manual `collect` adds a few a day; a line is about 160 bytes
+(four 19-digit numbers, a span, an instant). 30 runs a day × 400 days × 160 B ≈ 1.9 MB at the most; at the default retention and
+one run an hour, about 1.5 MB. The bound is structural: retention drops by AGE, and the file is rewritten only when a line ages
+out, so a burst of manual runs grows it linearly and the next write after 400 days trims it. Until E17.S1 takes it over as a
 statistics record, this file is the only store. A missing or malformed file is "no baseline", never an error.
 
 **A4. On the wire:**
@@ -1615,6 +1621,13 @@ statistics record, this file is the only store. A missing or malformed file is "
   carried one's place; `host.vmmem` is now carried, so on Windows it moves from "appended once after the carried list" (E15.S5) to
   its carried position, still exactly once. A RED pins the new position.
 - The Linux status goldens are regenerated; the captured disk-script answer gains a vmmem line (an invented, plausible value).
+
+**The plan round (coai, 2026-10-16: `good_enough`, 3 of 4 reviewers — codex, vibe, a local preset; kimi cancelled at the
+10-minute limit).** Taken: the ledger's projected size and the temp file beside the ledger (findings 3, 6, 8). Declined, with
+reasons recorded in the gate: range enforcement (every IntKey is already refused out of range at load), privileges (measured
+readable unelevated), a 5.1 pre-flight (the runner names a failed start), `ElapsedTime` as an advancing duration (refuted by six
+measured reads: constant while `Timestamp_Sys100NS` advanced — the RED fixture uses those lines), and the legacy `vmmem` name (one
+rule with the Windows binary's `vmmemWSL`; plain `vmmem` is also other Hyper-V VMs' worker).
 
 ### C. RED first
 
