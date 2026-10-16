@@ -25,7 +25,7 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
  *
  * Each `status` run opens one run-log file in the daemon (M1) — and, since E19.S2b, one in the WINDOWS binary's own log folder
  * too, so a Windows window-day costs about TWICE the files at the default (721 + 721). An interval tick reads the Windows status only when
- * the last Windows read STARTED at least max(refreshSeconds, 120 s) ago (`Timers.nowMs`), so at the 30 s floor the Windows side stays at 721
+ * the last Windows read STARTED about 120 s ago (`Timers.nowMs`, with half a tick of slack for timer jitter; at the default 120 s or slower every tick reads, no clock compare), so at the 30 s floor the Windows side stays at 721
  * a day (the distro's 2 881 follows the setting); a panel Refresh and a regained focus always read. The numbers per window-day are measured by
  * `poller.test.ts` over this very class and recorded in research/2026-10-04_extension_poll_churn.md.
  *
@@ -269,21 +269,29 @@ export class Poller {
     }
   }
 
-  /** An interval tick may read the Windows status: no clock to measure by, no read yet, or the throttle's span has passed. */
+  /**
+   * An interval tick may read the Windows status. At the default interval (120 s) or slower EVERY tick reads — the interval is already
+   * the span, and comparing clocks there would skip a tick whenever a timer fires a hair early (a real `setInterval` drifts, and the
+   * read's start stamp lands after its own tick), halving the reading to every 240 s. Below it (the 30 s floor) the span is measured from
+   * the last read's start, with half a tick interval of slack so jitter cannot make it land every other span.
+   */
   private windowsDue(): boolean {
-    const now = this.options.timers.nowMs?.();
-    if (now === undefined || this.windowsStartedAt === undefined) {
-      return true;
-    }
+    const intervalMs = effectiveSeconds(this.options.refreshSeconds()) * 1000;
 
-    return now - this.windowsStartedAt >= Math.max(WINDOWS_READ_MIN_SECONDS, effectiveSeconds(this.options.refreshSeconds())) * 1000;
+    return intervalMs >= WINDOWS_READ_MIN_SECONDS * 1000 || this.sinceWindowsRead() + intervalMs / 2 >= WINDOWS_READ_MIN_SECONDS * 1000;
+  }
+
+  /** Milliseconds since the newest Windows read started, on the injected clock; infinite when there is no clock or no read yet. */
+  private sinceWindowsRead(): number {
+    const now = this.options.timers.nowMs?.();
+
+    return now === undefined || this.windowsStartedAt === undefined ? Number.POSITIVE_INFINITY : now - this.windowsStartedAt;
   }
 
   private async readWindows(windows: WindowsStatusSource): Promise<void> {
     const outcome = await windows.status().catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb: 'status' }));
     this.options.store.setWindowsStatus(outcome);
   }
-
   /** Starts a round: its number, after `observeTarget`. */
   private begin(): number {
     this.observeTarget();

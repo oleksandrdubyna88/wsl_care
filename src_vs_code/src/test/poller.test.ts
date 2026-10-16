@@ -475,3 +475,50 @@ test('a windows.usable() that throws is caught: the tick and the refresh resolve
   assert.match(JSON.stringify(stored), /the probe broke/);
   assert.equal(w.store.snapshot().status?.kind, 'answered', 'the distro outcome is untouched');
 });
+
+// ---- E19.S2b review: the throttle on a clock with jitter (real timers fire a hair off the nominal interval) ----
+
+/**
+ * A poller whose ticks and clock the test drives by hand: `tick(at)` sets the clock to `at` (in ms) and fires the interval's callback,
+ * so a tick can land a millisecond short of — or past — the nominal interval, as real `setInterval` fires and the read's own start do.
+ */
+function jitterWorld(seconds: number): { start: () => Promise<void>; tick: (at: number) => Promise<void>; reads: () => number } {
+  let now = 0;
+  let fire: () => void = () => undefined;
+  let reads = 0;
+  const poller = new Poller({
+    run: (verb) => Promise.resolve(okAnswer(verb)),
+    store: new OutcomeStore(),
+    focused: () => true,
+    refreshSeconds: () => seconds,
+    timers: { every: (_ms, run) => { fire = run; return () => undefined; }, nowMs: () => now },
+    target: () => '',
+    windows: { usable: () => true, status: () => { reads += 1; return Promise.resolve(windowsAnswer()); } },
+  });
+
+  return {
+    start: async () => { poller.start(); await poller.settled(); },
+    tick: async (at) => { now = at; fire(); await poller.settled(); },
+    reads: () => reads,
+  };
+}
+
+test('at the default interval every tick reads the windows status even when the clock runs a millisecond short', async () => {
+  const w = jitterWorld(120);
+  await w.start();
+  await w.tick(1); // the read's start stamp lands a millisecond after its timer fired…
+  await w.tick(120_000); // …so the next fire is 119 999 ms after it
+  await w.tick(240_001);
+  await w.tick(359_999);
+  assert.equal(w.reads(), 5, 'start + four ticks: none skipped at the default');
+});
+
+test('at the 30 s floor the read lands every fourth tick with jitter', async () => {
+  const w = jitterWorld(30);
+  await w.start();
+  const jitter = [1, -1, 1, -1, 0, 1, -1, 1, -1, 0, 1, -1];
+  for (let i = 0; i < jitter.length; i += 1) {
+    await w.tick((i + 1) * 30_000 + (jitter[i] ?? 0));
+  }
+  assert.equal(w.reads(), 1 + jitter.length / 4, 'the start read and one every fourth tick (120 s), not every eighth and not every one');
+});

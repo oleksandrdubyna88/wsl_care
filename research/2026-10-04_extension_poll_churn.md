@@ -108,7 +108,7 @@ What is NOT measured: the daemon's wall time and bytes per `status` run on this 
 | an instant | 120 | **1** | 1 | — |
 
 **The throttle (the coai code round).** An interval tick reads the Windows status only when the last Windows read STARTED at least
-max(`wslCare.refreshSeconds`, 120 s) ago (measured on the poller's injected clock); a panel Refresh and a regained focus always read.
+max(`wslCare.refreshSeconds`, 120 s) ago (measured on the poller's injected clock, with half a tick interval of slack for timer jitter; at 120 s or slower every tick reads and nothing is compared); a panel Refresh and a regained focus always read.
 At the default 120 s nothing changes (721 a day); at the 30 s floor the Windows binary stays at 721 a day instead of 2 881 — the
 distribution's own count still follows the setting. Measured: `poller.test.ts`, *at the 30 s floor the windows status is read once
 per 120 s* and *E19.S2b churn, measured* (721 / 241 / 721 / 1).
