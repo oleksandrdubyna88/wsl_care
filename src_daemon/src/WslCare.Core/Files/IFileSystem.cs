@@ -80,7 +80,12 @@ public abstract record FileSizeResult
     /// <param name="Bytes">Its length.</param>
     /// <param name="ModifiedAt">Its last write, UTC — how the health check tells a collector that still writes
     /// (sysstat, atop) from one that stopped.</param>
-    public sealed record Measured(long Bytes, DateTimeOffset ModifiedAt) : FileSizeResult;
+    public sealed record Measured(long Bytes, DateTimeOffset ModifiedAt) : FileSizeResult
+    {
+        /// <summary>When the file was CREATED, UTC (WR-T1: a file copied in with an old write time is told apart by it). The default is the
+        /// far future: a stat that does not say counts as brand new, which can only make a caller keep something.</summary>
+        public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.MaxValue;
+    }
 
     public sealed record Missing : FileSizeResult;
 
@@ -95,7 +100,11 @@ public abstract record DirectoryTimeResult
     {
     }
 
-    public sealed record Measured(DateTimeOffset ModifiedAt) : DirectoryTimeResult;
+    public sealed record Measured(DateTimeOffset ModifiedAt) : DirectoryTimeResult
+    {
+        /// <summary>When the folder was CREATED, UTC; the far future when not said (see <see cref="FileSizeResult.Measured.CreatedAt"/>).</summary>
+        public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.MaxValue;
+    }
 
     public sealed record Missing : DirectoryTimeResult;
 
@@ -126,7 +135,13 @@ public enum EntryKind
 }
 
 /// <summary>One entry of a directory listing (plan §15q D2: a session is found by its name and its stat, never by its content).</summary>
-public sealed record FileEntry(string Name, EntryKind Kind, long Length, DateTimeOffset LastWriteUtc);
+public sealed record FileEntry(string Name, EntryKind Kind, long Length, DateTimeOffset LastWriteUtc)
+{
+    /// <summary>When the entry was CREATED, UTC — from the listing alone (WR-T1: deleting a folder's children rewrites its write time
+    /// but never its creation time, so a folder created after a checkpoint is told apart by this). The default is the far future: a
+    /// listing that does not say counts as brand new, which can only make a caller keep something.</summary>
+    public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.MaxValue;
+}
 
 /// <summary>The bounds of one listing (plan §15q E7.S2d, consultation C-1): at most <paramref name="MaxEntries"/> entries, the
 /// caller's deadline and its cancellation — asked at EVERY entry. A cooperative bound on the work between file-system calls,
@@ -312,6 +327,11 @@ public interface IFileSystem
             : new EntryListing.Listed(all, true, string.Empty);
     }
 
+    /// <summary>The account owning <paramref name="path"/> (a Windows SID such as <c>S-1-5-21-…</c>), read without following a link;
+    /// empty when the owner is not known — the default, and what a test double without its own answers. A caller that compares it
+    /// with a known account treats empty as "not that account" (WR-T1: an entry whose owner is unknown is never deleted).</summary>
+    string OwnerSidOf(string path) => string.Empty;
+
     /// <summary>Where <paramref name="path"/> really is — every link followed, <c>..</c> applied to the real parent (the walk the
     /// deletion policy decides on, <see cref="RealPath"/>); nothing is opened.</summary>
     RealPathResult ResolvePath(string path);
@@ -391,6 +411,11 @@ public interface IFileSystem
     DeletionVerdict DeleteFile(string path, DeletionScope scope);
 
     DeletionVerdict DeleteDirectory(string path, DeletionScope scope);
+
+    /// <summary>Removes <paramref name="path"/> only when it holds NOTHING (WR-T1, the Fable own review M1): a non-recursive remove, so
+    /// anything that appeared after the caller's listing is never deleted unjudged. A folder that is not empty throws
+    /// <see cref="IOException"/> (the operating system's own answer); the deletion policy judges it like any delete.</summary>
+    DeletionVerdict DeleteEmptyDirectory(string path, DeletionScope scope);
 
     DeletionVerdict MoveFile(string from, string to, DeletionScope scope);
 

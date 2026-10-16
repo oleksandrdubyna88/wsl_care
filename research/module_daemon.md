@@ -79,6 +79,7 @@ flowchart TB
 | `IWorkerSupervisor`, `JobSupervisor`, `IJobControl` / `Win32JobControl`, `WorkerLaunch`, `WorkerOutcome`, `TaskWorkers` | `Core/Processes`, `Core/Scheduler` | the Windows runner's supervisor (WR-D3): one kill-on-close job per `tasks run`, the worker from a closed table, its deadline on the unbiased clock (section below) |
 | `StageRecord` / `StageRead`, `StagedCheck` | `Core/Scheduler` | `stage.json` beside a staged copy and its strict reader; whether this process is a verified staged copy (`registrable`) |
 | `Staging`, `StagingPlace`, `StagingAccess`, `StageInput`, `StageReport` / `StageRemoveReport`, `StagingFolder`, `StagingSweep` | `Core/Scheduler` | `tasks stage` and `--remove` (WR-D2; section below): the copy made, read back and recorded, the sweep of the other digest folders (also the `tasks run` start's), every copy removed |
+| `WindowsTempAction`, `TempSettings`, `TempFacts`, `TempGlob`, `TempGuards`, `TempRoots` / `TempRootResult`, `TempCursor` / `TempCheckpoint` / `TempCursors`, `TempPlanner`, `TempJudge`, `TempScanner`, `TempDeletion`, `TempRun` | `Core/Actions/WindowsTemp` | A23, the Windows `%TEMP%` cleanup (WR-T1; section below): the engine's first Windows-side action — the allow-list, the newest-descendant age, the owner, reparse points, the `claude` guard, a wrapping cursor with a checkpoint, the re-validated link-free delete walk |
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 | `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
 | `PwshProbe`, `PwshEngine` / `InteropEngine` | `Core/Health` | E15.S1b (section below): what the clock probe saw of the MSI PowerShell 7, and the PURE choice of the engine the disk script runs under |
@@ -136,6 +137,7 @@ has none.
 | Windows memory pressure: `host.commit` / `host.compression` / `host.vmmem`, `Thresholds/HostRules`, `Health/HostMemoryFacts` (E15.S5, 2026-10-12) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) *E15.S5 design*, the measurement [2026-10-12_host_memory.md](2026-10-12_host_memory.md) |
 
 | the Windows runner's staged copy: `tasks stage`, `tasks stage --remove`, the sweep (WR-D2, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2, §3.7, §3.10 |
+| the Windows `%TEMP%` cleanup: A23, `act` on the Windows side, the `temp.*` keys (WR-T1, 2026-10-15) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.12 |
 
 ## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
 
@@ -1191,3 +1193,113 @@ flowchart TB
 - **Not here**: no elevated refusal (the plan does not ask it; an elevated stage's copy may be owned by Administrators, and the
   render's no-link open then refuses it — not registrable, so nothing is registered); the extension's own digest compare and its
   `BUNDLED_DAEMON` check (§3.7) are WR-E3's.
+
+## The Windows `%TEMP%` cleanup: A23 (WR-T1 of PLAN_windows_runner.md, 2026-10-15)
+
+The engine's FIRST Windows-side action (`ICleanupAction.Sides = [Windows]`): it deletes the current user's own top-level entries of
+`%TEMP%` that match an allow-list and whose NEWEST descendant is older than `temp.olderThanDays`. Built in `Core/Actions/WindowsTemp/`;
+the task that runs it on a schedule, the `tasks preview cleanup` verb and the panel are WR-T2 / WR-T3.
+
+```mermaid
+flowchart TD
+    A[act A23 / the engine] --> R{TempRoots.Resolve}
+    R -- "LocalAppData Temp differs from GetTempPath, or outside the profile" --> X[Refusal: nothing deleted]
+    R -- same folder --> L[top-level listing, bounded by temp.maxTopLevelEntries]
+    L --> O["order: the interrupted candidate, names after the cursor, then the wrap up to the cursor's own name"]
+    O --> J[TempJudge per candidate, within temp.scanMaxNodes / scanMaxSeconds / maxItemsPerRun]
+    J -->|claude, link, testsToDelete-, other owner, .git| N[Excluded / Unknown: retained]
+    J -->|not on the allow-list| W[NotAllowed / WouldBeEligible]
+    J -->|scan: newest descendant, reparse inside| Y[Young / Unknown / Eligible]
+    Y --> P[ActionPreview: facts, groups, targets, Carry]
+    P --> U[TempRun]
+    U --> V[re-validate each target by stat + rescan]
+    V --> K[checkpoint BEFORE the first delete]
+    K --> D["delete walk: no link followed, every delete through IFileSystem and the policy"]
+    D --> C[cursor moves past the candidate; marker cleared]
+```
+
+**Entry points.** `act A23 --preview` / `--confirm [--timer|--manual]` on the Windows binary; the registry holds it
+(`ActionRegistry.Product`), `ActionId` knows it (`auto.A23`, default ON like the other timer actions — installing the cleanup task is
+the opt-in, and `dryRun` plus A23's own first week, `first-timer-run-A23.json`, govern the timer). The distro's binary refuses it ("A23 runs on the Windows host,
+not on this side (the WSL binary)"); `status` lists it only on the Windows side.
+
+**`act` on the Windows side (a deviation from the distro's rule).** On Linux every `act` is root's. On Windows A23 runs in the
+person's OWN, unelevated process: when the request holds at least one Windows action, `ActCommand.Refusal` asks the side refusal first and `Elevated` instead of `NotRoot` (so `act A23,A4` is told "A4 runs inside the WSL distro"; a request of distro actions alone keeps the distro's order, root first) — an elevated process is refused (exit
+81, "NOT elevated") — and `--detach` (a systemd unit) is refused. `EngineContext.UserSid` / `ActionContext.UserSid` carry the
+account's SID (`CliHost.UserSid`); empty owns nothing.
+
+**The root** (`TempRoots`). There is no shell known folder for TEMP, so it is the shell folder `LocalApplicationData` + `\Temp`,
+cross-checked with the process' temp path (`GetTempPath`): both must name the same folder (case, separators and a trailing
+separator normalised by `PathRules.Windows`) and it must lie strictly inside the user's profile; otherwise the preview REFUSES with
+the reason and nothing is deleted. A `TEMP` / `TMP` naming ANOTHER folder, or a short 8.3 spelling of the profile, differs in spelling
+and is such a refusal (fail closed); a junction AT `%LOCALAPPDATA%\Temp` leading to another drive is not (the spellings agree; the
+deletion policy and the delete walk judge the real path).
+
+**Selection** (`TempJudge`, in this order): the `claude` guard (`TempGuards.IsClaude`: the name ordinal-ignore-case AND the
+canonical full path against `<root>\claude`, trailing separators/dots/spaces stripped — before any traversal; the deletion policy's
+`ClaudeTemp` root is the second line); a candidate whose own listing attributes say reparse point is `Unknown`, never entered; a
+`testsToDelete-` name is `Excluded` ("the test-leftover sweep's"); an owner other than the current SID (or an unknown one) is
+`Excluded`; the allow-list (`temp.allowGlobs`, `TempGlob`: `*` / `?`, no separator, may not match `claude` or the sweep's prefix);
+then the scan (`TempScanner`): newest write time over files AND folders, a reparse entry anywhere retains the tree, a `.git` file
+or folder at the top makes it "a git working folder - never deleted", a listing cut by the budget makes it `Unknown`. Outcomes:
+`Eligible`, `WouldBeEligible` (old and clean but not allowed — shown so the list can be widened from evidence), `NotAllowed`,
+`Young`, `Excluded`, `Unknown`, `Changed`, `Deferred`. A TIMER trigger does not scan names the allow-list does not cover (it spends
+its budget on what it may delete); every other trigger does, for the "would be eligible" groups. The AGE is the later of a write time and a
+creation time (files and folders, the candidate included): a copy keeps its write time but takes a new creation time. A `.git` at ANY
+depth, in any case, retains the tree.
+
+**Budgets and the cursor** (`temp-cursor.json` in the state directory, `TempCursor`). Candidates are the top-level names in ordinal
+order. A run takes the interrupted candidate first, then the names after `Last`, then — when it reaches the end — the names up to
+`Last` itself (the wrap). EVERY candidate it reaches is decided (deleted, retained, excluded, unknown) and `Last` moves to the last
+one, so a run that finds nothing to delete still moves on. A run that decides its first name after the wrap completes a pass
+(`PassesCompleted`, `PassStarted`, `PassDecided`; the preview's `What` says "pass started <t>, N of M names decided"). Limits: a
+node budget and a time budget shared by the run's top-level listing and scans (the listing's time counts too), and a plan that reaches `temp.maxItemsPerRun` or an exhausted budget counts the rest of the names `Deferred` without visiting them, `temp.maxItemsPerRun` eligible entries (the rest `Deferred`), and
+`temp.maxTopLevelEntries` (a cut top-level listing has no stable order, so it refuses whole).
+
+**Recovery after a kill** (`TempCheckpoint`). Before the first delete inside a folder candidate the run writes (atomically)
+`{name, newest FILE write time, checkpoint time, owner}`. The next run takes that candidate first and judges it NOT by folder times
+(deleting children rewrites them) but by its remaining FILES' write times and the CREATION times of everything inside: a file newer
+than the recorded one, or a file or folder created after the checkpoint, retains it as "changed while interrupted"; otherwise it is
+finished. The marker is cleared once the candidate is decided; finishing it never moves the cursor's `Last` (it belongs to an
+earlier pass). A cancelled run returns `ActionRun.Interrupted` and keeps the marker; the engine
+records the action and the run `interrupted`.
+
+**The delete** (`TempRun`, `TempDeletion`). Each target is RE-VALIDATED just before its delete from a stat of its own path (a link
+now, or gone, is not deleted) and a fresh scan under the same rules (owner, allow-list, age, reparse, git) — a candidate that is no
+longer eligible is `NotRemoved` "changed since the preview"; a stat that cannot be read is "unreadable" (not "already gone"). The
+re-validation scans of one run share ONE allowance of `temp.scanMaxNodes` / `temp.scanMaxSeconds`; the delete walk itself has no time
+cap (the supervisor's deadline and the cancellation end it; the checkpoint makes that safe). The walk lists each folder without
+following reparse points (`AttributesToSkip = 0`, so they are SEEN), asks `ReadLink` of each sub-folder just before entering it, and
+before EVERY delete requires `ResolvePath(path)` to equal the real temp root plus the relative path (a link anywhere on the way stops
+the candidate, "a link appeared"; the CANDIDATE folder itself is asked the same two questions before it is listed). An entry (file or folder) whose later of write and creation time is newer than the cutoff (`now - temp.olderThanDays`) stops the candidate, "changed while deleting": what appeared after the scan is never deleted unjudged. A folder is removed only when EMPTY (`IFileSystem.DeleteEmptyDirectory`, never recursive): what
+appeared after the listing stays, and the folder is "kept in use". Every delete goes through `IFileSystem` and so through the
+deletion policy. A sharing violation or any I/O failure is kept and counted (`kept in use N`), never retried in the same run.
+**Residual:** the real-path check and the delete are two calls (the seam has no handle-relative delete), so a swap inside that window
+is not excluded; the policy still judges the path and a swap reaches only what this account may delete anyway.
+
+**Its own dry week.** `ICleanupAction.DryWindowStamp` is `A23` for A23: its first week is `first-timer-run-A23.json`, started by the first
+timer run that reaches A23's deletion gate, so the common stamp the Windows watch and the archive body start never opens it (`dryRun`
+still holds too). **With UAC off** an administrator is always elevated, so A23 always answers 81 for that account (fail closed).
+**For WR-T2:** the supervisor spawns exactly `act A23 --timer`.
+
+**The run detail.** `ActionRun`: `Count` = candidates deleted, `FreedBytes` = the logical bytes of the files deleted (the basis says
+"not disk space freed"), `Removed` / `NotRemoved` (the first `preview.maxItems`), `Notes`: `deleted N, kept in use N, changed N,
+refused N, already gone N; logical bytes N`, `by group: coai-* 2 (… bytes), …` and the preview's retained counts. The preview's
+`Facts` carry `eligible`, `wouldBeEligible`, `notAllowed`, `young`, `excluded`, `unknown`, `changed`, `deferred`, `decided`, `total` and
+`group:<pattern>:eligible|wouldBeEligible`.
+
+**Not in a full check.** `ICleanupAction.InFullCheck` (default true) is false for A23: `collect`'s timer pass on either side does not list it (the cleanup has its own task, WR-T2), so the Linux records are unchanged and a Windows full check never lists the temp folder.
+
+**Seams added.** `IFileSystem.OwnerSidOf(path)` (default empty; `PhysicalFileSystem` reads the owner on Windows),
+`FileEntry.CreatedUtc` (default far future: an unknown creation time keeps), `ActionPreview.Carry`, `ActionContext.UserSid`.
+
+**Keys.** `temp.olderThanDays` (7, 1–365, Higher), `temp.allowGlobs` (the owner's 2026-10-12 list: `coai-*`, `wsl-care-test-*`,
+`stage-*`, `mindex-*`, `git-commit-*`, `docrag-*`, `bge-seed-*`; an open list under `TextRule.TempGlobName`, at most 32),
+`temp.scanMaxNodes` (200000, 1000–10000000, Lower), `temp.scanMaxSeconds` (120, 10–3600, Lower), `temp.maxItemsPerRun` (5000,
+1–1000000, Lower), `temp.maxTopLevelEntries` (500000, 10000–10000000, Lower), `auto.A23`. None is machine-only. Regenerated:
+`contracts/config-keys.json` (the allow-list is a `textList` with `memberPattern`, `maxMembers`, `neverMatches`),
+`contracts/actions.json`. The extension's `ACTION_IDS` (equal to `actions.json` by `rootIds.test.ts`) gained `A23`, and
+`BUTTON_ONLY_IDS` too, so no WSL cleanup op ever acts on it.
+
+**Not here.** The scheduled task, `tasks preview cleanup`, the panel (WR-T2 / WR-T3); the `testsToDelete-` rename of the harness
+(DH-8 — `wsl-care-test-*` stays on the allow-list for the existing backlog); a lease shared with the future A26 sweep.

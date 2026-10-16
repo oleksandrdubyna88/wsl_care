@@ -64,7 +64,7 @@ public sealed class ReadContractFlows
         report.Actions.Should().NotBeNull();
         if (home.Paths.Side == HostSide.Windows)
         {
-            report.Actions.Should().BeEmpty("every built action is the distro's; the Windows binary's are E12's");
+            report.Actions.Should().Equal(["A23"], "the Windows binary's one built action is the %TEMP% cleanup (WR-T1); the rest are E12's");
         }
         else
         {

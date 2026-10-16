@@ -100,6 +100,15 @@ public abstract record TextRule
         public override string Outdated(string value) => Mcp.McpUserPrograms.Outdated(value);
     }
 
+    /// <summary>A name pattern of the Windows <c>%TEMP%</c> cleanup's allow-list (<c>temp.allowGlobs</c>, WR-T1) — the one rule
+    /// <see cref="Actions.WindowsTemp.TempGlob"/> holds, so the loader and the selection cannot disagree.</summary>
+    public sealed record TempGlobName : TextRule
+    {
+        public override string Describe => Actions.WindowsTemp.TempGlob.Description;
+
+        public override string Problem(string value) => Actions.WindowsTemp.TempGlob.Problem(value);
+    }
+
     /// <summary>A systemd unit name (<c>systemd.ignoredFailedUnits</c>, 2026-10-12): letters, digits and <c>@ : _ . - \</c>, then one of
     /// systemd's unit types — a NAME compared ordinally, never a pattern (no <c>*</c>), so it can only quiet the unit it names.</summary>
     public sealed record SystemdUnitName : TextRule

@@ -53,6 +53,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual RealPathResult ResolvePath(string path) => inner.ResolvePath(path);
 
+    public virtual string OwnerSidOf(string path) => inner.OwnerSidOf(path);
+
     public virtual (uint Major, uint Minor)? DeviceOf(string path) => inner.DeviceOf(path);
 
     public virtual WriteAccess ProbeWriteAccess(string directory) => inner.ProbeWriteAccess(directory);
@@ -75,6 +77,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
     public virtual DeletionVerdict DeleteFile(string path, DeletionScope scope) => inner.DeleteFile(path, scope);
 
     public virtual DeletionVerdict DeleteDirectory(string path, DeletionScope scope) => inner.DeleteDirectory(path, scope);
+
+    public virtual DeletionVerdict DeleteEmptyDirectory(string path, DeletionScope scope) => inner.DeleteEmptyDirectory(path, scope);
 
     public virtual DeletionVerdict MoveFile(string from, string to, DeletionScope scope) => inner.MoveFile(from, to, scope);
 

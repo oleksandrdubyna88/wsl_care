@@ -23,7 +23,8 @@
     "A16": true,
     "A17": false,
     "A19": true,
-    "A21": true
+    "A21": true,
+    "A23": true
   },
   "volumes": {
     "anonymousMaxCount": 100,
@@ -371,5 +372,21 @@
     "watchLogonDelaySeconds": 60,
     "archiveLogonDelayMinutes": 20,
     "archiveEveryHours": 4
+  },
+  "temp": {
+    "olderThanDays": 7,
+    "allowGlobs": [
+      "coai-*",
+      "wsl-care-test-*",
+      "stage-*",
+      "mindex-*",
+      "git-commit-*",
+      "docrag-*",
+      "bge-seed-*"
+    ],
+    "scanMaxNodes": 200000,
+    "scanMaxSeconds": 120,
+    "maxItemsPerRun": 5000,
+    "maxTopLevelEntries": 500000
   }
 }

@@ -225,7 +225,19 @@ public sealed class ActCommandTests : IDisposable
     {
         CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]")
             .And.Contain("act --request <runId>").And.Contain("act --stop <runId> [--json]").And.Contain("collect [--timer or --detach] [--json]")
-            .And.Contain("\"act\" holds these actions: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
+            .And.Contain("\"act\" holds these actions: " + string.Join(", ", ActionRegistry.Product.Actions.Where(a => a.Sides.Contains(HostSide.Wsl)).Select(a => a.Id.Text)) + ".");
+    }
+
+    /// <summary>WR-T1: the help line the release smoke previews from names the WSL distro's actions only — the Windows host's A23 is
+    /// on its own line, so a smoke on either binary previews (or is refused for) exactly one side's actions.</summary>
+    [Fact]
+    public void The_help_names_the_windows_hosts_actions_on_their_own_line()
+    {
+        var windows = ActionRegistry.Product.Actions.Where(a => !a.Sides.Contains(HostSide.Wsl)).Select(a => a.Id.Text).ToList();
+        windows.Should().Contain("A23");
+        CommandLine.HelpText.Should().Contain($"On the Windows host, \"act\" holds: {string.Join(", ", windows)}.");
+        CommandLine.HelpText.Split('\n').Single(l => l.Contains("\"act\" holds these actions: ", StringComparison.Ordinal))
+            .Should().NotContain("A23", "the distro's line is what the smoke previews on the WSL binary");
     }
 
     // ---------- E3.S2: the panel's mark and A4's shown list ----------

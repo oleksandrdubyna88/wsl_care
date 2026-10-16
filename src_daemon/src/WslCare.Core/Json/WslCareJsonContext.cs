@@ -44,6 +44,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Actions.Engine.ActReport))]
 [JsonSerializable(typeof(Actions.Engine.RunningFile))]
 [JsonSerializable(typeof(Actions.Engine.FirstTimerRun))]
+[JsonSerializable(typeof(Actions.WindowsTemp.TempCursor))]
 [JsonSerializable(typeof(Health.DistroNameFile))]
 [JsonSerializable(typeof(Actions.Clock.ClockFixRecord))]
 [JsonSerializable(typeof(History.RunsReport))]
