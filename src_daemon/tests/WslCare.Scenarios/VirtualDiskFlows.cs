@@ -63,6 +63,12 @@ public sealed class VirtualDiskFlows
         disk.Volumes!.Should().ContainSingle().Which.Letter.Should().Be("C");
         File.Exists(DistroIdentity.File(home.Paths)).Should().BeTrue("a root run started through wsl.exe records this distro's name");
         var thresholds = Report(first).Detail!.Thresholds;
+        // E19.S1: every lettered volume of the capture is judged by disk.volumeFree — D: (23.1 GiB of 195.3 GiB) warns, the 29.7 MiB E: is not judged.
+        thresholds.Single(t => t.Id == VolumeFreeRules.Id).Level.Should().Be(Level.Warn);
+        var lettered = disk.Lettered!;
+        lettered.Select(l => l.Letter).Should().BeEquivalentTo("C", "D", "E", "F");
+        lettered.Single(l => l.Letter == "D").Should().Match<LetteredVolumeReport>(l => l.Level == Level.Warn && l.JudgedBy == "gib-or-percent" && l.FreeBytes == 24_833_069_056);
+        lettered.Single(l => l.Letter == "E").JudgedBy.Should().StartWith("not judged: ");
         thresholds.Single(t => t.Id == DiskRules.GrowthId).Level.Should().Be(Level.Unknown);
         thresholds.Single(t => t.Id == DiskRules.HostFreeId).Level.Should().Be(Level.Unknown, "three files' possible growth is not known, so free space is never ok");
 
@@ -81,6 +87,8 @@ public sealed class VirtualDiskFlows
         status.Disk.Basis.RunId.Should().Be(again.RunId.Text, "the newest full run's section, with its run");
         status.Disk.Basis.AgeSeconds.Should().NotBeNull();
         status.Verdicts!.Single(v => v.Id == DiskRules.GapId).Basis!.Source.Should().Be(VerdictSource.FullRun);
+        status.Disk.Lettered.Should().BeEquivalentTo(again.Disk!.Lettered, "Status_carries_the_lettered_judgements: the newest full run's list, as recorded");
+        status.Verdicts!.Single(v => v.Id == VolumeFreeRules.Id).Should().Match<Verdict>(v => v.Level == Level.Warn && v.Basis!.Source == VerdictSource.FullRun);
     }
 
     [Fact]

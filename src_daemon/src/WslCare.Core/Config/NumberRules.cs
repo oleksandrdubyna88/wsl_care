@@ -101,6 +101,23 @@ public static class NumberRules
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Running.NoProgressMinutes)) >= RunBudget.LongestStep(c),
             c => $"{ConfigKeys.Running.NoProgressMinutes.Name} ({I(c, ConfigKeys.Running.NoProgressMinutes)}) must be at least the longest single command ({Math.Ceiling(RunBudget.LongestStep(c).TotalMinutes)} min with its drains and {CeilingMarginSeconds} s more): a command still inside its ceiling is progress"),
         .. ArchiveRules,
+        .. DiskVolumeRules,
+    ];
+
+    /// <summary>E19.S1 (disk.volumeFree): a critical floor lies BELOW its warn floor — equal would leave no warn level to see — for the GiB
+    /// floors and for the percent floors, and the size below which a volume is not judged is at most the size from which the GiB floors
+    /// apply (a volume judged by percent alone must exist between the two).</summary>
+    private static IReadOnlyList<Rule> DiskVolumeRules =>
+    [
+        new([ConfigKeys.Disk.VolumeFreeCriticalGib, ConfigKeys.Disk.VolumeFreeWarnGib],
+            c => I(c, ConfigKeys.Disk.VolumeFreeCriticalGib) < I(c, ConfigKeys.Disk.VolumeFreeWarnGib),
+            c => $"{ConfigKeys.Disk.VolumeFreeCriticalGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeCriticalGib)}) must be below {ConfigKeys.Disk.VolumeFreeWarnGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeWarnGib)}): a critical floor at or above the warn floor would leave no warn level to see"),
+        new([ConfigKeys.Disk.VolumeFreeCriticalPercent, ConfigKeys.Disk.VolumeFreeWarnPercent],
+            c => I(c, ConfigKeys.Disk.VolumeFreeCriticalPercent) < I(c, ConfigKeys.Disk.VolumeFreeWarnPercent),
+            c => $"{ConfigKeys.Disk.VolumeFreeCriticalPercent.Name} ({I(c, ConfigKeys.Disk.VolumeFreeCriticalPercent)}) must be below {ConfigKeys.Disk.VolumeFreeWarnPercent.Name} ({I(c, ConfigKeys.Disk.VolumeFreeWarnPercent)}): a critical share at or above the warn share would leave no warn level to see"),
+        new([ConfigKeys.Disk.VolumeFreeMinSizeGib, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib],
+            c => I(c, ConfigKeys.Disk.VolumeFreeMinSizeGib) <= I(c, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib),
+            c => $"{ConfigKeys.Disk.VolumeFreeMinSizeGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeMinSizeGib)}) must be at most {ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib)}): a volume is not judged below the first size, and the GiB floors apply from the second"),
     ];
 
     /// <summary>An ESTIMATE of the bytes one session takes in the archive's in-flight file: its entry id, agent, folder, key, month,

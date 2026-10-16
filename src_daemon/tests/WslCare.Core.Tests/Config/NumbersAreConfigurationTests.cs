@@ -36,7 +36,9 @@ public sealed class NumbersAreConfigurationTests
         "thresholds.wslMemoryCriticalPercent", "processes.topCount",
         "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.maxDeferHours", "archive.minFreeGb",
         "archive.copyBufferKib", "disk.eventsSinceDays", "disk.vhdxGapWarnGib", "disk.vhdxGrowthWarnGibPerDay", "disk.hostFreeWarnGib",
-        "disk.growthMinHours", "thresholds.hostCommitWarnPercent", "thresholds.hostCommitCriticalPercent", "thresholds.hostCompressionWarnGb", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
+        "disk.growthMinHours", "thresholds.hostCommitWarnPercent", "thresholds.hostCommitCriticalPercent", "thresholds.hostCompressionWarnGb",
+        "disk.volumeFreeWarnGib", "disk.volumeFreeCriticalGib", "disk.volumeFreeWarnPercent", "disk.volumeFreeCriticalPercent",
+        "disk.volumeFreeMinSizeGib", "disk.volumeFreeAbsoluteMinSizeGib", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
     ];
 
     /// <summary>The inventory's group B (root-safety limits) — machine-layer-only keys.</summary>
@@ -115,12 +117,31 @@ public sealed class NumbersAreConfigurationTests
     [InlineData("""{ "agentCpu": { "maxBytes": 16384 } }""", "agentCpu.maxBytes")]
     [InlineData("""{ "requests": { "maxBytes": 65536 } }""", "requests.maxBytes")]
     [InlineData("""{ "thresholds": { "hostCommitWarnPercent": 90, "hostCommitCriticalPercent": 90 } }""", "thresholds.hostCommitCriticalPercent")]
+    [InlineData("""{ "disk": { "volumeFreeCriticalGib": 40 } }""", "disk.volumeFreeCriticalGib (10) must be below disk.volumeFreeWarnGib (30)")]
+    [InlineData("""{ "disk": { "volumeFreeCriticalPercent": 15 } }""", "disk.volumeFreeCriticalPercent (3) must be below disk.volumeFreeWarnPercent (10)")]
+    [InlineData("""{ "disk": { "volumeFreeMinSizeGib": 200 } }""", "disk.volumeFreeMinSizeGib (8) must be at most disk.volumeFreeAbsoluteMinSizeGib (100)")]
     public void Coupled_limits_that_contradict_each_other_refuse_the_layer_naming_the_rule(string machine, string named)
     {
         var result = Load(machine);
 
         result.IsObserveOnly.Should().BeTrue("a contradiction between two limits is a configuration error");
         result.Errors.Should().Contain(e => e.Message.Contains(named, StringComparison.Ordinal));
+    }
+
+    /// <summary>E19.S1 (disk.volumeFree): a critical floor must lie BELOW its warn floor — equal is a contradiction too, because the
+    /// warn level could then never be seen — and a user value that breaks it is a notice, the value below staying in force.</summary>
+    [Fact]
+    public void Critical_below_warn_is_held_by_the_number_rules()
+    {
+        Load("""{ "disk": { "volumeFreeCriticalGib": 30 } }""").Errors.Should().Contain(e => e.Message.Contains("disk.volumeFreeCriticalGib", StringComparison.Ordinal) && e.Message.Contains("must be below disk.volumeFreeWarnGib", StringComparison.Ordinal));
+        Load("""{ "disk": { "volumeFreeCriticalPercent": 10 } }""").Errors.Should().Contain(e => e.Message.Contains("disk.volumeFreeCriticalPercent", StringComparison.Ordinal) && e.Message.Contains("must be below disk.volumeFreeWarnPercent", StringComparison.Ordinal));
+        Load("""{ "disk": { "volumeFreeMinSizeGib": 100 } }""").IsObserveOnly.Should().BeFalse("a size floor equal to the absolute-size floor is allowed (minSize <= absoluteMinSize)");
+
+        var fromUser = Load("{}", """{ "disk": { "volumeFreeCriticalGib": 50 } }""");
+
+        fromUser.IsObserveOnly.Should().BeFalse();
+        fromUser.Notices.Should().Contain(n => n.Key == "disk.volumeFreeCriticalGib" && n.File.Layer == ConfigLayer.User && n.Message.Contains("must be below", StringComparison.Ordinal));
+        fromUser.Config.Int((ConfigKey.IntKey)ConfigKeys.Find("disk.volumeFreeCriticalGib")!).Should().Be(10, "the user's 50 is not taken: the default stays");
     }
 
     /// <summary>The point of the rule: a machine value REACHES the code it bounds — a command's ceiling, its template's (read when

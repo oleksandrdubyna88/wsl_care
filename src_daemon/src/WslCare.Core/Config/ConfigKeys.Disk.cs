@@ -38,5 +38,50 @@ public static partial class ConfigKeys
         /// unavailable ("too close to the previous measurement"). Default 1 — a STARTING VALUE, not measured: it keeps the
         /// extrapolation factor at 24 or below.</summary>
         public static readonly ConfigKey.IntKey GrowthMinHours = new("disk.growthMinHours", 1, 48) { Trust = KeyTrust.Display };
+
+        /// <summary>E19.S1: <c>disk.volumeFree</c> WARNS when a lettered Windows volume has less than this many GiB free (on a volume of at
+        /// least <see cref="VolumeFreeAbsoluteMinSizeGib"/>) — or less than <see cref="VolumeFreeWarnPercent"/> free. Default 30 — a STARTING
+        /// VALUE: D: was 30.6 GiB free four days before it hit 0 (research/2026-10-10_disk.md D1; PLAN_disk_hygiene_windows.md §1), so the warning arrives before
+        /// that margin is spent; a floor, not a measured need.</summary>
+        public static readonly ConfigKey.IntKey VolumeFreeWarnGib = new("disk.volumeFreeWarnGib", 1, 10240) { Trust = KeyTrust.Display };
+
+        /// <summary>E19.S1: <c>disk.volumeFree</c> is CRITICAL when a lettered volume has less than this many GiB free (on a volume of at
+        /// least <see cref="VolumeFreeAbsoluteMinSizeGib"/>) — or less than <see cref="VolumeFreeCriticalPercent"/> free; only a critical
+        /// volume marks the status bar. Default 10 — a STARTING VALUE: a worktree's build output is about 1.7–2.4 GB, so 10 GiB is four or
+        /// five builds. Held below the warn floor by <see cref="NumberRules"/>.</summary>
+        public static readonly ConfigKey.IntKey VolumeFreeCriticalGib = new("disk.volumeFreeCriticalGib", 1, 10240) { Trust = KeyTrust.Display };
+
+        /// <summary>E19.S1: <c>disk.volumeFree</c> warns when a judged volume has less than this share free, whatever its size — the only
+        /// floor of a volume under <see cref="VolumeFreeAbsoluteMinSizeGib"/>. Default 10 — a STARTING VALUE: on the 2.4 TiB system
+        /// volume it warns at about 245 GiB, acceptable for a warning.</summary>
+        public static readonly ConfigKey.IntKey VolumeFreeWarnPercent = new("disk.volumeFreeWarnPercent", 1, 90) { Trust = KeyTrust.Display };
+
+        /// <summary>E19.S1: <c>disk.volumeFree</c> is critical when a judged volume has less than this share free. Default 3 — a STARTING
+        /// VALUE, not measured. Held below the warn share by <see cref="NumberRules"/>.</summary>
+        public static readonly ConfigKey.IntKey VolumeFreeCriticalPercent = new("disk.volumeFreeCriticalPercent", 1, 90) { Trust = KeyTrust.Display };
+
+        /// <summary>E19.S1: a lettered volume smaller than this many GiB is NOT judged by <c>disk.volumeFree</c> — the keyboard's 29.7 MiB
+        /// USB stick (D1) must never warn. Default 8 — a STARTING VALUE: well above that stick, below any system or data volume.
+        /// Held at or below <see cref="VolumeFreeAbsoluteMinSizeGib"/> by <see cref="NumberRules"/>.</summary>
+        public static readonly ConfigKey.IntKey VolumeFreeMinSizeGib = new("disk.volumeFreeMinSizeGib", 1, 1024) { Trust = KeyTrust.Display };
+
+        /// <summary>E19.S1: the GiB floors apply only to a volume of at least this many GiB; a smaller one is judged by percent alone (a 16
+        /// GiB volume with 12 GiB free would otherwise warn for ever, and a 9 GiB one be critical for ever, whatever it holds). Default
+        /// 100 — a STARTING VALUE.</summary>
+        public static readonly ConfigKey.IntKey VolumeFreeAbsoluteMinSizeGib = new("disk.volumeFreeAbsoluteMinSizeGib", 8, 10240) { Trust = KeyTrust.Display };
+
+        /// <summary>At most this many letters in <see cref="VolumeFreeIgnoreLetters"/> — one per drive letter A-Z, a schema limit, part of the
+        /// contract other tools write against (<c>contracts/config-keys.json</c>).</summary>
+        public const int MaxIgnoredLetters = 26;
+
+        /// <summary>E19.S1: drive letters <c>disk.volumeFree</c> does NOT judge (a backup disk that is meant to be full) — each one capital
+        /// letter A-Z. Default none. A user key: it only quiets a warning, it changes no action; the verdict's reason still names an ignored
+        /// volume.</summary>
+        public static readonly ConfigKey.TextListKey VolumeFreeIgnoreLetters = new(
+            "disk.volumeFreeIgnoreLetters",
+            [],
+            new TextRule.Matching("^[A-Z]$", "a drive letter A-Z"),
+            MaxIgnoredLetters)
+        { Trust = KeyTrust.Display };
     }
 }

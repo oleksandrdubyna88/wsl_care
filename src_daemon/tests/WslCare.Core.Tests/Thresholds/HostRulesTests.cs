@@ -189,7 +189,9 @@ public sealed class HostRulesTests : IDisposable
             config);
 
         var ids = verdicts.Select(v => v.Id).ToList();
-        ids.IndexOf("host.commit").Should().Be(ids.IndexOf("disk.hostFree") + 1);
+        // E19.S1: disk.volumeFree is the last disk verdict, right behind disk.hostFree; the host.* verdicts follow it.
+        ids.IndexOf("disk.volumeFree").Should().Be(ids.IndexOf("disk.hostFree") + 1);
+        ids.IndexOf("host.commit").Should().Be(ids.IndexOf("disk.volumeFree") + 1);
         verdicts.Single(v => v.Id == "host.commit").Should().Match<Verdict>(v => v.Level == Level.Ok && v.Value == "103.4 of 145.6 GiB = 71.0 %");
         verdicts.Single(v => v.Id == "host.compression").Should().Match<Verdict>(v => v.Level == Level.Warn && v.Value == "9.86 GiB");
         ids.Should().NotContain("host.vmmem", "the full run does not read vmmem, so it judges none");

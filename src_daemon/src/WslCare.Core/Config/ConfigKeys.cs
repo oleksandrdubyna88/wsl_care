@@ -144,6 +144,7 @@ public static partial class ConfigKeys
         AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
         McpServers.Watched, McpServers.Programs,
         Systemd.IgnoredFailedUnits,
+        Disk.VolumeFreeIgnoreLetters,
         Archive.OlderThanDays, Archive.WindowsIdleDays, Archive.ClockSkewMinutes, Archive.BaseFolder, Archive.Agents,
         Idle.CpuPercent, Idle.Minutes,
         Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,
