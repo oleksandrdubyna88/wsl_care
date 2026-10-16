@@ -1,4 +1,5 @@
 using WslCare.Core.Config;
+using WslCare.Core.Processes.Redaction;
 using System.Globalization;
 using System.Text;
 
@@ -95,10 +96,6 @@ public static class CommandLineText
     /// <summary>The plan's limit on a shown command line (§4.2).</summary>
     public static int ShownLength => Tuning.Current.Int(ConfigKeys.Processes.ShownCommandChars);
 
-    private const string Redacted = "<redacted>";
-
-    private static readonly string[] SecretWords = ["token", "secret", "password", "passwd", "apikey", "api-key", "api_key", "credential"];
-
     /// <summary>The program and the word after it, as FILE NAMES (<c>.exe</c> stripped) — what an agent or an interpreter-run script
     /// is recognised by (plan §15q E7.S2d C-2). Taken from the RAW argv: the shown line is redacted and cut, and splitting it on
     /// spaces loses a program whose path holds one.</summary>
@@ -122,31 +119,15 @@ public static class CommandLineText
     public static IReadOnlyList<string> Arguments(ReadOnlySpan<byte> cmdline) =>
         Encoding.UTF8.GetString(cmdline).Split('\0').SkipLast(cmdline.Length > 0 && cmdline[^1] == 0 ? 1 : 0).ToList();
 
-    /// <summary>The argv as one line: secret-looking values redacted, then cut to <see cref="ShownLength"/>.</summary>
-    public static string Shown(IReadOnlyList<string> argv)
-    {
-        var line = string.Join(' ', Redact(argv));
-        return line.Length <= ShownLength ? line : line[..ShownLength];
-    }
+    /// <summary>The limits of the one redaction rule, read from the keys in force: the entropy floor, the longest argument judged, the
+    /// cut of a shown line (E15.S7). The rule itself reads no configuration; this is where its arguments come from.</summary>
+    public static RedactionLimits Limits() =>
+        new(Tuning.Current.Int(ConfigKeys.Processes.SecretMinChars), Tuning.Current.Int(ConfigKeys.Processes.MaxJudgedArgChars), ShownLength);
 
-    /// <summary><c>--name=value</c> and <c>--name value</c> where the name holds a secret word lose the value.</summary>
-    public static IReadOnlyList<string> Redact(IReadOnlyList<string> argv) =>
-        [.. argv.Select((arg, i) => RedactOne(arg, i > 0 ? argv[i - 1] : string.Empty))];
+    /// <summary>The argv as one line: redacted by <see cref="CommandLineRedaction"/>, then cut to <see cref="ShownLength"/> (E15.S7: the
+    /// one rule every road R1–R4 of the design's inventory reaches through here).</summary>
+    public static string Shown(IReadOnlyList<string> argv) => CommandLineRedaction.Shown(argv, Limits());
 
-    private static string RedactOne(string argument, string previous) =>
-        IsSecretAssignment(argument) ? argument[..(argument.IndexOf('=') + 1)] + Redacted
-        : IsSecretFlag(previous) ? Redacted
-        : argument;
-
-    private static bool IsSecretAssignment(string argument)
-    {
-        var equals = argument.IndexOf('=');
-        return argument.StartsWith('-') && equals > 0 && NamesASecret(argument[..equals]);
-    }
-
-    private static bool IsSecretFlag(string argument) =>
-        argument.StartsWith('-') && !argument.Contains('=') && NamesASecret(argument);
-
-    private static bool NamesASecret(string name) =>
-        SecretWords.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase));
+    /// <summary>The arguments after the one rule (a delegation: <see cref="CommandLineRedaction.Redact"/>).</summary>
+    public static IReadOnlyList<string> Redact(IReadOnlyList<string> argv) => CommandLineRedaction.Redact(argv, Limits());
 }

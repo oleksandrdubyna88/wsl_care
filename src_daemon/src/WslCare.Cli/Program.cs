@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Diagnostics;
 
 using Serilog;
@@ -170,6 +171,6 @@ internal static class Program
         }
 
         // At Information on purpose: a run log that holds no line is a file nobody can read anything from.
-        log.Information("{Request}: wsl-care {Argv}", request.GetType().Name, string.Join(' ', args.Select(CommandLine.Printable)));
+        log.Information("{Request}: wsl-care {Argv}", request.GetType().Name, string.Join(' ', args.Select(ShownText.Printable)));
     }
 }

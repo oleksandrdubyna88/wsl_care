@@ -227,8 +227,8 @@ public sealed class CommandLineRedactionTests
     {
         { ["creds", "config", ConfigKey], ConfigKey },
         { ["env", "GITHUB_TOKEN=" + GitHubToken, "x"], GitHubToken },
-        { ["tool", "--password", "Inv3ntedPassword9"], "Inv3ntedPassword9" },
-        { ["tool", "--password=Inv3ntedPassword9"], "Inv3ntedPassword9" },
+        { ["tool", "--password", "Inv3ntedHunter9"], "Inv3ntedHunter9" },
+        { ["tool", "--password=Inv3ntedHunter9"], "Inv3ntedHunter9" },
         { ["tool", Blob48], Blob48 },
         { ["tool", Hex40], Hex40 },
         { ["curl", "-u", "alice:Pa55w0rdInvented"], "Pa55w0rdInvented" },
@@ -278,7 +278,7 @@ public sealed class CommandLineRedactionTests
 
         shown.Should().Be("a ", "the pair does not fit: it is left out whole");
         FluentActions.Invoking(() => new UTF8Encoding(false, true).GetBytes(shown)).Should().NotThrow("an unpaired surrogate would not encode");
-        JsonSerializer.Serialize(shown).Should().Be("\"a \"");
+        JsonEncodedText.Encode(shown).Value.Should().Be("a ", "the JSON encoder refuses an unpaired surrogate, so a status answer can never carry one");
     }
 
     // 18 ------------------------------------------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 namespace WslCare.Cli;
 
 /// <summary>
@@ -6,7 +7,7 @@ namespace WslCare.Cli;
 /// the extension parses stdout.
 /// </summary>
 /// <remarks>The ONE road to a stream (the console sink is the one road for log lines): every stderr
-/// message passes through <see cref="Message"/>, which applies <see cref="CommandLine.Printable"/>, so
+/// message passes through <see cref="Message"/>, which applies <see cref="ShownText.Printable"/>, so
 /// no message — whatever it quotes, typed or read from a file or a path — can carry a newline, a
 /// carriage return or an escape sequence that would split or repaint it. <c>OutputRoadTests</c> fails
 /// the build on a stream write anywhere else in the CLI.</remarks>
@@ -50,5 +51,5 @@ internal static class Output
         return (int)ExitCode.Interrupted;
     }
 
-    private static string Message(string text) => $"{CommandLine.BinaryName}: {CommandLine.Printable(text)}";
+    private static string Message(string text) => $"{CommandLine.BinaryName}: {ShownText.Printable(text)}";
 }

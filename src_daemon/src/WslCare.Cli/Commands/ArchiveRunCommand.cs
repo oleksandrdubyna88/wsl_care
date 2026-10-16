@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Text;
 using System.Text.Json;
 
@@ -106,15 +107,15 @@ internal static class ArchiveRunCommand
 
     private static string RenderRestore(ArchiveRunReport report)
     {
-        var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive restore {report.RunId} ({report.SideFolder}): {report.Outcome}{(report.Stop.Length > 0 ? " - " + report.Stop : string.Empty)}; restored {report.Restore.Restored}, already there {report.Restore.AlreadyThere}, refused {report.Restore.Refused}"));
+        var text = new StringBuilder().AppendLine(ShownText.Printable($"wsl-care archive restore {report.RunId} ({report.SideFolder}): {report.Outcome}{(report.Stop.Length > 0 ? " - " + report.Stop : string.Empty)}; restored {report.Restore.Restored}, already there {report.Restore.AlreadyThere}, refused {report.Restore.Refused}"));
         foreach (var session in report.Restore.Sessions)
         {
-            text.AppendLine(CommandLine.Printable($"  {session.Outcome,-13} {session.Agent} {session.Key} ({session.EntryId}): {session.Note}"));
+            text.AppendLine(ShownText.Printable($"  {session.Outcome,-13} {session.Agent} {session.Key} ({session.EntryId}): {session.Note}"));
         }
 
         foreach (var note in report.Reconcile.Notes)
         {
-            text.AppendLine(CommandLine.Printable("  " + note));
+            text.AppendLine(ShownText.Printable("  " + note));
         }
 
         return text.ToString().TrimEnd();
@@ -122,15 +123,15 @@ internal static class ArchiveRunCommand
 
     private static string RenderList(ArchiveListReport report)
     {
-        var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive list ({report.SideFolder}): {report.Outcome}{(report.Note.Length > 0 ? " - " + report.Note : string.Empty)}; {report.Entries.Count} entries, {report.SkippedLines} index lines skipped"));
+        var text = new StringBuilder().AppendLine(ShownText.Printable($"wsl-care archive list ({report.SideFolder}): {report.Outcome}{(report.Note.Length > 0 ? " - " + report.Note : string.Empty)}; {report.Entries.Count} entries, {report.SkippedLines} index lines skipped"));
         foreach (var entry in report.Entries)
         {
-            text.AppendLine(CommandLine.Printable(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {entry.EntryId} {entry.Agent,-12} {entry.Month} {entry.Status,-13}{(entry.Verified ? string.Empty : " UNVERIFIED")} {entry.Files} file(s), {entry.Bytes} bytes  {entry.Key}")));
+            text.AppendLine(ShownText.Printable(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {entry.EntryId} {entry.Agent,-12} {entry.Month} {entry.Status,-13}{(entry.Verified ? string.Empty : " UNVERIFIED")} {entry.Files} file(s), {entry.Bytes} bytes  {entry.Key}")));
         }
 
         foreach (var note in report.Notes)
         {
-            text.AppendLine(CommandLine.Printable("  " + note));
+            text.AppendLine(ShownText.Printable("  " + note));
         }
 
         return text.ToString().TrimEnd();
@@ -193,20 +194,20 @@ internal static class ArchiveRunCommand
 
     private static string Render(ArchiveRunReport report)
     {
-        var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive run {report.RunId} ({report.SideFolder}): {report.Outcome}{(report.Stop.Length > 0 ? " — " + report.Stop : string.Empty)}"));
+        var text = new StringBuilder().AppendLine(ShownText.Printable($"wsl-care archive run {report.RunId} ({report.SideFolder}): {report.Outcome}{(report.Stop.Length > 0 ? " — " + report.Stop : string.Empty)}"));
         foreach (var agent in report.Agents)
         {
-            text.AppendLine(CommandLine.Printable(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {agent.Id,-14} copied {agent.Copied} ({agent.CopiedBytes / 1048576.0:0.0} MiB), removed {agent.Removed}, waiting {agent.Waiting}, gone {agent.GoneAtSource}, superseded {agent.Superseded}, damaged {agent.Damaged}")));
+            text.AppendLine(ShownText.Printable(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {agent.Id,-14} copied {agent.Copied} ({agent.CopiedBytes / 1048576.0:0.0} MiB), removed {agent.Removed}, waiting {agent.Waiting}, gone {agent.GoneAtSource}, superseded {agent.Superseded}, damaged {agent.Damaged}")));
         }
 
         if (report.Scan.SideFolders > 0)
         {
-            text.AppendLine(CommandLine.Printable($"  scan: {report.Scan.SideFolders} side folders, {report.Scan.Files} files, {report.Scan.Recovered} re-indexed as recovered"));
+            text.AppendLine(ShownText.Printable($"  scan: {report.Scan.SideFolders} side folders, {report.Scan.Files} files, {report.Scan.Recovered} re-indexed as recovered"));
         }
 
         foreach (var note in report.Reconcile.Notes)
         {
-            text.AppendLine(CommandLine.Printable($"  note: {note}"));
+            text.AppendLine(ShownText.Printable($"  note: {note}"));
         }
 
         return text.ToString().TrimEnd('\r', '\n');
@@ -214,15 +215,15 @@ internal static class ArchiveRunCommand
 
     internal static string RenderStatus(ArchiveStatusReport report)
     {
-        var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive status ({report.SideFolder}): lock {report.Lock.State}{(report.Lock.Pid > 0 ? $" (pid {report.Lock.Pid}, run {report.Lock.RunId})" : string.Empty)}; {report.Inflight.Count} on the way"));
+        var text = new StringBuilder().AppendLine(ShownText.Printable($"wsl-care archive status ({report.SideFolder}): lock {report.Lock.State}{(report.Lock.Pid > 0 ? $" (pid {report.Lock.Pid}, run {report.Lock.RunId})" : string.Empty)}; {report.Inflight.Count} on the way"));
         foreach (var entry in report.Inflight)
         {
-            text.AppendLine(CommandLine.Printable($"  {entry.State,-9} {entry.Agent} {entry.Key} ({entry.Files} file(s), {entry.Month})"));
+            text.AppendLine(ShownText.Printable($"  {entry.State,-9} {entry.Agent} {entry.Key} ({entry.Files} file(s), {entry.Month})"));
         }
 
         if (report.LastRun is { } last)
         {
-            text.AppendLine(CommandLine.Printable($"  last run {last.RunId}: {last.Outcome}, copied {last.Copied}, removed {last.Removed}"));
+            text.AppendLine(ShownText.Printable($"  last run {last.RunId}: {last.Outcome}, copied {last.Copied}, removed {last.Removed}"));
         }
 
         return text.ToString().TrimEnd('\r', '\n');
