@@ -8,6 +8,7 @@ import { followPollOf, FOLLOW_POLL } from '../cleanup/runFollower';
 import { parseLogsMessage } from '../logsPage/logsMessages';
 import { DEFAULT_NUMBERS, NUMBER_NAMES, NUMBER_SETTINGS, numberOf, readNumbers } from '../settings/numbers';
 import { WSL_LIST_MEASURED_S } from '../client/worstCases';
+import { TASKS_DEFAULT_TIMEOUT_MS } from '../client/verbs';
 import { MapStore } from './support/memento';
 import { EXTENSION_ROOT } from './support/paths';
 
@@ -84,4 +85,15 @@ test('§15p: the wsl.exe questions\' ceiling has a minimum above their measured 
   assert.ok(NUMBER_SETTINGS.wslListSeconds.minimum > WSL_LIST_MEASURED_S);
   assert.equal(NUMBER_SETTINGS.wslListSeconds.minimum, WSL_LIST_MEASURED_S * 100);
   assert.equal(NUMBER_SETTINGS.wslListSeconds.default, 15, 'today\'s 15 s');
+});
+
+// ---- WR-E2 (PLAN_windows_runner.md §3.6): the Windows tasks' read ----
+
+test('WR-E2: `tasks render` has its ceiling as a setting (60 s, 10–600), and the Task Scheduler read keeps the guard\'s — whose description now says it reads every task', () => {
+  const stage = NUMBER_SETTINGS.windowsTasksStageSeconds;
+  assert.deepEqual([stage.key, stage.default, stage.minimum, stage.maximum], ['timeouts.windowsTasksStageSeconds', 60, 10, 600]);
+  assert.equal(stage.default * 1000, TASKS_DEFAULT_TIMEOUT_MS, 'the client\'s default is the setting\'s default');
+  assert.match(stage.description, /tasks render/);
+  assert.match(NUMBER_SETTINGS.windowsTimeGuardQuerySeconds.description, /every task under \\wsl-care/, 'the one read is bounded by this setting, and says so');
+  assert.equal(NUMBER_NAMES.some((name) => /windowsTasksQuery/.test(name)), false, 'no second ceiling for the one read');
 });
