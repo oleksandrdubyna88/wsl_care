@@ -1595,9 +1595,21 @@ inside — the limits arrive as arguments, as `HostRules` takes `EffectiveConfig
   quoted run, a trailing backslash, an empty argument, a quoted argv[0] with a space) (plan round, finding 0).
   **The Windows guarantee is stated, not assumed** (plan round, finding 4): the rule judges arguments as `CommandLineToArgvW`
   splits them. A program that parses its raw line differently (`--auth:'secret value'`) can carry a value the split does not
-  isolate, so a raw-line BACKSTOP runs after `Shown(Split(line))`: when the raw line holds a secret word followed by a separator
-  (`:`, `=`, whitespace, a quote) and the text after it survives in the shown result, the whole shown line becomes `<redacted>`.
-  A RED test uses a line with non-`CommandLineToArgvW` quoting. Then the Windows side calls the SAME `CommandLineRedaction.Shown(Split(line))`.
+  isolate, so a raw-line BACKSTOP runs after the rule (judge's review, 2026-10-16 — the exact definition):
+  1. Find every match, in the RAW line, of a secret word (§2.2) followed directly by a separator: `:`, `=`, or one run of
+     whitespace.
+  2. Its VALUE SPAN starts after the separator. When the span's first character is a quote that `CommandLineToArgvW` does NOT
+     honour (`'` or a backtick), the span runs to the matching closing quote (or the end of the line when there is none);
+     otherwise it runs to the next whitespace that is outside a double-quoted run, exactly as `Split` would end the argument.
+  3. Split the span on whitespace into words, each with any surrounding `'`, `"` or backtick removed; empty words are dropped.
+  4. The backstop FIRES when any of those words EQUALS a whole argument of the redacted result (`Redact(Split(line))`), compared
+     as whole strings, ordinal — never a substring test. Then the whole shown line becomes `<redacted>`.
+  So `prog.exe --auth:'my secret value'` fires (the span is `'my secret value'`; `secret` and `value'`→`value` survive as whole
+  arguments — `value'` compared after the same quote strip on the argument side), while `claude.exe --resume=<guid> …
+  --max-thinking-tokens 0` does NOT (the span is `0`, which is no whole argument of the result: `<redacted>` took its place, and
+  the `0` inside the GUID is a substring, not an argument). RED tests: the non-`CommandLineToArgvW` quoting line; the GUID line
+  (a redacted value whose text also occurs inside a shown argument does not fire); `tool.exe --token abc --port 5` does not fire.
+  The Windows side then calls the SAME `CommandLineRedaction.Shown(Split(line))` and applies the backstop to its result.
   E15.S6 is its first wire consumer; E9.S5's matcher (R5) keeps matching the raw line, it shows nothing.
 
 **2.1 Order of judgement, per argument** (`Judge(argument, previous)` — a `switch`, the first arm that fires decides; nothing is
@@ -1608,11 +1620,15 @@ judged twice and a value is never partly redacted):
 3. The argument is `name=value` (with or without leading dashes; the name is the text before the first `=`, non-empty, of
    `[A-Za-z0-9_.-]`, so `a==b` and `=x` are not assignments) → the name holds a secret word → `name=<redacted>`; else the VALUE is
    judged by arms 4–8 as if it were a positional, and a value that fails gives `name=<redacted>` — never `name=abc<redacted>`.
-4. A creds shape anywhere in the text (§2.3) → `<redacted>`.
-5. A URL (`^[a-z][a-z0-9+.-]{1,15}://`) → its userinfo, when present, becomes `<redacted>` whole (`scheme://<redacted>@host/…`
-   — the user name goes too); each query parameter whose name holds a secret word, or is `sig`, `signature`, `key`, `code`,
-   `auth`, `access_token` → `name=<redacted>`; the rest of the URL is shown. (A URL is judged here, before the path arm: it holds
-   `/`.)
+4. A URL (`^[a-z][a-z0-9+.-]{1,15}://`) — judged FIRST among the shape arms (judge's review, 2026-10-16: the tests' and the
+   design's order disagreed; a URL is the one token whose credential can be cut out cleanly). Its userinfo, when present,
+   becomes `<redacted>` whole (`scheme://<redacted>@host/…` — the user name goes too); each query parameter whose name holds a
+   secret word, or is `sig`, `signature`, `key`, `code`, `auth`, `access_token` → `name=<redacted>`. Then the creds-shape test
+   (arm 5) runs over what REMAINS of the URL (scheme, host, port, path, the query's names and kept values): a hit there makes the
+   whole token `<redacted>` (a `ghp_…` in a path segment). Otherwise the rest of the URL is shown. (A URL is judged before the
+   path arm: it holds `/`.) So `https://alice:ghp_…@host/o/r` → `https://<redacted>@host/o/r`, and `https://host/ghp_…/a.tgz` →
+   `<redacted>`.
+5. A creds shape anywhere in the text (§2.3) → `<redacted>`.
 6. A PATH → shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
    letters and digits of ANY script (`\p{L}`, `\p{N}`) plus space and `._~+@%:/\-()[],'&` (so `C:\Program Files (x86)\…`,
    `/mnt/c/Users/Фёдор Иванов/…` and `D:\dev\a&b` are paths; `/TelemetrySession:{"CollectorApiKey":…}` is NOT — it holds `{`
@@ -1857,7 +1873,7 @@ Definition of Done:
 - **Passphrases of words** (`correct-horse-battery-staple`): two classes, low entropy — shown.
 - **Bare hex digests are lost** (a container id, a commit) — the price of redacting every bare hex token; inside a path they stay.
 - **A secret as a file name or a path component** (`/tmp/ghp_…`): arm 6 shows paths — unless the component is creds-shaped
-  (arm 4 runs before arm 6, so `/tmp/ghp_abc…` IS redacted whole; a plain-looking name is not).
+  (arm 5 runs before arm 6, so `/tmp/ghp_abc…` IS redacted whole; a plain-looking name is not).
 - **A secret split across two positionals**, or one whose flag is in another language's spelling (`--contraseña`), is shown.
 - **The process name and the cwd** (`ProcessReport.Name`, `.Cwd`) are not judged: a cwd names folders, not credentials; a process
   named after a secret is a residual.
