@@ -1,0 +1,138 @@
+import { TASK_NAMES, type TaskName } from '../client/verbs';
+import type { RenderAnswer, RenderResult } from '../client/windowsTasks';
+import { summariesMatch } from '../windowsTime/guardState';
+import { taskOf, type LastRun, type SchedulerRead, type TaskRead } from './schedulerAnswer';
+
+/**
+ * The Windows tasks' part of the panel, as ONE pure state (WR-E2 of PLAN_windows_runner.md §3.8): what Task Scheduler's ONE read
+ * says about each of the two tasks (`schedulerAnswer.ts`), what the daemon's staged copy says about what this version would
+ * install (`tasks render <task>`, run on the staged copy by `tasksHost.ts`), and the copy's own state — joined into the plan's D5
+ * rows. The truth is Task Scheduler's and the daemon's, re-read on every panel open and refresh; nothing here is a flag a window
+ * holds (`common.durable-status`). Nothing is spelt for a person here: `tasksView.ts` does that.
+ *
+ * Precedence of a registered task's row: unreadable (its own read failed — its neighbours are untouched), disabled, running, then
+ * its comparison with the staged copy ("install again to update"), then its last run.
+ */
+
+/** The staged copy of the bundled exe, as the panel's last probe found it. */
+export type CopyState =
+  /** Not Windows (or the extension is not on a local disk): the part says nothing at all. */
+  | { readonly kind: 'unavailable' }
+  /** Not probed yet. */
+  | { readonly kind: 'checking' }
+  /** The bundled exe's digest could not be computed, so no staged copy can even be named. */
+  | { readonly kind: 'digestUnreadable'; readonly reason: string }
+  /** `tasks render` on the staged copy found no such file: nothing is staged for this version. */
+  | { readonly kind: 'notStaged'; readonly digest: string }
+  /** The copy is there (or may be) but did not answer `tasks render` — a timeout, a blocked start, a refusal — with the reason. */
+  | { readonly kind: 'unreadable'; readonly digest: string; readonly reason: string }
+  /** `tasks render` answered on the staged copy: its answer per task asked (the second is not asked when the first found no copy). */
+  | { readonly kind: 'staged'; readonly digest: string; readonly renders: Readonly<Partial<Record<TaskName, RenderResult>>> };
+
+export const NOT_PROBED: CopyState = { kind: 'checking' };
+
+export type TaskRow =
+  | { readonly kind: 'checking' }
+  /** The read gave no answer at all: why, and the ceiling when it was a timeout. */
+  | { readonly kind: 'unknown'; readonly reason: string; readonly timeoutMs?: number }
+  | { readonly kind: 'notInstalled' }
+  | { readonly kind: 'unreadable'; readonly reason: string }
+  | { readonly kind: 'disabled' }
+  | { readonly kind: 'running' }
+  /** Registered, but not as this version would register it — or not comparable: `differs`, `notStaged`, `cannotCompare` (with why). */
+  | { readonly kind: 'updateNeeded'; readonly why: 'differs' | 'notStaged' | 'cannotCompare'; readonly detail: string }
+  | { readonly kind: 'installed'; readonly lastRun: LastRun };
+
+export interface WindowsTasksState {
+  readonly copy: CopyState;
+  readonly tasks: Readonly<Record<TaskName, TaskRow>>;
+  /** The Windows dry state's sentence from a render that answered ('' when none did). */
+  readonly dry: string;
+}
+
+const CHECKING: TaskRow = { kind: 'checking' };
+
+function allTasks(row: (name: TaskName) => TaskRow): Readonly<Record<TaskName, TaskRow>> {
+  return Object.fromEntries(TASK_NAMES.map((name) => [name, row(name)])) as Record<TaskName, TaskRow>;
+}
+
+/** The render's answer when the daemon gave one — registrable or not; every other ending is a gap. */
+function answerOf(render: RenderResult | undefined): RenderAnswer | undefined {
+  return render !== undefined && (render.kind === 'registrable' || render.kind === 'notRegistrable') ? render.answer : undefined;
+}
+
+/** Why a render gave no summary to compare with. */
+function gapOf(render: RenderResult | undefined): string {
+  return render === undefined || render.kind === 'registrable' || render.kind === 'notRegistrable' ? 'its render was not asked' : render.reason;
+}
+
+function stagedRow(task: Extract<TaskRead, { kind: 'present' }>, render: RenderResult | undefined): TaskRow {
+  const answer = answerOf(render);
+  if (answer === undefined) {
+    return { kind: 'updateNeeded', why: 'cannotCompare', detail: gapOf(render) };
+  }
+
+  return summariesMatch(task.summary, answer.summary)
+    ? { kind: 'installed', lastRun: task.lastRun }
+    : { kind: 'updateNeeded', why: 'differs', detail: '' };
+}
+
+/** A registered, enabled, idle task against the copy: the comparison, or why none could be made. */
+function comparedRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName, copy: CopyState): TaskRow {
+  switch (copy.kind) {
+    case 'staged':
+      return stagedRow(task, copy.renders[name]);
+    case 'notStaged':
+      return { kind: 'updateNeeded', why: 'notStaged', detail: '' };
+    case 'unreadable':
+      return { kind: 'updateNeeded', why: 'cannotCompare', detail: copy.reason };
+    case 'digestUnreadable':
+      return { kind: 'updateNeeded', why: 'cannotCompare', detail: copy.reason };
+    default:
+      return { kind: 'updateNeeded', why: 'cannotCompare', detail: 'this version\'s copy is still being checked' };
+  }
+}
+
+function presentRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName, copy: CopyState): TaskRow {
+  if (!task.enabled) {
+    return { kind: 'disabled' };
+  }
+
+  return task.running ? { kind: 'running' } : comparedRow(task, name, copy);
+}
+
+function rowOf(read: Extract<SchedulerRead, { kind: 'read' }>, name: TaskName, copy: CopyState): TaskRow {
+  const task = taskOf(read, name);
+  switch (task.kind) {
+    case 'absent':
+      return { kind: 'notInstalled' };
+    case 'unreadable':
+      return { kind: 'unreadable', reason: task.reason };
+    default:
+      return presentRow(task, name, copy);
+  }
+}
+
+function unknownRow(read: Extract<SchedulerRead, { kind: 'unknown' }>): TaskRow {
+  if (read.cause === 'checking') {
+    return CHECKING;
+  }
+
+  return read.timeoutMs === undefined ? { kind: 'unknown', reason: read.reason } : { kind: 'unknown', reason: read.reason, timeoutMs: read.timeoutMs };
+}
+
+/** The dry state's sentence of the first render that answered on a staged copy. */
+function dryOf(copy: CopyState): string {
+  if (copy.kind !== 'staged') {
+    return '';
+  }
+
+  return TASK_NAMES.map((name) => answerOf(copy.renders[name])?.dry.reason).find((reason) => reason !== undefined && reason !== '') ?? '';
+}
+
+/** The Task Scheduler read and the copy's probe, as the part's state. */
+export function windowsTasksState(read: SchedulerRead, copy: CopyState): WindowsTasksState {
+  const tasks = read.kind === 'unknown' ? allTasks(() => unknownRow(read)) : allTasks((name) => rowOf(read, name, copy));
+
+  return { copy, tasks, dry: dryOf(copy) };
+}

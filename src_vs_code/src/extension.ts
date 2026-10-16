@@ -33,6 +33,7 @@ import { fileInfoOf } from './powershell/elevatedEngine';
 import { EngineHost } from './powershell/engineHost';
 import { engineQueryFor, newEngineRecorder, type EngineRecorder } from './powershell/engineRecorder';
 import { SchedulerHost } from './windowsTasks/schedulerHost';
+import { TasksHost } from './windowsTasks/tasksHost';
 import { WindowsTimeGuardHost, type GuardUi } from './windowsTime/guardHost';
 import { sweepPending } from './windowsTime/guardPending';
 import type { GuardOptions } from './windowsTime/guardTask';
@@ -116,6 +117,8 @@ interface Parts {
   readonly guard: WindowsTimeGuardHost;
   /** The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2) — the guard's and the Windows tasks' part alike. */
   readonly scheduler: SchedulerHost;
+  /** WR-E2: the Windows tasks' part of the panel — the shared Task Scheduler read plus the staged copy's probe (read only). */
+  readonly tasks: TasksHost;
   /** Which PowerShell runs the Windows Time runs elevated (PLAN_pwsh_engine_windows_time.md §11 R3). */
   readonly engine: EngineHost;
   readonly engineRecorder: EngineRecorder;
@@ -176,6 +179,7 @@ function build(context: vscode.ExtensionContext): Parts {
   return {
     testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, scheduler, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
     bundled: new BundledHost({ version: () => windowsClient.version(), pin: BUNDLED_DAEMON }),
+    tasks: tasksHostOf(scheduler, windowsClient),
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
 }
@@ -204,17 +208,28 @@ function pollerOf(client: WslCareClient, windowsClient: WindowsCareClient, store
 }
 
 /**
- * ONE client of the bundled exe, shared by the panel's Windows row (`--version`) and the poller (`status`, E19.S2b); the `status` ceiling is
- * the `windowsStatus` call of `client/ceilings.ts`, read from the settings at every call.
+ * ONE client of the bundled exe, shared by the panel's Windows row (`--version`), the poller (`status`, E19.S2b) and the Windows
+ * tasks' part (WR-E2: the bundled exe's digest and `tasks render` on the staged copy); the `status` ceiling is the `windowsStatus` call
+ * of `client/ceilings.ts`, `tasks render`'s is `wslCare.timeouts.windowsTasksStageSeconds` — each read from the settings at every call.
+ * The staged copy lives under the profile's `%LOCALAPPDATA%`, which the client takes as an option and derives the folder from.
  */
 function windowsClientOf(context: vscode.ExtensionContext, runner: ReturnType<typeof clientRunner>): WindowsCareClient {
+  const localAppData = process.env.LOCALAPPDATA;
+
   return new WindowsCareClient({
     runner,
     platform: process.platform,
     extension: { scheme: context.extensionUri.scheme, fsPath: context.extensionUri.fsPath },
     timeoutMs: () => numbers().versionSeconds * 1000,
     statusTimeoutMs: () => ceilingMs(numbers(), { call: 'windowsStatus' }),
+    tasksTimeoutMs: () => numbers().windowsTasksStageSeconds * 1000,
+    ...(localAppData === undefined ? {} : { localAppData }),
   });
+}
+
+/** The Windows tasks' part (WR-E2): it consumes the ONE Task Scheduler read and probes the staged copy through the shared client. */
+function tasksHostOf(scheduler: SchedulerHost, windowsClient: WindowsCareClient): TasksHost {
+  return new TasksHost({ scheduler, client: windowsClient, pin: BUNDLED_DAEMON, formatInstant: (iso) => new Date(iso).toLocaleString() });
 }
 
 /**
@@ -333,12 +348,15 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
 }
 
 /**
- * The panel's refresh: the guard's Task Scheduler query, the panel round (`status`, `preview`, `doctor`) and, once that round's
- * `status` is in the store (its capabilities decide what is asked), the archive's two reads (E10.S1) — never more often.
+ * The panel's refresh: the Windows tasks' read — the ONE Task Scheduler query the guard's line is derived from too, plus the probe
+ * of the staged copy (WR-E2; the guard's own `refresh()` is not asked beside it: the same read would run twice) — the panel round
+ * (`status`, `preview`, `doctor`) and, once that round's `status` is in the store (its capabilities decide what is asked), the
+ * archive's two reads (E10.S1) — never more often. This is the ONE call site of the Windows tasks' read: it runs when the panel
+ * opens, becomes visible or is refreshed, and nowhere else.
  */
 function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
   return (options) => {
-    void parts.guard.refresh();
+    void parts.tasks.refresh();
     void parts.engine.refresh();
     void parts.bundled.refresh();
     void parts.gpu.host.refresh();
@@ -446,6 +464,8 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     ...extras,
     ...gpuPanelActions(parts.gpu),
     ...bundledPanelActions(parts.bundled),
+    windowsTasks: () => parts.tasks.view(),
+    onWindowsTasksChange: (listener) => parts.tasks.onChange(listener),
   });
   context.subscriptions.push(
     bar,
@@ -505,6 +525,7 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     install: () => parts.install,
     windowsTime: () => parts.windowsTime,
     windowsTimeGuard: () => parts.guard,
+    windowsTasks: () => parts.tasks,
     guardRecorder: () => parts.guardRecorder,
     gpu: () => parts.gpu.host,
     gpuRecorder: () => parts.gpu.recorder,

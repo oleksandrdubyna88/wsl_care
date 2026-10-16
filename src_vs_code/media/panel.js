@@ -359,9 +359,27 @@
     return optionalLine(row.line, { 'windows-daemon': '', level: typeof row.level === 'string' ? row.level : 'none' });
   }
 
+  // ---- WR-E2 (PLAN_windows_runner.md §3.8): the Windows tasks' lines — the staged copy's, one per task and the dry state's — as
+  // TEXT with the level the host derived; nothing at all when the host says nothing (off Windows, or before a caller derived it). ----
+
+  function windowsTasksParts(view) {
+    const part = isObject(view.windowsTasks) ? view.windowsTasks : {};
+    const copy = isObject(part.copy) ? part.copy : {};
+    if (typeof copy.line !== 'string' || copy.line === '') {
+      return [];
+    }
+    const box = element('div', undefined, { 'windows-tasks': '' });
+    box.appendChild(element('p', copy.line, { 'windows-tasks-copy': '', level: typeof copy.level === 'string' ? copy.level : 'none' }));
+    (Array.isArray(part.tasks) ? part.tasks : []).forEach(function (task) {
+      box.appendChild(element('p', String(task.line), { 'windows-task': String(task.id), level: typeof task.level === 'string' ? task.level : 'none' }));
+    });
+    optionalLine(part.dry, { 'windows-tasks-dry': '' }).forEach(function (p) { box.appendChild(p); });
+    return [box];
+  }
+
   function healthExtras(view) {
     const box = element('div', undefined, { 'health-extras': '' });
-    gpuLine(view).concat(windowsDaemonLine(view), guardParts(view)).forEach(function (part) { box.appendChild(part); });
+    gpuLine(view).concat(windowsDaemonLine(view), windowsTasksParts(view), guardParts(view)).forEach(function (part) { box.appendChild(part); });
     return box;
   }
 
