@@ -29,6 +29,7 @@ function selections(): string[][] {
 
 const FIXED: readonly [HostCall, number][] = [
   [{ call: 'status' }, WORST_CASE_S.status],
+  [{ call: 'windowsStatus' }, WORST_CASE_S.windowsStatus],
   [{ call: 'version' }, WORST_CASE_S.version],
   [{ call: 'rootCheck' }, WORST_CASE_S.version],
   [{ call: 'doctor' }, WORST_CASE_S.doctor],
@@ -64,7 +65,7 @@ for (const [name, numbers] of [['the defaults', DEFAULT_NUMBERS], ['every settin
 
 test('each ceiling setting\'s minimum is its worst case plus the stated margin — no setting can reach the worst case', () => {
   const ceilings: readonly [keyof Numbers, number][] = [
-    ['statusSeconds', WORST_CASE_S.status], ['versionSeconds', WORST_CASE_S.version], ['doctorSeconds', WORST_CASE_S.doctor],
+    ['statusSeconds', WORST_CASE_S.status], ['windowsStatusSeconds', WORST_CASE_S.windowsStatus], ['versionSeconds', WORST_CASE_S.version], ['doctorSeconds', WORST_CASE_S.doctor],
     ['previewSeconds', WORST_CASE_S.preview], ['previewPerDockerRowSeconds', DOCKER_SNAPSHOT_S], ['runReadSeconds', WORST_CASE_S.runRead],
     ['detachSeconds', WORST_CASE_S.detach], ['stopSeconds', WORST_CASE_S.stop],
   ];
@@ -111,7 +112,7 @@ for (const [name, numbers] of [['the defaults', DEFAULT_NUMBERS], ['every settin
   test(`#17: with every published limit at its MAXIMUM, each ceiling is still strictly above the daemon's worst case — ${name}`, () => {
     const dear = worstCasesOf(MAX_LIMITS);
     const fixed: readonly [HostCall, number][] = [
-      [{ call: 'status' }, dear.status], [{ call: 'version' }, dear.version], [{ call: 'rootCheck' }, dear.version], [{ call: 'doctor' }, dear.doctor],
+      [{ call: 'status' }, dear.status], [{ call: 'windowsStatus' }, dear.windowsStatus], [{ call: 'version' }, dear.version], [{ call: 'rootCheck' }, dear.version], [{ call: 'doctor' }, dear.doctor],
       [{ call: 'preview' }, dear.preview], [{ call: 'runRead' }, dear.runRead], [{ call: 'detach' }, dear.detach], [{ call: 'stop' }, dear.stop],
     ];
     for (const [call, worstS] of fixed) {
@@ -122,3 +123,14 @@ for (const [name, numbers] of [['the defaults', DEFAULT_NUMBERS], ['every settin
     }
   });
 }
+
+test('E19.S2b: the bundled exe\'s status waits one MCP CPU window and starts no child — its worst case is the distro status\'s expression, and its setting a ceiling of its own', () => {
+  // The Windows binary's status reads the Windows process table and samples each MCP server across ONE mcpServers.cpuWindowMilliseconds
+  // (WindowsMcpCollector, waiting only for an instance its ledger has no point of), reads no run logs and starts no process. The bound
+  // kept is the distro status's — window plus listing — so the figure holds should the Windows side ever list logs too.
+  assert.equal(worstCasesOf(FALLBACK_LIMITS).windowsStatus, worstCasesOf(FALLBACK_LIMITS).status);
+  assert.equal(worstCasesOf(MAX_LIMITS).windowsStatus, (5000 + 5000) / 1000);
+  assert.equal(NUMBER_SETTINGS.windowsStatusSeconds.key, 'timeouts.windowsStatusSeconds');
+  assert.equal(ceilingMs({ ...DEFAULT_NUMBERS, windowsStatusSeconds: 33, statusSeconds: 20 }, { call: 'windowsStatus' }), 33_000, 'it follows its own setting, never the distro\'s');
+  assert.equal(ceilingMs({ ...DEFAULT_NUMBERS, windowsStatusSeconds: 33, statusSeconds: 44 }, { call: 'status' }), 44_000, 'and the distro\'s call never follows the Windows setting');
+});

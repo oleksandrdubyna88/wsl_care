@@ -186,6 +186,14 @@
           "scope": "application",
           "markdownDescription": "How long `status --json` may take before `wsl.exe` is stopped and the call reads \"timed out\", in seconds."
         },
+        "wslCare.timeouts.windowsStatusSeconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 12,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long `status --json` of the bundled Windows daemon may take before it is stopped and the reading reads \"timed out\", in seconds — it waits one MCP CPU window and starts no process."
+        },
         "wslCare.timeouts.versionSeconds": {
           "type": "integer",
           "default": 20,

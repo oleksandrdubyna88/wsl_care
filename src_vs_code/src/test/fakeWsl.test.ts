@@ -724,7 +724,7 @@ const BUNDLED_EXE_PATH = 'C:\\Users\\u\\.vscode\\extensions\\pub.ai-os-care-0.5.
 test('E7.S5a: WindowsCareClient through the Test-mode seam — the fake answers --version for EXACTLY the bundled path and records it', async () => {
   const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_PATH, bundledVersion: '0.4.0+0123456789abcdef0123456789abcdef01234567' });
   try {
-    const read = await new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: BUNDLED_EXTENSION, timeoutMs: () => 20_000 }).version();
+    const read = await new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: BUNDLED_EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000 }).version();
     assert.deepEqual(read, { kind: 'version', text: '0.4.0+0123456789abcdef0123456789abcdef01234567' });
     assert.deepEqual(world.files(), [BUNDLED_EXE_PATH], 'the exact absolute path the client started');
     assert.deepEqual(world.calls(), ['--version']);
@@ -733,13 +733,34 @@ test('E7.S5a: WindowsCareClient through the Test-mode seam — the fake answers 
   }
 });
 
-test('E7.S5a: the fake refuses any other argv to the bundled exe, and any other exe path stays refused', async () => {
+test('E7.S5a / E19.S2b: the fake refuses any other argv to the bundled exe (status --json and --version are the two it answers), and any other exe path stays refused', async () => {
   const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_PATH });
   try {
-    const other = await world.runner({ file: BUNDLED_EXE_PATH, args: ['status', '--json'], timeoutMs: 20_000 });
-    assert.equal(other.kind === 'exited' && other.code, FAKE_EXIT.refused);
+    for (const args of [['preview', '--all', '--json'], ['doctor', '--json'], ['status'], ['status', '--json', '--detail'], ['--version', 'x'], ['runs', '--json']]) {
+      const other = await world.runner({ file: BUNDLED_EXE_PATH, args, timeoutMs: 20_000 });
+      assert.equal(other.kind === 'exited' && other.code, FAKE_EXIT.refused, args.join(' '));
+    }
     const elsewhere = await world.runner({ file: 'C:\\Users\\u\\Downloads\\wsl-care.exe', args: ['--version'], timeoutMs: 20_000 });
     assert.equal(elsewhere.kind === 'exited' && elsewhere.code, FAKE_EXIT.wrongFile, 'an exe from anywhere else is no launcher the client has');
+  } finally {
+    world.dispose();
+  }
+});
+
+test('E19.S2b: the fake answers the bundled exe\'s status --json from the distro golden with the side named — and scripts an exit', async () => {
+  const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_PATH });
+  try {
+    const status = await world.runner({ file: BUNDLED_EXE_PATH, args: ['status', '--json'], timeoutMs: 20_000 });
+    assert.equal(status.kind === 'exited' && status.code, 0);
+    const body = JSON.parse(status.kind === 'exited' ? status.stdout.toString('utf8') : '{}') as Record<string, unknown>;
+    assert.equal(body.side, 'windows', 'no Windows golden exists: the distro\'s with the side the Windows binary reports');
+    assert.equal(body.schemaVersion, 1);
+    world.rewrite({ bundledStatusExit: { code: 70, stderr: 'wsl-care: defect\n' } });
+    const failing = await world.runner({ file: BUNDLED_EXE_PATH, args: ['status', '--json'], timeoutMs: 20_000 });
+    assert.equal(failing.kind === 'exited' && failing.code, 70);
+    assert.equal(failing.kind === 'exited' && failing.stderr.toString('utf8'), 'wsl-care: defect\n');
+    const version = await world.runner({ file: BUNDLED_EXE_PATH, args: ['--version'], timeoutMs: 20_000 });
+    assert.equal(version.kind === 'exited' && version.code, 0, 'the scripted status exit leaves --version alone');
   } finally {
     world.dispose();
   }

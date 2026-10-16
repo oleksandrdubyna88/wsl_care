@@ -2,11 +2,13 @@ import * as path from 'node:path';
 
 import type { ProcessResult, Runner } from '../process/runner';
 import { signed32 } from '../process/runner';
+import type { VerbOutcome } from './outcome';
 import { STAGED_DIGEST_SHAPE } from '../shared/shapes';
 import { sha256OfFile } from './fileDigest';
 import { answerExitsOf, readRefusal } from './runReadChecks';
 import { RUN_READ_TIMEOUT_MS, runReadTail, TASKS_DEFAULT_TIMEOUT_MS, TASKS_REMOVE_TAIL, TASKS_STAGE_TAIL, tasksRenderTail, VERBS, WINDOWS_READ_NAMES, type RunReadName, type TaskName, type WindowsRunRead } from './verbs';
 import { endingReason, firstLine, readOutcomeOf, removeResultOf, renderResultOf, stagedDigest, stageResultOf, type RemoveResult, type RenderResult, type StageResult, type WindowsReadOutcome } from './windowsTasks';
+import { windowsStatusOutcomeOf, windowsStatusUnavailable } from './windowsStatus';
 
 /**
  * The client of the Windows daemon (E7.S5a, research/PLAN_bundle_windows_binary.md §3.7; widened by WR-E1,
@@ -28,7 +30,8 @@ import { endingReason, firstLine, readOutcomeOf, removeResultOf, renderResultOf,
  *
  * What it asks, and nothing else (each tail is spelt in `verbs.ts` only):
  *
- * - the bundled exe: `--version`, `tasks stage` and `tasks stage --remove`;
+ * - the bundled exe: `--version`, `status --json` (E19.S2b: typed in `windowsStatus.ts`, into the distro's own `VerbOutcome`), `tasks stage` and
+ *   `tasks stage --remove`;
  * - the staged exe: `tasks render <watch|archive>`;
  * - either exe: the run reads (`read`) — values checked before a spawn, as `WslCareClient.read` checks them.
  *
@@ -87,6 +90,8 @@ export interface WindowsClientOptions {
   readonly tasksTimeoutMs?: () => number;
   /** How long a run read may run; the run reads' default ceilings until a setting says otherwise. */
   readonly readTimeoutMs?: (read: RunReadName) => number;
+  /** `wslCare.timeouts.windowsStatusSeconds` (through `ceilings.ts`), in milliseconds — the Windows `status` read's own ceiling. */
+  readonly statusTimeoutMs: () => number;
 }
 
 /** What `--version` of the bundled exe answered: its version line, why it was not started, or why it did not answer. */
@@ -151,6 +156,19 @@ export class WindowsCareClient {
     }
 
     return bundledReadOf(await this.options.runner({ file, args: VERBS.version, timeoutMs: this.options.timeoutMs() }));
+  }
+
+  /**
+   * `status --json` of the bundled exe (E19.S2b), read into the SAME `VerbOutcome` the distro's status is (`windowsStatus.ts`) — every
+   * ending an outcome, none a throw; nothing started when {@link exe} says why not.
+   */
+  async status(): Promise<VerbOutcome> {
+    const file = this.exe();
+    if (typeof file !== 'string') {
+      return windowsStatusUnavailable(this.options.platform, file.reason);
+    }
+
+    return windowsStatusOutcomeOf(await this.options.runner({ file, args: VERBS.status, timeoutMs: this.options.statusTimeoutMs() }));
   }
 
   /**

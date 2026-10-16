@@ -125,6 +125,22 @@ const WINDOWS_FAKE: readonly Scenario[] = [
     },
   },
   {
+    // E19.S2b: the poller's Windows read, wired in extension.ts (extensionWiring.test.ts holds the line itself; this runs it).
+    name: 'E19.S2b: the focused window also asks the bundled exe status --json — by the exe absolute path, with no -d',
+    run: async (api) => {
+      const extension = vscode.extensions.getExtension(EXTENSION_ID);
+      assert.ok(extension !== undefined);
+      scenario({ ...RUNNING, bundledExe: path.win32.join(extension.extensionUri.fsPath, 'bin', 'wsl-care.exe') });
+      api.setFocused(false);
+      await api.settled();
+      api.resetCalls();
+      api.setFocused(true);
+      await api.settled();
+      assert.deepEqual(api.calls().filter((c) => !c.startsWith('-d ')).filter((c) => c.endsWith('status --json')), ['status --json'], "ONE bare status --json: the bundled exe, no wsl.exe -d in front");
+      assert.equal(daemonCalls(api).filter((c) => c.endsWith('status --json')).length, 1, "and the distribution own status, once");
+    },
+  },
+  {
     name: 'opening the panel asks preview and doctor once and the webview renders every field-map row',
     run: async (api) => {
       api.resetCalls();
