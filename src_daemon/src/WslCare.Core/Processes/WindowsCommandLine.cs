@@ -23,6 +23,12 @@ public static class WindowsCommandLine
         return line.ToString();
     }
 
+    /// <summary>E15.S7 — STUB (the RED commit): the inverse of <see cref="Of"/>.</summary>
+    public static IReadOnlyList<string> Split(string line) => [line];
+
+    /// <summary>E15.S7 — STUB (the RED commit): the Windows binary's entry to the one rule.</summary>
+    public static string Shown(string line, Redaction.RedactionLimits limits) => line.Length <= limits.ShownChars ? line : line[..limits.ShownChars];
+
     private static void Append(StringBuilder line, string argument)
     {
         if (argument.Length > 0 && argument.IndexOfAny([' ', '\t', '"']) < 0)
