@@ -322,6 +322,7 @@ public sealed class FixturePrivacyTests
     [InlineData("/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code")]
     [InlineData("C:\\Users\\Public\\Desktop")]
     [InlineData("[{\"unit\":\"getty@tty1.service\",\"load\":\"loaded\"}] and user@1000.service")]
+    [InlineData("a bus name getty@tty1.busname and a snapshot getty@tty1.snapshot")]
     [InlineData("  - /home/<user> -> /home/user;")]
     [InlineData("npm exec @playwright/mcp@latest")]
     public void Anonymised_values_systemd_template_units_and_placeholders_are_not_findings(string line)

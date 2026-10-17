@@ -78,11 +78,12 @@ internal static partial class FixturePrivacy
 
     private static readonly HashSet<string> WindowsOwnProfiles = new(StringComparer.OrdinalIgnoreCase) { "user", "Public", "Default" };
 
+    // Sibling lists of the same unit types: `UnitTypes` in WslCare.TestSupport/FixtureIdentity.cs and `UNIT_TYPES` in src_vs_code/src/test/support/vsixCheck.ts (they lack `journal`) — change them together.
     /// <summary>Suffixes after an <c>@</c> that make a file or unit name, not an address: systemd unit types (a template
     /// instance, <c>&lt;name&gt;@&lt;instance&gt;.&lt;type&gt;</c>) and journald's archived files (<c>system@&lt;id&gt;.journal</c>).</summary>
     private static readonly HashSet<string> UnitTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "service", "socket", "timer", "scope", "slice", "mount", "target", "path", "device", "swap", "automount", "journal",
+        "service", "socket", "timer", "scope", "slice", "mount", "target", "path", "device", "swap", "automount", "busname", "snapshot", "journal",
     };
 
     /// <summary>Every file under a scanned directory of the repository at <paramref name="root"/>, as a path relative to it
