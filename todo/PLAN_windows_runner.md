@@ -996,7 +996,7 @@ The story is READ ONLY: nothing is registered, removed, run or written to Task S
   EVERY OS through `test/support/summaryOfXml.ts` (an independent TypeScript reference reader of the XML, also held against the guard's
   own XML), and the Windows leg parses each golden XML with `NewTask(0).XmlText` (read only, a made-up SID, never registered) and asserts
   the real read-back lines equal the golden's, byte for byte.
-- **The publication scan reads `package.json` as raw text** (`vsixCheck`): a setting description may not hold a `\\wsl` — written as the JSON-escaped `\\wsl-care` it reads as a UNC share — so the widened `windowsTimeGuardQuerySeconds` description says "every task in Task Scheduler's wsl-care folder" (the first full run caught it: 24 of its 25 failures were this one line).
+- **The publication scan reads `package.json` as raw text** (`vsixCheck`): a setting description may not hold a `\\wsl` — written as the JSON-escaped `\\wsl-care` it reads as a UNC share — so the widened `windowsTimeGuardQuerySeconds` description says "every task this extension registers in Task Scheduler" (productName.test allows the extension's text to name wsl-care only as the daemon, so the folder's name is not spelt in it either) (the first full run caught it: 24 of its 25 failures were this one line).
 - **Not built here (E3–E4)**: the install / remove / run-now flows and their buttons, the pending record, registration through PowerShell.
   Open for WR-E3: `TasksHost` is read only; its `view()` has no button list.
 
