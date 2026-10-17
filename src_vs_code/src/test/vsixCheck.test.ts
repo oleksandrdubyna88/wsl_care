@@ -208,6 +208,45 @@ test('a systemd unit name (getty@tty1.service) is not an e-mail address: the wor
   }
 });
 
+const SYSTEMD_UNIT_TYPES = ['service', 'socket', 'timer', 'mount', 'target', 'path', 'slice', 'scope', 'device', 'swap', 'automount', 'busname', 'snapshot'] as const;
+
+for (const type of SYSTEMD_UNIT_TYPES) {
+  test(`a systemd unit name ending in .${type} is not an e-mail address`, () => {
+    const unit = `getty@tty1.${type}`;
+    assert.deepEqual(vsixFindings(inBundle(unit), OPTIONS), [], unit);
+    assert.deepEqual(vsixFindings(planted('extension/changelog.md', `the verdict ignores a list, ${unit}`), OPTIONS), [], unit);
+  });
+}
+
+test('the unit type is read as the WHOLE last label up to a boundary: the engine cannot backtrack to getty@tty1.servic', () => {
+  for (const literal of ['getty@tty1.service.', 'getty@tty1.service,', '(getty@tty1.service)', 'getty@tty1.service;', 'getty@tty1.service and more', 'ignores getty@tty1.service']) {
+    assert.deepEqual(vsixFindings(inBundle(literal), OPTIONS), [], literal);
+  }
+  assert.deepEqual(vsixFindings(planted('extension/changelog.md', 'default getty@tty1.service'), OPTIONS), [], 'the unit name is the last text of its line');
+  for (const literal of ['getty@tty1.servicex', 'getty@tty1.servic', 'getty@tty1.timers', 'getty@tty1.service2']) {
+    const findings = vsixFindings(inBundle(literal), OPTIONS);
+    assert.equal(findings.length, 1, `${literal} is address-shaped and its last label is not a unit type: ${findings.join(' | ')}`);
+  }
+});
+
+test('a drop-in path (user@1000.service.d) is not an e-mail address', () => {
+  assert.deepEqual(vsixFindings(inBundle('/etc/systemd/system/user@1000.service.d/override.conf'), OPTIONS), []);
+  assert.deepEqual(vsixFindings(planted('extension/changelog.md', 'see user@1000.service.d'), OPTIONS), []);
+});
+
+test('a line with a real address and a unit name gives EXACTLY one finding, the address — in either order', () => {
+  for (const line of ['Contact admin@example.com, default getty@tty1.service', 'default getty@tty1.service, contact admin@example.com']) {
+    const findings = vsixFindings(planted('extension/changelog.md', line), OPTIONS);
+    assert.equal(findings.length, 1, `${line}: ${findings.join(' | ')}`);
+    assert.match(findings[0] ?? '', /^extension\/changelog\.md:\d+ holds an e-mail address$/);
+  }
+});
+
+test('the scan reports the FIRST match of a rule per entry, not every match — a gate needs one, and the second address in the same file is not listed', () => {
+  const findings = vsixFindings(planted('extension/changelog.md', 'a@b.io\nc@d.io\ne@f.io'), OPTIONS);
+  assert.equal(findings.filter((f) => f.endsWith('holds an e-mail address')).length, 1, findings.join(' | '));
+});
+
 test('a user name of the build machine or a denylist word is found as a whole word, and never printed', () => {
   const owner = vsixFindings(inBundle('built by SomeOwner today'), OPTIONS);
   assert.deepEqual(owner, ['extension/dist/extension.js holds denied word #1 (a user name or a denylist entry; not printed)']);
