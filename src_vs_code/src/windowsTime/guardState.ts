@@ -52,12 +52,22 @@ function presentState(task: Extract<TaskRead, { kind: 'present' }>, channel: Cha
   };
 }
 
+/** No such task — and, when its rate-limit stamp outlived it, saying so. */
+function absentState(read: Extract<SchedulerRead, { kind: 'read' }>): GuardState {
+  return read.stampLeft ? { kind: 'absent', channel: read.channel, stampLeft: true } : { kind: 'absent', channel: read.channel };
+}
+
+/** A task Task Scheduler would not let this account read: its HRESULT, or — when its fields did not parse — the reason. */
+function unreadableState(task: Extract<TaskRead, { kind: 'unreadable' }>, channel: Channel): GuardState {
+  return task.hresult === undefined ? { kind: 'unknown', reason: task.reason } : { kind: 'unreadable', hresult: task.hresult, channel };
+}
+
 function stateOfTask(task: TaskRead, read: Extract<SchedulerRead, { kind: 'read' }>): GuardState {
   switch (task.kind) {
     case 'absent':
-      return { kind: 'absent', channel: read.channel, ...(read.stampLeft ? { stampLeft: true } : {}) };
+      return absentState(read);
     case 'unreadable':
-      return task.hresult === undefined ? { kind: 'unknown', reason: task.reason } : { kind: 'unreadable', hresult: task.hresult, channel: read.channel };
+      return unreadableState(task, read.channel);
     default:
       return presentState(task, read.channel);
   }

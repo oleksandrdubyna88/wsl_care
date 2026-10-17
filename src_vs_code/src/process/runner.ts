@@ -76,9 +76,21 @@ export function signed32(code: number): number {
  * when no safe request can be made: a pid that is not a positive integer, or a `SystemRoot` that is not a local drive path.
  */
 export function treeKillRequest(pid: number, systemRoot: string | undefined): { readonly file: string; readonly args: readonly string[] } | undefined {
-  const usable = Number.isInteger(pid) && pid > 0 && systemRoot !== undefined && /^[A-Za-z]:[\\/]/.test(systemRoot);
+  return usablePid(pid) && isDriveFolder(systemRoot) ? { file: path.win32.join(systemRoot, 'System32', 'taskkill.exe'), args: ['/PID', String(pid), '/T', '/F'] } : undefined;
+}
 
-  return usable ? { file: path.win32.join(systemRoot, 'System32', 'taskkill.exe'), args: ['/PID', String(pid), '/T', '/F'] } : undefined;
+function usablePid(pid: number): boolean {
+  return Number.isInteger(pid) && pid > 0;
+}
+
+/** A folder on a local drive: a drive letter, a colon, a separator. */
+function isDriveFolder(folder: string | undefined): folder is string {
+  return folder !== undefined && /^[A-Za-z]:[\\/]/.test(folder);
+}
+
+/** The tree kill for `child` on this host — `undefined` off Windows, for a child with no pid, or without a usable `SystemRoot`. */
+function treeKillOf(child: childProcess.ChildProcess): ReturnType<typeof treeKillRequest> {
+  return process.platform === 'win32' && child.pid !== undefined ? treeKillRequest(child.pid, process.env.SystemRoot) : undefined;
 }
 
 /**
@@ -86,7 +98,7 @@ export function treeKillRequest(pid: number, systemRoot: string | undefined): { 
  * the tree from the child's pid, so the child must still be there when it starts, and a failure to start it is simply "kill the child".
  */
 function endTree(child: childProcess.ChildProcess, thenKill: () => void): void {
-  const request = process.platform === 'win32' && child.pid !== undefined ? treeKillRequest(child.pid, process.env.SystemRoot) : undefined;
+  const request = treeKillOf(child);
   if (request === undefined) {
     thenKill();
     return;

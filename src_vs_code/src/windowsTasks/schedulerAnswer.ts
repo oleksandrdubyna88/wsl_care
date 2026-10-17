@@ -76,54 +76,75 @@ interface Parsed {
   readonly sections: Map<string, TaskSection>;
 }
 
-/** The answer's lines split into the folder's tags and one section per task name (a repeated name keeps the first). */
-function sectionsOf(stdout: string): Parsed {
-  const folderTags = new Map<string, string>();
-  const sections = new Map<string, TaskSection>();
-  let current: Building | undefined;
-  let sink: Building | undefined;
+/** One line into the task section being built: a summary line, or a tag. */
+function addTo(building: Building, line: string): void {
+  if (line.startsWith(SUMMARY_TAG)) {
+    building.summary.push(line.slice(SUMMARY_TAG.length));
+  } else {
+    tagInto(line, building.tags);
+  }
+}
 
-  const close = (): void => {
-    if (current !== undefined) {
-      sections.set(current.name, current);
-    }
-    current = undefined;
-  };
+/**
+ * The answer's lines, fed one at a time: before the first `task=` line they are the folder's tags; after it each belongs to the
+ * section that line opened. A repeated task name keeps its FIRST section — the later one is read into a sink nobody keeps.
+ */
+class Sections implements Parsed {
+  readonly folderTags = new Map<string, string>();
+  readonly sections = new Map<string, TaskSection>();
+  private sink: Building | undefined;
+  private current: Building | undefined;
 
-  for (const line of stdout.split(/\r?\n/).filter((l) => l.trim() !== '')) {
+  feed(line: string): void {
     if (line.startsWith(TASK_TAG)) {
-      close();
-      const name = line.slice(TASK_TAG.length).trim();
-      sink = { name, tags: new Map(), summary: [] };
-      current = sections.has(name) ? undefined : sink;
-    } else if (sink === undefined) {
-      tagInto(line, folderTags);
-    } else if (line.startsWith(SUMMARY_TAG)) {
-      sink.summary.push(line.slice(SUMMARY_TAG.length));
+      this.open(line.slice(TASK_TAG.length).trim());
+    } else if (this.sink === undefined) {
+      tagInto(line, this.folderTags);
     } else {
-      tagInto(line, sink.tags);
+      addTo(this.sink, line);
     }
   }
-  close();
 
-  return { folderTags, sections };
+  /** The section being built is complete: it is kept. */
+  close(): void {
+    if (this.current !== undefined) {
+      this.sections.set(this.current.name, this.current);
+    }
+    this.current = undefined;
+  }
+
+  private open(name: string): void {
+    this.close();
+    this.sink = { name, tags: new Map(), summary: [] };
+    this.current = this.sections.has(name) ? undefined : this.sink;
+  }
+}
+
+/** The answer's lines split into the folder's tags and one section per task name (a repeated name keeps the first). */
+function sectionsOf(stdout: string): Parsed {
+  const parts = new Sections();
+  stdout.split(/\r?\n/).filter((l) => l.trim() !== '').forEach((line) => { parts.feed(line); });
+  parts.close();
+
+  return parts;
 }
 
 function channelOf(value: string | undefined): Channel {
   return value === 'enabled' || value === 'disabled' ? value : 'unknown';
 }
 
+/** The HRESULT a failed read printed, or `?` when it printed none. */
+function hresultOf(tags: ReadonlyMap<string, string>): string {
+  return tags.get('hresult') || '?';
+}
+
 function folderOf(tags: ReadonlyMap<string, string>): FolderState | undefined {
-  switch (tags.get('folder')) {
-    case 'present':
-      return { kind: 'present' };
-    case 'absent':
-      return { kind: 'absent' };
-    case 'unreadable':
-      return { kind: 'unreadable', hresult: tags.get('hresult') || '?' };
-    default:
-      return undefined;
+  const kind = tags.get('folder');
+  if (kind === 'unreadable') {
+    return { kind, hresult: hresultOf(tags) };
   }
+
+  return kind === 'present' || kind === 'absent' ? { kind } : undefined;
 }
 
 const NO_ANSWER: SchedulerRead = { kind: 'unknown', cause: 'failed', reason: 'the Task Scheduler query printed no answer' };
@@ -175,13 +196,15 @@ function stateOf(tags: ReadonlyMap<string, string>): number | string {
   return INTEGER.test(value) ? Number(value) : `its state field is ${shown(value)}, not a number`;
 }
 
-/** The last run: `never` for an empty or "never" instant, an empty result or Task Scheduler's "not run yet"; else the run, or why not. */
-function lastRunOf(tags: ReadonlyMap<string, string>): LastRun | string {
-  const utc = tags.get('lastRunUtc') ?? '';
-  const result = tags.get('lastResult') ?? '';
-  if (utc === '' || utc === 'never' || result === '') {
-    return { kind: 'never' };
-  }
+const NEVER: LastRun = { kind: 'never' };
+
+/** A run that did not happen: no instant, "never" for it, or no result — Task Scheduler's own zero values. */
+function neverRan(utc: string, result: string): boolean {
+  return utc === '' || utc === 'never' || result === '';
+}
+
+/** A run that happened: its instant and result read, or why one of them cannot be (`0x41303`, "not run yet", is no run). */
+function ranOf(utc: string, result: string): LastRun | string {
   if (!Number.isFinite(Date.parse(utc))) {
     return `its lastRunUtc field is ${shown(utc)}, not a time`;
   }
@@ -190,7 +213,20 @@ function lastRunOf(tags: ReadonlyMap<string, string>): LastRun | string {
   }
   const code = Number(result) >>> 0;
 
-  return code === NOT_RUN_YET ? { kind: 'never' } : { kind: 'ran', utc, result: code };
+  return code === NOT_RUN_YET ? NEVER : { kind: 'ran', utc, result: code };
+}
+
+/** The last run: `never` for an empty or "never" instant, an empty result or Task Scheduler's "not run yet"; else the run, or why not. */
+function lastRunOf(tags: ReadonlyMap<string, string>): LastRun | string {
+  const utc = tags.get('lastRunUtc') ?? '';
+  const result = tags.get('lastResult') ?? '';
+
+  return neverRan(utc, result) ? NEVER : ranOf(utc, result);
+}
+
+/** Running: Task Scheduler's own state says so, or the last result is its "running" code. */
+function runningOf(state: number, lastRun: LastRun): boolean {
+  return state === STATE_RUNNING || (lastRun.kind === 'ran' && lastRun.result === RUNNING);
 }
 
 function presentOf(section: TaskSection): TaskRead {
@@ -205,20 +241,14 @@ function presentOf(section: TaskSection): TaskRead {
     return unreadable('its definition printed no summary lines');
   }
 
-  return {
-    kind: 'present',
-    enabled: enabled as boolean,
-    running: state === STATE_RUNNING || (typeof lastRun !== 'string' && lastRun.kind === 'ran' && lastRun.result === RUNNING),
-    lastRun: lastRun as LastRun,
-    summary: section.summary,
-  };
+  return { kind: 'present', enabled: enabled as boolean, running: runningOf(state as number, lastRun as LastRun), lastRun: lastRun as LastRun, summary: section.summary };
 }
 
 function sectionOf(section: TaskSection): TaskRead {
   if (section.tags.get('read') !== 'unreadable') {
     return presentOf(section);
   }
-  const hresult = section.tags.get('hresult') || '?';
+  const hresult = hresultOf(section.tags);
 
   return { kind: 'unreadable', reason: `Task Scheduler did not let this account read its definition (${hresult})`, hresult };
 }

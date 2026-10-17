@@ -28,11 +28,11 @@ test('no request is made for a pid or a SystemRoot that cannot be trusted: nothi
 const WINDOWS_ONLY = { skip: process.platform !== 'win32' ? 'taskkill and the tree it ends exist on the Windows leg only' : false } as const;
 
 /**
- * A Windows PowerShell that starts a `ping.exe` grandchild (25 pings, about 24 s: it ends by itself), prints its pid and waits. Not
+ * A Windows PowerShell that starts a `ping.exe` grandchild (45 pings, about 44 s: it ends by itself), prints its pid and waits. Not
  * a node child: every node process puts the children it starts into a kill-on-close job (libuv), so a node grandchild dies WITH its
  * parent whatever the runner does, and could not tell a tree kill from a plain one.
  */
-const HELPER = "$p = Start-Process -FilePath ping.exe -ArgumentList '-n','25','127.0.0.1' -PassThru -WindowStyle Hidden; 'grandchild=' + $p.Id; Start-Sleep -Seconds 25";
+const HELPER = "$p = Start-Process -FilePath ping.exe -ArgumentList '-n','45','127.0.0.1' -PassThru -WindowStyle Hidden; 'grandchild=' + $p.Id; Start-Sleep -Seconds 45";
 
 function helperFile(): string {
   return `${process.env.SystemRoot ?? 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
@@ -57,7 +57,7 @@ async function goneWithin(pid: number, ms: number): Promise<boolean> {
 }
 
 async function grandchildOf(killTree: boolean): Promise<number> {
-  const result = await spawnRunner({ file: helperFile(), args: ['-NoProfile', '-NonInteractive', '-Command', HELPER], timeoutMs: 8_000, ...(killTree ? { killTree: true } : {}) });
+  const result = await spawnRunner({ file: helperFile(), args: ['-NoProfile', '-NonInteractive', '-Command', HELPER], timeoutMs: 15_000, ...(killTree ? { killTree: true } : {}) });
   assert.equal(result.kind, 'timedOut', JSON.stringify(result));
   const printed = result.kind === 'timedOut' ? result.stdout.toString('utf8') : '';
   const pid = Number(/grandchild=(\d+)/.exec(printed)?.[1]);

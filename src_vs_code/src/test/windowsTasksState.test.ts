@@ -219,7 +219,7 @@ test('every word a task or the daemon supplied is made printable and bounded bef
   const hostile = 'x\u202Ey\u0007</script><img src=x onerror=alert(1)>'.repeat(60);
   const view = viewOf(stateOf([task('watch', { unreadable: hostile })], { kind: 'unreadable', digest: STAGED_DIGEST, reason: hostile }));
   for (const line of [view.copy.line, ...view.tasks.map((t) => t.line)]) {
-    assert.doesNotMatch(line, /[\u0000-\u001f\u202a-\u202e]/);
+    assert.equal([...line].some((c) => c.charCodeAt(0) < 0x20 || (c.charCodeAt(0) >= 0x202a && c.charCodeAt(0) <= 0x202e)), false, 'a control or a bidi override reached the panel');
     assert.ok(line.length < 1_100, String(line.length));
   }
 });

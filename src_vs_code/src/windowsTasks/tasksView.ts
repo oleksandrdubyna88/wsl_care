@@ -27,6 +27,8 @@ export interface WindowsTasksView {
 /** Nothing to say (off Windows, or before a caller derived anything): the page draws no part. */
 export const NO_WINDOWS_TASKS: WindowsTasksView = { copy: { line: '', level: 'none' }, tasks: [], dry: '' };
 
+type Line = { readonly line: string; readonly level: ViewLevel };
+
 const COPY_PREFIX = 'Windows daemon copy: ';
 
 const DIGEST_SHOWN = 12;
@@ -39,10 +41,15 @@ function digestOf(copy: { readonly digest: string }): string {
   return copy.digest.slice(0, DIGEST_SHOWN);
 }
 
+/** The render that speaks for the copy: the first task's, else the second's. */
+function firstRender(copy: Extract<CopyState, { kind: 'staged' }>): Extract<CopyState, { kind: 'staged' }>['renders'][TaskName] {
+  return copy.renders.watch ?? copy.renders.archive;
+}
+
 /** What the copy's first render answered beyond "registrable": a copy the daemon will not let a task name, or a configuration it refuses. */
-function stagedLine(copy: Extract<CopyState, { kind: 'staged' }>, pin: string): { readonly line: string; readonly level: ViewLevel } {
+function stagedLine(copy: Extract<CopyState, { kind: 'staged' }>, pin: string): Line {
   const head = `${COPY_PREFIX}${pin} (${digestOf(copy)}) staged`;
-  const first = copy.renders.watch ?? copy.renders.archive;
+  const first = firstRender(copy);
   switch (first?.kind) {
     case 'notRegistrable':
       return { line: `${head} — not registrable: ${noticeText(first.reason)}`, level: 'warn' };
@@ -53,21 +60,19 @@ function stagedLine(copy: Extract<CopyState, { kind: 'staged' }>, pin: string): 
   }
 }
 
-function copyLine(copy: CopyState, pin: string): { readonly line: string; readonly level: ViewLevel } {
-  switch (copy.kind) {
-    case 'unavailable':
-      return { line: '', level: 'none' };
-    case 'checking':
-      return { line: `${COPY_PREFIX}checking…`, level: 'none' };
-    case 'digestUnreadable':
-      return { line: `${COPY_PREFIX}not known — ${noticeText(copy.reason)}`, level: 'warn' };
-    case 'notStaged':
-      return { line: `${COPY_PREFIX}${pin} (${digestOf(copy)}) not staged`, level: 'none' };
-    case 'unreadable':
-      return { line: `${COPY_PREFIX}${pin} (${digestOf(copy)}) could not be checked — ${noticeText(copy.reason)}`, level: 'warn' };
-    default:
-      return stagedLine(copy, pin);
-  }
+type CopyKind = Exclude<CopyState['kind'], 'staged'>;
+
+/** One sentence per copy state that is not a staged copy. */
+const COPY_LINES: { readonly [K in CopyKind]: (copy: Extract<CopyState, { kind: K }>, pin: string) => Line } = {
+  unavailable: () => ({ line: '', level: 'none' }),
+  checking: () => ({ line: `${COPY_PREFIX}checking…`, level: 'none' }),
+  digestUnreadable: (copy) => ({ line: `${COPY_PREFIX}not known — ${noticeText(copy.reason)}`, level: 'warn' }),
+  notStaged: (copy, pin) => ({ line: `${COPY_PREFIX}${pin} (${digestOf(copy)}) not staged`, level: 'none' }),
+  unreadable: (copy, pin) => ({ line: `${COPY_PREFIX}${pin} (${digestOf(copy)}) could not be checked — ${noticeText(copy.reason)}`, level: 'warn' }),
+};
+
+function copyLine(copy: CopyState, pin: string): Line {
+  return copy.kind === 'staged' ? stagedLine(copy, pin) : (COPY_LINES[copy.kind] as (c: CopyState, pin: string) => Line)(copy, pin);
 }
 
 // ---- one task's line ----
@@ -97,8 +102,6 @@ function resultWords(code: number): string {
   return code > 0xffff ? `result 0x${code.toString(16).toUpperCase().padStart(8, '0')}` : `exit ${code}`;
 }
 
-type Line = { readonly line: string; readonly level: ViewLevel };
-
 function installedLine(row: Extract<TaskRow, { kind: 'installed' }>, formatInstant: (iso: string) => string): Line {
   const { lastRun } = row;
   if (lastRun.kind === 'never') {
@@ -122,25 +125,20 @@ function unknownLine(row: Extract<TaskRow, { kind: 'unknown' }>): string {
   return `unknown — the Task Scheduler read timed out after ${Math.round(row.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeGuardQuerySeconds); its PowerShell and everything it started were ended`;
 }
 
+/** One line per row kind; `installed` is the one that needs the presentation edge's time formatter. */
+const TASK_LINES: { readonly [K in TaskRow['kind']]: (row: Extract<TaskRow, { kind: K }>, formatInstant: (iso: string) => string) => Line } = {
+  checking: () => ({ line: 'checking…', level: 'none' }),
+  unknown: (row) => ({ line: unknownLine(row), level: 'unknown' }),
+  notInstalled: () => ({ line: 'not installed', level: 'none' }),
+  unreadable: (row) => ({ line: `unreadable — ${noticeText(row.reason)}`, level: 'unknown' }),
+  disabled: () => ({ line: 'installed, but disabled in Task Scheduler — install again to enable it', level: 'warn' }),
+  running: () => ({ line: 'installed, running (0x41301)', level: 'ok' }),
+  updateNeeded: (row) => ({ line: UPDATE_SENTENCE[row.why](row.detail), level: 'warn' }),
+  installed: installedLine,
+};
+
 function taskLine(row: TaskRow, formatInstant: (iso: string) => string): Line {
-  switch (row.kind) {
-    case 'checking':
-      return { line: 'checking…', level: 'none' };
-    case 'unknown':
-      return { line: unknownLine(row), level: 'unknown' };
-    case 'notInstalled':
-      return { line: 'not installed', level: 'none' };
-    case 'unreadable':
-      return { line: `unreadable — ${noticeText(row.reason)}`, level: 'unknown' };
-    case 'disabled':
-      return { line: 'installed, but disabled in Task Scheduler — install again to enable it', level: 'warn' };
-    case 'running':
-      return { line: 'installed, running (0x41301)', level: 'ok' };
-    case 'updateNeeded':
-      return { line: UPDATE_SENTENCE[row.why](row.detail), level: 'warn' };
-    default:
-      return installedLine(row, formatInstant);
-  }
+  return (TASK_LINES[row.kind] as (r: TaskRow, f: (iso: string) => string) => Line)(row, formatInstant);
 }
 
 /** The part's lines; `pin` is `BUNDLED_DAEMON`, the build the extension carries; `formatInstant` the presentation edge's local-time formatter. */

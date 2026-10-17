@@ -362,18 +362,33 @@
   // ---- WR-E2 (PLAN_windows_runner.md §3.8): the Windows tasks' lines — the staged copy's, one per task and the dry state's — as
   // TEXT with the level the host derived; nothing at all when the host says nothing (off Windows, or before a caller derived it). ----
 
-  function windowsTasksParts(view) {
+  /** The level the host derived for a line, or none. */
+  function levelOf(row) {
+    return typeof row.level === 'string' ? row.level : 'none';
+  }
+
+  function hasText(value) {
+    return typeof value === 'string' && value !== '';
+  }
+
+  /** The host's Windows tasks part when it has a copy line to show; none otherwise. */
+  function windowsTasksData(view) {
     const part = isObject(view.windowsTasks) ? view.windowsTasks : {};
-    const copy = isObject(part.copy) ? part.copy : {};
-    if (typeof copy.line !== 'string' || copy.line === '') {
+    return isObject(part.copy) && hasText(part.copy.line) ? part : undefined;
+  }
+
+  function windowsTaskLine(task) {
+    return element('p', String(task.line), { 'windows-task': String(task.id), level: levelOf(task) });
+  }
+
+  function windowsTasksParts(view) {
+    const part = windowsTasksData(view);
+    if (part === undefined) {
       return [];
     }
     const box = element('div', undefined, { 'windows-tasks': '' });
-    box.appendChild(element('p', copy.line, { 'windows-tasks-copy': '', level: typeof copy.level === 'string' ? copy.level : 'none' }));
-    (Array.isArray(part.tasks) ? part.tasks : []).forEach(function (task) {
-      box.appendChild(element('p', String(task.line), { 'windows-task': String(task.id), level: typeof task.level === 'string' ? task.level : 'none' }));
-    });
-    optionalLine(part.dry, { 'windows-tasks-dry': '' }).forEach(function (p) { box.appendChild(p); });
+    const copy = element('p', part.copy.line, { 'windows-tasks-copy': '', level: levelOf(part.copy) });
+    [copy].concat((Array.isArray(part.tasks) ? part.tasks : []).map(windowsTaskLine), optionalLine(part.dry, { 'windows-tasks-dry': '' })).forEach(function (line) { box.appendChild(line); });
     return [box];
   }
 

@@ -189,9 +189,17 @@ function build(context: vscode.ExtensionContext): Parts {
  * Test-mode fake or the closed runner, never the Windows-Time real runner — so `test:host` never starts the real exe. It starts
  * `<extension>/bin/wsl-care.exe --version` only when the panel asks (its refresh), never at activation.
  */
-/** The panel's two members of the Windows row: the view and its change. */
-function bundledPanelActions(bundled: BundledHost): Pick<PanelActions, 'windowsDaemon' | 'onWindowsDaemonChange'> {
-  return { windowsDaemon: () => bundled.view(), onWindowsDaemonChange: (listener) => bundled.onChange(listener) };
+/**
+ * The panel's members of the Windows parts: the bundled daemon's row (E7.S5a) and — WR-E2 — the Windows tasks' lines, each its view
+ * and its change.
+ */
+function windowsPanelActions(bundled: BundledHost, windowsTasks: TasksHost): Pick<PanelActions, 'windowsDaemon' | 'onWindowsDaemonChange' | 'windowsTasks' | 'onWindowsTasksChange'> {
+  return {
+    windowsDaemon: () => bundled.view(),
+    onWindowsDaemonChange: (listener) => bundled.onChange(listener),
+    windowsTasks: () => windowsTasks.view(),
+    onWindowsTasksChange: (listener) => windowsTasks.onChange(listener),
+  };
 }
 
 /** The poller: the distribution's client, and — E19.S2b — the bundled Windows daemon's `status` on the same tick, only where its client can start the exe. */
@@ -463,9 +471,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     removeWindowsTimeGuard: removeGuard,
     ...extras,
     ...gpuPanelActions(parts.gpu),
-    ...bundledPanelActions(parts.bundled),
-    windowsTasks: () => parts.tasks.view(),
-    onWindowsTasksChange: (listener) => parts.tasks.onChange(listener),
+    ...windowsPanelActions(parts.bundled, parts.tasks),
   });
   context.subscriptions.push(
     bar,

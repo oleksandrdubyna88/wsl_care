@@ -77,20 +77,22 @@ function stagedRow(task: Extract<TaskRead, { kind: 'present' }>, render: RenderR
     : { kind: 'updateNeeded', why: 'differs', detail: '' };
 }
 
-/** A registered, enabled, idle task against the copy: the comparison, or why none could be made. */
-function comparedRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName, copy: CopyState): TaskRow {
+/** Why a registered task cannot be compared with a copy that gave no render to compare with. */
+function copyGap(copy: Exclude<CopyState, { kind: 'staged' }>): Extract<TaskRow, { kind: 'updateNeeded' }> {
   switch (copy.kind) {
-    case 'staged':
-      return stagedRow(task, copy.renders[name]);
     case 'notStaged':
       return { kind: 'updateNeeded', why: 'notStaged', detail: '' };
     case 'unreadable':
-      return { kind: 'updateNeeded', why: 'cannotCompare', detail: copy.reason };
     case 'digestUnreadable':
       return { kind: 'updateNeeded', why: 'cannotCompare', detail: copy.reason };
     default:
       return { kind: 'updateNeeded', why: 'cannotCompare', detail: 'this version\'s copy is still being checked' };
   }
+}
+
+/** A registered, enabled, idle task against the copy: the comparison, or why none could be made. */
+function comparedRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName, copy: CopyState): TaskRow {
+  return copy.kind === 'staged' ? stagedRow(task, copy.renders[name]) : copyGap(copy);
 }
 
 function presentRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName, copy: CopyState): TaskRow {
