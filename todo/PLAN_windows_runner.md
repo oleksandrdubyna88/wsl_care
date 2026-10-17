@@ -326,6 +326,7 @@ cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout
 - [ ] Every RED test seen red for the right reason, then green; every break-it red on product code, then restored.
 - [ ] The child + grandchild timeout test green on the Windows leg; no test registers, runs or deletes a real task or starts a real `wsl-care.exe`.
 - [ ] `contracts/config-keys.json`, `contracts/exit-codes.json`, the render golden regenerated; `plan-lifecycle`, lint, typecheck, the daemon's Windows suites and CI's two legs green.
+- [ ] WR-E3/E4 live gate (the Opus own review of WR-E2, m6): the REAL registered `\wsl-care\watch`, read back through `QUERY_SCRIPT`, satisfies `summariesMatch(registered, tasks render's summary)` — the panel says "installed, …", never "install again to update" — before WR-E3 is called done; WR-E4 repeats it after a run-now (`state`, `lastResult`).
 - [ ] The owner's acceptance (POST_DEPLOY): *Install the Windows watch task* registers `\wsl-care\watch` unelevated; Task Scheduler's first run exits 0 and the ledger advances; *Remove* leaves no task, no folder (when empty) and no staging folder; a blocked start, if any, is shown with Windows' own code.
 - [ ] The Windows `%TEMP%` cleanup: its preview read by the owner before the dry window ends (the not-allow-listed groups named), one real run recorded with counts and logical bytes; nothing under `%TEMP%\claude\` touched.
 - [ ] One dry week on Windows read through `tasks render`'s dry state and the run logs, recorded in `research/` before `dryRun` is turned off there.
@@ -984,11 +985,13 @@ The story is READ ONLY: nothing is registered, removed, run or written to Task S
   version = `BUNDLED_DAEMON`), `p[data-windows-task=<watch|archive>]` per task, `p[data-windows-tasks-dry]` when there is a dry line;
   nothing at all off Windows. Text only (`textContent`, every supplied word through `noticeText`).
 - **The runner's tree kill (finding 8) is NEW, not "the existing kill"**: the runner only ever called `child.kill()` (one process). A
-  request may now carry `killTree`: on Windows at its ceiling the runner runs `<SystemRoot>\System32\taskkill.exe /PID <pid> /T /F` by
-  absolute path and BY PID (`treeKillRequest`, never `/IM`), waits for it, and only then calls `child.kill()` (taskkill walks the tree from
-  the child, so the child must still be there). The query asks for it; no other caller changed. A node helper cannot test this (libuv puts
-  the children of every node process in a kill-on-close job, so a node grandchild dies with its parent) — the test's helper is a Windows
-  PowerShell starting `ping.exe` (45 pings, ends by itself after ~44 s) and the control proves a plain kill leaves it alive.
+  request may now carry `killTree`: at its ceiling the runner runs ONE fixed, verifying PowerShell (`process/treeKill.ts`) that ends
+  the child's tree by pid AND creation time — the host's own child only, never by image name, and never once the child has exited —
+  waits for its verdict, and only then calls `child.kill()`; the `timedOut` result says through `treeEnded` whether the tree was
+  VERIFIED ended (the first design was `taskkill /PID <pid> /T /F`; *the Opus own review of WR-E2* below replaced it). The query asks
+  for it; no other caller changed. A node helper cannot test this (libuv puts the children of every node process in a kill-on-close
+  job, so a node grandchild dies with its parent) — the test's helper is a Windows PowerShell starting `ping.exe` (45 pings, ends by
+  itself after ~44 s) and the control proves a plain kill leaves it alive.
 - **The canonical summary (finding 10)**: the golden's summary lines equal `summariesMatch`'s reading of SUMMARY_FUNCTION's read-back on
   EVERY OS through `test/support/summaryOfXml.ts` (an independent TypeScript reference reader of the XML, also held against the guard's
   own XML), and the Windows leg parses each golden XML with `NewTask(0).XmlText` (read only, a made-up SID, never registered) and asserts
@@ -1027,3 +1030,69 @@ The story is READ ONLY: nothing is registered, removed, run or written to Task S
   reversed (10+ red); `killTree` ignored (1 red, the real grandchild); the Windows tasks lines dropped from the page (3 red); the guard
   asked beside the tasks in `panelRefresh` (1 red); the stop at "not staged" removed (2 red); the summary compare dropping the principal
   (3 red); the query asking for one task by name (1 red).
+
+**The Opus own review of WR-E2 (2026-10-17)** — two blocking, three major, seven minor findings, all fixed, RED first
+(`runnerKillTree.test.ts`, `schedulerAnswer.test.ts`, `windowsTasksState.test.ts`, `windowsTimeGuardFlow.test.ts`, `singleFlight.test.ts`):
+
+- **B1 (blocking) — the tree kill could end a process that was not the runner's running child.** `Run.stop()` can fire after Node saw
+  the child `exit` (the ceiling's timer is cleared only on `close`, and a pipe may stay open), by when its pid may be another
+  process's; and `taskkill /T` ends whatever the pid names. **What was done: BOTH** — the exit guard AND the family kill rule (pid +
+  creation time, own children only), not the guard alone. (1) `endTree` asks for a tree kill ONLY while `child.exitCode === null &&
+  child.signalCode === null` and the pid is known; otherwise it makes NO request and the run falls back to the plain `child.kill()`
+  (which Node does not send to an exited child). (2) The tree kill is no longer `taskkill`: it is ONE fixed, verifying Windows
+  PowerShell started by its absolute path (`process/treeKill.ts`, reusing `powerShellOf`), whose script is constant but for three
+  validated integers (the root's pid, this host's pid, this host's start in epoch milliseconds, a little early). It confirms the
+  root's `ParentProcessId` is this host and its `CreationDate` is after this host started (exits 3/4/5 otherwise), walks the CIM
+  `Win32_Process` descendants keeping a child only when its `CreationDate` is not earlier than its parent's (a reused parent pid
+  cannot adopt a stranger; a `seen` set stops a cycle), stops each by id — oldest first, so the root cannot start more — after
+  re-reading its creation time and only if it is still the process that was judged, waits 300 ms and READS BACK that none of the
+  judged set is left (exit 7 otherwise). Exit 0 alone is "verified ended". It is never `-Name`, never `taskkill`, never an image name.
+  **Residual race, for the owner's sign-off:** a process the tree starts AFTER the walk (between the CIM read and the stop) is not in
+  the judged set and survives; the root is stopped first to shrink that window, and the read-back covers only the judged set. The
+  window between re-reading one pid's creation time and its `Stop-Process` is milliseconds. RED: `Expected values to be strictly equal …`
+  for the exited root (a request was made), and after the fake child's `exit` `stop()` made a request.
+- **B2 (blocking) — `$channel` was printed LAST**, so the parser filed it under the last task and the channel read `unknown` whenever
+  a task existed (the guard's "stop event is not logged" note was lost; the fixtures printed it first, hiding it). It is printed
+  right after it is computed, before `stamp=`, and the trailing print and the folder catch's copy are gone. Tests: the script
+  prints it once, before the stamp, the folder and the first task; the fixtures print in the script's REAL order; and on the Windows
+  leg the real output has `channel=` before `folder=` and none after a task opened. RED: `before stamp=`, and on the real run
+  `channel= is printed before folder=`.
+- **M1 — a task this account cannot read read as "not installed".** `GetTasks(1)` skips it. Each expected task (`watch`,
+  `archive`, `windows-time-guard`, from the constants) the list lacks is now asked for by name: `0x80070002` prints nothing (absent),
+  any other refusal prints that task's `read=unreadable` + HRESULT. Tests: the script's loop, and a restricted `watch` beside an
+  absent `archive`.
+- **M2 — a hung killer left the child unkilled** (the old `child.kill()` ran only on the killer's exit). The killer is bounded
+  (`TREE_KILL_BOUND_MS`, 10 s): at the bound it is stopped and the tree counts as not ended; the child is killed plainly right after.
+- **M3 — the timeout line always claimed the tree was ended.** A `timedOut` result carries `treeEnded` (true only for the verified
+  verdict, false otherwise, absent when no tree kill was asked for); nothing settles before the verdict (bounded); the panel line says
+  "its PowerShell and everything it started were ended" only for true and "the extension could not confirm that …" otherwise.
+- **m1** a registered task reads "checking…" (not the update warning) while the copy is probed. **m2** ONE table of Task Scheduler's
+  results (`SCHEDULER_RESULT`, `SCHEDULER_RESULT_WORDS` in `schedulerAnswer.ts`; the guard's table is it plus its own time-limit
+  sentence) and ONE single-flight helper (`shared/singleFlight.ts`, used by the shared read and the probe). **m3** `shared/listeners.ts`
+  isolates a listener's fault (the shared read, the host, the guard host), and the guard host's settle of a pending run is caught (the
+  store may refuse; the next read settles it). **m4** below. **m5** "(0x41301)" is said only when the last result IS that code
+  (`byCode`); a task running by its State alone reads "running". **m6** below. **m7** below.
+- **m4 — the guard's parse changes, recorded.** The guard is now read OUT OF the one query's answer by name
+  (`parseGuardAnswer(stdout, task = GUARD_NAME)`, `guardStateFromRead`); the old `guard=absent|present|unreadable` lines are gone; a
+  missing folder or task is `absent` (the stamp note kept), a folder or task Task Scheduler refuses is `unreadable` with its HRESULT,
+  a task whose fields do not parse — including "its definition printed no summary lines" — is `unknown` with the reason (the former
+  "answered without the last run"); a never-run guard keeps `lastRunUtc: 'never'` and result `0x41303`. `GuardHostDeps` requires the
+  shared `scheduler` (its `queryTimeoutMs` moved to `SchedulerHost`), the guard host's listeners are isolated, and `panelRefresh` no
+  longer calls `parts.guard.refresh()` (that would be a second read).
+- **m6 — a LIVE GATE for WR-E3/E4.** Nothing of E2 was ever read back from a REAL registration: the golden proves
+  `SUMMARY_FUNCTION`'s read-back of the XML in memory, not of a registered task (Task Scheduler normalises `PT60S` to `PT1M`, and the
+  principal's name to a SID). WR-E3's acceptance (POST_DEPLOY, the owner's first *Install*) must register `\wsl-care\watch`, read it
+  back through `QUERY_SCRIPT`, and require `summariesMatch(registered summary, tasks render's summary)` to be TRUE — the panel line
+  reading "installed, … " and not "install again to update" — before E3 is called done; WR-E4 does the same after a run-now
+  (`lastResult`, `state`). Added to §9's Definition of Done.
+- **m7 — task names are case-insensitive in Task Scheduler.** The query's by-name fallback compares with `-eq` (case-insensitive), but
+  the parser keys sections by the exact name and the extension registers lower-case names: a task someone re-created as `Watch` is
+  listed, so not fetched by name, and reads "not installed" here. Noted, not handled (the registration is the extension's own).
+- **Proposed, not done (reuse-first: name it, propose it).** `gpu/gpuHost.ts` (and `bundled/bundledHost.ts`, `archive/archiveHost.ts`)
+  carry their own copies of "one in flight, one more when asked meanwhile" and of the listener list; `SingleFlight` and `Listeners` could
+  replace them — a separate change in code this story did not otherwise touch, so it is a question for the owner.
+- **RED and break-its of the review** (each break-it on PRODUCT code, restored byte for byte, the tree clean after): B1 the exit guard
+  removed (2 red); B2 the channel printed last as well (2 red, one the real run); M1 the by-name loop broken (1 red); M2 the hung killer not
+  stopped (1 red); M3 the verdict dropped (4 red, the real grandchild test among them); m1 "checking" back to the update warning (1 red);
+  m5 "(0x41301)" for every running task (1 red); m3 the settle uncaught (1 red); m3 listeners not isolated (2 red); m2 the single flight
+  without its one more run (5 red).
