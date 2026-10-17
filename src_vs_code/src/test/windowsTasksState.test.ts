@@ -8,8 +8,8 @@ import { test } from 'node:test';
 import type { TaskName } from '../client/verbs';
 import { renderResultOf, type RenderResult } from '../client/windowsTasks';
 import { guardSummary, guardTaskXml, SUMMARY_FUNCTION } from '../windowsTime/guardTask';
-import { summariesMatch } from '../windowsTime/guardState';
-import { parseSchedulerAnswer } from '../windowsTasks/schedulerAnswer';
+import { SCHEDULER_RESULTS, summariesMatch } from '../windowsTime/guardState';
+import { parseSchedulerAnswer, SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS } from '../windowsTasks/schedulerAnswer';
 import { windowsTasksState, type CopyState, type WindowsTasksState } from '../windowsTasks/tasksState';
 import { NO_WINDOWS_TASKS, windowsTasksView, type WindowsTasksView } from '../windowsTasks/tasksView';
 import { MUTATING } from './support/noRealWsl';
@@ -210,9 +210,39 @@ test('plan round 6, 8: a read that did not answer is "unknown" with its reason o
   const unknown = (read: Parameters<typeof windowsTasksState>[0]): WindowsTasksView => windowsTasksView(windowsTasksState(read, STAGED), PIN, LOCAL);
   const failed = unknown({ kind: 'unknown', cause: 'failed', reason: 'the Task Scheduler query exited 1' });
   assert.equal(lineOf(failed, 'watch'), 'Windows watch task: unknown — the Task Scheduler query exited 1');
-  const timedOut = unknown({ kind: 'unknown', cause: 'timedOut', timeoutMs: 30_000, reason: 'the Task Scheduler query did not answer within 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds)' });
+  const reason = 'the Task Scheduler query did not answer within 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds)';
+  const timedOut = unknown({ kind: 'unknown', cause: 'timedOut', timeoutMs: 30_000, reason, treeEnded: true });
   assert.equal(lineOf(timedOut, 'archive'), 'Windows archive task: unknown — the Task Scheduler read timed out after 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds); its PowerShell and everything it started were ended');
   assert.equal(lineOf(unknown({ kind: 'unknown', cause: 'checking', reason: 'checking…' }), 'watch'), 'Windows watch task: checking…');
+});
+
+test('the Opus own review M3: the timeout line claims the tree ended only when the runner VERIFIED it — else it says it could not confirm', () => {
+  const unknown = (extra: { treeEnded?: boolean }): WindowsTasksView => windowsTasksView(windowsTasksState({ kind: 'unknown', cause: 'timedOut', timeoutMs: 30_000, reason: 'the Task Scheduler query did not answer within 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds)', ...extra }, STAGED), PIN, LOCAL);
+  const unconfirmed = 'Windows watch task: unknown — the Task Scheduler read timed out after 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds); the extension could not confirm that its PowerShell and everything it started were ended';
+  assert.equal(lineOf(unknown({ treeEnded: false }), 'watch'), unconfirmed);
+  assert.equal(lineOf(unknown({}), 'watch'), unconfirmed, 'no word from the runner is no confirmation');
+  assert.match(lineOf(unknown({ treeEnded: true }), 'watch'), /; its PowerShell and everything it started were ended$/);
+});
+
+test('the Opus own review m1: while the copy is still being probed a registered task reads "checking…" — not the update warning', () => {
+  const view = viewOf(stateOf([task('watch')], { kind: 'checking' }));
+  assert.equal(lineOf(view, 'watch'), 'Windows watch task: checking…');
+  assert.equal(view.tasks[0]?.level, 'none');
+  assert.match(lineOf(viewOf(stateOf([task('watch', { enabled: 'False' })], { kind: 'checking' })), 'watch'), /disabled/, 'what Task Scheduler already said still holds');
+});
+
+test('the Opus own review m5: "(0x41301)" is said only for that code — a task Task Scheduler says is running by its State alone reads "running"', () => {
+  assert.equal(lineOf(viewOf(stateOf([task('watch', { state: '4', lastResult: '0' })])), 'watch'), 'Windows watch task: installed, running');
+  assert.equal(lineOf(viewOf(stateOf([task('watch', { state: '4', lastResult: '267009' })])), 'watch'), 'Windows watch task: installed, running (0x41301)');
+  assert.equal(lineOf(viewOf(stateOf([task('watch', { state: '3', lastResult: '267009' })])), 'watch'), 'Windows watch task: installed, running (0x41301)');
+});
+
+test('the Opus own review m2: Task Scheduler\'s result codes have ONE table — the guard\'s words are that table with its own time-limit sentence', () => {
+  assert.equal(SCHEDULER_RESULT.notRunYet, 0x41303);
+  assert.equal(SCHEDULER_RESULTS[SCHEDULER_RESULT.running], SCHEDULER_RESULT_WORDS[SCHEDULER_RESULT.running]);
+  assert.equal(SCHEDULER_RESULTS[SCHEDULER_RESULT.skipped], SCHEDULER_RESULT_WORDS[SCHEDULER_RESULT.skipped]);
+  assert.equal(SCHEDULER_RESULTS[SCHEDULER_RESULT.timeLimit], 'stopped by its time limit (wslCare.windowsTime.guard.timeLimitMinutes)');
+  assert.match(lineOf(viewOf(stateOf([task('watch', { lastResult: '267014' })])), 'watch'), /: stopped by its time limit$/);
 });
 
 test('every word a task or the daemon supplied is made printable and bounded before the panel shows it', () => {

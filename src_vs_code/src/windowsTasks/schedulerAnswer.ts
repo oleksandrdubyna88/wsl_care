@@ -30,8 +30,11 @@ export type FolderState =
   | { readonly kind: 'unreadable'; readonly hresult: string };
 
 export type SchedulerRead =
-  /** No answer: not asked yet, the query ended without one, or it timed out (`timeoutMs`). */
-  | { readonly kind: 'unknown'; readonly cause: 'checking' | 'timedOut' | 'failed'; readonly reason: string; readonly timeoutMs?: number }
+  /**
+   * No answer: not asked yet, the query ended without one, or it timed out (`timeoutMs`; `treeEnded` is what the runner could say of
+   * the PowerShell's process tree at that ceiling — true only when it VERIFIED it ended, absent when no tree kill was asked for).
+   */
+  | { readonly kind: 'unknown'; readonly cause: 'checking' | 'timedOut' | 'failed'; readonly reason: string; readonly timeoutMs?: number; readonly treeEnded?: boolean }
   | { readonly kind: 'read'; readonly user: string; readonly channel: Channel; readonly stampLeft: boolean; readonly folder: FolderState; readonly sections: ReadonlyMap<string, TaskSection> };
 
 /** A task that has never run, or its last run: the instant as Task Scheduler printed it, and the unsigned 32-bit result. */
@@ -46,9 +49,19 @@ export type TaskRead =
 
 export const NOT_ASKED_READ: SchedulerRead = { kind: 'unknown', cause: 'checking', reason: 'checking…' };
 
-/** Task Scheduler's `SCHED_S_TASK_HAS_NOT_RUN` and `SCHED_S_TASK_RUNNING`. */
-const NOT_RUN_YET = 0x41303;
-const RUNNING = 0x41301;
+/**
+ * Task Scheduler's own last results — the ONE place their numbers and words live (the guard's rows and the Windows tasks' rows both
+ * read them): `SCHED_S_TASK_RUNNING`, `SCHED_S_TASK_HAS_NOT_RUN`, `SCHED_S_TASK_TERMINATED` (stopped by its time limit) and
+ * `SCHED_E_ALREADY_RUNNING` (a run skipped because one was still going).
+ */
+export const SCHEDULER_RESULT = { running: 0x41301, notRunYet: 0x41303, timeLimit: 0x41306, skipped: 0x8004131f } as const;
+
+export const SCHEDULER_RESULT_WORDS: Readonly<Record<number, string>> = {
+  [SCHEDULER_RESULT.running]: 'running now',
+  [SCHEDULER_RESULT.notRunYet]: 'not run yet',
+  [SCHEDULER_RESULT.timeLimit]: 'stopped by its time limit',
+  [SCHEDULER_RESULT.skipped]: 'skipped — a run of it was still going',
+};
 
 /** `TASK_STATE_RUNNING`. */
 const STATE_RUNNING = 4;
@@ -168,7 +181,14 @@ export function schedulerReadOf(result: ProcessResult): SchedulerRead {
   }
   const reason = notAnsweredWords(result, 'the Task Scheduler query', 'wslCare.timeouts.windowsTimeGuardQuerySeconds');
 
-  return result.kind === 'timedOut' ? { kind: 'unknown', cause: 'timedOut', timeoutMs: result.timeoutMs, reason } : { kind: 'unknown', cause: 'failed', reason };
+  return result.kind === 'timedOut' ? timedOutRead(result, reason) : { kind: 'unknown', cause: 'failed', reason };
+}
+
+/** A timeout, with the ceiling it hit and — when the runner was asked for a tree kill — whether it VERIFIED the tree ended. */
+function timedOutRead(result: Extract<ProcessResult, { kind: 'timedOut' }>, reason: string): SchedulerRead {
+  const { timeoutMs, treeEnded } = result;
+
+  return { kind: 'unknown', cause: 'timedOut', timeoutMs, reason, ...(treeEnded === undefined ? {} : { treeEnded }) };
 }
 
 // ---- one task out of the read ----
@@ -213,7 +233,7 @@ function ranOf(utc: string, result: string): LastRun | string {
   }
   const code = Number(result) >>> 0;
 
-  return code === NOT_RUN_YET ? NEVER : { kind: 'ran', utc, result: code };
+  return code === SCHEDULER_RESULT.notRunYet ? NEVER : { kind: 'ran', utc, result: code };
 }
 
 /** The last run: `never` for an empty or "never" instant, an empty result or Task Scheduler's "not run yet"; else the run, or why not. */
@@ -226,7 +246,7 @@ function lastRunOf(tags: ReadonlyMap<string, string>): LastRun | string {
 
 /** Running: Task Scheduler's own state says so, or the last result is its "running" code. */
 function runningOf(state: number, lastRun: LastRun): boolean {
-  return state === STATE_RUNNING || (lastRun.kind === 'ran' && lastRun.result === RUNNING);
+  return state === STATE_RUNNING || (lastRun.kind === 'ran' && lastRun.result === SCHEDULER_RESULT.running);
 }
 
 function presentOf(section: TaskSection): TaskRead {

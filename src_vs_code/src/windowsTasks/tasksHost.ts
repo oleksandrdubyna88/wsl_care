@@ -1,5 +1,7 @@
 import type { WindowsCareClient } from '../client/WindowsCareClient';
 import type { RenderResult } from '../client/windowsTasks';
+import { Listeners } from '../shared/listeners';
+import { SingleFlight } from '../shared/singleFlight';
 import type { SchedulerHost } from './schedulerHost';
 import { NOT_PROBED, windowsTasksState, type CopyState, type WindowsTasksState } from './tasksState';
 import { windowsTasksView, type WindowsTasksView } from './tasksView';
@@ -62,14 +64,13 @@ function copyAfterFirst(first: RenderResult, digest: string): CopyState | undefi
 
 export class TasksHost {
   private copy: CopyState = NOT_PROBED;
-  private probing: Promise<void> | undefined;
-  /** A refresh asked while a probe was in flight: that probe may predate what the caller just did, so one more runs. */
-  private again = false;
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Listeners();
+  /** ONE probe in flight; a refresh during a flight is answered by ONE more after it (the same rule as the shared read). */
+  private readonly probing = new SingleFlight(() => this.probeOnce(), { ended: () => { this.listeners.tell(); } });
 
   constructor(private readonly deps: TasksHostDeps) {
     // The shared read started or answered: the lines follow it.
-    deps.scheduler.onChange(() => { this.tell(); });
+    deps.scheduler.onChange(() => { this.listeners.tell(); });
   }
 
   state(): WindowsTasksState {
@@ -81,34 +82,20 @@ export class TasksHost {
   }
 
   onChange(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return this.listeners.add(listener);
   }
 
   /**
-   * The panel's refresh: the shared Task Scheduler read and the probe of the staged copy, side by side. Each follows the guard
-   * host's rule — a call while one is in flight is answered by ONE more after it, further calls share that one.
+   * The panel's refresh: the shared Task Scheduler read and the probe of the staged copy, side by side. Each follows the
+   * {@link SingleFlight} rule — a call while one is in flight is answered by ONE more after it, further calls share that one.
    */
   async refresh(): Promise<void> {
-    await Promise.all([this.deps.scheduler.refresh(), this.probe()]);
+    await Promise.all([this.deps.scheduler.refresh(), this.probing.request()]);
   }
 
-  private probe(): Promise<void> {
-    if (this.probing !== undefined) {
-      this.again = true;
-      return this.probing;
-    }
-    this.probing = this.probes().finally(() => { this.probing = undefined; this.tell(); });
-
-    return this.probing;
-  }
-
-  private async probes(): Promise<void> {
-    do {
-      this.again = false;
-      this.copy = await this.copyOnce();
-      this.tell();
-    } while (this.again);
+  private async probeOnce(): Promise<void> {
+    this.copy = await this.copyOnce();
+    this.listeners.tell();
   }
 
   private async copyOnce(): Promise<CopyState> {
@@ -136,16 +123,5 @@ export class TasksHost {
     } catch (e: unknown) {
       return { kind: 'unreadable', digest, reason: reasonOf(e) };
     }
-  }
-
-  /** Every listener hears it; one that throws neither stops the others nor rejects the refresh. */
-  private tell(): void {
-    this.listeners.forEach((listener) => {
-      try {
-        listener();
-      } catch {
-        // A listener's own fault is its own; the state stands.
-      }
-    });
   }
 }

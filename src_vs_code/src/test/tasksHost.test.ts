@@ -192,10 +192,16 @@ test('three refreshes at once are the flight and ONE more — never three reads,
 });
 
 test('plan round 6, 8: a read that timed out — the panel says so on each task, and the copy line is still its own', async () => {
-  const w = world({ queryResult: { kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
+  const w = world({ queryResult: { kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), treeEnded: true } });
   await w.host.refresh();
   assert.match(w.host.view().tasks[0]?.line ?? '', /^Windows watch task: unknown — the Task Scheduler read timed out after 30 s \(wslCare\.timeouts\.windowsTimeGuardQuerySeconds\); its PowerShell and everything it started were ended$/);
   assert.equal(w.host.view().copy.line, 'Windows daemon copy: 0.4.0 (0123456789ab) staged');
+});
+
+test('the Opus own review M3, end to end: a timeout whose tree the runner could not verify ended says it could not confirm — the claim follows the runner\'s word', async () => {
+  const w = world({ queryResult: { kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), treeEnded: false } });
+  await w.host.refresh();
+  assert.match(w.host.view().tasks[0]?.line ?? '', /; the extension could not confirm that its PowerShell and everything it started were ended$/);
 });
 
 test('a client that throws is that probe\'s unreadable copy — the refresh resolves, the panel is told, nothing is thrown into VS Code', async () => {

@@ -237,7 +237,7 @@ test('PowerShell\'s parser reads the action, install, remove and query scripts w
   assert.equal(names['guard.ps1'], 'Get-Service,Set-Service,Get-ItemPropertyValue,Test-WslCareStartAllowed,Test-Path,New-Item,Out-Null,Set-ItemProperty,Start-Service,Join-Path,Start-Sleep', 'the action runs these and nothing else (w32tm by absolute path through &), and no command before the module path is pinned');
   assert.equal(names['install.ps1'], 'Import-Module,Join-Path,New-Object,Register-ScheduledTask,Out-Null', 'pwsh D4: ScheduledTasks by its absolute path first');
   assert.equal(names['remove.ps1'], 'New-Object,Test-Path,Remove-Item,Get-ChildItem,Get-Item');
-  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Test-Path,Get-WslCareSummary,ForEach-Object', 'pwsh §11 R4: Test-Path reads the stamp; WR-E2: the widened query runs the same commands — one pass over every task of the folder adds none');
+  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Test-Path,Where-Object,Get-WslCareSummary,ForEach-Object', 'pwsh §11 R4: Test-Path reads the stamp; WR-E2: one pass over every task of the folder adds only Where-Object (the review M1 by-name fallback)');
 });
 
 test('Task Scheduler\'s own parser reads the definition IN MEMORY (nothing registered), and its read-back is exactly the expected summary', WINDOWS_ONLY, () => {
@@ -286,6 +286,11 @@ test('the status query really RUNS on the Windows leg — unelevated, read-only 
   const state = guardStateOf({ kind: 'exited', code: 0, stdout: Buffer.from(result.stdout), stderr: Buffer.alloc(0) });
   assert.notEqual(state.kind, 'unknown', result.stdout);
   assert.match(result.stdout, /^channel=(enabled|disabled|unknown)$/m);
+  // WR-E2 review B2, on the REAL output: the folder's lines come before the first task, so the channel is the folder's, never a task's.
+  const out = result.stdout;
+  assert.ok(out.indexOf('channel=') >= 0 && out.indexOf('channel=') < out.indexOf('folder='), 'channel= is printed before folder=');
+  assert.ok(!/\ntask=[\s\S]*\nchannel=/.test(out), 'no channel= after a task section opened');
+  assert.match(out, /^user=S-1-5-21-[\d-]+$/m);
 });
 
 // ---- PLAN_pwsh_engine_windows_time.md D2, D4: PowerShell 7 elevated, the facts from this query ----

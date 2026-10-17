@@ -1,4 +1,6 @@
 import type { Runner } from '../process/runner';
+import { Listeners } from '../shared/listeners';
+import { SingleFlight } from '../shared/singleFlight';
 import { queryRequest } from '../windowsTime/guardScripts';
 import { NOT_ASKED_READ, schedulerReadOf, type SchedulerRead } from './schedulerAnswer';
 
@@ -9,8 +11,9 @@ import { NOT_ASKED_READ, schedulerReadOf, type SchedulerRead } from './scheduler
  *
  * It never polls and owns no timer: the read runs when somebody calls {@link refresh} — the panel opening, becoming visible
  * or being refreshed (`extension.ts`, `panelRefresh`), and an elevated run answering — and never otherwise. The query is
- * bounded by `wslCare.timeouts.windowsTimeGuardQuerySeconds`; on that ceiling the runner ends the PowerShell AND its process
- * tree (`killTree`, `process/runner.ts` — by pid, never by image name), and the read says it timed out.
+ * bounded by `wslCare.timeouts.windowsTimeGuardQuerySeconds`; on that ceiling the runner ends the PowerShell's process tree
+ * (`killTree`, `process/runner.ts` — verified, by pid and creation time, never by image name) and says whether it did, and the read
+ * says it timed out.
  */
 
 export interface SchedulerHostDeps {
@@ -23,10 +26,9 @@ export interface SchedulerHostDeps {
 
 export class SchedulerHost {
   private read: SchedulerRead = NOT_ASKED_READ;
-  private querying: Promise<void> | undefined;
-  /** A refresh asked while a query was in flight: that query may predate what the caller just did, so one more runs. */
-  private again = false;
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Listeners();
+  /** One query in flight; a refresh during a flight is answered by ONE more after it (the guard's own code review k4). */
+  private readonly flight = new SingleFlight(() => this.query(), { started: () => { this.listeners.tell(); }, ended: () => { this.listeners.tell(); } });
 
   constructor(private readonly deps: SchedulerHostDeps) {}
 
@@ -37,43 +39,21 @@ export class SchedulerHost {
 
   /** Whether a query is in flight now. */
   checking(): boolean {
-    return this.querying !== undefined;
+    return this.flight.running;
   }
 
-  /**
-   * Reads Task Scheduler again. A call while one is in flight is answered by ONE more query after it (never by the flight
-   * itself, which may have started before the caller's change — own code review k4 of the guard); further calls share that one.
-   */
+  /** Reads Task Scheduler again (see {@link SingleFlight}): the flight's answer, or the one more it makes. */
   refresh(): Promise<void> {
-    if (this.querying !== undefined) {
-      this.again = true;
-      return this.querying;
-    }
-    this.querying = this.queries().finally(() => { this.querying = undefined; this.changed(); });
-    this.changed();
-
-    return this.querying;
+    return this.flight.request();
   }
 
   onChange(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  }
-
-  private async queries(): Promise<void> {
-    do {
-      this.again = false;
-      await this.query();
-    } while (this.again);
+    return this.listeners.add(listener);
   }
 
   private async query(): Promise<void> {
     const request = queryRequest(this.deps.env, this.deps.queryTimeoutMs());
     this.read = typeof request === 'string' ? { kind: 'unknown', cause: 'failed', reason: request } : schedulerReadOf(await this.deps.query(request));
-    this.changed();
-  }
-
-  private changed(): void {
-    this.listeners.forEach((listener) => listener());
+    this.listeners.tell();
   }
 }

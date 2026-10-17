@@ -1,6 +1,6 @@
 import type { ProcessResult } from '../process/runner';
 import { noticeText } from '../text/safeText';
-import { parseSchedulerAnswer, schedulerReadOf, taskOf, type Channel, type SchedulerRead, type TaskRead } from '../windowsTasks/schedulerAnswer';
+import { parseSchedulerAnswer, SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS, schedulerReadOf, taskOf, type Channel, type SchedulerRead, type TaskRead } from '../windowsTasks/schedulerAnswer';
 import { durationSeconds, GUARD_EXIT, GUARD_NAME, guardSummary, type GuardOptions } from './guardTask';
 import { FAILURES } from './windowsTimeFix';
 
@@ -35,9 +35,6 @@ export type GuardState =
 
 export const NOT_ASKED: GuardState = { kind: 'unknown', reason: 'checking…' };
 
-/** Task Scheduler's `SCHED_S_TASK_HAS_NOT_RUN`. */
-const NOT_RUN_YET = 0x41303;
-
 /** A task that answered, as the guard's `present`: a never-run task carries `never` and Task Scheduler's own "not run yet" code. */
 function presentState(task: Extract<TaskRead, { kind: 'present' }>, channel: Channel): GuardState {
   const { lastRun } = task;
@@ -46,7 +43,7 @@ function presentState(task: Extract<TaskRead, { kind: 'present' }>, channel: Cha
     kind: 'present',
     enabled: task.enabled,
     lastRunUtc: lastRun.kind === 'never' ? 'never' : lastRun.utc,
-    lastResult: lastRun.kind === 'never' ? NOT_RUN_YET : lastRun.result,
+    lastResult: lastRun.kind === 'never' ? SCHEDULER_RESULT.notRunYet : lastRun.result,
     summary: task.summary,
     channel,
   };
@@ -94,10 +91,8 @@ export function guardStateOf(result: ProcessResult): GuardState {
 
 /** Task Scheduler's own result codes the guard's last run can carry, beside the guard's exits (D8 o9). */
 export const SCHEDULER_RESULTS: Readonly<Record<number, string>> = {
-  0x41301: 'running now',
-  0x41303: 'not run yet',
-  0x41306: 'stopped by its time limit (wslCare.windowsTime.guard.timeLimitMinutes)',
-  0x8004131f: 'skipped — a run of it was still going',
+  ...SCHEDULER_RESULT_WORDS,
+  [SCHEDULER_RESULT.timeLimit]: 'stopped by its time limit (wslCare.windowsTime.guard.timeLimitMinutes)',
 };
 
 /** The sentence of each exit of the guard's own script (D2). */
@@ -123,7 +118,7 @@ export function lastResultText(code: number): string {
 
 /** Whether a last result is the guard failing (a run not yet made, still running or rate-limited is not a failure). */
 export function lastResultFailed(code: number): boolean {
-  return code !== GUARD_EXIT.done && code !== GUARD_EXIT.rateLimited && code !== 0x41301 && code !== 0x41303;
+  return code !== GUARD_EXIT.done && code !== GUARD_EXIT.rateLimited && code !== SCHEDULER_RESULT.running && code !== SCHEDULER_RESULT.notRunYet;
 }
 
 export type GuardAction = 'installWindowsTimeGuard' | 'removeWindowsTimeGuard';

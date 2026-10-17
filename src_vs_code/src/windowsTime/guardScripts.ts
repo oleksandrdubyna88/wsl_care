@@ -1,6 +1,10 @@
 import type { ProcessRequest } from '../process/runner';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
 import { powerShellOf } from '../powershell/elevatedLauncher';
+import { TASK_NAMES } from '../client/verbs';
+
+/** Every task this extension installs under `\wsl-care`: the two Windows tasks and the guard — the names the read must find or say it could not. */
+const EXPECTED_TASKS: readonly string[] = [...TASK_NAMES, GUARD_NAME];
 
 /**
  * The three PowerShell texts around the guard's task (PLAN_windows_time_task.md D3, D5, D8) — install and remove, each run
@@ -86,11 +90,17 @@ export const QUERY_SCRIPT = [
   SUMMARY_FUNCTION,
   `$log = $null; try { $log = Get-WinEvent -ListLog '${TIME_SERVICE_CHANNEL}' -ErrorAction Stop } catch { $log = $null }`,
   "$channel = 'channel=unknown'; if ($null -ne $log) { if ($log.IsEnabled) { $channel = 'channel=enabled' } else { $channel = 'channel=disabled' } }",
+  // The folder's own lines first, ALL of them before the first task: the parser files every tag before the first `task=` into the
+  // folder, so a `channel=` printed last would be read as the last task's (review B2).
+  '$channel',
   `if (Test-Path -Path '${STAMP_KEY}') { 'stamp=present' } else { 'stamp=absent' }`,
   "'user=' + [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
   '$tasks = @()',
-  `try { $service = New-Object -ComObject Schedule.Service; $service.Connect(); $tasks = @($service.GetFolder('\\${GUARD_FOLDER}').GetTasks(1)) } catch { $code = $_.Exception.HResult; if ($code -eq ${NOT_FOUND_HRESULT}) { 'folder=absent' } else { 'folder=unreadable'; 'hresult=0x{0:X8}' -f $code }; $channel; exit 0 }`,
+  `try { $service = New-Object -ComObject Schedule.Service; $service.Connect(); $folder = $service.GetFolder('\\${GUARD_FOLDER}'); $tasks = @($folder.GetTasks(1)) } catch { $code = $_.Exception.HResult; if ($code -eq ${NOT_FOUND_HRESULT}) { 'folder=absent' } else { 'folder=unreadable'; 'hresult=0x{0:X8}' -f $code }; exit 0 }`,
   "'folder=present'",
+  // GetTasks skips a task this account may not read: each task this extension installs that the list lacks is asked for BY NAME —
+  // not found is absent, any other refusal is that task's unreadable section (review M1).
+  `foreach ($name in @(${EXPECTED_TASKS.map((n) => `'${n}'`).join(',')})) { if (@($tasks | Where-Object { $_.Name -eq $name }).Count -eq 0) { try { $tasks += $folder.GetTask($name) } catch { if ($_.Exception.HResult -ne ${NOT_FOUND_HRESULT}) { 'task=' + $name; 'read=unreadable'; 'hresult=0x{0:X8}' -f $_.Exception.HResult } } } }`,
   'foreach ($task in $tasks) {',
   "'task=' + ($task.Name -replace '[\\x00-\\x1f]', '?')",
   'try {',
@@ -100,7 +110,6 @@ export const QUERY_SCRIPT = [
   '$lines',
   "} catch { 'read=unreadable'; 'hresult=0x{0:X8}' -f $_.Exception.HResult }",
   '}',
-  '$channel',
   'exit 0',
 ].join('\n');
 

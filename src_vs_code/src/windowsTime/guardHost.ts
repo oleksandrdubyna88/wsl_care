@@ -1,6 +1,7 @@
 import type { DurableStore } from '../cleanup/journal';
 import type { Runner } from '../process/runner';
 import { guardEngineLine, type EngineSource } from '../powershell/engineHost';
+import { Listeners } from '../shared/listeners';
 import type { SchedulerHost } from '../windowsTasks/schedulerHost';
 import type { FixPrompt } from './windowsTimeFix';
 import { runGuardOp, type GuardOp, type GuardOutcome } from './guardFlow';
@@ -47,7 +48,7 @@ export interface GuardHostDeps {
 
 export class WindowsTimeGuardHost {
   private opRunning = false;
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Listeners();
   private readonly durable: DurableStore;
 
   constructor(private readonly deps: GuardHostDeps) {
@@ -71,8 +72,7 @@ export class WindowsTimeGuardHost {
   }
 
   onChange(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return this.listeners.add(listener);
   }
 
   /**
@@ -114,7 +114,9 @@ export class WindowsTimeGuardHost {
   private schedulerChanged(): void {
     this.changed();
     if (!this.deps.scheduler.checking()) {
-      void this.settlePending().then(() => { this.changed(); });
+      // A store that refuses leaves the pending record where it was — the next read settles it again — and the line follows the read
+      // either way: this detached edge has no one to throw to.
+      void this.settlePending().catch(() => undefined).then(() => { this.changed(); });
     }
   }
 
@@ -127,6 +129,6 @@ export class WindowsTimeGuardHost {
   }
 
   private changed(): void {
-    this.listeners.forEach((listener) => listener());
+    this.listeners.tell();
   }
 }

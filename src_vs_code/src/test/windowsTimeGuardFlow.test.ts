@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import type { DurableStore } from '../cleanup/journal';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { parsePageMessage } from '../panel/messages';
 import { buildPanelView } from '../panel/viewModel';
@@ -252,6 +253,29 @@ test('gemini: a changed guard setting re-derives the line at once — no query n
   everyHours = 5;
   guard.settingsChanged();
   assert.equal(changes, 1);
+});
+
+test('the Opus own review m3: a pending-run settle that fails (the durable store refuses) when ANOTHER consumer\'s read answers is no unhandled rejection — and a listener that throws does not stop the guard hearing the read', async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const store = new MapStore();
+    await store.update(PENDING_KEY, { op: 'install', startedAtUtcMs: 500, deadlineUtcMs: 400_000 });
+    const failing: DurableStore = { get: (key) => store.get(key), update: () => Promise.reject(new Error('the store refused')) };
+    const query: GuardUi['query'] = () => Promise.resolve(exited(0, presentStdout()));
+    const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, query });
+    const guard = guardOf(quietUi(query), { durable: failing, scheduler });
+    let heard = 0;
+    guard.onChange(() => { throw new Error('a listener\'s own fault'); });
+    guard.onChange(() => { heard += 1; });
+    await scheduler.refresh();
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    assert.deepEqual(unhandled, [], 'the failed settle was caught');
+    assert.ok(heard >= 1, 'the second listener heard the read although the first threw');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
 });
 
 // ---- the panel and the page's message set ----

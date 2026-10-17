@@ -31,10 +31,44 @@ function exited(stdout: string, code = 0): ProcessResult {
 test('one query reads every task under \\wsl-care: the folder is listed, not one task asked for by name — and the script only reads', () => {
   assert.ok(QUERY_SCRIPT.includes("GetFolder('\\wsl-care')"), 'the folder');
   assert.ok(QUERY_SCRIPT.includes('GetTasks(1)'), 'every task of it, hidden ones included');
-  assert.ok(!QUERY_SCRIPT.includes('GetTask('), 'no task is fetched by a name: the guard is one of the listed tasks');
   assert.ok(QUERY_SCRIPT.includes("'task=' + "), 'each task opens its own section');
   assert.ok(QUERY_SCRIPT.includes("'user=' + "), 'the reader\'s own SID');
   assert.equal(MUTATING.test(QUERY_SCRIPT), false);
+});
+
+/** The script's lines, to read the ORDER things are printed in. */
+const SCRIPT_LINES = QUERY_SCRIPT.split('\n');
+
+function lineIndex(startsWith: string): number {
+  return SCRIPT_LINES.findIndex((line) => line.startsWith(startsWith));
+}
+
+test('the Opus own review B2: the stop-event channel is printed ONCE, before the stamp, the folder and every task — the parser files each tag before the first task= into the folder, so a trailing one would be the LAST task\'s', () => {
+  const printed = SCRIPT_LINES.flatMap((line, i) => (line === '$channel' ? [i] : []));
+  assert.equal(printed.length, 1, 'one place prints it');
+  assert.ok(printed[0] !== undefined && printed[0] < lineIndex("if (Test-Path -Path 'HKLM:"), 'before stamp=');
+  assert.ok(printed[0] < lineIndex("'folder=present'") && printed[0] < lineIndex('foreach ($task in $tasks)'), 'before the folder and the tasks');
+  assert.ok(!QUERY_SCRIPT.includes('; $channel;'), 'not repeated by the folder\'s catch');
+  assert.ok(lineIndex("'user=' + ") < lineIndex("'folder=present'"), 'the folder\'s own lines all come before the first task');
+});
+
+test('the fixtures print the folder\'s lines in the script\'s real order: channel, stamp, user, folder, then the tasks', () => {
+  const lines = schedulerStdout({ tasks: [{ name: 'watch', summary: SUMMARY }] }).split('\r\n');
+  assert.deepEqual(lines.slice(0, 4).map((l) => l.split('=')[0]), ['channel', 'stamp', 'user', 'folder']);
+  assert.equal(lines[4], 'task=watch');
+});
+
+test('the Opus own review M1: GetTasks(1) skips a task this account cannot read, so each EXPECTED task missing from the list is fetched by name — absent only for 0x80070002, else unreadable with the HRESULT', () => {
+  assert.ok(QUERY_SCRIPT.includes("foreach ($name in @('watch','archive','windows-time-guard'))"), 'the expected names, from the constants');
+  assert.ok(QUERY_SCRIPT.includes('$folder.GetTask($name)'), 'fetched by name');
+  assert.match(QUERY_SCRIPT, new RegExp(`\\$_\\.Exception\\.HResult -ne ${NOT_FOUND_HRESULT}\\) \\{ 'task=' \\+ \\$name; 'read=unreadable'`), 'a refusal that is not "not found" is that task\'s unreadable section');
+  assert.equal(MUTATING.test(QUERY_SCRIPT), false);
+});
+
+test('the Opus own review M1: a task this account cannot read reads UNREADABLE with its HRESULT — not "not installed" — beside one that is simply not there', () => {
+  const read = readOf(schedulerStdout({ tasks: [{ name: 'watch', unreadable: '0x80070005' }] }));
+  assert.deepEqual(taskOf(read, 'watch'), { kind: 'unreadable', reason: 'Task Scheduler did not let this account read its definition (0x80070005)', hresult: '0x80070005' });
+  assert.equal(taskOf(read, 'archive').kind, 'absent');
 });
 
 test('the answer holds every task, in the order printed, each with its own tags and summary lines', () => {

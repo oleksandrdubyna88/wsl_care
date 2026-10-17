@@ -97,3 +97,13 @@ test('two consumers, one read: a listener added by each hears the same single qu
   assert.deepEqual(a, b);
   assert.equal(a.at(-1), 'read');
 });
+
+test('the Opus own review m3: a listener that throws neither stops the ones after it nor rejects the refresh — the read it was told about stands', async () => {
+  const { host } = hostOf(() => Promise.resolve(exited(schedulerStdout())));
+  let heard = 0;
+  host.onChange(() => { throw new Error('a listener\'s own fault'); });
+  host.onChange(() => { heard += 1; });
+  await host.refresh();
+  assert.ok(heard >= 2, 'the second listener heard the start and the answer');
+  assert.equal(host.current().kind, 'read');
+});

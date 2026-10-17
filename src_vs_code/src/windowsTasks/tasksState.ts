@@ -1,7 +1,7 @@
 import { TASK_NAMES, type TaskName } from '../client/verbs';
 import type { RenderAnswer, RenderResult } from '../client/windowsTasks';
 import { summariesMatch } from '../windowsTime/guardState';
-import { taskOf, type LastRun, type SchedulerRead, type TaskRead } from './schedulerAnswer';
+import { SCHEDULER_RESULT, taskOf, type LastRun, type SchedulerRead, type TaskRead } from './schedulerAnswer';
 
 /**
  * The Windows tasks' part of the panel, as ONE pure state (WR-E2 of PLAN_windows_runner.md §3.8): what Task Scheduler's ONE read
@@ -33,12 +33,13 @@ export const NOT_PROBED: CopyState = { kind: 'checking' };
 
 export type TaskRow =
   | { readonly kind: 'checking' }
-  /** The read gave no answer at all: why, and the ceiling when it was a timeout. */
-  | { readonly kind: 'unknown'; readonly reason: string; readonly timeoutMs?: number }
+  /** The read gave no answer at all: why, and — when it was a timeout — the ceiling and whether the runner VERIFIED the tree ended. */
+  | { readonly kind: 'unknown'; readonly reason: string; readonly timeoutMs?: number; readonly treeEnded?: boolean }
   | { readonly kind: 'notInstalled' }
   | { readonly kind: 'unreadable'; readonly reason: string }
   | { readonly kind: 'disabled' }
-  | { readonly kind: 'running' }
+  /** Running; `byCode`: Task Scheduler's own "running" result (`0x41301`) is what its last result says. */
+  | { readonly kind: 'running'; readonly byCode: boolean }
   /** Registered, but not as this version would register it — or not comparable: `differs`, `notStaged`, `cannotCompare` (with why). */
   | { readonly kind: 'updateNeeded'; readonly why: 'differs' | 'notStaged' | 'cannotCompare'; readonly detail: string }
   | { readonly kind: 'installed'; readonly lastRun: LastRun };
@@ -78,7 +79,7 @@ function stagedRow(task: Extract<TaskRead, { kind: 'present' }>, render: RenderR
 }
 
 /** Why a registered task cannot be compared with a copy that gave no render to compare with. */
-function copyGap(copy: Exclude<CopyState, { kind: 'staged' }>): Extract<TaskRow, { kind: 'updateNeeded' }> {
+function copyGap(copy: Exclude<CopyState, { kind: 'staged' | 'checking' }>): Extract<TaskRow, { kind: 'updateNeeded' }> {
   switch (copy.kind) {
     case 'notStaged':
       return { kind: 'updateNeeded', why: 'notStaged', detail: '' };
@@ -86,13 +87,25 @@ function copyGap(copy: Exclude<CopyState, { kind: 'staged' }>): Extract<TaskRow,
     case 'digestUnreadable':
       return { kind: 'updateNeeded', why: 'cannotCompare', detail: copy.reason };
     default:
-      return { kind: 'updateNeeded', why: 'cannotCompare', detail: 'this version\'s copy is still being checked' };
+      return { kind: 'updateNeeded', why: 'cannotCompare', detail: 'this version\'s copy is not known here' };
   }
 }
 
-/** A registered, enabled, idle task against the copy: the comparison, or why none could be made. */
+/** A registered, enabled, idle task against the copy: the comparison, or why none could be made — or "checking…" while the copy is probed. */
 function comparedRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName, copy: CopyState): TaskRow {
-  return copy.kind === 'staged' ? stagedRow(task, copy.renders[name]) : copyGap(copy);
+  switch (copy.kind) {
+    case 'staged':
+      return stagedRow(task, copy.renders[name]);
+    case 'checking':
+      return CHECKING;
+    default:
+      return copyGap(copy);
+  }
+}
+
+/** Running by Task Scheduler's own result code, not only by its state. */
+function runningRow(task: Extract<TaskRead, { kind: 'present' }>): TaskRow {
+  return { kind: 'running', byCode: task.lastRun.kind === 'ran' && task.lastRun.result === SCHEDULER_RESULT.running };
 }
 
 function presentRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName, copy: CopyState): TaskRow {
@@ -100,7 +113,7 @@ function presentRow(task: Extract<TaskRead, { kind: 'present' }>, name: TaskName
     return { kind: 'disabled' };
   }
 
-  return task.running ? { kind: 'running' } : comparedRow(task, name, copy);
+  return task.running ? runningRow(task) : comparedRow(task, name, copy);
 }
 
 function rowOf(read: Extract<SchedulerRead, { kind: 'read' }>, name: TaskName, copy: CopyState): TaskRow {
@@ -120,7 +133,9 @@ function unknownRow(read: Extract<SchedulerRead, { kind: 'unknown' }>): TaskRow 
     return CHECKING;
   }
 
-  return read.timeoutMs === undefined ? { kind: 'unknown', reason: read.reason } : { kind: 'unknown', reason: read.reason, timeoutMs: read.timeoutMs };
+  const { reason, timeoutMs, treeEnded } = read;
+
+  return { kind: 'unknown', reason, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(treeEnded === undefined ? {} : { treeEnded }) };
 }
 
 /** The dry state's sentence of the first render that answered on a staged copy. */

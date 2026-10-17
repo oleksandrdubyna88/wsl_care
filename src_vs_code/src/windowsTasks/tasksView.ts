@@ -2,6 +2,7 @@ import { DAEMON_EXIT } from '../client/exitCodes';
 import type { TaskName } from '../client/verbs';
 import type { ViewLevel } from '../panel/view';
 import { noticeText } from '../text/safeText';
+import { SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS } from './schedulerAnswer';
 import type { CopyState, TaskRow, WindowsTasksState } from './tasksState';
 
 /**
@@ -85,13 +86,11 @@ const RESULT_WORDS: Readonly<Record<number, string>> = {
   [DAEMON_EXIT.busy]: 'skipped — another run held the run lock (normal)',
   [DAEMON_EXIT.notAsRoot]: 'refused — it ran elevated, which it never may (exit 81)',
   [DAEMON_EXIT.taskEnded]: 'ended at its deadline — its whole tree was ended (exit 84)',
-  0x41301: 'running now',
-  0x41306: 'stopped by its time limit',
-  0x8004131f: 'skipped — a run of it was still going',
+  ...SCHEDULER_RESULT_WORDS,
 };
 
 /** The results that are the task working as built: a success, a skipped overlap, a busy lock. */
-const NORMAL_RESULTS: ReadonlySet<number> = new Set([DAEMON_EXIT.ok, DAEMON_EXIT.busy, 0x8004131f]);
+const NORMAL_RESULTS: ReadonlySet<number> = new Set([DAEMON_EXIT.ok, DAEMON_EXIT.busy, SCHEDULER_RESULT.skipped]);
 
 function resultWords(code: number): string {
   const known = RESULT_WORDS[code];
@@ -122,7 +121,14 @@ function unknownLine(row: Extract<TaskRow, { kind: 'unknown' }>): string {
     return `unknown — ${noticeText(row.reason)}`;
   }
 
-  return `unknown — the Task Scheduler read timed out after ${Math.round(row.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeGuardQuerySeconds); its PowerShell and everything it started were ended`;
+  const ended = row.treeEnded === true ? 'its PowerShell and everything it started were ended' : 'the extension could not confirm that its PowerShell and everything it started were ended';
+
+  return `unknown — the Task Scheduler read timed out after ${Math.round(row.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeGuardQuerySeconds); ${ended}`;
+}
+
+/** Running, said with Task Scheduler's own code only when that code is what its last result says. */
+function runningLine(row: Extract<TaskRow, { kind: 'running' }>): string {
+  return row.byCode ? `installed, running (0x${SCHEDULER_RESULT.running.toString(16).toUpperCase()})` : 'installed, running';
 }
 
 /** One line per row kind; `installed` is the one that needs the presentation edge's time formatter. */
@@ -132,7 +138,7 @@ const TASK_LINES: { readonly [K in TaskRow['kind']]: (row: Extract<TaskRow, { ki
   notInstalled: () => ({ line: 'not installed', level: 'none' }),
   unreadable: (row) => ({ line: `unreadable — ${noticeText(row.reason)}`, level: 'unknown' }),
   disabled: () => ({ line: 'installed, but disabled in Task Scheduler — install again to enable it', level: 'warn' }),
-  running: () => ({ line: 'installed, running (0x41301)', level: 'ok' }),
+  running: (row) => ({ line: runningLine(row), level: 'ok' }),
   updateNeeded: (row) => ({ line: UPDATE_SENTENCE[row.why](row.detail), level: 'warn' }),
   installed: installedLine,
 };
