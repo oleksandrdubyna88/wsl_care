@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.5.0...daemon-v0.6.0) (2026-10-17)
+
+
+### Features
+
+* **daemon:** A23 windowsTemp — the Windows %TEMP% cleanup, the engine's first Windows action (WR-T1) ([#155](https://github.com/oleksandrdubyna88/wsl_care/issues/155)) ([c74af46](https://github.com/oleksandrdubyna88/wsl_care/commit/c74af4641df177d0f3595af8abf02cbd0b4d0932))
+* **daemon:** Windows memory pressure — host.commit, host.compression, host.vmmem, one rule on both roads (E15.S5) ([#150](https://github.com/oleksandrdubyna88/wsl_care/issues/150)) ([6d68f00](https://github.com/oleksandrdubyna88/wsl_care/commit/6d68f00990f33a7e4120b9317429ec7b2d2e7a69))
+* **health:** the `wsl-care` daemon's disk script runs under the verified MSI PowerShell 7, else 5.1 (E15.S1b) ([#151](https://github.com/oleksandrdubyna88/wsl_care/issues/151)) ([a432e97](https://github.com/oleksandrdubyna88/wsl_care/commit/a432e9708aedf07168a63f80cab01da8c5d5b6e4))
+
+
+### Bug Fixes
+
+* **extension:** the vsix e-mail scan does not flag a systemd unit name (getty@tty1.service) ([#164](https://github.com/oleksandrdubyna88/wsl_care/issues/164)) ([11553fe](https://github.com/oleksandrdubyna88/wsl_care/commit/11553feb79d1d5d227a67d59b3de09b6cb7c3fbe))
+
 ## [0.5.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.4.0...daemon-v0.5.0) (2026-10-15)
 
 
