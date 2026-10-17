@@ -175,6 +175,9 @@ const PATH_PLANTS: readonly { readonly what: string; readonly literal: string }[
   { what: 'a /mnt/ path', literal: '/mnt/c/tools' },
   { what: `a ${BACKSLASH}${BACKSLASH}wsl share`, literal: `${BACKSLASH}${BACKSLASH}wsl.localhost${BACKSLASH}Ubuntu` },
   { what: 'an e-mail address', literal: 'contact x.y@example.org' },
+  { what: 'an e-mail address', literal: 'name@company.co.uk' },
+  { what: 'an e-mail address', literal: 'a@b.io' },
+  { what: 'an e-mail address', literal: 'user@service.example.com' },
   { what: 'a source map reference', literal: '//# sourceMappingURL=extension.js.map' },
   { what: 'a source map reference', literal: '"sourcesContent": []' },
 ];
@@ -195,6 +198,13 @@ test('planted in a non-code entry (the README) a path is found too', () => {
 test('the near misses are not findings: a URL scheme, one escaped backslash before wsl, an npm scope, a version', () => {
   for (const literal of ['https://github.com/oleksandrdubyna88/wsl_care', `System32${BACKSLASH}wsl.exe`, '@vscode/vsce@4.0.0', 'x@1.85.0', 'a: b']) {
     assert.deepEqual(vsixFindings(inBundle(literal), OPTIONS), [], literal);
+  }
+});
+
+test('a systemd unit name (getty@tty1.service) is not an e-mail address: the word after the last dot names a unit type, so a changelog line that quotes one stays clean', () => {
+  for (const literal of ['getty@tty1.service', 'serial-getty@ttyS0.service', 'default getty@tty1.service', 'sshd@2.socket', 'fstrim@x.timer']) {
+    assert.deepEqual(vsixFindings(inBundle(literal), OPTIONS), [], literal);
+    assert.deepEqual(vsixFindings(planted('extension/changelog.md', `the verdict ignores a list, ${literal}`), OPTIONS), [], literal);
   }
 });
 
