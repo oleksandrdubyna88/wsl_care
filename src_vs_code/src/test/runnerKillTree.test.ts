@@ -32,11 +32,11 @@ test('the tree kill is ONE fixed PowerShell by absolute path — the verifying s
   assert.deepEqual(made.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
   const script = made.args[3] ?? '';
   assert.equal(made.args.length, 4);
-  for (const word of ['$rootId = 4321', '$hostId = 100', 'FromUnixTimeMilliseconds(1760000000000)']) {
+  for (const word of ['$originId = 4321', '$hostId = 100', 'FromUnixTimeMilliseconds(1760000000000)']) {
     assert.ok(script.includes(word), word);
   }
   const other = request(7, 8, 9).args[3] ?? '';
-  assert.equal(other.replaceAll('$rootId = 7', '$rootId = 4321').replaceAll('$hostId = 8', '$hostId = 100').replaceAll('FromUnixTimeMilliseconds(9)', 'FromUnixTimeMilliseconds(1760000000000)'), script, 'nothing else differs');
+  assert.equal(other.replaceAll('$originId = 7', '$originId = 4321').replaceAll('$hostId = 8', '$hostId = 100').replaceAll('FromUnixTimeMilliseconds(9)', 'FromUnixTimeMilliseconds(1760000000000)'), script, 'nothing else differs');
 });
 
 test('the script verifies before it ends anything: the root is a child of THIS host that started after it, each descendant no older than its parent, ended by id — and read back', () => {
@@ -60,6 +60,12 @@ test('no request is made for a pid, host pid or start time that cannot be truste
   }
   assert.equal(treeKillRequest(ENV, 100, 100, 1_760_000_000_000), undefined, 'the host is never its own root');
   assert.equal(treeKillRequest({}, 4321, 100, 1_760_000_000_000), undefined, 'no SystemRoot, no PowerShell to name');
+});
+
+test('the script is a string literal of the shipped bundle, which the publication scan reads word by word: it holds none of the words that scan forbids outside the root module (the full run found "$root")', () => {
+  const script = request().args[3] ?? '';
+  assert.doesNotMatch(script, /\broot\b/i, 'bundleScan: no region but the root module spells the word root');
+  assert.doesNotMatch(script, /(^|\s)config(\s|$)|(^|\s)-u(\s|=|$)|--(user|timer|confirm|manual|preview|detach|only|process|entry|stop|request)\b/);
 });
 
 // ---- endTree: the guard, the verdict, the bound ----

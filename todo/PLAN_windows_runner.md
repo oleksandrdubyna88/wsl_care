@@ -1088,6 +1088,7 @@ The story is READ ONLY: nothing is registered, removed, run or written to Task S
 - **m7 — task names are case-insensitive in Task Scheduler.** The query's by-name fallback compares with `-eq` (case-insensitive), but
   the parser keys sections by the exact name and the extension registers lower-case names: a task someone re-created as `Watch` is
   listed, so not fetched by name, and reads "not installed" here. Noted, not handled (the registration is the extension's own).
+- **The full run after the review found one more** — the verifying script is a string literal of the shipped bundle, and `bundleScan` forbids the word `root` in any region but the root module: the script named its variable `$root`. It is `$origin` now, with a test that reads the script for every word that scan forbids (break-it: `$root` back → red).
 - **Proposed, not done (reuse-first: name it, propose it).** `gpu/gpuHost.ts` (and `bundled/bundledHost.ts`, `archive/archiveHost.ts`)
   carry their own copies of "one in flight, one more when asked meanwhile" and of the listener list; `SingleFlight` and `Listeners` could
   replace them — a separate change in code this story did not otherwise touch, so it is a question for the owner.
