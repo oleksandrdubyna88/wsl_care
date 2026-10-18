@@ -1,7 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
 > Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); E15.S7 being designed on its branch `feat/wc-e15s7-redaction` (*E15.S7 design* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); E15.S7 built on its branch `feat/wc-e15s7-redaction` (draft PR #161, 2026-10-17; *E15.S7 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
 > and E15.S6 onwards (E15.S7 aside) not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
 
 > built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
@@ -1894,3 +1894,108 @@ Definition of Done:
 4. A user-widenable word list → **deferred** to the open tail (`processes.extraSecretWords` + `SafeDirection.Superset`); not
    needed for #87.
 5. Kernel ring lines → **a follow-up**, recorded in the open tail; not in this story.
+
+## E15.S7 as built (2026-10-17, branch `feat/wc-e15s7-redaction`, draft PR #161)
+
+**What shipped.** One redaction rule, `WslCare.Core/Processes/Redaction/CommandLineRedaction`, behind every road R1–R4 of the design's
+inventory, on both binaries; `program` / `argumentsShown` / `argumentsTotal` on the wire; three machine-only keys; the Windows entry
+(`WindowsCommandLine.Split` / `.Shown`) with its raw-line backstop. The judge's review of the WIP (2026-10-16) is applied: the URL arm
+before the creds shape, the exact backstop span, every provider-shaped token built from halves (`{GHP}` / `{CFGK}` / `{SKANT}` /
+`{JWT}` placeholders in the fixture), one invented case per creds family, the pattern ceiling at the key's DEFAULT,
+`AgentOrphans.Script` internal and called directly. Read: [module_daemon.md](../research/module_daemon.md) § *One redaction rule for
+every command line*, [module_tests.md](../research/module_tests.md) § *One redaction rule … (E15.S7)* (the RED messages, the guards,
+the twelve break-its), [architecture.md](../research/architecture.md) (E5.S0 contracts).
+
+**Commits** (conventional, each builds and is green for its own tests): `docs(plan)` ×4 (design, decisions, plan round, judge's
+review); `test(daemon): E15.S7 RED`; `feat(daemon): SecretShapes …`; `feat(daemon): the three processes.* keys …`;
+`feat(daemon): CommandLineRedaction …`; `feat(daemon): program, argumentsShown, argumentsTotal on the wire`;
+`feat(daemon): WindowsCommandLine.Split …`; `docs: E15.S7 as built`.
+
+### The golden diff, every `commandLine` that changed (`contracts/golden/head/status.json`, regenerated in WSL)
+
+The design (§5, §8) and the brief expected ONLY the `/TelemetrySession:` entries to change. **That row is not in the golden** (the
+captured Visual Studio server processes are not in the top 30 or the `/mnt` walkers), and **two other entries changed**. The security
+judge decides on them. Verbatim, before → after (both cut at the 200 characters `processes.shownCommandChars` allows):
+
+1. A bare **40-hex commit id** in the `wslServer.sh` launch — redacted by the DECIDED rule "no digest exemption" (§2.4, RED 14;
+   a pre-`ghp_` GitHub token is 40 hex):
+
+   ```
+   - "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-",
+   + "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh <redacted> stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=<redacted> --use-host-pr",
+   ```
+
+   (The old line was cut inside `--connection-` by the 200-character limit; the shorter `<redacted>` lets the same cut reach
+   `--connection-token=<redacted>`, which the old rule would also have redacted.)
+
+2. A **`sh -c` script** holding `--connection-token=REDACTED` (a by-hand redaction in the fixture) — the whole argument is a blob
+   with a secret word and a separator (arm 7), so it goes whole:
+
+   ```
+   - "commandLine": "sh -c \"$VSCODE_WSL_EXT_LOCATION/scripts/wslServer.sh\" 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=REDACTED --use-host-proxy ",
+   + "commandLine": "sh -c <redacted>",
+   ```
+
+Everything else in the diff is the three added fields (50 process rows and the 2 live MCP owners; 280 lines added) and the trailing
+comma that the new field after `commandLine` forces on two lines (the two `claude … --max-thinking-tokens <redacted>` rows, whose
+text is unchanged). One further change was found in the first regeneration and FIXED rather than accepted:
+`--sourceGeneratorExecutionPreference` and `--devKitDependencyPath` were redacted by the entropy test (their dashes count as a
+symbol class and their CamelCase as two letter cases); a flag name is now exempt, with a test that went red first.
+
+### Deviations from the design
+
+- **Commits 3 and 4 swapped**: the keys came before the rule's wiring, because `CommandLineText` delegates with limits READ from
+  them; each commit builds and is green.
+- **Whitespace-only arguments are skipped and not counted** (design §2.5 says empty only): the safer reading — node's title
+  padding is a run of spaces, and such an argument shows nothing a view could use. Recorded in `ShownArguments.Of`'s remarks.
+- **The pattern ceiling is a compile-time constant** (`SecretShapes.PatternCeilingMilliseconds` = 1000) — a `[GeneratedRegex]`
+  attribute takes a constant, never a configured value, so it is the range maximum of `patterns.matchTimeoutMilliseconds` (the
+  bootstrap ceiling `TextRule.Matching` uses), held equal by a test and listed in `NumbersArchitectureTests` with its reason, like
+  `CommandLine.MaxShownVolumes`. A match that times out counts as a HIT (deny by default). The linearity comes from the 4096-character
+  bound and the anchored, bounded patterns.
+- **Arm 3 and the blob**: a value that fails by arm 7 (a secret word and a separator inside it) gives the WHOLE argument, not
+  `name=<redacted>` — the design's own "reached through arm 3" example (`Server=…;Password=…`) and test 10 demand it.
+- **A "secret flag" (arm 1) is a name with no value in it** (`^--?[A-Za-z0-9][A-Za-z0-9._-]*$`), not "starts with `-` and holds no
+  `=`": `--auth:"my secret value"` is one argument judged on its own, and it must not make the `--port` after it secret (test
+  `A_windows_line_whose_secret_the_split_isolates…`).
+- **The backstop scans resume after a value span** (a name such as `secret` inside `--auth:"my secret value"` is part of that
+  value) and treats a timeout as a hit.
+- **A flag name is exempt from the entropy test** (above).
+- **Entropy calibration constants** (`MinEntropyBits` 3.5, `MinClasses` 3, `MinDigitPercent` 30) are code constants listed in
+  `NumbersArchitectureTests` as the credential alphabet's properties; the length floor IS a key.
+- **Fixture arm labels** `arm4` / `arm5` of two lines were corrected to the amended order; the arm labels are informational.
+- **Test defects found and fixed** in commit 4's tests: the surrogate test called reflection-based JSON (disabled in this
+  build; it now asks `JsonEncodedText`), and the no-prefix test used a value that shares four letters (`assw`) with the flag name it
+  follows. `McpStatusTests` compares the owner by value including its two new fields.
+- **Not done in this story**: the extension's own half (E18.W1b, the full view that shows `program` + `argumentsShown`); the
+  open tail below.
+
+### Totals and checks
+
+Rebased on `origin/main` a672ae74 (2026-10-18). **Windows:** Core 3202 (3113 passed, 89 skipped, 0 failed); CLI 443 (440 passed, 3
+skipped, 0 failed); Scenarios 635 (344 passed, 288 skipped, 3 failed — `FixtureAnonymisationTests` was REAL: the identity list
+rewrote an address-shaped `Inv3nted@db.example.invalid` in `realistic-leaks.txt` to `user@example.invalid`, now committed as the list
+writes it; `EventsFlows…` and `VirtualDiskFlows…` were timeouts under load and pass alone; the fixture, privacy and redaction
+contract classes were rerun: 63 of 63). **Linux** (WSL, a NEW `/tmp/testsToDelete-wc-e15s7-20261018T091038Z`, script files only): the
+goldens regenerated, then `GoldenContractTests` green without the write variable (7 of 7, twice); Core 3202 (3101 passed, 101
+skipped, 0 failed); CLI 443 (399 passed, 44 skipped, 0 failed); Scenarios 635 (618 passed, 15 skipped, 2 failed — the two
+`StatusFlows` wall-clock budgets on a machine at 100 % CPU; two quiet reruns 9 of 9 and 9 of 9, a third had one red at 3.003 s
+against the 3 s budget: the budget is 2 s of the CPU window plus the process; the rule's own cost was not measured separately — the same test passed
+twice in three quiet reruns).
+**Break-its:** twelve, each red, restored byte for byte and green (the nine of §7 plus the URL-first order, the backstop's
+whole-argument compare and the unbounded word `key`; B3 first did not compile and was redone) — the messages are in
+[module_tests.md](../research/module_tests.md). **Format** (`dotnet format wsl_care.slnx --verify-no-changes`): one real finding
+(a missing final newline in `ProcessFiles.cs`), fixed in the commit it belongs to; **plan-lifecycle**, `adapter-check`,
+`pin-check` and `build-flags-check`: clean. **The extension** (`npm test`, `npm run lint`): NOT run — `src_vs_code` has no
+`node_modules` in this worktree and installing is refused on the machine; nothing in `src_vs_code` changed, no extension source or test
+names a value the golden diff changed, and the new fields are additive (read by key), so the claim "green without a change" rests on
+that reading until the extension suite is run by someone who may install.
+
+### Open tail
+
+- `processes.extraSecretWords` (an OPEN, reviewed `TextRule.SecretWord` list with a `SafeDirection.Superset`) if the owner asks.
+- Kernel ring lines (`health.kernelLinesKept`) can echo a command line; routing them through `Shown` is a follow-up.
+- History already written keeps what the old rule showed; `runs.historyRetentionDays` retires it (the PR body says so).
+- E15.S6 is the first wire consumer of `WindowsCommandLine.Shown`.
+- The two golden entries above wait for the security judge; if the 40-hex exemption is to return, it is one `IsGuid`-style shape in
+  `HighEntropy`.

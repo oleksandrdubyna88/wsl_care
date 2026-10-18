@@ -859,6 +859,53 @@ flowchart LR
 - **Not built here**: a vmmem line in the distro's disk script. With it the full run can judge `host.vmmem` again
   (`FullRunVerdicts` gains it); it waits for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
 
+## One redaction rule for every command line (E15.S7, 2026-10-17)
+
+> Plan: `todo/PLAN_disk_health.md`, *E15.S7 design* and *E15.S7 as built*. Read-only: nothing
+> is acted on, no wire field is removed.
+
+**Purpose.** Every command line the product shows or stores — `status --json`'s process rows and MCP owners, the action previews and
+run details, the golden contracts, and from E15.S6 the Windows binary's own — is judged by ONE pure function,
+`WslCare.Core/Processes/Redaction/CommandLineRedaction`, on both binaries. The old rule (eight words, `--name=value` and
+`--name value` only) missed a creds config key given positionally, `GITHUB_TOKEN=…` without a dash, a URL's userinfo, a bearer
+header behind an innocent flag and a blob like VS Code's `/TelemetrySession:{"CollectorApiKey":…}`.
+
+```mermaid
+flowchart LR
+    argv["raw argv<br/>(/proc cmdline · Windows Split)"] --> judge["ArgumentJudge<br/>per argument, first arm wins"]
+    judge --> shown["Redact → Printable → Shown<br/>cut AFTER the rule, on a rune boundary"]
+    judge --> view["ShownArguments<br/>program · safe prefix · total"]
+    shown --> wire["commandLine<br/>status · previews · run details · golden"]
+    view --> wire2["program · argumentsShown · argumentsTotal"]
+    win["Windows line"] --> split["WindowsArgv.Split<br/>CommandLineToArgvW rules"] --> judge
+    shown --> back["RawLineBackstop<br/>whole-argument compare on the raw line"]
+```
+
+**Order of judgement** (`ArgumentJudge`, per argument; the first arm that decides wins; a value is never partly redacted):
+over `processes.maxJudgedArgChars` → `<redacted>` unjudged · (1) the previous argument is a secret FLAG (a name with no value in it)
+· (2) the program's own password flag (`sshpass -p`, `mysql -pSECRET`, `curl -u user:pass`) · (3) `name=value`: a secret name loses
+its value, otherwise the value is judged as a positional and a value that fails gives `name=<redacted>` (a blob gives the whole
+argument) · (4) a URL — userinfo and secret query values cut, then the creds-shape test over what remains · (5) a creds shape ·
+(6) a path (shown whole) · (7) a secret word followed by a separator inside a blob · (8) high entropy (length, alphabet, classes,
+Shannon bits; a GUID and a flag name are exempt, a digest is NOT). `ShownText.Printable` (moved here from the CLI) then replaces
+control, format and unpaired-surrogate characters with `?`.
+
+| Entity | Role |
+|---|---|
+| `CommandLineRedaction` | `Redact`, `Shown`, `Line`; `RedactionLimits(SecretMinChars, MaxJudgedArgChars, ShownChars)` arrive as arguments |
+| `ArgumentJudge`, `UrlRedaction` | the order above; the URL arm runs before the creds shape (judge's review, 2026-10-16) |
+| `SecretShapes`, `HighEntropy`, `SafeShapes` | the closed lists, the entropy test, the path / GUID / npm-spec / flag / plain-word shapes |
+| `ShownArguments` | `program`, the longest SAFE PREFIX (at most `processes.shownSafeArgs`), `argumentsTotal` |
+| `WindowsArgv`, `WindowsCommandLine.Split` / `.Shown`, `RawLineBackstop` | the Windows entry: split as `CommandLineToArgvW` does, the same rule, then the backstop |
+| `CommandLineText` | `Shown` / `Redact` delegate with the limits read from the three keys; `FileNameOf`, `ProgramNames`, `ScriptOf` stay on the RAW argv |
+
+**Keys** (machine layer only, `Lower` is the safe direction): `processes.secretMinChars` 12–64 (20), `processes.shownSafeArgs` 0–8 (2),
+`processes.maxJudgedArgChars` 1024–65536 (4096). The word lists and shapes are closed in code (no user-widenable list: that needs a
+"superset is safer" direction `SafeDirection` does not have).
+
+**Wire** (additive, `schemaVersion` 1): `program`, `argumentsShown`, `argumentsTotal` on every process row; `program`,
+`argumentsShown` on an MCP owner; `commandLine` stays. Residuals — free text, short secrets, passphrases of words, bare hex digests
+(lost on purpose), a secret as a file name, kernel ring lines, history already written — are the plan's §9.
 ## Story history (moved from architecture.md, 2026-10-12)
 
 What E4 built — the installer and the units (E4.S1) and the release pipeline (E4.S2) — moved here from
