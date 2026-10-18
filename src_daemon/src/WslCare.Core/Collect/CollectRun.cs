@@ -447,7 +447,7 @@ public static class CollectRun
             Config = ConfigValueReport.NotDefault(c.Loaded),
             ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
             Settled = c.Settled is { } settled ? RunSettledReport.From(settled) : null,
-            Disk = DiskReports.From(disk),
+            Disk = DiskReports.From(disk, VolumeFreeRules.From(health, c.Loaded.Config)),
         };
     }
 

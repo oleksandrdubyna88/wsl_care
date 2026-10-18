@@ -2,6 +2,9 @@ import type { StatusAnswer, Verdict, VerbOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
 import type { GpuBarMark } from '../gpu/gpuState';
 import { at, unavailableAncestor } from '../panel/jsonPath';
+import type { VolumeBarMark } from './volumeMark';
+
+export { NO_VOLUME_MARK, volumeMarkOf, volumeMarkOfOutcome, type VolumeBarMark } from './volumeMark';
 
 /**
  * The status bar (plan §7.2; §15g B1), as a pure function of the newest `status` outcome:
@@ -103,17 +106,38 @@ function failureView(status: Exclude<VerbOutcome, { kind: 'answered' }>): BarVie
 
 const BAR_RANK: Readonly<Record<BarLevel, number>> = { none: 0, warn: 1, critical: 2 };
 
+/** What a mark laid over the bar is made of — the GPU host's and the volume mark's shapes are this one. */
+interface BarMark {
+  readonly text: string;
+  readonly level: BarLevel;
+  readonly lines: readonly string[];
+}
+
+/** Appends the mark's text, puts its lines first in the tooltip and raises the level — never LOWERS it; an empty mark changes nothing. */
+function withMark(view: BarView, mark: BarMark): BarView {
+  if (mark.text === '') {
+    return view;
+  }
+
+  return { text: view.text + mark.text, tooltip: [...mark.lines, view.tooltip].join('\n'), level: BAR_RANK[mark.level] > BAR_RANK[view.level] ? mark.level : view.level };
+}
+
 /**
  * The GPU mark (PLAN_gpu_health.md D6) on whatever the bar shows — WSL's figures, "WSL stopped", a failure: ` · GPU off` and
  * the error colour while an adapter is not working, ` · GPU ?` and the warning colour while the check could not run, the
  * adapters' lines first in the tooltip. A mark never LOWERS the bar's level. Pure.
  */
 export function withGpuMark(view: BarView, mark: GpuBarMark): BarView {
-  if (mark.text === '') {
-    return view;
-  }
+  return withMark(view, mark);
+}
 
-  return { text: view.text + mark.text, tooltip: [...mark.lines, view.tooltip].join('\n'), level: BAR_RANK[mark.level] > BAR_RANK[view.level] ? mark.level : view.level };
+/**
+ * The volume mark (E19.S1) beside the GPU's: ` · D: low space` and the error colour while `disk.volumeFree` is critical, the volume's
+ * free space and the reading's age as the tooltip's first line (`volumeMark.ts` reads them from the status answer). A mark never
+ * LOWERS the bar's level. Pure.
+ */
+export function withVolumeMark(view: BarView, mark: VolumeBarMark): BarView {
+  return withMark(view, mark);
 }
 
 export function barView(status: VerbOutcome | undefined): BarView {
