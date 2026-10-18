@@ -88,6 +88,16 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
 - Only the focused VS Code window polls, every `wslCare.refreshSeconds` seconds (default 120), and only for `status`.
 - No telemetry and no network calls of its own.
 
+## The Windows tasks
+
+Two opt-in scheduled tasks run the bundled Windows daemon for you: `\wsl-care\watch` (samples the Windows MCP servers into the daemon's CPU ledger every few minutes) and `\wsl-care\archive` (archives the Windows side's aged AI sessions). The panel's *Health* section has three buttons — **Install the Windows watch task**, **Install the Windows archive task** and **Remove the Windows tasks** (also in the command palette, each ending "(as you, not elevated)…").
+
+- **One PowerShell, as you.** It is not elevated, Windows asks nothing, and the task runs as your own account with an interactive token at the least privilege — never SYSTEM. It runs only while you are logged on.
+- **A verified copy.** An install first asks the daemon to copy the bundled `wsl-care.exe` to `%LOCALAPPDATA%\wsl-care\bin\<digest>\` and to read the copy back; the task starts THAT copy, never the extension folder. The modal says the copy is already there; a decline leaves it, and *Remove the Windows tasks* deletes it.
+- **You read what runs.** The exact PowerShell script — with the task definition the daemon rendered inside it — opens in a read-only tab beside the modal, and the modal names the program (PowerShell 7 when it is installed and verified, else Windows PowerShell 5.1), the triggers, the deadlines and the dry-run state. The extension checks the render before it shows it: your own account, an interactive token, the staged path — nothing else is registered.
+- **Dry first.** Until the dry run ends the tasks only sample or preview. This extension never writes the daemon's settings; to turn the dry run off, run `wsl-care.exe config set dryRun false` in a terminal on the Windows side once you have read the dry week.
+- **Remove** deletes both tasks, then the folder only when nothing else is in it (the Windows Time guard's task keeps it), then every staged copy; a copy whose exe is still executing is kept and named, and the next install or removal retries it.
+
 ## Install the daemon
 
 The extension shows what the daemon reports; the daemon itself is installed in the distribution by its release's
@@ -111,6 +121,8 @@ All are user settings only (`"scope": "application"`), so a repository's `.vscod
 |---|---|---|
 | `wslCare.distro` | empty | The distribution to show. Empty means WSL's default distribution. A name `wsl.exe --list` does not report is refused before anything starts. |
 | `wslCare.refreshSeconds` | 120 | How often the focused window asks for `status`, in seconds (at least 30). |
+
+`wslCare.timeouts.windowsTasksSeconds` (60, 10–600) bounds the ONE PowerShell of an install or removal of the Windows tasks, and `wslCare.windowsTasks.busyRetrySeconds` (3, 1–60) is the wait before the ONE retry when the daemon's run lock is busy.
 
 Every other number the extension uses is a setting too — each with its range; a value outside it is clamped. A call's
 ceiling can never be set at or below the daemon's own worst case for that call: its minimum is that worst case plus 10 s.
