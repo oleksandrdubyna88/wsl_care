@@ -61,7 +61,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Agents/AgentWalk.cs: Take(5)"] = "the wire shape: a report's 'largest' list holds five sessions (contracts/agents.schema.json)",
         ["WslCare.Core/Agents/AgentsReport.cs: Mb"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Agents/AgentsReport.cs: Gb"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
-        ["WslCare.Core/Config/ConfigKeys.Disk.cs: MaxIgnoredLetters"] = "the ignored-volume-letters schema limit (A-Z, 26), part of the contract other tools write against (contracts/config-keys.json)",,
+        ["WslCare.Core/Config/ConfigKeys.Disk.cs: MaxIgnoredLetters"] = "the ignored-volume-letters schema limit (A-Z, 26), part of the contract other tools write against (contracts/config-keys.json)",
         ["WslCare.Core/Config/ConfigKeys.Worktrees.cs: MaxArtifactPatterns"] = "the build-artifact list's cap in the schema (contracts/config-keys.json maxMembers), what bounds the configuration itself",
         ["WslCare.Core/Config/ConfigKeys.Worktrees.cs: MaxAutomountRoots"] = "the automount-roots list's cap in the schema (contracts/config-keys.json maxMembers), what bounds the configuration itself",
         ["WslCare.Core/Worktrees/WorktreesStatus.cs: BytesPerGibibyte"] = "a unit: bytes in a GiB, never a choice (E19.S3)",

@@ -122,7 +122,7 @@ public sealed class ContractFilesTests
             [("shape", "textList"), ("memberPattern", WslCare.Core.Actions.WindowsTemp.TempGlob.Pattern), ("maxMembers", glob.MaxMembers), ("neverMatches", new JsonArray(WslCare.Core.Actions.WindowsTemp.TempGlob.ClaudeName, WslCare.Core.Actions.WindowsTemp.TempGlob.TestLeftoverPrefix + "*"))],
         ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.WindowsLocalPath } open =>
             [("shape", "textList"), ("memberShape", "windowsLocalPath"), ("memberMaxLength", TextRule.AbsolutePathOrEmpty.MaxLength), ("maxMembers", open.MaxMembers)],
-        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.Matching matching } open =>
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.Matching matching } open when open.Name.StartsWith("worktrees.", StringComparison.Ordinal) =>
             [("shape", "textList"), ("memberPattern", matching.Expression), ("maxMembers", open.MaxMembers)],
         ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
         ConfigKey.AgentListKey => [("shape", "agentList"), ("maxEntries", ExtraAgentShape.MaxEntries), ("maxFolders", ExtraAgentShape.MaxFolders), ("maxPathLength", ExtraAgentShape.MaxPathLength), ("maxGlobLength", ExtraAgentShape.MaxGlobLength), ("maxNameLength", ExtraAgentShape.MaxNameLength), ("sides", new JsonArray(ExtraAgentShape.Wsl, ExtraAgentShape.Windows))],
