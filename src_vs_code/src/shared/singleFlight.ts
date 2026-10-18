@@ -5,7 +5,8 @@
  * more. So a burst of refreshes is at most two runs, and the last one always starts after the last request.
  *
  * `started` is called when a flight begins and `ended` when its last run is over; `running` is already true in the first and
- * already false in the second. A run that rejects rejects the request (and the shared flight), and the next request starts afresh.
+ * already false in the second. A run that rejects does NOT drop a run queued behind it (the coai code round, finding 4): the queue is
+ * drained, then the LAST error any run threw rejects the request (and the shared flight), and the next request starts afresh.
  */
 export class SingleFlight {
   private flight: Promise<void> | undefined;
@@ -35,9 +36,18 @@ export class SingleFlight {
   }
 
   private async runs(): Promise<void> {
+    let failure: { readonly error: unknown } | undefined;
     do {
       this.again = false;
-      await this.work();
+      try {
+        await this.work();
+      } catch (error: unknown) {
+        // A run that rejects must not drop the run queued behind it: the queue is drained first, the last error surfaced after.
+        failure = { error };
+      }
     } while (this.again);
+    if (failure !== undefined) {
+      throw failure.error;
+    }
   }
 }

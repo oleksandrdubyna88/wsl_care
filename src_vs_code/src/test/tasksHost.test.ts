@@ -124,7 +124,7 @@ test('a copy that is there but would not start (an Application Control block, sa
 });
 
 test('a render that timed out names the setting; one the daemon refused (an older daemon, exit 2) is the daemon\'s sentence', async () => {
-  const timedOut = world({ renderOf: () => ({ kind: 'timedOut', timeoutMs: 60_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }) });
+  const timedOut = world({ renderOf: () => ({ kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }) });
   await timedOut.host.refresh();
   assert.match(timedOut.host.view().copy.line, /could not be checked — it did not answer within 60 s/);
   const old = world({ renderOf: () => exited(2, '', 'unknown command: tasks') });
@@ -134,7 +134,7 @@ test('a render that timed out names the setting; one the daemon refused (an olde
 
 test('one task whose render did not answer is that task\'s "cannot be compared" — the other task\'s render still counts', async () => {
   const w = world({
-    renderOf: (task) => (task === 'watch' ? exited(0, renderAnswer('watch from the staged copy')) : { kind: 'timedOut', timeoutMs: 60_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }),
+    renderOf: (task) => (task === 'watch' ? exited(0, renderAnswer('watch from the staged copy')) : { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }),
     tasks: [{ name: 'watch', summary: registered('watch') }, { name: 'archive', summary: registered('archive') }],
   });
   await w.host.refresh();

@@ -81,7 +81,7 @@ test('L1: launchFailure reads every non-exit ending, the timeout by its paramete
   const empty = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   assert.deepEqual(launchFailure({ kind: 'failedToStart', reason: 'ENOENT' }, 'daemonCall'), { kind: 'wslFailed', message: 'wsl.exe could not be started: ENOENT' });
   assert.deepEqual(launchFailure({ kind: 'tooMuchOutput', stream: 'stdout', limitBytes: 9 }, 'wslQuestion'), { kind: 'unparseable', detail: 'the answer exceeded 9 bytes on stdout' });
-  assert.deepEqual(launchFailure({ kind: 'timedOut', timeoutMs: 5, ...empty }, 'daemonCall'), { kind: 'timedOut', timeoutMs: 5 });
-  assert.deepEqual(launchFailure({ kind: 'timedOut', timeoutMs: 5, ...empty }, 'wslQuestion'), { kind: 'wslFailed', message: 'wsl.exe did not answer within 5 ms' });
+  assert.deepEqual(launchFailure({ kind: 'timedOut', timeoutMs: 5, treeEnded: false, ...empty }, 'daemonCall'), { kind: 'timedOut', timeoutMs: 5 });
+  assert.deepEqual(launchFailure({ kind: 'timedOut', timeoutMs: 5, treeEnded: false, ...empty }, 'wslQuestion'), { kind: 'wslFailed', message: 'wsl.exe did not answer within 5 ms' });
   assert.deepEqual(launchFailure({ kind: 'signalled', signal: 'SIGTERM', ...empty }, 'daemonCall'), { kind: 'unknownFailure', code: undefined, messages: ['ended by SIGTERM'] });
 });

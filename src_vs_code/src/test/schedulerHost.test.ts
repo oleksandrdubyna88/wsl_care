@@ -72,9 +72,9 @@ test('plan round 7, 8: the query is the fixed script under the setting\'s ceilin
 });
 
 test('plan round 8: a read that hit its ceiling says it timed out — the runner\'s own ending, with the ceiling named', async () => {
-  const { host } = hostOf(() => Promise.resolve({ kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }));
+  const { host } = hostOf(() => Promise.resolve({ kind: 'timedOut', timeoutMs: 30_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }));
   await host.refresh();
-  assert.deepEqual(host.current(), { kind: 'unknown', cause: 'timedOut', timeoutMs: 30_000, reason: 'the Task Scheduler query did not answer within 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds)' });
+  assert.deepEqual(host.current(), { kind: 'unknown', cause: 'timedOut', timeoutMs: 30_000, treeEnded: false, reason: 'the Task Scheduler query did not answer within 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds)' });
 });
 
 test('no SystemRoot: no PowerShell can be named, so the read says why — and starts nothing', async () => {

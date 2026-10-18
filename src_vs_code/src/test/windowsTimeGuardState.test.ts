@@ -61,7 +61,7 @@ test('the guard is read out of the folder\'s tasks BY NAME — its neighbours ch
 });
 
 test('a query that did not answer is unknown, with its reason', () => {
-  assert.match(JSON.stringify(guardStateOf({ kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) })), /did not answer within 30 s \(wslCare\.timeouts\.windowsTimeGuardQuerySeconds\)/);
+  assert.match(JSON.stringify(guardStateOf({ kind: 'timedOut', timeoutMs: 30_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) })), /did not answer within 30 s \(wslCare\.timeouts\.windowsTimeGuardQuerySeconds\)/);
   assert.match(JSON.stringify(guardStateOf({ kind: 'failedToStart', reason: 'ENOENT' })), /could not start: ENOENT/);
   assert.match(JSON.stringify(guardStateOf(exited('folder=absent', 1))), /exited 1/);
   assert.deepEqual(guardStateOf(exited(schedulerStdout({ channel: 'enabled' }))), { kind: 'absent', channel: 'enabled' });

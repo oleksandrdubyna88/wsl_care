@@ -180,8 +180,8 @@ test('plan round 6: a folder Task Scheduler will not let this account read is un
 });
 
 test('plan round 6, 8: a query that did not answer is unknown, with its reason — a timeout says it timed out', () => {
-  const timedOut = schedulerReadOf({ kind: 'timedOut', timeoutMs: 30_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
-  assert.deepEqual(timedOut, { kind: 'unknown', cause: 'timedOut', timeoutMs: 30_000, reason: 'the Task Scheduler query did not answer within 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds)' });
+  const timedOut = schedulerReadOf({ kind: 'timedOut', timeoutMs: 30_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+  assert.deepEqual(timedOut, { kind: 'unknown', cause: 'timedOut', timeoutMs: 30_000, treeEnded: false, reason: 'the Task Scheduler query did not answer within 30 s (wslCare.timeouts.windowsTimeGuardQuerySeconds)' });
   assert.deepEqual(schedulerReadOf({ kind: 'failedToStart', reason: 'ENOENT' }), { kind: 'unknown', cause: 'failed', reason: 'the Task Scheduler query could not start: ENOENT' });
   assert.deepEqual(schedulerReadOf(exited('', 1)), { kind: 'unknown', cause: 'failed', reason: 'the Task Scheduler query exited 1' });
   assert.deepEqual(schedulerReadOf({ kind: 'signalled', signal: 'SIGTERM', stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), { kind: 'unknown', cause: 'failed', reason: 'the Task Scheduler query was stopped (SIGTERM)' });

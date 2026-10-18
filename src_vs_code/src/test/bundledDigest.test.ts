@@ -38,3 +38,19 @@ test('a bundled exe that cannot be read, or a digest that is not 64 lower-case h
     assert.equal((await bad.bundledDigest()).kind, 'failed', JSON.stringify(odd));
   }
 });
+
+test('the coai code round, findings 6 + 15: the bundled exe is hashed ONCE per client — a second call, a concurrent one and the stage\'s expected copy reuse the answer; a failed read is not remembered', async () => {
+  let calls = 0;
+  const { runner } = recording(exited(0));
+  const client = new WindowsCareClient({ runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 1, statusTimeoutMs: () => 1, localAppData: 'C:\\Users\\user\\AppData\\Local', digestOf: () => { calls += 1; return Promise.resolve(STAGED_DIGEST); } });
+  await Promise.all([client.bundledDigest(), client.bundledDigest()]);
+  await client.bundledDigest();
+  await client.tasksStage();
+  assert.equal(calls, 1, 'one read of the 13.7 MB exe');
+
+  let attempts = 0;
+  const flaky = new WindowsCareClient({ runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 1, statusTimeoutMs: () => 1, digestOf: () => { attempts += 1; return attempts === 1 ? Promise.reject(new Error('EBUSY: resource busy')) : Promise.resolve(STAGED_DIGEST); } });
+  assert.equal((await flaky.bundledDigest()).kind, 'failed');
+  assert.deepEqual(await flaky.bundledDigest(), { kind: 'digest', digest: STAGED_DIGEST });
+  assert.equal(attempts, 2, 'the failure was not remembered');
+});

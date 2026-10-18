@@ -123,6 +123,9 @@ export function bundledReadOf(result: ProcessResult): BundledRead {
 }
 
 export class WindowsCareClient {
+  /** The bundled exe's digest, once learned (see {@link WindowsCareClient.bundledDigest}). */
+  private digest: Promise<BundledDigest> | undefined;
+
   constructor(private readonly options: WindowsClientOptions) {}
 
   /**
@@ -182,7 +185,21 @@ export class WindowsCareClient {
    * of the staged copy it asks `tasks render` about). A read of the file — nothing is started; `unavailable` when no bundled exe
    * is named here (not Windows, not a local disk), `failed` when it cannot be read.
    */
-  async bundledDigest(): Promise<BundledDigest> {
+  bundledDigest(): Promise<BundledDigest> {
+    // ONE read of the 13.7 MB exe per client, whoever asks and however often (the coai code round, findings 6 + 15): the answer is
+    // remembered as a promise, so concurrent askers share it; anything that is not a digest — unavailable, a failed read — is not.
+    this.digest ??= this.readBundledDigest().then((read) => {
+      if (read.kind !== 'digest') {
+        this.digest = undefined;
+      }
+
+      return read;
+    });
+
+    return this.digest;
+  }
+
+  private async readBundledDigest(): Promise<BundledDigest> {
     const file = this.exe();
     if (typeof file !== 'string') {
       return { kind: 'unavailable', reason: file.reason };

@@ -134,7 +134,7 @@ test('a render that cannot be read is a failure with its reason: bad JSON, the w
     ['a newer schema', exited(0, { ...answer, schemaVersion: 99 }), /newer/],
     ['exit 1', exited(1, '', 'boom\nmore'), /exited 1: boom/],
     ['exit 70', exited(70, '', 'internal'), /exited 70/],
-    ['timed out', { kind: 'timedOut', timeoutMs: 60_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, /did not answer within 60 s/],
+    ['timed out', { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, /did not answer within 60 s/],
     ['could not start', { kind: 'failedToStart', reason: 'spawn UNKNOWN: An Application Control policy has blocked this file.' }, /Application Control policy/],
   ];
   for (const [what, result, reason] of cases) {
@@ -194,7 +194,7 @@ test('the exit code and the JSON must agree: staged with exit 1, refused or busy
 
 test('stage exit 2 is the wrong side; a timeout and a failed start are failures that say so', async () => {
   assert.equal((await client(recording(exited(2, '', 'not the Windows binary')).runner).tasksStage()).kind, 'wrongSide');
-  assert.match(JSON.stringify(await client(recording({ kind: 'timedOut', timeoutMs: 60_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).tasksStage()), /did not answer within 60 s/);
+  assert.match(JSON.stringify(await client(recording({ kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).tasksStage()), /did not answer within 60 s/);
   assert.match(JSON.stringify(await client(recording({ kind: 'failedToStart', reason: 'spawn EPERM' }).runner).tasksStage()), /spawn EPERM/);
 });
 

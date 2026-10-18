@@ -141,8 +141,40 @@ function fakeChild(events: string[] = []): FakeChild {
 }
 
 function treeEndedOf(results: readonly ProcessResult[]): readonly unknown[] {
-  return results.map((r) => (r.kind === 'timedOut' ? ('treeEnded' in r ? r.treeEnded : 'absent') : 'not a timeout'));
+  return results.map((r) => (r.kind === 'timedOut' ? r.treeEnded : 'not a timeout'));
 }
+
+/** `done` calls, counted: a run completes ONCE (the coai code round, finding 3). */
+function counted(): { readonly done: (result: ProcessResult) => void; readonly results: ProcessResult[] } {
+  const results: ProcessResult[] = [];
+
+  return { results, done: (r) => { results.push(r); } };
+}
+
+test('the coai code round, finding 3: a run completes ONCE — a child that closes while the tree kill is in flight, and then the grace timer, call `done` exactly once', async () => {
+  const child = fakeChild();
+  const killer = new FakeKiller();
+  const { done, results } = counted();
+  const run = new Run(child, done, { killTree: true, treeKill: deps(killer, []), graceMs: 30 });
+  run.timedOut(1_000);
+  run.ended(null, 'SIGTERM');
+  killer.emit('exit', 0);
+  await new Promise((resolve) => { setTimeout(resolve, 150); });
+  assert.equal(results.length, 1, 'one completion, not one from the close and one from the grace timer');
+  assert.deepEqual(treeEndedOf(results), [true]);
+});
+
+test('finding 3: a child that never closes is completed by the grace timer ONCE, and a close arriving after that completes nothing again', async () => {
+  const child = fakeChild();
+  const { done, results } = counted();
+  const run = new Run(child, done, { killTree: false, treeKill: deps(new FakeKiller(), []), graceMs: 30 });
+  run.timedOut(1_000);
+  await new Promise((resolve) => { setTimeout(resolve, 100); });
+  run.ended(null, 'SIGTERM');
+  await new Promise((resolve) => { setTimeout(resolve, 30); });
+  assert.equal(results.length, 1);
+  assert.deepEqual(treeEndedOf(results), [false]);
+});
 
 test('the Opus own review B1: after the child emitted exit — its pipes still open, the ceiling firing — stop() makes NO tree-kill request, kills the child plainly and says the tree was not ended', async () => {
   const child = fakeChild();
@@ -176,7 +208,7 @@ test('the Opus own review M3: a run that ended its tree reports treeEnded true o
   assert.deepEqual(treeEndedOf(results), [true]);
 });
 
-test('a killer that did not verify the tree leaves treeEnded false on the timeout; no killTree asked leaves it absent', async () => {
+test('a killer that did not verify the tree leaves treeEnded false on the timeout; no killTree asked leaves it false too (finding 11: a REQUIRED boolean)', async () => {
   const child = fakeChild();
   const killer = new FakeKiller();
   const results: ProcessResult[] = [];
@@ -192,7 +224,7 @@ test('a killer that did not verify the tree leaves treeEnded false on the timeou
   plainRun.ended(null, 'SIGTERM');
   await new Promise((resolve) => { setTimeout(resolve, 20); });
   assert.deepEqual(treeEndedOf(results), [false]);
-  assert.deepEqual(treeEndedOf(plainResults), ['absent']);
+  assert.deepEqual(treeEndedOf(plainResults), [false]);
   assert.equal(plain.killed, 1);
 });
 
@@ -252,5 +284,5 @@ test('and without killTree the grandchild is still there and no verdict is given
   const { grandchild, result } = await ranOut(false);
   await new Promise((resolve) => { setTimeout(resolve, 500); });
   assert.equal(alive(grandchild), true, 'a plain kill ends the child alone');
-  assert.deepEqual(treeEndedOf([result]), ['absent']);
+  assert.deepEqual(treeEndedOf([result]), [false]);
 });

@@ -125,7 +125,7 @@ test('every exit of the elevated run is one closed outcome with its own sentence
 });
 
 test('codex c4: a TIMED-OUT run keeps holding the buttons until its deadline — the elevated child may still run', async () => {
-  const h = harness(true, { kind: 'timedOut', timeoutMs: 180_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, ENV, 1_000_000);
+  const h = harness(true, { kind: 'timedOut', timeoutMs: 180_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, ENV, 1_000_000);
   assert.equal((await runGuardOp('install', h.deps)).kind, 'timedOut');
   assert.deepEqual(readPending(h.store, 1_000_000), { op: 'install', startedAtUtcMs: 1_000_000, deadlineUtcMs: 1_360_000 });
   assert.match(h.reports[0]?.message ?? '', /answering it still runs it/);
@@ -371,7 +371,7 @@ function hostDepsWith(engine: GuardFlowDeps['engine']): ConstructorParameters<ty
 }
 
 test('own code review, note 13: a timed-out guard run names the engine; exit 13 on the MSI engine carries no Store note', async () => {
-  const timedOut = harness(true, { kind: 'timedOut', timeoutMs: 180_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+  const timedOut = harness(true, { kind: 'timedOut', timeoutMs: 180_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
   await runGuardOp('install', withEngine(timedOut, fixedEngine(STORE_READ)));
   assert.match(timedOut.reports[0]?.message ?? '', /did not finish within 180 s .+ Elevated program: PowerShell 7 \(.+\)\.$/);
   const msi = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';

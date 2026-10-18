@@ -143,7 +143,7 @@ test('the page may ask for the two flows only as BARE messages — a path or any
 // ---- the code round (coai 237ecc90): findings 4 and 5 ----
 
 test('code round #4: after a write whose ending is unknown or failed, the daemon is asked again', async () => {
-  for (const ending of [{ kind: 'timedOut' as const, timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, exited(70, '', 'wsl-care: internal error: x\n')]) {
+  for (const ending of [{ kind: 'timedOut' as const, timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, exited(70, '', 'wsl-care: internal error: x\n')]) {
     const reads: string[] = [];
     const recorder = newArchiveRecorder();
     recorder.answer = true;

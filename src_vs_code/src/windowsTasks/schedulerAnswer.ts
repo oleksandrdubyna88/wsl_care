@@ -186,9 +186,7 @@ export function schedulerReadOf(result: ProcessResult): SchedulerRead {
 
 /** A timeout, with the ceiling it hit and — when the runner was asked for a tree kill — whether it VERIFIED the tree ended. */
 function timedOutRead(result: Extract<ProcessResult, { kind: 'timedOut' }>, reason: string): SchedulerRead {
-  const { timeoutMs, treeEnded } = result;
-
-  return { kind: 'unknown', cause: 'timedOut', timeoutMs, reason, ...(treeEnded === undefined ? {} : { treeEnded }) };
+  return { kind: 'unknown', cause: 'timedOut', timeoutMs: result.timeoutMs, reason, treeEnded: result.treeEnded };
 }
 
 // ---- one task out of the read ----

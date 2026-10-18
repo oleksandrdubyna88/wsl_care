@@ -72,3 +72,26 @@ test('the listener list: every listener hears it; one that throws neither stops 
   listeners.tell();
   assert.deepEqual(heard, ['b', 'c', 'c']);
 });
+
+test('the coai code round, finding 4: a run that rejects does not drop a request queued behind it — the queued run still happens, and the last error is then surfaced', async () => {
+  const first = gate();
+  let n = 0;
+  const flight = new SingleFlight(async () => { n += 1; if (n === 1) { await first.opened; throw new Error('run 1 failed'); } });
+  const a = flight.request();
+  void flight.request();
+  first.open();
+  await assert.rejects(a, /run 1 failed/, 'no failure is hidden');
+  assert.equal(n, 2, 'the queued run was not dropped');
+  assert.equal(flight.running, false);
+});
+
+test('finding 4: when the queued run fails too, the LAST error is the one surfaced', async () => {
+  const first = gate();
+  let n = 0;
+  const flight = new SingleFlight(async () => { n += 1; if (n === 1) { await first.opened; } throw new Error(`run ${n} failed`); });
+  const a = flight.request();
+  void flight.request();
+  first.open();
+  await assert.rejects(a, /run 2 failed/);
+  assert.equal(n, 2);
+});

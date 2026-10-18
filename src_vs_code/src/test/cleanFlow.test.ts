@@ -204,7 +204,7 @@ test('§15k #19: the daemon refusing the piped list (its 10 s stdin ceiling) is 
 });
 
 test('§15k #3: a detach whose answer was not seen and whose run never showed stays UNRESOLVED in the journal — the follower resolves it', async () => {
-  const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: { kind: 'timedOut', timeoutMs: 90_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
+  const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: { kind: 'timedOut', timeoutMs: 90_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
   const outcome = await w.flow.clean(['A4'], false);
   assert.ok(outcome.kind === 'handedOff' && outcome.outcome.kind === 'outcomeUnknown');
   assert.deepEqual(w.journal.entries().map((e) => e.kind), ['unresolved']);
