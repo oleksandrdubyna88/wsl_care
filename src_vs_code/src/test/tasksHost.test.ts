@@ -15,6 +15,7 @@ import { fixedEngine, PS51_READ } from './support/engines';
 import { MapStore } from './support/memento';
 import { schedulerStdout, type TaskFixture } from './support/schedulerAnswers';
 import { SOURCE_ROOT } from './support/paths';
+import { quietTasks } from './support/tasksDeps';
 import { EXTENSION, exited, LOCAL_APP_DATA, renderAnswer, STAGED_DIGEST, STAGED_EXE } from './support/windowsTasks';
 
 /**
@@ -64,7 +65,7 @@ function world(options: WorldOptions = {}): World {
   const answer = options.queryResult ?? exited(0, schedulerStdout({ tasks: options.tasks ?? [], folder: options.folder ?? 'present' }));
   const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query: (request) => { queries.push(request); return Promise.resolve(answer); } });
 
-  return { host: new TasksHost({ scheduler, client, pin: PIN, formatInstant: (iso) => `<${iso}>` }), scheduler, renders, queries };
+  return { host: new TasksHost({ scheduler, client, pin: PIN, formatInstant: (iso) => `<${iso}>`, ...quietTasks().deps }), scheduler, renders, queries };
 }
 
 /** What the panel's refresh does for the Windows parts: ONE shared Task Scheduler read, and the tasks' probe of the staged copy (xtension.ts, `panelRefresh`). */

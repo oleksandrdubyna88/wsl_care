@@ -11,8 +11,10 @@ import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { PAGE_ACTIONS } from '../panel/view';
 import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
+import type { WindowsTasksState } from '../windowsTasks/tasksState';
 import { GPU_ACTIONS, gpuView, parseGpuAnswer } from '../gpu/gpuState';
 import { GUARD_LABELS, guardView } from '../windowsTime/guardState';
+import { TASKS_LABELS, windowsTasksView } from '../windowsTasks/tasksView';
 import { guardSummary, type GuardOptions } from '../windowsTime/guardTask';
 import { failed, goldenSnapshot } from './support/outcomes';
 import { Element, runPageScript } from './support/pageHarness';
@@ -67,13 +69,15 @@ function postedByPageButtons(): Set<string> {
     buildPanelView(goldenSnapshot(), undefined, undefined, undefined, gpuView(parseGpuAnswer(['name.0=GPU', 'id.0=PCI\\VEN_1002&DEV_7551', 'code.0=22', 'adapters=1'].join('\n'), 0), undefined, undefined, () => '')),
     // S7b.2b: the head golden's daemon publishes interopRelays, offers A21 and advertises its road — the relays' button enabled.
     buildPanelView(goldenSnapshot(), undefined, undefined, undefined, undefined, deriveRelays(goldenSnapshot(), { enabled: true, reason: '' })),
+    // WR-E3: a staged copy, the watch task installed and the archive task not — the Windows tasks' three buttons all enabled, no pending run.
+    buildPanelView(goldenSnapshot(), undefined, undefined, undefined, undefined, undefined, undefined, windowsTasksView(WINDOWS_TASKS_STATE, '0.4.0', local)),
   ];
   const posted = new Set<string>();
   for (const view of views) {
     const root = new Element('MAIN');
     const page = runPageScript(fs.readFileSync(PAGE_SCRIPT, 'utf8'), { panel: root });
     page.message({ type: 'view', view: structuredClone(view) });
-    for (const button of [...root.all('button[data-action]'), ...root.all('button[data-guard-action]'), ...root.all('button[data-archive-action]'), ...root.all('button[data-gpu-action]'), ...root.all('button[data-relays-action]')]) {
+    for (const button of [...root.all('button[data-action]'), ...root.all('button[data-guard-action]'), ...root.all('button[data-archive-action]'), ...root.all('button[data-gpu-action]'), ...root.all('button[data-relays-action]'), ...root.all('button[data-windows-tasks-action]')]) {
       page.click(button);
     }
     for (const message of page.posted) {
@@ -85,6 +89,12 @@ function postedByPageButtons(): Set<string> {
 
 /** The golden outcomes as a real `Snapshot` — typed, not cast (TypeScript doctrine §3; code round of PLAN_gpu_health.md). */
 
+const WINDOWS_TASKS_STATE: WindowsTasksState = {
+  copy: { kind: 'staged', digest: '0123456789abcdef'.repeat(4), renders: {} },
+  tasks: { watch: { kind: 'installed', lastRun: { kind: 'never' } }, archive: { kind: 'notInstalled' } },
+  dry: '',
+};
+
 const GUARD_OPTIONS: GuardOptions = { setAutomaticStart: true, everyHours: 4, minMinutesBetweenStarts: 10, delaySeconds: 60, timeLimitMinutes: 5 };
 
 test('a page button is one the page renders, the host accepts, and that runs the command\'s own operation', () => {
@@ -94,7 +104,7 @@ test('a page button is one the page renders, the host accepts, and that runs the
       continue;
     }
     assert.ok(rendered.has(button.action), `${command}: no rendered page button posts '${button.action}' (pressed: ${[...rendered].sort().join(', ')})`);
-    assert.ok((PAGE_ACTIONS as readonly string[]).includes(button.action) || button.action in GUARD_LABELS || button.action in ARCHIVE_LABELS || (GPU_ACTIONS as readonly string[]).includes(button.action) || button.action in RELAYS_LABELS, `${command}: '${button.action}' is no page action`);
+    assert.ok((PAGE_ACTIONS as readonly string[]).includes(button.action) || button.action in GUARD_LABELS || button.action in ARCHIVE_LABELS || (GPU_ACTIONS as readonly string[]).includes(button.action) || button.action in RELAYS_LABELS || button.action in TASKS_LABELS, `${command}: '${button.action}' is no page action`);
     assert.ok((PAGE_MESSAGE_TYPES as readonly string[]).includes(button.action), `${command}: the host does not accept '${button.action}'`);
     assert.equal(command, `wslCare.${button.action}`, `${command}: its button posts '${button.action}', another operation`);
   }

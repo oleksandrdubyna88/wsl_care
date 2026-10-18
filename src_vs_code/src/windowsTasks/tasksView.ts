@@ -3,6 +3,7 @@ import type { TaskName } from '../client/verbs';
 import type { ViewLevel } from '../panel/view';
 import { noticeText } from '../text/safeText';
 import { SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS } from '../scheduler/schedulerAnswer';
+import type { PendingTasksOp } from './tasksPending';
 import type { CopyState, TaskRow, WindowsTasksState } from './tasksState';
 
 /**
@@ -17,16 +18,33 @@ export interface WindowsTaskLine {
   readonly level: ViewLevel;
 }
 
+/** The three buttons of the Windows tasks (WR-E3), each posting its bare id — the page never sends a task, a path or a value. */
+export type TasksAction = 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks';
+
+export interface WindowsTasksButton {
+  readonly id: TasksAction;
+  readonly label: string;
+  readonly enabled: boolean;
+}
+
 export interface WindowsTasksView {
   /** "Windows daemon copy: 0.4.0 (0123456789ab) staged" — '' off Windows. */
   readonly copy: { readonly line: string; readonly level: ViewLevel };
   readonly tasks: readonly WindowsTaskLine[];
   /** The Windows dry state, as the daemon's render states it ('' when no render answered). */
   readonly dry: string;
+  /** The install and remove buttons, derived from the state, the persisted pending run and this window's flow — none off Windows. */
+  readonly buttons: readonly WindowsTasksButton[];
 }
 
 /** Nothing to say (off Windows, or before a caller derived anything): the page draws no part. */
-export const NO_WINDOWS_TASKS: WindowsTasksView = { copy: { line: '', level: 'none' }, tasks: [], dry: '' };
+export const NO_WINDOWS_TASKS: WindowsTasksView = { copy: { line: '', level: 'none' }, tasks: [], dry: '', buttons: [] };
+
+/** What holds the buttons besides the state: the persisted pending run (any window, across a reload) and a flow running in THIS window. */
+export interface TasksControls {
+  readonly pending?: PendingTasksOp | undefined;
+  readonly busy?: boolean;
+}
 
 type Line = { readonly line: string; readonly level: ViewLevel };
 
@@ -116,12 +134,17 @@ const UPDATE_SENTENCE: { readonly [K in Extract<TaskRow, { kind: 'updateNeeded' 
   cannotCompare: (detail) => `installed — it cannot be compared with this version's copy (${noticeText(detail)}), install again to update`,
 };
 
+/** What the runner could say of a process tree at a ceiling: ended only when it VERIFIED it — the one wording of every timeout line. */
+export function treeVerdict(treeEnded: boolean | undefined): string {
+  return treeEnded === true ? 'its PowerShell and everything it started were ended' : 'the extension could not confirm that its PowerShell and everything it started were ended';
+}
+
 function unknownLine(row: Extract<TaskRow, { kind: 'unknown' }>): string {
   if (row.timeoutMs === undefined) {
     return `unknown — ${noticeText(row.reason)}`;
   }
 
-  const ended = row.treeEnded === true ? 'its PowerShell and everything it started were ended' : 'the extension could not confirm that its PowerShell and everything it started were ended';
+  const ended = treeVerdict(row.treeEnded);
 
   return `unknown — the Task Scheduler read timed out after ${Math.round(row.timeoutMs / 1000)} s (wslCare.timeouts.windowsTimeGuardQuerySeconds); ${ended}`;
 }
@@ -147,10 +170,49 @@ function taskLine(row: TaskRow, formatInstant: (iso: string) => string): Line {
   return (TASK_LINES[row.kind] as (r: TaskRow, f: (iso: string) => string) => Line)(row, formatInstant);
 }
 
+// ---- the buttons (WR-E3) ----
+
+/** The three buttons' labels — the words the panel shows and the palette titles echo. */
+export const TASKS_LABELS: { readonly [K in TasksAction]: string } = {
+  installWindowsWatchTask: 'Install the Windows watch task',
+  installWindowsArchiveTask: 'Install the Windows archive task',
+  removeWindowsTasks: 'Remove the Windows tasks',
+};
+
+const ACTIONS: readonly TasksAction[] = ['installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks'];
+
+/** The copy states in which no install can be asked: its digest is unknown, it is being probed, or this is not Windows. */
+const NO_INSTALL: ReadonlySet<CopyState['kind']> = new Set(['digestUnreadable', 'checking', 'unavailable']);
+
+/** The task rows that say nothing is registered (or that nothing is known yet): a removal has nothing to delete there. */
+const NOTHING_REGISTERED: ReadonlySet<TaskRow['kind']> = new Set(['notInstalled', 'checking', 'unknown']);
+
+function removable(state: WindowsTasksState): boolean {
+  const registered = Object.values(state.tasks).some((row) => !NOTHING_REGISTERED.has(row.kind));
+
+  return registered || state.copy.kind === 'staged' || state.copy.kind === 'unreadable';
+}
+
+function allowed(id: TasksAction, state: WindowsTasksState): boolean {
+  return id === 'removeWindowsTasks' ? removable(state) : !NO_INSTALL.has(state.copy.kind);
+}
+
+/** The three buttons: every one disabled while a run stands or runs; otherwise each by the state. */
+function tasksButtons(state: WindowsTasksState, held: boolean): readonly WindowsTasksButton[] {
+  return ACTIONS.map((id) => ({ id, label: TASKS_LABELS[id], enabled: !held && allowed(id, state) }));
+}
+
+/** The copy line while a pending run stands — the guard's "waiting" shape: what the PowerShell is doing, in every window and after a reload. */
+function waitingLine(pending: PendingTasksOp): Line {
+  const what = pending.op === 'install' ? `installs the Windows ${pending.task} task` : 'removes the Windows tasks';
+
+  return { line: `Waiting for the PowerShell that ${what}…`, level: 'none' };
+}
+
 /** The part's lines; `pin` is `BUNDLED_DAEMON`, the build the extension carries; `formatInstant` the presentation edge's local-time formatter. */
-export function windowsTasksView(state: WindowsTasksState, pin: string, formatInstant: (iso: string) => string): WindowsTasksView {
-  const copy = copyLine(state.copy, pin);
-  if (copy.line === '') {
+export function windowsTasksView(state: WindowsTasksState, pin: string, formatInstant: (iso: string) => string, controls: TasksControls = {}): WindowsTasksView {
+  const stated = copyLine(state.copy, pin);
+  if (stated.line === '') {
     return NO_WINDOWS_TASKS;
   }
   const tasks = (Object.keys(LABELS) as TaskName[]).map((id) => {
@@ -159,5 +221,19 @@ export function windowsTasksView(state: WindowsTasksState, pin: string, formatIn
     return { id, line: `${LABELS[id]}${line}`, level };
   });
 
-  return { copy, tasks, dry: state.dry === '' ? '' : `Windows tasks, dry run: ${noticeText(state.dry)}` };
+  return { copy: copyOrWaiting(stated, controls), tasks, dry: dryLine(state.dry), buttons: tasksButtons(state, held(controls)) };
+}
+
+/** The copy line, or — while a pending run stands — what that run is doing. */
+function copyOrWaiting(stated: Line, controls: TasksControls): Line {
+  return controls.pending === undefined ? stated : waitingLine(controls.pending);
+}
+
+function dryLine(dry: string): string {
+  return dry === '' ? '' : `Windows tasks, dry run: ${noticeText(dry)}`;
+}
+
+/** Whether the buttons are held: a pending run in any window, or a flow running in this one. */
+function held(controls: TasksControls): boolean {
+  return controls.pending !== undefined || controls.busy === true;
 }

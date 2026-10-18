@@ -484,6 +484,11 @@ const WINDOWS_TASKS_VIEW = {
     { id: 'archive' as const, line: 'Windows archive task: not installed', level: 'none' as const },
   ],
   dry: 'Windows tasks, dry run: the setting dryRun is on',
+  buttons: [
+    { id: 'installWindowsWatchTask' as const, label: 'Install the Windows watch task', enabled: true },
+    { id: 'installWindowsArchiveTask' as const, label: 'Install the Windows archive task', enabled: true },
+    { id: 'removeWindowsTasks' as const, label: 'Remove the Windows tasks', enabled: false },
+  ],
 };
 
 test('WR-E2: the Windows tasks\' lines sit in Health as TEXT with their levels — the copy line, one per task, the dry line', () => {

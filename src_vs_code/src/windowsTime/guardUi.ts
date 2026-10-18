@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import type { Runner } from '../process/runner';
+import { ReadOnlyDocuments } from '../shared/readOnlyDocuments';
 import type { GuardUi } from './guardHost';
 import type { GuardRecorder } from './guardRecorder';
 
@@ -21,34 +22,12 @@ export { newGuardRecorder, recordingQuery, type GuardRecorder } from './guardRec
 
 export const GUARD_SCHEME = 'wslcare-guard';
 
-/** The read-only documents: the newest snapshot per URI, held only while the extension runs. */
-class SnapshotProvider implements vscode.TextDocumentContentProvider {
-  private readonly snapshots = new Map<string, string>();
-  private count = 0;
-
-  /** A new URI for `text` — the previous flow's snapshot is dropped, the new one is what the tab serves. */
-  add(text: string): vscode.Uri {
-    this.count += 1;
-    this.snapshots.clear();
-    const uri = vscode.Uri.from({ scheme: GUARD_SCHEME, path: `/windows-time-guard-install-${this.count}.ps1` });
-    this.snapshots.set(uri.toString(), text);
-    return uri;
-  }
-
-  provideTextDocumentContent(uri: vscode.Uri): string {
-    return this.snapshots.get(uri.toString()) ?? '';
-  }
-}
-
 function realUi(runner: Runner, subscriptions: vscode.Disposable[]): GuardUi {
-  const provider = new SnapshotProvider();
+  const provider = new ReadOnlyDocuments(GUARD_SCHEME, 'windows-time-guard');
   subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(GUARD_SCHEME, provider));
 
   return {
-    show: async (text) => {
-      const document = await vscode.workspace.openTextDocument(provider.add(text));
-      await vscode.window.showTextDocument(document, { preview: true, viewColumn: vscode.ViewColumn.Active });
-    },
+    show: (text) => provider.show(text),
     confirm: async (prompt) => (await vscode.window.showWarningMessage(prompt.message, { modal: true, detail: prompt.detail }, prompt.confirm)) === prompt.confirm,
     run: (request) => Promise.resolve(vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Waiting for the elevated PowerShell (Windows Time guard)…' }, () => runner(request))),
     report: (message, failed) => { void (failed ? vscode.window.showErrorMessage(message) : vscode.window.showInformationMessage(message)); },

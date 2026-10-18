@@ -31,7 +31,8 @@ const WORD = /^[a-z-]+$/;
 
 function word(kind: string, text: string): string {
   if (!WORD.test(text)) {
-    throw new RangeError(`a ${kind} in a task script is lower-case letters and hyphens, not ${JSON.stringify(text.slice(0, 40))}`);
+    const shown = JSON.stringify(text.slice(0, 40));
+    throw new RangeError(`a ${kind} in a task script is lower-case letters and hyphens, not ${shown}`);
   }
 
   return text;
