@@ -67,7 +67,7 @@ test('the outcome is read by the exit alone: 0 written (its line), 2 refused, 81
   assert.deepEqual(configOutcomeOf(exited(2, '', 'wsl-care: archive.baseFolder: refused (on-system-drive): no. Nothing was written.\n'), 'Ubuntu'), { kind: 'refused', messages: ['wsl-care: archive.baseFolder: refused (on-system-drive): no. Nothing was written.'] });
   assert.equal(configOutcomeOf(exited(81, '', 'wsl-care: run it as that user.\n'), 'Ubuntu').kind, 'notAsRoot');
   assert.equal(configOutcomeOf(exited(70, '', 'wsl-care: internal error: x\n'), 'Ubuntu').kind, 'internalDefect');
-  assert.deepEqual(configOutcomeOf({ kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, 'Ubuntu'), { kind: 'timedOut', timeoutMs: 20_000 });
+  assert.deepEqual(configOutcomeOf({ kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, 'Ubuntu'), { kind: 'timedOut', timeoutMs: 20_000 });
   assert.equal(configOutcomeOf({ kind: 'failedToStart', reason: 'no' }, 'Ubuntu').kind, 'wslFailed');
 });
 

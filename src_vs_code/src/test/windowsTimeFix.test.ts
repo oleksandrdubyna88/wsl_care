@@ -108,7 +108,7 @@ test('every exit of the fix is one closed outcome with its own sentence', () => 
   assert.match(JSON.stringify(outcomeOf(exited(EXIT.resyncFailed))), /failed three times/);
   assert.match(JSON.stringify(outcomeOf(exited(EXIT.launchFailed))), /elevated PowerShell could not be started/);
   assert.match(JSON.stringify(outcomeOf(exited(4294967295))), /exited -1/, 'Windows reports exit codes unsigned');
-  assert.deepEqual(outcomeOf({ kind: 'timedOut', timeoutMs: 180_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), { kind: 'timedOut', timeoutMs: 180_000 });
+  assert.deepEqual(outcomeOf({ kind: 'timedOut', timeoutMs: 180_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), { kind: 'timedOut', timeoutMs: 180_000 });
   assert.equal(outcomeOf({ kind: 'failedToStart', reason: 'ENOENT' }).kind, 'notStarted');
 });
 

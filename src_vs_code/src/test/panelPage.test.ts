@@ -474,3 +474,39 @@ test('E7.S5a: the Windows row sits in Health as TEXT with its level — and rend
   const { root: quiet } = show(buildPanelView(snapshot(goldenOutcomes())));
   assert.equal(quiet.all('p[data-windows-daemon]').length, 0, 'off Windows (or not yet asked by a caller) no row');
 });
+
+// ---- WR-E2 (PLAN_windows_runner.md §3.8): the Windows tasks' lines in Health, as TEXT ----
+
+const WINDOWS_TASKS_VIEW = {
+  copy: { line: 'Windows daemon copy: 0.4.0 (0123456789ab) staged', level: 'ok' as const },
+  tasks: [
+    { id: 'watch' as const, line: 'Windows watch task: installed, last run <2026-10-16T08:00:00Z>: succeeded', level: 'ok' as const },
+    { id: 'archive' as const, line: 'Windows archive task: not installed', level: 'none' as const },
+  ],
+  dry: 'Windows tasks, dry run: the setting dryRun is on',
+};
+
+test('WR-E2: the Windows tasks\' lines sit in Health as TEXT with their levels — the copy line, one per task, the dry line', () => {
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, undefined, undefined, WINDOWS_TASKS_VIEW));
+  const box = root.one('section[data-section="health"]').one('div[data-windows-tasks]');
+  assert.equal(box.one('p[data-windows-tasks-copy]').textContent, WINDOWS_TASKS_VIEW.copy.line);
+  assert.equal(box.one('p[data-windows-tasks-copy]').dataset.level, 'ok');
+  assert.deepEqual(box.all('p[data-windows-task]').map((p) => [p.dataset['windowsTask'], p.textContent, p.dataset.level]), WINDOWS_TASKS_VIEW.tasks.map((t) => [t.id, t.line, t.level]));
+  assert.equal(box.one('p[data-windows-tasks-dry]').textContent, WINDOWS_TASKS_VIEW.dry);
+});
+
+test('WR-E2: a hostile word in a task\'s line is shown as characters, never as markup', () => {
+  const hostile = 'Windows watch task: unreadable — </script><img src=x onerror=alert(1)>';
+  const view = { ...WINDOWS_TASKS_VIEW, tasks: [{ id: 'watch' as const, line: hostile, level: 'unknown' as const }] };
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, undefined, undefined, view));
+  assert.equal(root.one('p[data-windows-task="watch"]').textContent, hostile);
+  assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
+});
+
+test('WR-E2: when the host says nothing (off Windows, or no caller derived it) no Windows tasks part is drawn — and the dry line only when there is one', () => {
+  assert.equal(show(buildPanelView(snapshot(goldenOutcomes()))).root.all('div[data-windows-tasks]').length, 0);
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, undefined, undefined, { ...WINDOWS_TASKS_VIEW, dry: '' }));
+  assert.equal(root.all('p[data-windows-tasks-dry]').length, 0);
+  assert.equal(root.all('div[data-windows-tasks]').length, 1);
+  assert.equal(buildPanelView(snapshot(goldenOutcomes())).windowsTasks.copy.line, '');
+});

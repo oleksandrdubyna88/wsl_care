@@ -280,7 +280,15 @@
           "minimum": 5,
           "maximum": 300,
           "scope": "application",
-          "markdownDescription": "How long the read-only Task Scheduler query behind the panel's *Windows Time guard* line may take, in seconds."
+          "markdownDescription": "How long the ONE read-only Task Scheduler read may take, in seconds. It feeds both the panel's *Windows Time guard* line and its Windows tasks lines. At the ceiling its PowerShell and everything it started are ended, and the panel says the read timed out."
+        },
+        "wslCare.timeouts.windowsTasksStageSeconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long the Windows daemon's `tasks render` (what the panel asks of the staged copy, to compare it with each registered task) and `tasks stage` may take, in seconds. A stage copies 13.7 MB and reads it back twice; a render reads one small file and the configuration."
         },
         "wslCare.timeouts.engineProbeSeconds": {
           "type": "integer",

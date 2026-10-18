@@ -55,7 +55,7 @@ test('a refused start shows Node\'s message as Windows gave it — never a guess
   const refused = await client(recording({ kind: 'failedToStart', reason: 'spawn UNKNOWN: An Application Control policy has blocked this file.' }).runner).version();
   assert.deepEqual(refused, { kind: 'failed', reason: 'it could not start: spawn UNKNOWN: An Application Control policy has blocked this file.' });
   assert.match(JSON.stringify(await client(recording(exited(3, '', 'boom\nmore')).runner).version()), /exited 3: boom/);
-  assert.match(JSON.stringify(await client(recording({ kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).version()), /did not answer within 20 s \(wslCare\.timeouts\.versionSeconds\)/);
+  assert.match(JSON.stringify(await client(recording({ kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).version()), /did not answer within 20 s \(wslCare\.timeouts\.versionSeconds\)/);
   assert.match(JSON.stringify(await client(recording(exited(0, '   ')).runner).version()), /printed no version/);
 });
 
@@ -102,7 +102,7 @@ test('the windows status through the Test-mode fake: exactly the bundled path, e
 
 test('a windows status that fails reads as the failure kinds the client already uses — never a thrown error', async () => {
   const kind = async (result: ProcessResult): Promise<string> => (await client(recording(result).runner).status()).kind;
-  assert.deepEqual(await client(recording({ kind: 'timedOut', timeoutMs: STATUS_MS, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).status(), { kind: 'timedOut', timeoutMs: STATUS_MS, verb: 'status' });
+  assert.deepEqual(await client(recording({ kind: 'timedOut', timeoutMs: STATUS_MS, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).status(), { kind: 'timedOut', timeoutMs: STATUS_MS, verb: 'status' });
   assert.equal(await kind(exited(2, '', 'wsl-care: no such verb\r\n')), 'refused');
   assert.equal(await kind(exited(70, '', 'wsl-care: defect\r\n')), 'internalDefect');
   assert.equal(await kind(exited(1, '', 'wsl-care: boom\r\n')), 'unknownFailure');

@@ -32,10 +32,13 @@ import { clientRunner, type WslCareTestApi } from './testApi';
 import { fileInfoOf } from './powershell/elevatedEngine';
 import { EngineHost } from './powershell/engineHost';
 import { engineQueryFor, newEngineRecorder, type EngineRecorder } from './powershell/engineRecorder';
-import { WindowsTimeGuardHost } from './windowsTime/guardHost';
+import { SchedulerHost } from './scheduler/schedulerHost';
+import { TasksHost } from './windowsTasks/tasksHost';
+import { WindowsTimeGuardHost, type GuardUi } from './windowsTime/guardHost';
 import { sweepPending } from './windowsTime/guardPending';
 import type { GuardOptions } from './windowsTime/guardTask';
-import { guardUiFor, newGuardRecorder, type GuardRecorder } from './windowsTime/guardUi';
+import { QUERY_SCRIPT } from './windowsTime/guardScripts';
+import { guardUiFor, newGuardRecorder, recordingQuery, type GuardRecorder } from './windowsTime/guardUi';
 import { startWindowsTime } from './windowsTime/windowsTimeFix';
 import { newWindowsTimeRecorder, windowsTimeUiFor, type WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import { distroSettingText } from './wsl/distros';
@@ -113,6 +116,10 @@ interface Parts {
   readonly windowsTime: WindowsTimeRecorder;
   readonly guardRecorder: GuardRecorder;
   readonly guard: WindowsTimeGuardHost;
+  /** The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2) — the guard's and the Windows tasks' part alike. */
+  readonly scheduler: SchedulerHost;
+  /** WR-E2: the Windows tasks' part of the panel — the shared Task Scheduler read plus the staged copy's probe (read only). */
+  readonly tasks: TasksHost;
   /** Which PowerShell runs the Windows Time runs elevated (PLAN_pwsh_engine_windows_time.md §11 R3). */
   readonly engine: EngineHost;
   readonly engineRecorder: EngineRecorder;
@@ -164,13 +171,16 @@ function build(context: vscode.ExtensionContext): Parts {
   const guardRecorder = newGuardRecorder();
   const engineRecorder = newEngineRecorder();
   const engine = engineHostOf(testMode, engineRecorder);
-  const guard = windowsTimeGuard(context, testMode, guardRecorder, engine);
+  const guardUi = guardUiFor(testMode, guardRecorder, runnerFor({ kind: 'real' }), context.subscriptions);
+  const scheduler = schedulerOf(testMode, guardRecorder);
+  const guard = windowsTimeGuard(context, guardUi, scheduler, engine);
   const archiveRecorder = newArchiveRecorder();
   const archive = archiveHostOf(testMode, client, runner, store, host, archiveRecorder, log);
 
   return {
-    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
+    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, scheduler, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
     bundled: new BundledHost({ version: () => windowsClient.version(), pin: BUNDLED_DAEMON }),
+    tasks: tasksHostOf(scheduler, windowsClient),
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
 }
@@ -180,9 +190,17 @@ function build(context: vscode.ExtensionContext): Parts {
  * Test-mode fake or the closed runner, never the Windows-Time real runner — so `test:host` never starts the real exe. It starts
  * `<extension>/bin/wsl-care.exe --version` only when the panel asks (its refresh), never at activation.
  */
-/** The panel's two members of the Windows row: the view and its change. */
-function bundledPanelActions(bundled: BundledHost): Pick<PanelActions, 'windowsDaemon' | 'onWindowsDaemonChange'> {
-  return { windowsDaemon: () => bundled.view(), onWindowsDaemonChange: (listener) => bundled.onChange(listener) };
+/**
+ * The panel's members of the Windows parts: the bundled daemon's row (E7.S5a) and — WR-E2 — the Windows tasks' lines, each its view
+ * and its change.
+ */
+function windowsPanelActions(bundled: BundledHost, windowsTasks: TasksHost): Pick<PanelActions, 'windowsDaemon' | 'onWindowsDaemonChange' | 'windowsTasks' | 'onWindowsTasksChange'> {
+  return {
+    windowsDaemon: () => bundled.view(),
+    onWindowsDaemonChange: (listener) => bundled.onChange(listener),
+    windowsTasks: () => windowsTasks.view(),
+    onWindowsTasksChange: (listener) => windowsTasks.onChange(listener),
+  };
 }
 
 /** The poller: the distribution's client, and — E19.S2b — the bundled Windows daemon's `status` on the same tick, only where its client can start the exe. */
@@ -199,17 +217,28 @@ function pollerOf(client: WslCareClient, windowsClient: WindowsCareClient, store
 }
 
 /**
- * ONE client of the bundled exe, shared by the panel's Windows row (`--version`) and the poller (`status`, E19.S2b); the `status` ceiling is
- * the `windowsStatus` call of `client/ceilings.ts`, read from the settings at every call.
+ * ONE client of the bundled exe, shared by the panel's Windows row (`--version`), the poller (`status`, E19.S2b) and the Windows
+ * tasks' part (WR-E2: the bundled exe's digest and `tasks render` on the staged copy); the `status` ceiling is the `windowsStatus` call
+ * of `client/ceilings.ts`, `tasks render`'s is `wslCare.timeouts.windowsTasksStageSeconds` — each read from the settings at every call.
+ * The staged copy lives under the profile's `%LOCALAPPDATA%`, which the client takes as an option and derives the folder from.
  */
 function windowsClientOf(context: vscode.ExtensionContext, runner: ReturnType<typeof clientRunner>): WindowsCareClient {
+  const localAppData = process.env.LOCALAPPDATA;
+
   return new WindowsCareClient({
     runner,
     platform: process.platform,
     extension: { scheme: context.extensionUri.scheme, fsPath: context.extensionUri.fsPath },
     timeoutMs: () => numbers().versionSeconds * 1000,
     statusTimeoutMs: () => ceilingMs(numbers(), { call: 'windowsStatus' }),
+    tasksTimeoutMs: () => numbers().windowsTasksStageSeconds * 1000,
+    ...(localAppData === undefined ? {} : { localAppData }),
   });
+}
+
+/** The Windows tasks' part (WR-E2): it consumes the ONE Task Scheduler read and probes the staged copy through the shared client. */
+function tasksHostOf(scheduler: SchedulerHost, windowsClient: WindowsCareClient): TasksHost {
+  return new TasksHost({ scheduler, client: windowsClient, pin: BUNDLED_DAEMON, formatInstant: (iso) => new Date(iso).toLocaleString() });
 }
 
 /**
@@ -251,20 +280,32 @@ function engineHostOf(testMode: boolean, recorder: EngineRecorder): EngineHost {
  * wsl.exe; a recorder in Test mode), and its install / remove run ONE elevated PowerShell each — the engine `engine` chose.
  * A pending run past its deadline is swept at activation, so nothing stays "waiting" after a crash.
  */
-function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, recorder: GuardRecorder, engine: EngineHost): WindowsTimeGuardHost {
+function windowsTimeGuard(context: vscode.ExtensionContext, ui: GuardUi, scheduler: SchedulerHost, engine: EngineHost): WindowsTimeGuardHost {
   void sweepPending(context.globalState, Date.now());
 
   return new WindowsTimeGuardHost({
     env: process.env,
     options: guardOptions,
     opTimeoutMs: () => numbers().windowsTimeGuardSeconds * 1000,
-    queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000,
-    ui: guardUiFor(testMode, recorder, runnerFor({ kind: 'real' }), context.subscriptions),
+    ui,
+    scheduler,
     durable: context.globalState,
     nowUtcMs: () => Date.now(),
     formatInstant: (iso) => new Date(iso).toLocaleString(),
     engine,
   });
+}
+
+/**
+ * The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2), in `src/scheduler/`: its script is the guard's facts plus the
+ * folder's tasks (`windowsTime/guardScripts.ts`), its capability to run it comes from the process layer — the real UNELEVATED
+ * runner, or the recorder in Test mode — and is not one of the guard's surfaces; bounded by
+ * `wslCare.timeouts.windowsTimeGuardQuerySeconds`. The guard and the Windows tasks' part both consume it.
+ */
+function schedulerOf(testMode: boolean, recorder: GuardRecorder): SchedulerHost {
+  const query = testMode ? recordingQuery(recorder) : runnerFor({ kind: 'real' });
+
+  return new SchedulerHost({ env: process.env, queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000, script: QUERY_SCRIPT, query });
 }
 
 /** Two subscriptions as one: the guard's part re-renders on Task Scheduler's answers AND on the engine read's (D6). */
@@ -319,12 +360,16 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
 }
 
 /**
- * The panel's refresh: the guard's Task Scheduler query, the panel round (`status`, `preview`, `doctor`) and, once that round's
- * `status` is in the store (its capabilities decide what is asked), the archive's two reads (E10.S1) — never more often.
+ * The panel's refresh: the ONE shared Task Scheduler read — the guard host and the Windows tasks' host both FOLLOW its change, neither
+ * asks it itself (WR-E2, the coai code round finding 0) — and the tasks' probe of the staged copy, the panel round (`status`,
+ * `preview`, `doctor`) and, once that round's `status` is in the store (its capabilities decide what is asked), the archive's two
+ * reads (E10.S1) — never more often. These are the ONE call sites of the shared read and of the probe: they run when the panel
+ * opens, becomes visible or is refreshed, and nowhere else (an elevated guard run answering reads once more, through the guard).
  */
 function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
   return (options) => {
-    void parts.guard.refresh();
+    void parts.scheduler.refresh();
+    void parts.tasks.refresh();
     void parts.engine.refresh();
     void parts.bundled.refresh();
     void parts.gpu.host.refresh();
@@ -431,7 +476,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     removeWindowsTimeGuard: removeGuard,
     ...extras,
     ...gpuPanelActions(parts.gpu),
-    ...bundledPanelActions(parts.bundled),
+    ...windowsPanelActions(parts.bundled, parts.tasks),
   });
   context.subscriptions.push(
     bar,
@@ -491,6 +536,7 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     install: () => parts.install,
     windowsTime: () => parts.windowsTime,
     windowsTimeGuard: () => parts.guard,
+    windowsTasks: () => parts.tasks,
     guardRecorder: () => parts.guardRecorder,
     gpu: () => parts.gpu.host,
     gpuRecorder: () => parts.gpu.recorder,

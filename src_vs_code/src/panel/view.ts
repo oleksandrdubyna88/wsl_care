@@ -2,6 +2,7 @@ import type { ArchiveControls } from '../archive/archiveView';
 import type { WindowsDaemonView } from '../bundled/bundledView';
 import type { GpuView } from '../gpu/gpuState';
 import type { RelaysControls } from '../relays/relaysView';
+import type { WindowsTasksView } from '../windowsTasks/tasksView';
 import type { GuardView } from '../windowsTime/guardState';
 
 /**
@@ -104,6 +105,12 @@ export type { GpuView } from '../gpu/gpuState';
  */
 export type { RelaysControls } from '../relays/relaysView';
 
+/**
+ * The Windows tasks' lines on the *Health* section (WR-E2, PLAN_windows_runner.md §3.8): derived by the host from the ONE Task
+ * Scheduler read and the staged copy's probe (`windowsTasks/tasksState.ts`) — never a page flag.
+ */
+export type { WindowsTasksView } from '../windowsTasks/tasksView';
+
 export interface PanelView {
   readonly heading: string;
   /** One sentence above the sections ('' when there is nothing to say). */
@@ -118,4 +125,6 @@ export interface PanelView {
   readonly relays: RelaysControls;
   /** E7.S5a: the bundled Windows daemon's version, compared with the build this extension carries — '' off Windows. */
   readonly windowsDaemon: WindowsDaemonView;
+  /** WR-E2: the Windows tasks' part — the staged copy's line, one line per task, the dry line — beside `windowsTimeGuard` in *Health*; empty off Windows. */
+  readonly windowsTasks: WindowsTasksView;
 }

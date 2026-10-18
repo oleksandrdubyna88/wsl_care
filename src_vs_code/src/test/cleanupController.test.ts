@@ -315,7 +315,7 @@ test('a second root operation while one is in flight in the same distribution is
 const FULL_CHECK = argv('collect', '--detach', '--json');
 const CONFIRM_A10 = argv('act', 'A10', '--confirm', '--manual', '--detach', '--json');
 const PREVIEW_A10 = argv('act', 'A10', '--preview', '--json');
-const TIMED_OUT: ProcessResult = { kind: 'timedOut', timeoutMs: 90_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+const TIMED_OUT: ProcessResult = { kind: 'timedOut', timeoutMs: 90_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
 
 function running(state: string, runId = RUN_ID, trigger = 'manual', actions: readonly string[] = ['collect']): Body {
   return setAt(headBody('status'), 'running', { state, runId, actions, trigger, reason: `run ${runId} is ${state}` });
@@ -546,7 +546,7 @@ test('M4: refusals where nothing started keep the preview — a gate refusal, a 
 // ---- review round L2: only an EXIT of the root check is "needs root" ----
 
 test('L2: a root check that timed out is its own failure — not "needs root" — and is not cached', async () => {
-  let answer: ProcessResult = { kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  let answer: ProcessResult = { kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   const w = world({ script: { [ROOT_CHECK]: () => answer } });
   assert.deepEqual(await w.controller.rootCheck(), { kind: 'timedOut', timeoutMs: 20_000 });
   answer = { kind: 'failedToStart', reason: 'ENOENT' };
