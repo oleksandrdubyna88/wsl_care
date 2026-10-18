@@ -13,7 +13,7 @@ arm3	["docker","run","-e","AWS_SECRET_ACCESS_KEY=wJalrXUtnInventedK7MDENGbPxRfiC
 arm7	["/usr/share/code/code","/TelemetrySession:{\"CollectorApiKey\":\"invented-collector-value\"}"]	/usr/share/code/code <redacted>
 # a credential inside a URL
 arm4	["git","clone","https://alice:{GHP}@git.example.invalid/o/r"]	git clone https://<redacted>@git.example.invalid/o/r
-arm3	["env","DATABASE_URL=postgres://app:Inv3nted@db.example.invalid/x","psql"]	env DATABASE_URL=<redacted> psql
+arm3	["env","DATABASE_URL=postgres://app:user@example.invalid/x","psql"]	env DATABASE_URL=<redacted> psql
 arm4	["curl","https://files.example.invalid/a.tgz?X-Amz-Signature=inventedSignature0123&dl=1"]	curl https://files.example.invalid/a.tgz?X-Amz-Signature=<redacted>&dl=1
 # a creds-shaped token after an innocent flag
 arm5	["curl","-H","Authorization: Bearer {JWT}","https://api.example.invalid/"]	curl -H <redacted> https://api.example.invalid/
