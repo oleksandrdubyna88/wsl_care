@@ -99,6 +99,26 @@ public sealed class FolderKindsTests
         Classify(world, "wt1").Kind.Should().Be(FolderKind.Worktree);
     }
 
+    /// <summary>E19.S3 Fable review, condition 3: a back pointer whose target EXISTS under another spelling (a link, an alias, a short name) is a
+    /// live worktree the classifier cannot vouch for — never an orphan, never a candidate. Only a target that does not exist is an orphan.</summary>
+    [Fact]
+    public void An_admin_folder_pointing_at_this_folder_under_another_spelling_is_not_an_orphan()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
+        using var world = new WorktreeWorld("kinds-alias");
+        world.Main("main");
+        world.Worktree("wt1");
+        var alias = world.Sandbox.Under("alias");
+        Assert.SkipUnless(DirectoryLinks.TryCreate(alias, world.Work), "no junction could be made here");
+        File.WriteAllText(Path.Combine(world.AdminOf("wt1"), "gitdir"), WorktreeWorld.Forward(Path.Combine(alias, "wt1", ".git")) + "\n");
+
+        var facts = Classify(world, "wt1");
+
+        facts.Kind.Should().NotBe(FolderKind.Orphan, facts.Why);
+        facts.Kind.Should().Be(FolderKind.Unreadable);
+        facts.Why.Should().Contain("another spelling");
+    }
+
     [Fact]
     public void A_pointer_that_cannot_be_read_is_unreadable_and_never_an_orphan()
     {

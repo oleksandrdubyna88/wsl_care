@@ -23,11 +23,15 @@ public sealed partial class WorktreeReportStore(IHostPaths paths, IFileSystem fi
 
     private const string Action = "worktrees";
 
+    /// <summary>The cap the report is READ back under (<c>records.maxStateFileBytes</c>) — and so the cap it is written under: a report larger than what the
+    /// reader accepts would be unreadable for ever.</summary>
+    private static int MaxBytes => Tuning.Current.Int(ConfigKeys.Records.MaxStateFileBytes);
+
     public string File => paths.Rules.Join(paths.StateDirectory, FileName);
 
     private DeletionScope Scope => new(paths.StateDirectory, Action);
 
-    public Reading<WorktreeReport> Read() => files.ReadRegularFile(File, Tuning.Current.Int(ConfigKeys.Records.MaxStateFileBytes)) switch
+    public Reading<WorktreeReport> Read() => files.ReadRegularFile(File, MaxBytes) switch
     {
         FileReadResult.Content content => Parse(content.Bytes),
         FileReadResult.Missing => Reading.Missing<WorktreeReport>($"{File} does not exist"),
@@ -40,9 +44,7 @@ public sealed partial class WorktreeReportStore(IHostPaths paths, IFileSystem fi
         try
         {
             return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.WorktreeReport) is { } report
-                ? report.SchemaVersion == Core.SchemaVersion.Current
-                    ? Reading.Of(report)
-                    : Reading.Missing<WorktreeReport>($"{File} has schema {report.SchemaVersion}; this build reads schema {Core.SchemaVersion.Current}")
+                ? Checked(report)
                 : Reading.Missing<WorktreeReport>($"{File} is not a worktree report: it holds nothing");
         }
         catch (JsonException e)
@@ -51,14 +53,48 @@ public sealed partial class WorktreeReportStore(IHostPaths paths, IFileSystem fi
         }
     }
 
+    /// <summary>A deserialiser does not run a record's defaults: an omitted list is null, and a file a person or a crash made can hold any shape. The
+    /// report is handed to the status only when everything the status reads is there (Fable review, E19.S3 recommendation 4).</summary>
+    private Reading<WorktreeReport> Checked(WorktreeReport report) =>
+        report.SchemaVersion != Core.SchemaVersion.Current ? Reading.Missing<WorktreeReport>($"{File} has schema {report.SchemaVersion}; this build reads schema {Core.SchemaVersion.Current}")
+        : Missing(report) is { Length: > 0 } what ? Reading.Missing<WorktreeReport>($"{File} is not a worktree report: it lacks {what}")
+        : Reading.Of(report);
+
+    private static string Missing(WorktreeReport report) =>
+        report.Roots is null ? "its roots"
+        : report.Top is null ? "its top folders"
+        : report.Reclaimable is null ? "its reclaimable verdict"
+        : report.Roots.Select(MissingInRoot).FirstOrDefault(m => m.Length > 0) ?? string.Empty;
+
+    private static string MissingInRoot(RootReport? root) =>
+        root is null ? "a root"
+        : root.Path is null || root.IdleOver is null || root.Unknown is null || root.NamedRetentions is null ? $"a field of a root ({root.Path})"
+        : root.BuildOutput is not { All: not null, InIdleUnlocked: not null, InIdleLocked: not null, InOrphans: not null, Retained: not null } ? $"the build output of {root.Path}"
+        : string.Empty;
+
+    /// <summary>The report as bytes the reader will accept: whole when it fits; else without its detail (each root's named retentions and the top list —
+    /// the counts, the build-output totals and the reasons stay); else none at all (empty), and the caller refuses the write.</summary>
+    private static byte[] Bounded(WorktreeReport report)
+    {
+        var whole = JsonSerializer.SerializeToUtf8Bytes(report, WslCareJsonContext.Default.WorktreeReport);
+        if (whole.Length <= MaxBytes)
+        {
+            return whole;
+        }
+
+        var trimmed = JsonSerializer.SerializeToUtf8Bytes(report with { Top = [], Roots = [.. report.Roots.Select(r => r with { NamedRetentions = [] })] }, WslCareJsonContext.Default.WorktreeReport);
+        return trimmed.Length <= MaxBytes ? trimmed : [];
+    }
+
     /// <summary>Writes the report; empty when it was written, else why not.</summary>
     public string TryWrite(WorktreeReport report)
     {
         try
         {
             files.CreateDirectory(paths.StateDirectory);
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(report, WslCareJsonContext.Default.WorktreeReport);
-            return files.WriteFileAtomically(File, bytes, Scope) is DeletionVerdict.Refused refused
+            var bytes = Bounded(report);
+            return bytes.Length == 0 ? $"the report is too large to keep: even its counts alone pass the {MaxBytes} bytes the reader accepts (records.maxStateFileBytes); the previous report stays"
+                : files.WriteFileAtomically(File, bytes, Scope) is DeletionVerdict.Refused refused
                 ? $"the deletion policy refused the report: {refused.Reason}"
                 : string.Empty;
         }

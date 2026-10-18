@@ -3,6 +3,7 @@ using System.Text.Json;
 using FluentAssertions;
 
 using WslCare.Core.Collectors;
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
 using WslCare.Core.Json;
@@ -88,6 +89,85 @@ public sealed class WorktreeReportStoreTests : IDisposable
         File.WriteAllText(Path.Combine(_paths.StateDirectory, "worktrees.json"), JsonSerializer.Serialize(Sample() with { SchemaVersion = Core.SchemaVersion.Current + 1 }, WslCareJsonContext.Default.WorktreeReport));
 
         Store().Read().Should().BeOfType<Reading<WorktreeReport>.Unavailable>().Which.Reason.Should().Contain("schema");
+    }
+
+    /// <summary>E19.S3 Fable review, recommended 4: a file that parses but lacks what the status reads (a hand-made or damaged one) is
+    /// unreadable with a reason — it must not make status throw.</summary>
+    [Theory]
+    [InlineData("""{"schemaVersion":1}""")]
+    [InlineData("""{"schemaVersion":1,"roots":[null],"top":[],"reclaimable":{"available":false,"reason":"x"}}""")]
+    [InlineData("""{"schemaVersion":1,"roots":[{"path":"D:\\w"}],"top":[],"reclaimable":{"available":false,"reason":"x"}}""")]
+    [InlineData("""{"schemaVersion":1,"roots":[],"reclaimable":null}""")]
+    public void A_report_missing_what_the_status_reads_is_unreadable_not_a_crash(string json)
+    {
+        Directory.CreateDirectory(_paths.StateDirectory);
+        File.WriteAllText(Path.Combine(_paths.StateDirectory, "worktrees.json"), json);
+
+        var read = Store().Read();
+
+        read.Should().BeOfType<Reading<WorktreeReport>.Unavailable>().Which.Reason.Should().Contain("not a worktree report");
+    }
+
+    /// <summary>Coai plan round (E19.S3): the report is read back with <c>records.maxStateFileBytes</c>' cap, so one written larger would be unreadable
+    /// for ever. The write trims what is only detail (the named retentions and the top list) and, when that is not enough, refuses and says so — it
+    /// never leaves a file the reader will refuse.</summary>
+    private static (IDisposable Scope, int Cap) SmallCap()
+    {
+        var defaults = new FileReadResult.Content(ConfigLoader.EmbeddedDefaults());
+        var machine = new FileReadResult.Content(System.Text.Encoding.UTF8.GetBytes("{ \"records\": { \"maxStateFileBytes\": 65536 } }"));
+        var loaded = ConfigLoader.Load([(ConfigLoader.DefaultsFile, defaults), (new ConfigLayerFile(ConfigLayer.Machine, @"C:\ProgramData\wsl-care\config.json"), machine)]);
+        loaded.IsObserveOnly.Should().BeFalse(string.Join("; ", loaded.Errors.Select(e => e.Display)));
+        return (Tuning.Use(loaded.Config), loaded.Config.Int(ConfigKeys.Records.MaxStateFileBytes));
+    }
+
+    [Fact]
+    public void A_report_over_the_read_cap_is_trimmed_to_its_counts_and_still_readable()
+    {
+        var (scope, cap) = SmallCap();
+        using (scope)
+        {
+            var heavy = Sample().Roots[0] with { NamedRetentions = [.. Enumerable.Range(0, 1000).Select(i => new NamedRetention($"wt{i}", "bin", new string('r', 200)))] };
+            var report = Sample() with { Roots = [heavy] };
+
+            var failed = Store().TryWrite(report);
+
+            failed.Should().BeEmpty("what is only detail is trimmed, the counts are kept");
+            new FileInfo(Store().File).Length.Should().BeLessThanOrEqualTo(cap);
+            var back = ((Reading<WorktreeReport>.Available)Store().Read()).Value;
+            back.Roots[0].NamedRetentions.Should().BeEmpty("the named retentions were the detail that went");
+            back.Roots[0].Folders.Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public void A_report_that_is_too_large_even_trimmed_is_refused_and_no_unreadable_file_is_left()
+    {
+        var (scope, cap) = SmallCap();
+        using (scope)
+        {
+            var wide = Sample().Roots[0] with { Unknown = new UnknownTotals(1, new string('u', 10_000)) };
+            var report = Sample() with { Roots = [.. Enumerable.Repeat(wide, 12)] };
+
+            var failed = Store().TryWrite(report);
+
+            failed.Should().Contain("the report is too large to keep").And.Contain(cap.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            File.Exists(Store().File).Should().BeFalse("a file the reader would refuse is never written");
+        }
+    }
+
+    [Fact]
+    public void An_old_good_report_stays_when_a_too_large_new_one_is_refused()
+    {
+        var (scope, _) = SmallCap();
+        using (scope)
+        {
+            Store().TryWrite(Sample()).Should().BeEmpty();
+            var wide = Sample().Roots[0] with { Unknown = new UnknownTotals(1, new string('u', 10_000)) };
+
+            Store().TryWrite(Sample() with { Roots = [.. Enumerable.Repeat(wide, 12)] }).Should().NotBeEmpty();
+
+            Store().Read().Should().BeOfType<Reading<WorktreeReport>.Available>("the previous report is still the one a reader sees");
+        }
     }
 
     [Fact]

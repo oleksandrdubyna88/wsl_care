@@ -80,9 +80,20 @@ public static class WorktreeRoots
         : null;
 
     private static (string Rule, string Why)? DiskProblem(PathRules rules, IFileSystem files, string path) =>
-        files.DirectoryExists(path) ? LinkProblem(rules, files, path)
+        files.DirectoryExists(path) ? SpellingProblem(rules, files, path) ?? LinkProblem(rules, files, path)
         : files.FileExists(path) ? (RootRule.NotAFolder, $"{path} is a file, not a folder")
         : (RootRule.Missing, $"{path} does not exist; a root is never created — create it, then choose it");
+
+    /// <summary>The folder held and its real name read (<see cref="IFileSystem.FolderFinalPath"/>) must be the spelling the key will store: an 8.3 short
+    /// name, a <c>subst</c> drive or a trailing dot or space is the SAME folder under a name the profile, protected-place and overlap rules would not
+    /// recognise (Fable review, E19.S3 condition 1). Refused naming the real name — and so two spellings of one folder can never be two roots.</summary>
+    private static (string Rule, string Why)? SpellingProblem(PathRules rules, IFileSystem files, string path) => files.FolderFinalPath(path) switch
+    {
+        Collectors.Reading<string>.Available final when rules.PathEquals(final.Value, path) => null,
+        Collectors.Reading<string>.Available final => (RootRule.SpeltDifferently, $"{path} is spelt differently from its real name {final.Value}; choose it by that name"),
+        Collectors.Reading<string>.Unavailable unavailable => (RootRule.SpeltDifferently, $"{path}: its real name could not be read ({unavailable.Reason})"),
+        _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
+    };
 
     /// <summary>Its real path must be its spelling: a link anywhere on the way would let what the root IS change after it was judged.</summary>
     private static (string Rule, string Why)? LinkProblem(PathRules rules, IFileSystem files, string path) => files.ResolvePath(path) switch
@@ -108,7 +119,12 @@ public static class WorktreeRoots
             : null;
     }
 
-    private static string RealOrSelf(IFileSystem files, string path) => files.ResolvePath(path) is RealPathResult.Resolved real ? real.Path : path;
+    /// <summary>A place's real name: the FINAL path of the held folder when it can be opened, else the links resolved, else as given — so a protected
+    /// place spelt short or through a <c>subst</c> drive is compared by what it really is.</summary>
+    private static string RealOrSelf(IFileSystem files, string path) =>
+        files.FolderFinalPath(path) is Collectors.Reading<string>.Available final ? final.Value
+        : files.ResolvePath(path) is RealPathResult.Resolved real ? real.Path
+        : path;
 
     private static IEnumerable<(string Path, string Whose)> ProtectedPlaces(IHostPaths paths) =>
     [
@@ -116,5 +132,15 @@ public static class WorktreeRoots
         .. paths.ClaudeTempRoots.Select(r => (r, $"Claude's temporary folder {r}")),
         (paths.StateDirectory, $"wsl-care's own folder {paths.StateDirectory}"),
         (paths.LogDirectory, $"wsl-care's own folder {paths.LogDirectory}"),
+        (paths.TempDirectory, $"the temporary folder {paths.TempDirectory}"),
+        .. SystemPlaces(paths),
     ];
+
+    /// <summary>Windows' own folders: nothing a person keeps worktrees in, and a root around one would take it along.</summary>
+    private static IEnumerable<(string Path, string Whose)> SystemPlaces(IHostPaths paths) =>
+        paths is WindowsHostPaths windows
+            ? [.. SystemFolderNames.Select(n => (windows.Rules.Join(windows.SystemDrive, n), $"the system folder {n}")), (windows.Folders.ProgramData, $"the program data folder {windows.Folders.ProgramData}")]
+            : [];
+
+    private static readonly string[] SystemFolderNames = ["Windows", "Program Files", "Program Files (x86)"];
 }

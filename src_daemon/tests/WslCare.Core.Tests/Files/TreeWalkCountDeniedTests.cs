@@ -182,4 +182,51 @@ public sealed class TreeWalkCountDeniedTests : IDisposable
         sensitive.Files.Should().Be(2);
         insensitive.Files.Should().Be(1);
     }
+
+    /// <summary>E19.S3 Fable review, condition 2: the counting walk counted only the files it yielded, so a tree of many EMPTY folders ignored the entry
+    /// budget, the deadline and the token. Every folder it recurses into counts, and the token is asked.</summary>
+    [Fact]
+    public void A_tree_of_many_empty_folders_still_stops_at_the_budget()
+    {
+        for (var i = 0; i < 300; i++)
+        {
+            Directory.CreateDirectory(_root.Under($"empty/d{i}"));
+        }
+
+        var stopped = _files.WalkTree(_root.Under("empty"), new TreeLimits(50, TimeSpan.FromMinutes(1)), TreeRules.All with { CountDenied = true }, CancellationToken.None)
+            .Should().BeOfType<TreeMeasure.Measured>().Subject;
+
+        stopped.Complete.Should().BeFalse("300 folders are past a budget of 50 entries, whether or not they hold a file");
+        stopped.Note.Should().Contain("50 entries");
+    }
+
+    [Fact]
+    public void A_tree_of_many_empty_folders_asks_the_token()
+    {
+        for (var i = 0; i < 1100; i++)
+        {
+            Directory.CreateDirectory(_root.Under($"empty-token/d{i}"));
+        }
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        var walk = () => _files.WalkTree(_root.Under("empty-token"), Limits, TreeRules.All with { CountDenied = true }, cancelled.Token);
+
+        walk.Should().Throw<OperationCanceledException>();
+    }
+
+    [Fact]
+    public void A_tree_of_many_empty_folders_still_ends_a_walk_that_ignores_what_it_cannot_open_as_before()
+    {
+        for (var i = 0; i < 300; i++)
+        {
+            Directory.CreateDirectory(_root.Under($"plain/d{i}"));
+        }
+
+        var measured = _files.WalkTree(_root.Under("plain"), new TreeLimits(50, TimeSpan.FromMinutes(1)), TreeRules.All, CancellationToken.None)
+            .Should().BeOfType<TreeMeasure.Measured>().Subject;
+
+        measured.Complete.Should().BeTrue("existing callers keep today's behaviour: only files count toward their entry limit");
+    }
 }

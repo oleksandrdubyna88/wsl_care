@@ -69,12 +69,12 @@ public static class WorktreesStatus
     private static string Structure(WorktreeReport report)
     {
         var roots = report.Roots;
-        var worktrees = roots.Sum(r => r.Worktrees);
-        var orphans = roots.Sum(r => r.Orphans);
-        var build = roots.Sum(r => r.BuildOutput.All.Count);
+        var worktrees = roots.Sum(r => (long)r.Worktrees);
+        var orphans = roots.Sum(r => (long)r.Orphans);
+        var build = roots.Sum(r => (long)r.BuildOutput.All.Count);
         var bytes = roots.Sum(r => r.BuildOutput.All.Bytes);
-        return string.Create(CultureInfo.InvariantCulture, $"{Count(worktrees, "worktree")} ({roots.Sum(r => r.Locked)} locked), {Count(orphans, "orphan")}, {Count(build, "build-output folder")} ({bytes / BytesPerGibibyte:0.0} GiB present)");
+        return string.Create(CultureInfo.InvariantCulture, $"{Count(worktrees, "worktree")} ({roots.Sum(r => (long)r.Locked)} locked), {Count(orphans, "orphan")}, {Count(build, "build-output folder")} ({bytes / BytesPerGibibyte:0.0} GiB present)");
     }
 
-    private static string Count(int count, string noun) => $"{count} {noun}{(count == 1 ? string.Empty : "s")}";
+    private static string Count(long count, string noun) => $"{count} {noun}{(count == 1 ? string.Empty : "s")}";
 }

@@ -354,6 +354,11 @@ public interface IFileSystem
     /// <c>null</c> when it cannot be asked; (0, 0) where the operating system has no such notion (plan §15q R2.1, review C1).</summary>
     (uint Major, uint Minor)? DeviceOf(string path);
 
+    /// <summary>The real name of the FOLDER at <paramref name="path"/> as the operating system spells it — an 8.3 short name, a <c>subst</c> drive and a
+    /// trailing dot or space expanded (Windows: the folder held, then its final path); a link is NOT followed (the folder is opened as itself). Unavailable
+    /// when it cannot be opened. A test's own file system without its own answers the path as given.</summary>
+    Collectors.Reading<string> FolderFinalPath(string path) => Collectors.Reading.Of(path);
+
     /// <summary>
     /// Whether this process may create a file in <paramref name="directory"/> (creating the directory first when
     /// it is missing): a temporary file is opened with delete-on-close and closed at once. Nothing remains —

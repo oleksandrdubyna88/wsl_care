@@ -86,8 +86,15 @@ public static class FolderKinds
         var there = GitPointers.Resolve(target, admin, settings.AutomountRoots);
         return there is Reading<string>.Available { Value: var resolved } && rules.PathEquals(resolved, gitFile)
             ? Locked(files, rules, settings, admin, facts with { Kind = FolderKind.Worktree, Why = "its .git file and its admin folder point at each other" })
-            : facts with { Kind = FolderKind.Orphan, Why = $"its admin folder {admin} points at {target}, not at this folder" };
+            : NotBack(files, admin, target, there, facts);
     }
+
+    /// <summary>The admin folder does not point at THIS .git file. Only a target that is not there makes an orphan; a .git file that EXISTS under another
+    /// spelling (a link, an alias, a short name) may be this very worktree, so it is unreadable — never an orphan, never a candidate (Fable review, E19.S3 condition 3).</summary>
+    private static FolderFacts NotBack(IFileSystem files, string admin, string target, Reading<string> there, FolderFacts facts) =>
+        there is Reading<string>.Available { Value: var resolved } && files.FileExists(resolved)
+            ? facts with { Kind = FolderKind.Unreadable, Why = $"its admin folder {admin} points at a .git file that exists under another spelling ({target}); it may be this folder, so it is not judged" }
+            : facts with { Kind = FolderKind.Orphan, Why = $"its admin folder {admin} points at {target}, not at this folder" };
 
     /// <summary>A <c>locked</c> file in the admin folder is how <c>git worktree lock</c> is stored; its text is the reason, capped and made printable.</summary>
     private static FolderFacts Locked(IFileSystem files, PathRules rules, WorktreeSettings settings, string admin, FolderFacts facts)

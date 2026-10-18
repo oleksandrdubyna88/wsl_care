@@ -122,12 +122,12 @@ internal static class TreeWalk
     {
         var state = new WalkState(Stopwatch.StartNew(), limits);
         var probe = new Probe(rules);
-        return Consume(Entries(root, rules, state, excluded, probe), rules, state, excluded, probe, cancellationToken);
+        return Consume(Entries(root, rules, state, excluded, probe, cancellationToken), rules, state, excluded, probe, cancellationToken);
     }
 
     /// <summary>The entries of the walk: today's ignoring enumeration for every caller that did not ask to count what it could not open,
     /// the counting one for the caller that did (<see cref="TreeRules.CountDenied"/>).</summary>
-    private static IEnumerable<(long Length, bool Counted, TreeFile? File)> Entries(string root, TreeRules rules, WalkState state, Exclusions excluded, Probe probe)
+    private static IEnumerable<(long Length, bool Counted, TreeFile? File)> Entries(string root, TreeRules rules, WalkState state, Exclusions excluded, Probe probe, CancellationToken cancellationToken)
     {
         var options = new EnumerationOptions
         {
@@ -137,7 +137,7 @@ internal static class TreeWalk
             ReturnSpecialDirectories = false,
         };
         return NeedsTheCountingWalk(rules)
-            ? new CountingEntries(root, options, rules, state, excluded, probe)
+            ? new CountingEntries(root, options, rules, state, excluded, probe, cancellationToken)
             : new FileSystemEnumerable<(long Length, bool Counted, TreeFile? File)>(
                 root,
                 (ref FileSystemEntry e) => (e.Length, rules.CountOnlyUnder.Count == 0 || IsUnderNamed(root, e.Directory.ToString(), rules.CountOnlyUnder), rules.ListFiles ? new TreeFile(e.ToFullPath(), e.Length, e.LastWriteTimeUtc) : null),
@@ -174,14 +174,19 @@ internal static class TreeWalk
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
-            if (state.Exhausted(visited) is { Length: > 0 } why)
+            probe.Visited = visited;
+            if (state.Exhausted(visited + probe.Directories) is { Length: > 0 } why)
             {
                 state.Stopped = true;
                 return Measured(bytes, files, false, why, rules, excluded, listed, probe);
             }
         }
 
-        return Measured(bytes, files, true, string.Empty, rules, excluded, listed, probe);
+        // A counting walk that stopped recursing because its budget ran out while only FOLDERS were left to enter (a tree of empty folders) yields no
+        // file to stop on: it ends here, and says so.
+        return state.Stopped
+            ? Measured(bytes, files, false, state.Why, rules, excluded, listed, probe)
+            : Measured(bytes, files, true, string.Empty, rules, excluded, listed, probe);
     }
 
     private static TreeMeasure.Measured Measured(long bytes, long files, bool complete, string note, TreeRules rules, Exclusions excluded, List<TreeFile> listed, Probe probe) =>
@@ -256,6 +261,11 @@ internal static class TreeWalk
 
         public int Denied { get; set; }
 
+        /// <summary>Files yielded so far, and folders recursed into: together what the budget counts in a counting walk.</summary>
+        public long Visited { get; set; }
+
+        public long Directories { get; set; }
+
         public DateTimeOffset Newest { get; private set; } = DateTimeOffset.MinValue;
 
         public IReadOnlyList<string> Found => _found.Count == 0 ? Array.Empty<string>() : [.. _found];
@@ -277,13 +287,13 @@ internal static class TreeWalk
     /// <summary>The walk that COUNTS (<see cref="TreeRules.CountDenied"/>): <see cref="EnumerationOptions.IgnoreInaccessible"/> is off and
     /// <see cref="FileSystemEnumerator{TResult}.ContinueOnError"/> counts each entry the enumeration could not open and goes on — an
     /// unreadable subtree is reported, never passed over in silence. Every entry is seen (<see cref="Probe"/>) before it is judged.</summary>
-    private sealed class CountingEntries(string root, EnumerationOptions options, TreeRules rules, WalkState state, Exclusions excluded, Probe probe) : IEnumerable<(long Length, bool Counted, TreeFile? File)>
+    private sealed class CountingEntries(string root, EnumerationOptions options, TreeRules rules, WalkState state, Exclusions excluded, Probe probe, CancellationToken cancellationToken) : IEnumerable<(long Length, bool Counted, TreeFile? File)>
     {
-        public IEnumerator<(long Length, bool Counted, TreeFile? File)> GetEnumerator() => new Enumerator(root, options, rules, state, excluded, probe);
+        public IEnumerator<(long Length, bool Counted, TreeFile? File)> GetEnumerator() => new Enumerator(root, options, rules, state, excluded, probe, cancellationToken);
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-        private sealed class Enumerator(string directory, EnumerationOptions options, TreeRules rules, WalkState state, Exclusions excluded, Probe probe) : FileSystemEnumerator<(long Length, bool Counted, TreeFile? File)>(directory, options)
+        private sealed class Enumerator(string directory, EnumerationOptions options, TreeRules rules, WalkState state, Exclusions excluded, Probe probe, CancellationToken cancellationToken) : FileSystemEnumerator<(long Length, bool Counted, TreeFile? File)>(directory, options)
         {
             private readonly string _root = directory;
 
@@ -297,7 +307,7 @@ internal static class TreeWalk
             {
                 var name = entry.FileName.ToString();
                 var full = entry.ToFullPath();
-                return !state.Stopped && !rules.SkipDirectory(full, name) && excluded.MayEnter(rules, name, full);
+                return !state.Stopped && Within(state, probe, cancellationToken) && !rules.SkipDirectory(full, name) && excluded.MayEnter(rules, name, full);
             }
 
             protected override (long Length, bool Counted, TreeFile? File) TransformEntry(ref FileSystemEntry entry) =>
@@ -315,9 +325,33 @@ internal static class TreeWalk
         }
     }
 
+    /// <summary>One more folder entered by a counting walk: counted toward the entry budget, the deadline looked at, and the token asked every
+    /// <see cref="CancellationStride"/> folders — so a tree of folders alone is bounded like a tree of files. False when the budget is spent.</summary>
+    private static bool Within(WalkState state, Probe probe, CancellationToken cancellationToken)
+    {
+        probe.Directories++;
+        if (probe.Directories % CancellationStride == 0)
+        {
+            Actions.Engine.RunProgress.Mark();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        if (state.Exhausted(probe.Visited + probe.Directories) is not { Length: > 0 } why)
+        {
+            return true;
+        }
+
+        state.Stopped = true;
+        state.Why = why;
+        return false;
+    }
+
     private sealed class WalkState(Stopwatch watch, TreeLimits limits)
     {
         public bool Stopped { get; set; }
+
+        /// <summary>Why a counting walk stopped between files, when it did.</summary>
+        public string Why { get; set; } = string.Empty;
 
         /// <summary>Why the walk must stop now, or empty.</summary>
         public string Exhausted(long visited) =>

@@ -1,6 +1,7 @@
 using FluentAssertions;
 
 using WslCare.Core.Files;
+using WslCare.Core.Collectors;
 using WslCare.Core.Hosting;
 using WslCare.Core.Worktrees;
 using WslCare.TestSupport;
@@ -128,6 +129,32 @@ public sealed class WorktreeRootsTests
         JudgeOne(disk, aroundClaudeTemp).Rule.Should().Be(RootRule.Protected, "a root that HOLDS Claude's temp folder would take it along");
     }
 
+    /// <summary>E19.S3 Fable review, recommended 5: the system folders and the whole temporary folder are never a root, nor inside or around one.</summary>
+    [Theory]
+    [InlineData("Windows")]
+    [InlineData("Program Files")]
+    [InlineData("Program Files (x86)")]
+    [InlineData("ProgramData")]
+    [InlineData(@"Users\me\AppData\Local\Temp")]
+    public void A_system_folder_or_the_temporary_folder_is_refused_and_so_is_one_inside_it(string relative)
+    {
+        var place = Rules.Join(Sandbox, relative);
+        var inside = Rules.Join(place, "repos");
+        var disk = Disk(place, inside);
+
+        JudgeOne(disk, place).Rule.Should().Be(RootRule.Protected);
+        JudgeOne(disk, inside).Rule.Should().Be(RootRule.Protected, "inside " + relative);
+    }
+
+    [Fact]
+    public void A_folder_holding_the_temporary_folder_or_a_system_folder_is_refused()
+    {
+        var local = Rules.Join(Sandbox, @"Users\me\AppData\Local");
+        var disk = Disk(local, Rules.Join(local, "Temp"));
+
+        JudgeOne(disk, local).Accepted.Should().BeFalse("it holds the temporary folder");
+    }
+
     [Fact]
     public void A_nested_or_overlapping_root_is_refused_and_the_earlier_one_kept()
     {
@@ -221,6 +248,9 @@ public sealed class WorktreeRootsTests
         public override bool DirectoryExists(string path) => Folders.Contains(Rules.Normalize(path), StringComparer.OrdinalIgnoreCase);
 
         public override bool FileExists(string path) => Files.Contains(Rules.Normalize(path));
+
+        /// <summary>The table spells every folder as it is written: no 8.3 names here (the real-disk legs cover those).</summary>
+        public override Reading<string> FolderFinalPath(string path) => Reading.Of(Rules.Normalize(path));
 
         public override RealPathResult ResolvePath(string path) =>
             new RealPathResult.Resolved(Links.TryGetValue(Rules.Normalize(path), out var target) ? target : Rules.Normalize(path));

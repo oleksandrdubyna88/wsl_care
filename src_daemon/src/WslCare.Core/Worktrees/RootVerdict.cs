@@ -12,6 +12,9 @@ public static class RootRule
     public const string Profile = "profile";
     public const string Protected = "protected-place";
     public const string Overlap = "overlap";
+
+    /// <summary>The folder opens, but the system calls it by another name — an 8.3 short name, a <c>subst</c> drive, a trailing dot or space, a differently-cased link-free alias: it is judged under its real name, never under the spelling that hides it.</summary>
+    public const string SpeltDifferently = "spelt-differently";
     public const string TooMany = "too-many";
 }
 
