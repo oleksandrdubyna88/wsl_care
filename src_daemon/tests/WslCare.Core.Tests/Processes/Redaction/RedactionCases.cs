@@ -76,6 +76,7 @@ internal static class RedactionCases
         { "DigitalOcean", "dop" + "_v1_" + Hex64 },
         { "Hugging Face", "hf" + "_" + "INVENTEDinvented0123456789" },
         { "SendGrid", "SG" + "." + "INVENTEDinvented0123" + "." + "INVENTEDinvented0123" },
+        { "Telegram bot", "bot" + "123456789" + ":" + "AAHq7Hn2Vx9LmT4bKd8RzY3wPc6Jf1sGa5" },
         { "CredsForDevs config key", ConfigKey },
         { "JWT", Jwt },
         { "PEM private key", "-----BEGIN " + "OPENSSH PRIVATE KEY-----" },

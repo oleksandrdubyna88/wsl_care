@@ -74,12 +74,12 @@ public sealed class ShownArgumentsTests
         shown.Total.Should().Be(4);
     }
 
-    /// <summary>Deviation from design §2.5, which skips EMPTY arguments only: a whitespace-only argument is skipped too (the safer reading —
-    /// it shows nothing a view could use and a title padding of spaces is the same fact). Recorded in the as-built section.</summary>
+    /// <summary>Deviation from design §2.5, which skips EMPTY arguments only: a whitespace-only argument never enters the SHOWN PREFIX (it shows
+    /// nothing a view could use), but <c>argumentsTotal</c> counts it (coai code round 3: the total is every non-empty argument).</summary>
     [Fact]
-    public void Empty_and_blank_arguments_are_skipped_and_not_counted()
+    public void Empty_and_blank_arguments_never_enter_the_shown_prefix_and_the_total_counts_the_non_empty_ones()
     {
-        Of(["node", "", "script.js", "   ", ""]).Should().Be(new ShownCommandLine("node", ["script.js"], 1));
+        Of(["node", "", "script.js", "   ", ""]).Should().Be(new ShownCommandLine("node", ["script.js"], 2));
     }
 
     [Fact]

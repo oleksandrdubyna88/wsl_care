@@ -81,6 +81,8 @@ public sealed class SecretShapesTests
     [InlineData("{ \"key\": \"x\" }", true)]
     [InlineData("const net = require('net'); const client = net.createConnection({ host: '127.0.0.1', port: 41304 })", false)]
     [InlineData("tokenizer", false)]
+    [InlineData("tool --password Hunter2Invented --port 5", true)]
+    [InlineData("the password is in the vault", true)]
     [InlineData("a plain sentence without any of the words", false)]
     public void A_blob_is_judged_by_a_secret_word_followed_by_a_separator(string text, bool expected)
     {
@@ -106,6 +108,9 @@ public sealed class SecretShapesTests
     [Theory]
     [InlineData("mysql", "-pInv3ntedPass", true)]
     [InlineData("mariadb-dump", "-pInv3ntedPass", true)]
+    [InlineData("sshpass", "-pHunter2Invented", true)]
+    [InlineData("curl", "-uuser:Pa55w0rd", true)]
+    [InlineData("curl", "-uuser", false)]
     [InlineData("mysql", "-p", false)]
     [InlineData("mysql", "--protocol=tcp", false)]
     [InlineData("mysql", "-P3306", false)]

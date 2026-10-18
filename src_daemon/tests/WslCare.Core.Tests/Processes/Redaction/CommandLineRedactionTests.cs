@@ -93,9 +93,9 @@ public sealed class CommandLineRedactionTests
     }
 
     [Fact]
-    public void A_creds_shape_in_the_path_of_a_url_makes_the_whole_url_redacted()
+    public void A_creds_shape_in_the_path_of_a_url_is_replaced_alone_and_the_rest_of_the_url_stays()
     {
-        Shown("curl", "https://files.example.invalid/" + GitHubToken + "/a.tgz").Should().Be("curl <redacted>");
+        Shown("curl", "https://files.example.invalid/" + GitHubToken + "/a.tgz").Should().Be("curl https://files.example.invalid/<redacted>/a.tgz");
     }
 
     // The URL arm runs BEFORE the creds shape (design §2.1 as amended 2026-10-16) -----------------------------------------
@@ -112,9 +112,9 @@ public sealed class CommandLineRedactionTests
     }
 
     [Fact]
-    public void A_creds_shape_left_in_the_rest_of_a_url_after_its_userinfo_went_makes_the_whole_url_redacted()
+    public void A_creds_shape_left_in_the_rest_of_a_url_after_its_userinfo_went_is_replaced_alone_too()
     {
-        Shown("curl", "https://alice:Inv3nted@api.example.invalid/" + GitHubToken + "/x").Should().Be("curl <redacted>");
+        Shown("curl", "https://alice:Inv3nted@api.example.invalid/" + GitHubToken + "/x").Should().Be("curl https://<redacted>@api.example.invalid/<redacted>/x");
     }
 
     // 5 (the bounded `key` word, design §2.2) ----------------------------------------------------------------------------
