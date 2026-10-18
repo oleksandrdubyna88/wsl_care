@@ -45,7 +45,7 @@ test('a read that answered no PowerShell 7 at all names Windows PowerShell 5.1 p
 
 test('a read that did not answer, answered nothing, or answered a tag twice runs 5.1 — and its label says PowerShell 7 could not be checked, and why', () => {
   const cases: readonly (readonly [ProcessResult, RegExp])[] = [
-    [{ kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, /did not answer within 20 s \(wslCare\.timeouts\.engineProbeSeconds\)/],
+    [{ kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, /did not answer within 20 s \(wslCare\.timeouts\.engineProbeSeconds\)/],
     [{ kind: 'failedToStart', reason: 'ENOENT' }, /could not start: ENOENT/],
     [exited('', 1), /exited 1/],
     [exited(''), /printed no PowerShell 7 verdict/],

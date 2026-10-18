@@ -100,6 +100,12 @@ export type BundledRead =
   | { readonly kind: 'unavailable'; readonly reason: string }
   | { readonly kind: 'failed'; readonly reason: string };
 
+/** The SHA-256 of the bundled exe as the client computes it (a file read, nothing started), or why it is not known. */
+export type BundledDigest =
+  | { readonly kind: 'digest'; readonly digest: string }
+  | { readonly kind: 'unavailable'; readonly reason: string }
+  | { readonly kind: 'failed'; readonly reason: string };
+
 function exitedRead(code: number, stdout: Buffer, stderr: Buffer): BundledRead {
   const text = firstLine(stdout);
   if (code !== 0) {
@@ -117,6 +123,9 @@ export function bundledReadOf(result: ProcessResult): BundledRead {
 }
 
 export class WindowsCareClient {
+  /** The bundled exe's digest, once learned (see {@link WindowsCareClient.bundledDigest}). */
+  private digest: Promise<BundledDigest> | undefined;
+
   constructor(private readonly options: WindowsClientOptions) {}
 
   /**
@@ -172,6 +181,38 @@ export class WindowsCareClient {
   }
 
   /**
+   * The SHA-256 of the bundled exe, computed by the client itself (WR-E2: the panel's "Windows daemon copy" line, and the digest
+   * of the staged copy it asks `tasks render` about). A read of the file — nothing is started; `unavailable` when no bundled exe
+   * is named here (not Windows, not a local disk), `failed` when it cannot be read.
+   */
+  bundledDigest(): Promise<BundledDigest> {
+    // ONE read of the 13.7 MB exe per client, whoever asks and however often (the coai code round, findings 6 + 15): the answer is
+    // remembered as a promise, so concurrent askers share it; anything that is not a digest — unavailable, a failed read — is not.
+    this.digest ??= this.readBundledDigest().then((read) => {
+      if (read.kind !== 'digest') {
+        this.digest = undefined;
+      }
+
+      return read;
+    });
+
+    return this.digest;
+  }
+
+  private async readBundledDigest(): Promise<BundledDigest> {
+    const file = this.exe();
+    if (typeof file !== 'string') {
+      return { kind: 'unavailable', reason: file.reason };
+    }
+    const digest = await this.digestOfBundled(file);
+    if (typeof digest !== 'string') {
+      return digest;
+    }
+
+    return STAGED_DIGEST_SHAPE.test(digest) ? { kind: 'digest', digest } : { kind: 'failed', reason: 'the digest computed for the bundled exe is not 64 lower-case hex digits' };
+  }
+
+  /**
    * `tasks render <task> --json` on the STAGED copy `digest` — read-only: the XML, the summary and whether the copy may be
    * registered. Typed from the exit code AND the JSON; a copy that answers for another digest is not registrable.
    */
@@ -196,7 +237,7 @@ export class WindowsCareClient {
     if (typeof file !== 'string') {
       return { kind: 'unavailable', reason: file.reason };
     }
-    const expected = await this.expectedCopy(file);
+    const expected = await this.expectedCopy();
     if ('kind' in expected) {
       return expected;
     }
@@ -206,17 +247,14 @@ export class WindowsCareClient {
   }
 
   /** What the stage must report: the bundled exe's digest and the staged exe the client would start for it — or why that is unknown. */
-  private async expectedCopy(bundled: string): Promise<{ readonly digest: string; readonly path: string } | { readonly kind: 'unavailable' | 'failed'; readonly reason: string }> {
-    const digest = await this.digestOfBundled(bundled);
-    if (typeof digest !== 'string') {
-      return digest;
+  private async expectedCopy(): Promise<{ readonly digest: string; readonly path: string } | { readonly kind: 'unavailable' | 'failed'; readonly reason: string }> {
+    const read = await this.bundledDigest();
+    if (read.kind !== 'digest') {
+      return read;
     }
-    if (!STAGED_DIGEST_SHAPE.test(digest)) {
-      return { kind: 'failed', reason: 'the digest computed for the bundled exe is not 64 lower-case hex digits' };
-    }
-    const copy = this.exe(staged(digest));
+    const copy = this.exe(staged(read.digest));
 
-    return typeof copy === 'string' ? { digest, path: copy } : { kind: 'unavailable', reason: copy.reason };
+    return typeof copy === 'string' ? { digest: read.digest, path: copy } : { kind: 'unavailable', reason: copy.reason };
   }
 
   /** The SHA-256 of the bundled exe, read by the digest seam — or why it could not be learned. */

@@ -1,6 +1,6 @@
 # PLAN — the Windows runner: two per-user scheduled tasks run the staged `wsl-care.exe` under one bounded supervisor
 
-> Status: **in progress, 2026-10-15 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 built (the archive body of `tasks run archive`: dry → `archive preview`, real → `archive run`, no run lock; *WR-D5 as built* in §14); WR-E1 built (the widened `WindowsCareClient`: the staged exe, `tasks render` / `stage` / `stage --remove` typed, the run reads; the strict fake learns them; *WR-E1 as built* in §14); WR-T1 built (A23 `windowsTemp`: the engine's first Windows action, the `temp.*` keys, `act` unelevated on the Windows side; *WR-T1 as built* and *the Fable own review* in §14); WR-E2 onward (except WR-T1) not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
+> Status: **in progress, 2026-10-17 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 built (the archive body of `tasks run archive`: dry → `archive preview`, real → `archive run`, no run lock; *WR-D5 as built* in §14); WR-E1 built (the widened `WindowsCareClient`: the staged exe, `tasks render` / `stage` / `stage --remove` typed, the run reads; the strict fake learns them; *WR-E1 as built* in §14); WR-T1 built (A23 `windowsTemp`: the engine's first Windows action, the `temp.*` keys, `act` unelevated on the Windows side; *WR-T1 as built* and *the Fable own review* in §14); WR-E2 built (one Task Scheduler read for `\wsl-care`, the guard consuming it; the Windows tasks' state, host and panel lines, read only; the runner's tree kill; *WR-E2 as built* and *the story's plan round (4fc3f328)* in §14); WR-E3 onward (except WR-T1) not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
 >
 > Related: [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b (A22 = S7b.3, the Windows stop; S7b.1 the ledger; S2b the watch), [PLAN_windows_care.md](PLAN_windows_care.md) §2 and W-A15 (E11), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) D9 (:3010–3017), [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md), [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a, §4 and its forward note), [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the task-registration precedent), [PLAN_pwsh_engine_windows_time.md](../research/PLAN_pwsh_engine_windows_time.md) (the engine rule, F1/F2), [2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md).
 >
@@ -326,6 +326,7 @@ cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout
 - [ ] Every RED test seen red for the right reason, then green; every break-it red on product code, then restored.
 - [ ] The child + grandchild timeout test green on the Windows leg; no test registers, runs or deletes a real task or starts a real `wsl-care.exe`.
 - [ ] `contracts/config-keys.json`, `contracts/exit-codes.json`, the render golden regenerated; `plan-lifecycle`, lint, typecheck, the daemon's Windows suites and CI's two legs green.
+- [ ] WR-E3/E4 live gate (the Opus own review of WR-E2, m6): the REAL registered `\wsl-care\watch`, read back through `QUERY_SCRIPT`, satisfies `summariesMatch(registered, tasks render's summary)` — the panel says "installed, …", never "install again to update" — before WR-E3 is called done; WR-E4 repeats it after a run-now (`state`, `lastResult`).
 - [ ] The owner's acceptance (POST_DEPLOY): *Install the Windows watch task* registers `\wsl-care\watch` unelevated; Task Scheduler's first run exits 0 and the ledger advances; *Remove* leaves no task, no folder (when empty) and no staging folder; a blocked start, if any, is shown with Windows' own code.
 - [ ] The Windows `%TEMP%` cleanup: its preview read by the owner before the dry window ends (the not-allow-listed groups named), one real run recorded with counts and logical bytes; nothing under `%TEMP%\claude\` touched.
 - [ ] One dry week on Windows read through `tasks render`'s dry state and the run logs, recorded in `research/` before `dryRun` is turned off there.
@@ -933,3 +934,211 @@ all-actions preview now previews this side's actions and asserts the other side'
 now names the WSL distro's actions only, with the Windows host's on their own line (`On the Windows host, "act" holds: A23.`). Test
 `ActCommandTests.The_help_names_the_windows_hosts_actions_on_their_own_line` (red first; break-it: A23 back on the distro's line →
 red). On the Windows binary the smoke still expects exit 2: the distro's actions are refused there, as before.
+
+**WR-E2 as built (2026-10-17).** `src_vs_code/src/windowsTime/guardScripts.ts` (`QUERY_SCRIPT` widened — the guard's one script, not a
+second), `windowsTime/guardState.ts` and `guardHost.ts` (the guard consumes the read), `windowsTime/guardTask.ts` (`SUMMARY_FUNCTION`'s
+logon case), `scheduler/` (the peer both consumers use, after the coai code round: `schedulerAnswer.ts` the parser, `schedulerHost.ts` the ONE read in flight, `queryScript.ts`, `taskSummary.ts`), `windowsTasks/tasksState.ts`, `tasksView.ts`,
+`tasksHost.ts`, `process/runner.ts` (`killTree`), `client/WindowsCareClient.ts` (`bundledDigest()`), `settings/numbers.ts` +
+`package.json` (`wslCare.timeouts.windowsTasksStageSeconds`), `panel/view.ts` / `viewModel.ts` / `panelProvider.ts`, `media/panel.js`,
+`extension.ts`, `testApi.ts`; the docs in [module_vs_code.md](../research/module_vs_code.md) and [module_tests.md](../research/module_tests.md).
+The story is READ ONLY: nothing is registered, removed, run or written to Task Scheduler. Decisions the plan did not spell out:
+
+- **The query's answer is one tagged format** (`windowsTime/guardScripts.ts`): the folder's lines (`channel=`, `stamp=`, `user=<sid>`,
+  `folder=present|absent|unreadable` + `hresult=`), then one section per task opened by a line that BEGINS `task=<name>` (`enabled=`,
+  `state=`, `lastRunUtc=`, `lastResult=`, `summary:` lines; or `read=unreadable` + `hresult=` for a task that could not be read). A task's
+  lines are collected before they are printed, so a failure leaves no half section; control characters of a name and line breaks in a
+  summary line cannot add a line. The old `guard=…` lines are gone: the guard is read out of the folder's tasks BY NAME
+  (`parseGuardAnswer(stdout, task = GUARD_NAME)`), so `summariesMatch` needs no task name — it compares two summaries — and the PARSER
+  takes it. A task whose fields do not parse (the guard's too) is `unreadable`/`unknown` for that task only; the guard's former "answered
+  without the last run → unknown" is now "its definition printed no summary lines → unknown".
+- **`SUMMARY_FUNCTION`'s logon case prints `interval=`** (WR-D1 asked for it): the guard's own summary became
+  `trigger=logon enabled=True delay=PT60S interval=` (an empty interval — the guard's logon trigger repeats nothing). Both sides of the
+  compare read the REGISTERED task through the same function, so no installed guard went stale by this.
+- **`SchedulerHost` holds the one read** (`guardHost.ts`'s shape, lifted): one query in flight, a refresh during a flight answered by
+  ONE more, a listener list; the guard host now REQUIRES it in its deps (`queryTimeoutMs` left the guard's deps; `GuardUi.query` is the
+  runner `extension.ts` gives the shared host). The recorder's default query answer is the new format ("no folder").
+- **`TasksHost` (read side) is `windowsTasks/tasksHost.ts`**; WR-E3 widens the same class with the install/remove flows. It is the part's
+  only caller of the client.
+- **The trigger (plan round, finding 4; amended by the coai code round, finding 0 — below).** `extension.ts`'s `panelRefresh` is the only caller of the shared read (`parts.scheduler.refresh()`) and of the probe (`TasksHost.refresh()`, which no longer reads Task Scheduler) —
+  the panel opening (`resolveWebviewView`), becoming visible (`visibilityChanged`), its *Refresh* button and the `wslCare.refresh`
+  command: the moments the guard's read has always run at. `panelRefresh` no longer calls `parts.guard.refresh()` beside it (two reads
+  for one refresh); the guard's `afterRun` still reads once after an elevated run answers. Tests: `tasksHost.test.ts` (no query at
+  construction, no timer in `windowsTasks/`, ONE `parts.scheduler.refresh()` and ONE `parts.tasks.refresh()` call site inside `panelRefresh`, none of the guard's).
+- **The copy probe.** The digest is the client's own SHA-256 of the bundled exe (`WindowsCareClient.bundledDigest()`, a file read; the
+  stage's expected copy reuses it). "Staged" is `tasks render watch` on `staged(<digest>)` ANSWERING (registrable, not registrable, or
+  the daemon refusing its configuration — exit 78); then `tasks render archive` is asked too. A start that finds no file (Node's
+  `ENOENT`) is "not staged" and NOTHING further is rendered; any other ending — a blocked start (an Application Control policy), a
+  timeout, an older daemon's exit 2 — is "could not be checked" with the start's own words, never "not staged". A probe that throws is
+  that too and never rejects the refresh. The render's ceiling is the new `wslCare.timeouts.windowsTasksStageSeconds` (60, 10–600);
+  the read's ceiling is the guard's `windowsTimeGuardQuerySeconds` (30, its description widened, no second setting — Q3).
+- **Rows** (`tasksState.ts`, precedence): unreadable (its own read failed; the folder not readable is one line on each task with
+  Task Scheduler's HRESULT), disabled, running (`State` 4 or `0x41301`), then the comparison with the staged copy's summary through
+  `summariesMatch` (`differs` → "install again to update"; not staged → "this version's copy is not staged, install again to update";
+  a render that gave nothing for THIS task → "cannot be compared with this version's copy (<why>)"), then the last run. A task that never
+  ran — an empty or `never` instant, an empty result or `0x41303` — reads "installed, never run". A folder that does not exist
+  (`0x80070002`) is an empty task set: every task "not installed". The last result in words is the daemon's exits (0, 1, 75 normal,
+  78, 81, 84) and Task Scheduler's codes; 0, 75 and `0x8004131f` are `ok`, any other result `warn`.
+- **The dry line** is the first answered render's `dry.reason` ("Windows tasks, dry run: …"), and empty until one answered (so never
+  claimed for a copy that is not staged). `user=<sid>` is parsed and held on the read for WR-E3's comparison with the render's `userSid`.
+- **The panel** (`PanelView.windowsTasks`, `buildPanelView`'s eighth parameter): a `div[data-windows-tasks]` in *Health*, between the
+  bundled daemon's line and the guard's: `p[data-windows-tasks-copy]` ("Windows daemon copy: 0.4.0 (0123456789ab) staged" / "not staged";
+  version = `BUNDLED_DAEMON`), `p[data-windows-task=<watch|archive>]` per task, `p[data-windows-tasks-dry]` when there is a dry line;
+  nothing at all off Windows. Text only (`textContent`, every supplied word through `noticeText`).
+- **The runner's tree kill (finding 8) is NEW, not "the existing kill"**: the runner only ever called `child.kill()` (one process). A
+  request may now carry `killTree`: at its ceiling the runner runs ONE fixed, verifying PowerShell (`process/treeKill.ts`) that ends
+  the child's tree by pid AND creation time — the host's own child only, never by image name, and never once the child has exited —
+  waits for its verdict, and only then calls `child.kill()`; the `timedOut` result says through `treeEnded` whether the tree was
+  VERIFIED ended (the first design was `taskkill /PID <pid> /T /F`; *the Opus own review of WR-E2* below replaced it). The query asks
+  for it; no other caller changed. A node helper cannot test this (libuv puts the children of every node process in a kill-on-close
+  job, so a node grandchild dies with its parent) — the test's helper is a Windows PowerShell starting `ping.exe` (45 pings, ends by
+  itself after ~44 s) and the control proves a plain kill leaves it alive.
+- **The canonical summary (finding 10)**: the golden's summary lines equal `summariesMatch`'s reading of SUMMARY_FUNCTION's read-back on
+  EVERY OS through `test/support/summaryOfXml.ts` (an independent TypeScript reference reader of the XML, also held against the guard's
+  own XML), and the Windows leg parses each golden XML with `NewTask(0).XmlText` (read only, a made-up SID, never registered) and asserts
+  the real read-back lines equal the golden's, byte for byte.
+- **The publication scan reads `package.json` as raw text** (`vsixCheck`): a setting description may not hold a `\\wsl` — written as the JSON-escaped `\\wsl-care` it reads as a UNC share — so the widened `windowsTimeGuardQuerySeconds` description says "every task this extension registers in Task Scheduler" (productName.test allows the extension's text to name wsl-care only as the daemon, so the folder's name is not spelt in it either) (the first full run caught it: 24 of its 25 failures were this one line).
+- **Not built here (E3–E4)**: the install / remove / run-now flows and their buttons, the pending record, registration through PowerShell.
+  Open for WR-E3: `TasksHost` is read only; its `view()` has no button list.
+
+**The story's plan round (4fc3f328, 2026-10-16) — ten findings, all ACCEPTED, each a RED test first:**
+
+1. *The `\wsl-care` folder does not exist on a machine never installed* → `0x80070002` on the folder is `folder=absent`, an empty
+   task set; every task "not installed" (`schedulerAnswer.test.ts`, `windowsTasksState.test.ts`; break-it: the `absent` case removed → red).
+2. *Not staged → no `tasks render`* → one probe, no second render; the copy line "not staged"; each registered task "installed — this
+   version's copy is not staged, install again to update" (`tasksHost.test.ts`; break-it: the stop removed → red).
+3. *Per-task isolation* → a task whose read failed or whose fields do not parse is that task's `unreadable` (break-it: one bad task
+   unanswers the whole read → red).
+4. *The trigger is stated and tested* → above.
+5. *The copy line's sources* → above (`bundledDigest.test.ts`, `tasksHost.test.ts`).
+6. *Access denied / any Task Scheduler error is a visible line* → `folder=unreadable` + HRESULT on each task, `read=unreadable` per task,
+   `unknown — <reason>` when the query itself failed.
+7. *A bounded ceiling* → the read reuses `wslCare.timeouts.windowsTimeGuardQuerySeconds` (read at every query; tested).
+8. *On timeout the tree is killed and the panel says it timed out* → `killTree` (above); "unknown — the Task Scheduler read timed out
+   after 30 s (…); its PowerShell and everything it started were ended" on each task (break-it: `killTree` ignored → the grandchild
+   outlives the run → red).
+9. *A never-run task reads "never run"* → "installed, never run", never `undefined` (tested for four spellings).
+10. *One canonical summary format* → above.
+
+**RED messages and break-its of WR-E2** (each break-it on PRODUCT code, restored byte for byte, the working tree clean after):
+
+- RED: the first batch against stubs failed 35 of 78 with assertion errors — `the folder's catch maps the not-found HRESULT to
+  folder=absent`, `expected 'read', actual 'unknown'`, `actual { kind: 'unknown', reason: 'checking…' } expected { kind: 'absent',
+  channel: 'enabled', stampLeft: true }`; the tree kill: `the grandchild 39432 outlived the run it belonged to` (and the first, node,
+  helper was a bad probe — see above); the setting: `wslCare.timeouts.windowsTasksStageSeconds is not contributed`; the state and host
+  against stubs: 17 of 22 and 15 of 16 red.
+- Break-its: the folder-not-found case removed (3 red); one unreadable task unanswering the whole read (2 red); the up-to-date compare
+  reversed (10+ red); `killTree` ignored (1 red, the real grandchild); the Windows tasks lines dropped from the page (3 red); the guard
+  asked beside the tasks in `panelRefresh` (1 red); the stop at "not staged" removed (2 red); the summary compare dropping the principal
+  (3 red); the query asking for one task by name (1 red).
+
+**The Opus own review of WR-E2 (2026-10-17)** — two blocking, three major, seven minor findings, all fixed, RED first
+(`runnerKillTree.test.ts`, `schedulerAnswer.test.ts`, `windowsTasksState.test.ts`, `windowsTimeGuardFlow.test.ts`, `singleFlight.test.ts`):
+
+- **B1 (blocking) — the tree kill could end a process that was not the runner's running child.** `Run.stop()` can fire after Node saw
+  the child `exit` (the ceiling's timer is cleared only on `close`, and a pipe may stay open), by when its pid may be another
+  process's; and `taskkill /T` ends whatever the pid names. **What was done: BOTH** — the exit guard AND the family kill rule (pid +
+  creation time, own children only), not the guard alone. (1) `endTree` asks for a tree kill ONLY while `child.exitCode === null &&
+  child.signalCode === null` and the pid is known; otherwise it makes NO request and the run falls back to the plain `child.kill()`
+  (which Node does not send to an exited child). (2) The tree kill is no longer `taskkill`: it is ONE fixed, verifying Windows
+  PowerShell started by its absolute path (`process/treeKill.ts`, reusing `powerShellOf`), whose script is constant but for three
+  validated integers (the root's pid, this host's pid, this host's start in epoch milliseconds, a little early). It confirms the
+  root's `ParentProcessId` is this host and its `CreationDate` is after this host started (exits 3/4/5 otherwise), walks the CIM
+  `Win32_Process` descendants keeping a child only when its `CreationDate` is not earlier than its parent's (a reused parent pid
+  cannot adopt a stranger; a `seen` set stops a cycle), stops each by id — oldest first, so the root cannot start more — after
+  re-reading its creation time and only if it is still the process that was judged, waits 300 ms and READS BACK that none of the
+  judged set is left (exit 7 otherwise). Exit 0 alone is "verified ended". It is never `-Name`, never `taskkill`, never an image name.
+  **Residual race, for the owner's sign-off:** a process the tree starts AFTER the walk (between the CIM read and the stop) is not in
+  the judged set and survives; the root is stopped first to shrink that window, and the read-back covers only the judged set. The
+  window between re-reading one pid's creation time and its `Stop-Process` is milliseconds. RED: `Expected values to be strictly equal …`
+  for the exited root (a request was made), and after the fake child's `exit` `stop()` made a request.
+- **B2 (blocking) — `$channel` was printed LAST**, so the parser filed it under the last task and the channel read `unknown` whenever
+  a task existed (the guard's "stop event is not logged" note was lost; the fixtures printed it first, hiding it). It is printed
+  right after it is computed, before `stamp=`, and the trailing print and the folder catch's copy are gone. Tests: the script
+  prints it once, before the stamp, the folder and the first task; the fixtures print in the script's REAL order; and on the Windows
+  leg the real output has `channel=` before `folder=` and none after a task opened. RED: `before stamp=`, and on the real run
+  `channel= is printed before folder=`.
+- **M1 — a task this account cannot read read as "not installed".** `GetTasks(1)` skips it. Each expected task (`watch`,
+  `archive`, `windows-time-guard`, from the constants) the list lacks is now asked for by name: `0x80070002` prints nothing (absent),
+  any other refusal prints that task's `read=unreadable` + HRESULT. Tests: the script's loop, and a restricted `watch` beside an
+  absent `archive`.
+- **M2 — a hung killer left the child unkilled** (the old `child.kill()` ran only on the killer's exit). The killer is bounded
+  (`TREE_KILL_BOUND_MS`, 10 s): at the bound it is stopped and the tree counts as not ended; the child is killed plainly right after.
+- **M3 — the timeout line always claimed the tree was ended.** A `timedOut` result carries `treeEnded` (true only for the verified
+  verdict, false otherwise, absent when no tree kill was asked for); nothing settles before the verdict (bounded); the panel line says
+  "its PowerShell and everything it started were ended" only for true and "the extension could not confirm that …" otherwise.
+- **m1** a registered task reads "checking…" (not the update warning) while the copy is probed. **m2** ONE table of Task Scheduler's
+  results (`SCHEDULER_RESULT`, `SCHEDULER_RESULT_WORDS` in `schedulerAnswer.ts`; the guard's table is it plus its own time-limit
+  sentence) and ONE single-flight helper (`shared/singleFlight.ts`, used by the shared read and the probe). **m3** `shared/listeners.ts`
+  isolates a listener's fault (the shared read, the host, the guard host), and the guard host's settle of a pending run is caught (the
+  store may refuse; the next read settles it). **m4** below. **m5** "(0x41301)" is said only when the last result IS that code
+  (`byCode`); a task running by its State alone reads "running". **m6** below. **m7** below.
+- **m4 — the guard's parse changes, recorded.** The guard is now read OUT OF the one query's answer by name
+  (`parseGuardAnswer(stdout, task = GUARD_NAME)`, `guardStateFromRead`); the old `guard=absent|present|unreadable` lines are gone; a
+  missing folder or task is `absent` (the stamp note kept), a folder or task Task Scheduler refuses is `unreadable` with its HRESULT,
+  a task whose fields do not parse — including "its definition printed no summary lines" — is `unknown` with the reason (the former
+  "answered without the last run"); a never-run guard keeps `lastRunUtc: 'never'` and result `0x41303`. `GuardHostDeps` requires the
+  shared `scheduler` (its `queryTimeoutMs` moved to `SchedulerHost`), the guard host's listeners are isolated, and `panelRefresh` no
+  longer calls `parts.guard.refresh()` (that would be a second read).
+- **m6 — a LIVE GATE for WR-E3/E4.** Nothing of E2 was ever read back from a REAL registration: the golden proves
+  `SUMMARY_FUNCTION`'s read-back of the XML in memory, not of a registered task (Task Scheduler normalises `PT60S` to `PT1M`, and the
+  principal's name to a SID). WR-E3's acceptance (POST_DEPLOY, the owner's first *Install*) must register `\wsl-care\watch`, read it
+  back through `QUERY_SCRIPT`, and require `summariesMatch(registered summary, tasks render's summary)` to be TRUE — the panel line
+  reading "installed, … " and not "install again to update" — before E3 is called done; WR-E4 does the same after a run-now
+  (`lastResult`, `state`). Added to §9's Definition of Done.
+- **m7 — task names are case-insensitive in Task Scheduler.** The query's by-name fallback compares with `-eq` (case-insensitive), but
+  the parser keys sections by the exact name and the extension registers lower-case names: a task someone re-created as `Watch` is
+  listed, so not fetched by name, and reads "not installed" here. Noted, not handled (the registration is the extension's own).
+- **The full run after the review found one more** — the verifying script is a string literal of the shipped bundle, and `bundleScan` forbids the word `root` in any region but the root module: the script named its variable `$root`. It is `$origin` now, with a test that reads the script for every word that scan forbids (break-it: `$root` back → red).
+- **Proposed, not done (reuse-first: name it, propose it).** `gpu/gpuHost.ts` (and `bundled/bundledHost.ts`, `archive/archiveHost.ts`)
+  carry their own copies of "one in flight, one more when asked meanwhile" and of the listener list; `SingleFlight` and `Listeners` could
+  replace them — a separate change in code this story did not otherwise touch, so it is a question for the owner.
+- **RED and break-its of the review** (each break-it on PRODUCT code, restored byte for byte, the tree clean after): B1 the exit guard
+  removed (2 red); B2 the channel printed last as well (2 red, one the real run); M1 the by-name loop broken (1 red); M2 the hung killer not
+  stopped (1 red); M3 the verdict dropped (4 red, the real grandchild test among them); m1 "checking" back to the update warning (1 red);
+  m5 "(0x41301)" for every running task (1 red); m3 the settle uncaught (1 red); m3 listeners not isolated (2 red); m2 the single flight
+  without its one more run (5 red).
+
+**The coai code round (4fc3f328, 2026-10-18)** — `proceed`, sixteen findings: ten accepted (0, 1, 3, 4, 6, 8, 11, 13, 14, 15), six rejected.
+Each accepted fix has its RED message and its break-it (product code only, restored byte for byte, the tree clean after):
+
+- **Findings 1 + 8 + 14 — one peer module (a refactor; the existing tests held it).** The query, its answer's parser, the host that holds
+  the read in flight and the canonical summary move to `src/scheduler/` — `queryScript.ts` (the script built from the CALLER's facts and
+  expected task names, `NOT_FOUND_HRESULT`, the request), `schedulerAnswer.ts`, `schedulerHost.ts`, `taskSummary.ts`
+  (`SUMMARY_FUNCTION`, `durationSeconds`, `summariesMatch`) — and `windowsTime/` and `windowsTasks/` consume it as PEERS: the peer imports
+  neither, and neither imports the other (before it, the Windows tasks' state imported `summariesMatch` out of the guard's state, and the
+  guard's state imported the parser out of `windowsTasks/`). `guardScripts.ts` keeps what is the guard's — its `channel=` and `stamp=`
+  facts and the names to look for — and builds `QUERY_SCRIPT` with `queryScript(...)` (a deviation from "move QUERY_SCRIPT": the
+  generic reading moved, the guard's facts stayed; `guardTask.ts`, `guardState.ts` and `guardScripts.ts` re-export what their tests
+  import). The query's RUNNER is now handed in from the process layer (`extension.ts`: the real unelevated runner, or the guard
+  recorder's new `recordingQuery` in Test mode) to the `SchedulerHost`; `GuardUi.query` is gone, so the shared read no longer
+  depends on a surface the guard owns. RED: `schedulerModule.test.ts` (the peer's four files, none importing a consumer, the two
+  consumers not importing each other) — `src/scheduler/queryScript.ts is a shipped source` missing and the offenders listed. Break-it: a
+  planted `export type … from '../windowsTime/guardTask'` in `schedulerHost.ts` → red.
+- **Finding 0 — one panel refresh, one read.** `panelRefresh` asks `parts.scheduler.refresh()` ONCE and `parts.tasks.refresh()`; the latter
+  now only probes the staged copy, and the guard host and the tasks host both FOLLOW the scheduler's change — neither starts its own read
+  (before it, the tasks host asked the shared read itself, so the one trigger was two call sites of one read). RED: one panel refresh made
+  two query requests; the scan of `extension.ts`. Break-its: the tasks host asking the scheduler again → 3 red; the guard asked beside the
+  shared read in `panelRefresh` → red.
+- **Finding 3 — `Run` completes once.** The child's close, the grace timer and a failure to start share one completion (a flag, and the
+  grace timer cleared): a child that closes while the tree kill is in flight no longer gets a second `done` from the grace timer. RED:
+  `one completion, not one from the close and one from the grace timer` (the run takes a `graceMs` so the test is fast). Break-its: the
+  flag removed (1 red), the flag and the timer's clearing both removed (2 red).
+- **Finding 4 — `SingleFlight` keeps a queued run after a failure.** A run that rejects no longer drops the request queued behind it: the
+  queue is drained, then the LAST error any run threw rejects the request (a later success does not hide an earlier error — nothing is
+  swallowed). RED: `the queued run was not dropped`, and `The input did not match /run 2 failed/`. Break-it: the error rethrown at once → 2 red.
+- **Findings 6 + 15 — the bundled exe is hashed once per client.** `bundledDigest()` is a memoised promise (concurrent askers share it, so
+  one refresh burst hashes the 13.7 MB exe once); `unavailable` and a failed read are NOT remembered. RED: `one read of the 13.7 MB exe`,
+  and the burst of three panel refreshes hashed twice. Break-it: the memo removed → 2 red.
+- **Finding 11 — `treeEnded` is a required boolean** on the `timedOut` result (false when no tree kill was asked for, true only for a
+  verified one); the tests that build such a result (twenty files) say `treeEnded: false`. RED: the plain-timeout control read
+  `absent`, not `false`. Break-it: the verdict forced true → 2 red.
+- **Finding 13 — the description of `wslCare.timeouts.windowsTimeGuardQuerySeconds`** says it bounds the ONE Task Scheduler read that
+  feeds both the Windows Time guard line and the Windows tasks lines (`numbers.ts`, `package.json`, the test and the docs agree).
+  Break-it: the sentence shortened → the manifest test and the numbers test red.
+- **Rejected, one line each.** 2 the default-parameter seam is the runner's established one. 5 after the origin exited, the verified walk
+  refuses to act — it can spare a process, never end a stranger (the accepted residual of the Opus review's B1). 7 plan §6 specifies
+  `NewTask(0).XmlText` — an in-memory definition, nothing registered or read. 9 the digest is already behind the `digestOf` seam
+  (`client/fileDigest.ts`) and the client must be the one module naming the exe. 10 the tree-kill script lives in `treeKill.ts`; the real
+  defect was finding 3. 12 the PowerShell text stays in TypeScript so the bundle scan and the script-interpolation scan read it.
+- **Follow-up filed:** the flaky `runner.test.ts` case "a child past its ceiling…" (a 700 ms ceiling shorter than node's start-up under
+  load) is [PLAN_runner_test_ceiling.md](PLAN_runner_test_ceiling.md).

@@ -5,7 +5,7 @@ import type { RunOptions } from '../client/WslCareClient';
 import type { OutcomeStore } from '../state/outcomeStore';
 import { parsePageMessage, type PageMessage } from './messages';
 import { newNonce, panelOptions, panelShell } from './panelHtml';
-import type { ArchiveControls, CleanupControls, GpuView, GuardView } from './view';
+import type { ArchiveControls, CleanupControls, GpuView, GuardView, WindowsTasksView } from './view';
 import type { RelaysControls } from '../relays/relaysView';
 import { buildPanelView } from './viewModel';
 import type { RowId } from '../cleanup/rowIds';
@@ -62,6 +62,9 @@ export interface PanelActions {
   /** E7.S5a: the bundled Windows daemon's row — read on the panel's refresh, never at activation. */
   readonly windowsDaemon: () => WindowsDaemonView;
   readonly onWindowsDaemonChange: (listener: () => void) => () => void;
+  /** WR-E2: the Windows tasks' lines — the shared Task Scheduler read and the staged copy's probe (`windowsTasks/tasksHost.ts`). */
+  readonly windowsTasks: () => WindowsTasksView;
+  readonly onWindowsTasksChange: (listener: () => void) => () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -72,7 +75,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   private readonly unsubscribe: readonly (() => void)[];
 
   constructor(private readonly extensionUri: vscode.Uri, private readonly store: OutcomeStore, private readonly actions: PanelActions) {
-    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post()), actions.onArchiveChange(() => this.post()), actions.onGpuChange(() => this.post()), actions.onWindowsDaemonChange(() => this.post())];
+    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post()), actions.onArchiveChange(() => this.post()), actions.onGpuChange(() => this.post()), actions.onWindowsDaemonChange(() => this.post()), actions.onWindowsTasksChange(() => this.post())];
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -138,6 +141,6 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive(), this.actions.gpu(), this.actions.relays(), this.actions.windowsDaemon()) });
+    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive(), this.actions.gpu(), this.actions.relays(), this.actions.windowsDaemon(), this.actions.windowsTasks()) });
   }
 }

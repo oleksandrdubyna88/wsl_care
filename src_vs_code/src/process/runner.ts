@@ -1,5 +1,7 @@
 import * as childProcess from 'node:child_process';
 
+import { endTree, type TreeKillDeps } from './treeKill';
+
 /**
  * The runner seam — the ONE module of the extension that starts a process (`structure.test.ts` fails when any other
  * shipped module imports `child_process`). It takes `{file, args}` and starts exactly that file with exactly those
@@ -34,12 +36,22 @@ export interface ProcessRequest {
    * variables into the distribution, and the Windows user's choice of them must not shape a root daemon's environment.
    */
   readonly withoutEnv?: readonly string[];
+  /**
+   * When the run ends by its ceiling (or its output bound), end the child's whole PROCESS TREE, not only the child (WR-E2,
+   * PLAN_windows_runner.md plan round 4fc3f328 finding 8, the Opus own review B1/M2/M3). It is the family kill rule — the host's own
+   * child only, each process judged by pid and creation time, never by image name — done by ONE fixed, verifying PowerShell
+   * (`process/treeKill.ts`) while the child is still running; the child is killed plainly after it, and the `timedOut` result says
+   * through `treeEnded` whether the tree was VERIFIED ended. Off Windows, or without a usable `SystemRoot`, only the child is killed
+   * and `treeEnded` is false. Absent: the child alone, as every other caller always had it (a timeout's `treeEnded` is false there too).
+   */
+  readonly killTree?: boolean;
 }
 
 export type ProcessResult =
   | { readonly kind: 'exited'; readonly code: number; readonly stdout: Buffer; readonly stderr: Buffer }
   | { readonly kind: 'signalled'; readonly signal: string; readonly stdout: Buffer; readonly stderr: Buffer }
-  | { readonly kind: 'timedOut'; readonly timeoutMs: number; readonly stdout: Buffer; readonly stderr: Buffer }
+  /** `treeEnded`: true only when a tree kill was asked for and VERIFIED (the root and every descendant gone); false otherwise, no tree kill asked included. */
+  | { readonly kind: 'timedOut'; readonly timeoutMs: number; readonly stdout: Buffer; readonly stderr: Buffer; readonly treeEnded: boolean }
   | { readonly kind: 'tooMuchOutput'; readonly stream: 'stdout' | 'stderr'; readonly limitBytes: number }
   | { readonly kind: 'failedToStart'; readonly reason: string };
 
@@ -62,15 +74,53 @@ export function signed32(code: number): number {
   return code > 0x7fffffff ? code - 0x100000000 : code;
 }
 
+/** How long the verifying tree kill may run before it is stopped and the tree counts as not ended: a PowerShell start and one CIM read, on a loaded machine. */
+export const TREE_KILL_BOUND_MS = 10_000;
+
+/** A margin taken off this host's start time, which is computed from its uptime and so only approximate. */
+const HOST_START_MARGIN_MS = 5_000;
+
+/** The tree kill's real parts: this host's pid and start, the environment, and the one place a killer process is started. */
+function productionTreeKill(): TreeKillDeps {
+  return {
+    env: process.env,
+    hostPid: process.pid,
+    hostStartedAtMs: Math.round(Date.now() - process.uptime() * 1000) - HOST_START_MARGIN_MS,
+    boundMs: TREE_KILL_BOUND_MS,
+    spawnKiller: (request) => childProcess.spawn(request.file, [...request.args], { shell: false, windowsHide: true, stdio: 'ignore' }),
+  };
+}
+
 type Stream = 'stdout' | 'stderr';
 
+/** What a run does with its child, and how a tree kill is made. */
+export interface RunKill {
+  readonly killTree: boolean;
+  readonly treeKill: TreeKillDeps;
+  /** How long a killed child gets to close before the run is completed without it; {@link KILL_GRACE_MS} unless a test shortens it. */
+  readonly graceMs?: number;
+}
+
+/** The child as a run needs it: its pid, whether it has ended, and a plain kill. */
+type Child = Pick<childProcess.ChildProcess, 'pid' | 'exitCode' | 'signalCode' | 'kill'>;
+
+/** A timeout carries the tree kill's verdict; every other ending is left as it is. */
+function withVerdict(ending: ProcessResult, treeEnded: boolean): ProcessResult {
+  return ending.kind === 'timedOut' ? { ...ending, treeEnded } : ending;
+}
+
 /** One child's run: the streams it wrote, and how the run ended. */
-class Run {
+export class Run {
   private readonly chunks: Record<Stream, Buffer[]> = { stdout: [], stderr: [] };
   private readonly sizes: Record<Stream, number> = { stdout: 0, stderr: 0 };
   private ending: ProcessResult | undefined;
+  /** The tree kill in progress, when one was asked for: nothing settles before its verdict (bounded by `boundMs`). */
+  private tree: Promise<void> | undefined;
+  /** A run completes ONCE: the child's close, the grace timer and a failure to start all go through {@link complete}. */
+  private completed = false;
+  private grace: NodeJS.Timeout | undefined;
 
-  constructor(private readonly child: childProcess.ChildProcess, private readonly done: (result: ProcessResult) => void) {}
+  constructor(private readonly child: Child, private readonly done: (result: ProcessResult) => void, private readonly kill: RunKill = { killTree: false, treeKill: productionTreeKill() }) {}
 
   take(stream: Stream, chunk: Buffer): void {
     this.sizes[stream] += chunk.length;
@@ -82,16 +132,36 @@ class Run {
   }
 
   timedOut(timeoutMs: number): void {
-    this.stop({ kind: 'timedOut', timeoutMs, ...this.streams() });
+    this.stop({ kind: 'timedOut', timeoutMs, treeEnded: false, ...this.streams() });
   }
 
   /** The child ended — by itself, or after the runner had already decided how this run ends. */
   ended(code: number | null, signal: NodeJS.Signals | null): void {
-    this.done(this.ending ?? natural(code, signal, this.streams()));
+    this.settle(() => natural(code, signal, this.streams()));
   }
 
   failed(error: Error): void {
-    this.done(this.ending ?? { kind: 'failedToStart', reason: error.message });
+    this.settle(() => ({ kind: 'failedToStart', reason: error.message }));
+  }
+
+  /** The run is over: with the ending decided earlier, else with `otherwise` — but never before a tree kill in progress has its verdict. */
+  private settle(otherwise: () => ProcessResult): void {
+    const finish = (): void => { this.complete(this.ending ?? otherwise()); };
+    if (this.tree === undefined) {
+      finish();
+    } else {
+      void this.tree.then(finish);
+    }
+  }
+
+  /** Hands the result to `done` the first time only, and stops the grace timer that would have handed it again. */
+  private complete(result: ProcessResult): void {
+    if (this.completed) {
+      return;
+    }
+    this.completed = true;
+    clearTimeout(this.grace);
+    this.done(result);
   }
 
   private streams(): { stdout: Buffer; stderr: Buffer } {
@@ -104,8 +174,19 @@ class Run {
       return;
     }
     this.ending = ending;
+    if (this.kill.killTree) {
+      // The tree first, while its root is still running (the walk starts from it); then the plain kill as the net.
+      this.tree = endTree(this.child, this.kill.treeKill).then((treeEnded) => { this.ending = withVerdict(ending, treeEnded); this.killChild(); });
+    } else {
+      this.killChild();
+    }
+  }
+
+  /** The plain kill, and — whatever the child does after it — the end of the wait after the grace. */
+  private killChild(): void {
     this.child.kill();
-    setTimeout(() => this.done(ending), KILL_GRACE_MS).unref();
+    this.grace = setTimeout(() => { this.complete(this.ending ?? { kind: 'failedToStart', reason: 'the run had no ending' }); }, this.kill.graceMs ?? KILL_GRACE_MS);
+    this.grace.unref();
   }
 }
 
@@ -164,7 +245,7 @@ function once(resolve: (result: ProcessResult) => void): { settle: (result: Proc
 
 function watch(child: childProcess.ChildProcess, request: ProcessRequest, resolve: (result: ProcessResult) => void): void {
   const ending = once(resolve);
-  const run = new Run(child, ending.settle);
+  const run = new Run(child, ending.settle, { killTree: request.killTree === true, treeKill: productionTreeKill() });
   ending.arm(setTimeout(() => run.timedOut(request.timeoutMs), request.timeoutMs));
   child.stdout?.on('data', (chunk: Buffer) => run.take('stdout', chunk));
   child.stderr?.on('data', (chunk: Buffer) => run.take('stderr', chunk));
