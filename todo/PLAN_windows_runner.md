@@ -937,7 +937,7 @@ red). On the Windows binary the smoke still expects exit 2: the distro's actions
 
 **WR-E2 as built (2026-10-17).** `src_vs_code/src/windowsTime/guardScripts.ts` (`QUERY_SCRIPT` widened — the guard's one script, not a
 second), `windowsTime/guardState.ts` and `guardHost.ts` (the guard consumes the read), `windowsTime/guardTask.ts` (`SUMMARY_FUNCTION`'s
-logon case), `windowsTasks/schedulerAnswer.ts` (the parser), `schedulerHost.ts` (the ONE read in flight), `tasksState.ts`, `tasksView.ts`,
+logon case), `scheduler/` (the peer both consumers use, after the coai code round: `schedulerAnswer.ts` the parser, `schedulerHost.ts` the ONE read in flight, `queryScript.ts`, `taskSummary.ts`), `windowsTasks/tasksState.ts`, `tasksView.ts`,
 `tasksHost.ts`, `process/runner.ts` (`killTree`), `client/WindowsCareClient.ts` (`bundledDigest()`), `settings/numbers.ts` +
 `package.json` (`wslCare.timeouts.windowsTasksStageSeconds`), `panel/view.ts` / `viewModel.ts` / `panelProvider.ts`, `media/panel.js`,
 `extension.ts`, `testApi.ts`; the docs in [module_vs_code.md](../research/module_vs_code.md) and [module_tests.md](../research/module_tests.md).
@@ -959,11 +959,11 @@ The story is READ ONLY: nothing is registered, removed, run or written to Task S
   runner `extension.ts` gives the shared host). The recorder's default query answer is the new format ("no folder").
 - **`TasksHost` (read side) is `windowsTasks/tasksHost.ts`**; WR-E3 widens the same class with the install/remove flows. It is the part's
   only caller of the client.
-- **The trigger (plan round, finding 4).** `TasksHost.refresh()` is the only entry and `extension.ts`'s `panelRefresh` its only caller —
+- **The trigger (plan round, finding 4; amended by the coai code round, finding 0 — below).** `extension.ts`'s `panelRefresh` is the only caller of the shared read (`parts.scheduler.refresh()`) and of the probe (`TasksHost.refresh()`, which no longer reads Task Scheduler) —
   the panel opening (`resolveWebviewView`), becoming visible (`visibilityChanged`), its *Refresh* button and the `wslCare.refresh`
   command: the moments the guard's read has always run at. `panelRefresh` no longer calls `parts.guard.refresh()` beside it (two reads
   for one refresh); the guard's `afterRun` still reads once after an elevated run answers. Tests: `tasksHost.test.ts` (no query at
-  construction, no timer in `windowsTasks/`, ONE `parts.tasks.refresh()` call site inside `panelRefresh`, none of the guard's).
+  construction, no timer in `windowsTasks/`, ONE `parts.scheduler.refresh()` and ONE `parts.tasks.refresh()` call site inside `panelRefresh`, none of the guard's).
 - **The copy probe.** The digest is the client's own SHA-256 of the bundled exe (`WindowsCareClient.bundledDigest()`, a file read; the
   stage's expected copy reuses it). "Staged" is `tasks render watch` on `staged(<digest>)` ANSWERING (registrable, not registrable, or
   the daemon refusing its configuration — exit 78); then `tasks render archive` is asked too. A start that finds no file (Node's
@@ -1097,3 +1097,48 @@ The story is READ ONLY: nothing is registered, removed, run or written to Task S
   stopped (1 red); M3 the verdict dropped (4 red, the real grandchild test among them); m1 "checking" back to the update warning (1 red);
   m5 "(0x41301)" for every running task (1 red); m3 the settle uncaught (1 red); m3 listeners not isolated (2 red); m2 the single flight
   without its one more run (5 red).
+
+**The coai code round (4fc3f328, 2026-10-18)** — `proceed`, sixteen findings: ten accepted (0, 1, 3, 4, 6, 8, 11, 13, 14, 15), six rejected.
+Each accepted fix has its RED message and its break-it (product code only, restored byte for byte, the tree clean after):
+
+- **Findings 1 + 8 + 14 — one peer module (a refactor; the existing tests held it).** The query, its answer's parser, the host that holds
+  the read in flight and the canonical summary move to `src/scheduler/` — `queryScript.ts` (the script built from the CALLER's facts and
+  expected task names, `NOT_FOUND_HRESULT`, the request), `schedulerAnswer.ts`, `schedulerHost.ts`, `taskSummary.ts`
+  (`SUMMARY_FUNCTION`, `durationSeconds`, `summariesMatch`) — and `windowsTime/` and `windowsTasks/` consume it as PEERS: the peer imports
+  neither, and neither imports the other (before it, the Windows tasks' state imported `summariesMatch` out of the guard's state, and the
+  guard's state imported the parser out of `windowsTasks/`). `guardScripts.ts` keeps what is the guard's — its `channel=` and `stamp=`
+  facts and the names to look for — and builds `QUERY_SCRIPT` with `queryScript(...)` (a deviation from "move QUERY_SCRIPT": the
+  generic reading moved, the guard's facts stayed; `guardTask.ts`, `guardState.ts` and `guardScripts.ts` re-export what their tests
+  import). The query's RUNNER is now handed in from the process layer (`extension.ts`: the real unelevated runner, or the guard
+  recorder's new `recordingQuery` in Test mode) to the `SchedulerHost`; `GuardUi.query` is gone, so the shared read no longer
+  depends on a surface the guard owns. RED: `schedulerModule.test.ts` (the peer's four files, none importing a consumer, the two
+  consumers not importing each other) — `src/scheduler/queryScript.ts is a shipped source` missing and the offenders listed. Break-it: a
+  planted `export type … from '../windowsTime/guardTask'` in `schedulerHost.ts` → red.
+- **Finding 0 — one panel refresh, one read.** `panelRefresh` asks `parts.scheduler.refresh()` ONCE and `parts.tasks.refresh()`; the latter
+  now only probes the staged copy, and the guard host and the tasks host both FOLLOW the scheduler's change — neither starts its own read
+  (before it, the tasks host asked the shared read itself, so the one trigger was two call sites of one read). RED: one panel refresh made
+  two query requests; the scan of `extension.ts`. Break-its: the tasks host asking the scheduler again → 3 red; the guard asked beside the
+  shared read in `panelRefresh` → red.
+- **Finding 3 — `Run` completes once.** The child's close, the grace timer and a failure to start share one completion (a flag, and the
+  grace timer cleared): a child that closes while the tree kill is in flight no longer gets a second `done` from the grace timer. RED:
+  `one completion, not one from the close and one from the grace timer` (the run takes a `graceMs` so the test is fast). Break-its: the
+  flag removed (1 red), the flag and the timer's clearing both removed (2 red).
+- **Finding 4 — `SingleFlight` keeps a queued run after a failure.** A run that rejects no longer drops the request queued behind it: the
+  queue is drained, then the LAST error any run threw rejects the request (a later success does not hide an earlier error — nothing is
+  swallowed). RED: `the queued run was not dropped`, and `The input did not match /run 2 failed/`. Break-it: the error rethrown at once → 2 red.
+- **Findings 6 + 15 — the bundled exe is hashed once per client.** `bundledDigest()` is a memoised promise (concurrent askers share it, so
+  one refresh burst hashes the 13.7 MB exe once); `unavailable` and a failed read are NOT remembered. RED: `one read of the 13.7 MB exe`,
+  and the burst of three panel refreshes hashed twice. Break-it: the memo removed → 2 red.
+- **Finding 11 — `treeEnded` is a required boolean** on the `timedOut` result (false when no tree kill was asked for, true only for a
+  verified one); the tests that build such a result (twenty files) say `treeEnded: false`. RED: the plain-timeout control read
+  `absent`, not `false`. Break-it: the verdict forced true → 2 red.
+- **Finding 13 — the description of `wslCare.timeouts.windowsTimeGuardQuerySeconds`** says it bounds the ONE Task Scheduler read that
+  feeds both the Windows Time guard line and the Windows tasks lines (`numbers.ts`, `package.json`, the test and the docs agree).
+  Break-it: the sentence shortened → the manifest test and the numbers test red.
+- **Rejected, one line each.** 2 the default-parameter seam is the runner's established one. 5 after the origin exited, the verified walk
+  refuses to act — it can spare a process, never end a stranger (the accepted residual of the Opus review's B1). 7 plan §6 specifies
+  `NewTask(0).XmlText` — an in-memory definition, nothing registered or read. 9 the digest is already behind the `digestOf` seam
+  (`client/fileDigest.ts`) and the client must be the one module naming the exe. 10 the tree-kill script lives in `treeKill.ts`; the real
+  defect was finding 3. 12 the PowerShell text stays in TypeScript so the bundle scan and the script-interpolation scan read it.
+- **Follow-up filed:** the flaky `runner.test.ts` case "a child past its ceiling…" (a 700 ms ceiling shorter than node's start-up under
+  load) is [PLAN_runner_test_ceiling.md](PLAN_runner_test_ceiling.md).
