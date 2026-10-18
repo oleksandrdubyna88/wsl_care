@@ -31,7 +31,9 @@ internal static partial class SecretShapes
     /// words — session ids are what the archive's in-use check and E15.S6 read.</summary>
     private const string WordList =
         "token|secret|password|passwd|apikey|api-key|api_key|credential|passphrase|pwd|creds|auth|bearer|cookie|csrf|signature"
-        + "|private-key|private_key|access-key|access_key|client-secret|client_secret";
+        + "|private-key|private_key|access-key|access_key|client-secret|client_secret"
+        // sshpass exists to carry a password: inside a script (bash -lc "sshpass -p x ssh host") its option is the secret.
+        + "|sshpass";
 
     private static readonly string[] Words = [.. WordList.Split('|')];
 
@@ -48,10 +50,11 @@ internal static partial class SecretShapes
 
     /// <summary>Whether a text holds a secret word, then a run of name characters, then a separator — <c>CollectorApiKey":</c>,
     /// <c>Authorization:</c>, <c>token=</c>, <c>Password=</c> (design §2.1 arm 7). The extent of a value inside a blob cannot be
-    /// delimited, so a hit makes the whole blob go.</summary>
+    /// delimited, so a hit makes the whole blob go. The separator is also WHITESPACE followed by a non-space (<c>--password Hunter2</c>, <c>-p x</c>
+    /// inside <c>sh -c "…"</c>): the cost is that a free-text prompt holding a secret word is redacted whole (plan §9).</summary>
     public static bool HoldsASecretBeforeASeparator(string text) => Hits(WordBeforeSeparator(), text);
 
-    [GeneratedRegex("(?:" + WordList + @"|(?<![A-Za-z0-9])key)[A-Za-z0-9_-]{0,32}[ \t]{0,3}[:=""']", Folded, PatternCeilingMilliseconds)]
+    [GeneratedRegex("(?:" + WordList + @"|(?<![A-Za-z0-9])key)[A-Za-z0-9_-]{0,32}(?:[ \t]{0,3}[:=""']|[ \t]+\S)", Folded, PatternCeilingMilliseconds)]
     private static partial Regex WordBeforeSeparator();
 
     /// <summary>Whether a text holds a creds-shaped token ANYWHERE (design §2.3): the providers' own prefixes, anchored to a token
@@ -80,6 +83,8 @@ internal static partial class SecretShapes
         + @"|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"
         // The CredsForDevs config key: cfgk_ and 43 base64url characters (dew_flow_creds_for_devs configKey.ts).
         + "|cfgk_[A-Za-z0-9_-]{20,}"
+        // Telegram bot tokens (bot<id>:<secret>), as they sit in an API URL path.
+        + "|bot[0-9]{6,12}:[A-Za-z0-9_-]{30,}"
         // JSON web tokens: header, payload, signature (the signature may be empty).
         + @"|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*"
         // PEM blocks (every BEGIN line names a key or a certificate chain a command line should not carry) and age secret keys.
@@ -106,8 +111,8 @@ internal static partial class SecretShapes
     /// <summary>Programs whose NEXT argument after <c>-p</c> is a password (<c>sshpass -p x</c>).</summary>
     private static readonly string[] PasswordFlagPrograms = ["sshpass", "mysql", "mysqldump", "mariadb", "mariadb-dump"];
 
-    /// <summary>The MySQL family: <c>-pSECRET</c> (no space) is the password, <c>-p</c> alone prompts.</summary>
-    private static readonly string[] AttachedPasswordPrograms = ["mysql", "mysqldump", "mariadb", "mariadb-dump"];
+    /// <summary>sshpass and the MySQL family: <c>-pSECRET</c> (no space) is the password; <c>-p</c> alone prompts (mysql) or takes the next argument (sshpass).</summary>
+    private static readonly string[] AttachedPasswordPrograms = ["sshpass", "mysql", "mysqldump", "mariadb", "mariadb-dump"];
 
     /// <summary>A program-specific rule applies to <paramref name="argument"/>, which follows <paramref name="previous"/>: the
     /// password of <c>sshpass -p</c> / <c>mysql -p</c>, or the userinfo of <c>curl -u</c> (design §2.1 arm 2). Docker's <c>-p 8080:80</c>
@@ -116,9 +121,14 @@ internal static partial class SecretShapes
         (previous == "-p" && Listed(PasswordFlagPrograms, program))
         || (IsUserinfoFlag(previous) && Listed(UserinfoPrograms, program) && IsUserinfo(argument));
 
-    /// <summary>The MySQL family's attached form: <c>-pSECRET</c> becomes <c>-p&lt;redacted&gt;</c>.</summary>
+    /// <summary>A credential ATTACHED to its short option: <c>-pSECRET</c> (sshpass and the MySQL family) and <c>-uuser:pass</c> (curl, wget, git,
+    /// gh) — the rule keeps the two-character option and redacts the rest (<c>-p&lt;redacted&gt;</c>).</summary>
     public static bool IsAttachedPassword(string program, string argument) =>
-        argument.Length > 2 && argument[0] == '-' && argument[1] == 'p' && Listed(AttachedPasswordPrograms, program);
+        argument.Length > 2 && argument[0] == '-' && (IsAttachedP(program, argument) || IsAttachedU(program, argument));
+
+    private static bool IsAttachedP(string program, string argument) => argument[1] == 'p' && Listed(AttachedPasswordPrograms, program);
+
+    private static bool IsAttachedU(string program, string argument) => argument[1] == 'u' && Listed(UserinfoPrograms, program) && IsUserinfo(argument[2..]);
 
     private static bool Listed(string[] programs, string program) => programs.Contains(program, StringComparer.OrdinalIgnoreCase);
 

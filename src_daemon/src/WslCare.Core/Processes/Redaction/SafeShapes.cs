@@ -38,6 +38,12 @@ internal static partial class SafeShapes
     [GeneratedRegex(@"^--?[A-Za-z0-9][A-Za-z0-9._-]*\z", Options, SecretShapes.PatternCeilingMilliseconds)]
     private static partial Regex Flag();
 
+    /// <summary>A Windows switch with no value: <c>/name</c> — the shape <c>cmdkey /password x</c> puts before a secret.</summary>
+    public static bool IsSlashSwitch(string text) => Match(Switch(), text);
+
+    [GeneratedRegex(@"^/[A-Za-z0-9][A-Za-z0-9._-]*\z", Options, SecretShapes.PatternCeilingMilliseconds)]
+    private static partial Regex Switch();
+
     /// <summary>A plain word of <c>[A-Za-z0-9._@:+-]</c> shorter than <paramref name="maxExclusive"/> (the entropy floor).</summary>
     public static bool IsPlainWord(string text, int maxExclusive) => text.Length < maxExclusive && Match(Plain(), text);
 

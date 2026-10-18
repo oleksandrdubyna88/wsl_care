@@ -24,11 +24,11 @@ internal static class HighEntropy
 
     /// <summary>Whether <paramref name="token"/> looks like a credential nothing else recognised.</summary>
     public static bool Looks(string token, int minChars) =>
-        token.Length >= minChars && !IsExempt(token) && LooksRandom(token.TrimEnd('='));
+        JudgedBody(token) is var body && body.Length >= minChars && !SafeShapes.IsGuid(body) && LooksRandom(body);
 
-    /// <summary>A GUID (a session id) and a flag name (<c>--sourceGeneratorExecutionPreference</c>: its dashes are a symbol class and its
-    /// CamelCase two more, so it would pass for a credential) are exempt; a flag is no VALUE, and the rule judges what follows it.</summary>
-    private static bool IsExempt(string token) => SafeShapes.IsGuid(token) || SafeShapes.IsFlagWithoutValue(token);
+    /// <summary>The token as the test judges it: leading dashes (a token that merely STARTS with <c>-</c> or <c>--</c> is still a token — the
+    /// security review measured <c>-&lt;48 base64url&gt;</c> passing as a flag) and trailing padding <c>=</c> stripped.</summary>
+    private static string JudgedBody(string token) => token.TrimStart('-').TrimEnd('=');
 
     private static bool LooksRandom(string body) => InAlphabet(body) && Mixed(body) && Bits(body) >= MinEntropyBits;
 

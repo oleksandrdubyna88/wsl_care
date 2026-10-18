@@ -11,8 +11,8 @@ namespace WslCare.Core.Processes.Redaction;
 /// </summary>
 public static class ShownText
 {
-    /// <summary>The text with every control (<c>Cc</c>: NUL, tab, LF, ESC), format (<c>Cf</c>) and unpaired surrogate (<c>Cs</c>)
-    /// character replaced by <c>?</c>; a valid surrogate pair is one character and stays.</summary>
+    /// <summary>The text with every control (<c>Cc</c>: NUL, tab, LF, ESC), format (<c>Cf</c>), unpaired surrogate (<c>Cs</c>) and
+    /// line / paragraph separator (<c>Zl</c>, <c>Zp</c>: U+2028, U+2029) character replaced by <c>?</c>; a valid surrogate pair is one character and stays.</summary>
     public static string Printable(string text)
     {
         var chars = text.ToCharArray();
@@ -35,5 +35,6 @@ public static class ShownText
         char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]);
 
     private static bool IsUnprintable(char c) =>
-        char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.Surrogate;
+        char.GetUnicodeCategory(c) is UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.Surrogate
+            or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator;
 }

@@ -38,14 +38,15 @@ internal static class ArgumentJudge
 
     /// <summary>Arm 1: the previous argument is a secret FLAG (<c>--password x</c>) — today's rule over the widened word list. A flag is a
     /// name with no value in it: <c>--auth:my secret value</c> (one argument, a blob judged on its own) does not make the NEXT argument
-    /// secret, or <c>--port</c> after it would be lost.</summary>
+    /// secret, or <c>--port</c> after it would be lost. A Windows switch (<c>/password</c>) is one too, for THIS arm only (the Windows
+    /// tools take <c>/name value</c>).</summary>
     private static Verdict AfterASecretFlag(string previous) =>
-        SafeShapes.IsFlagWithoutValue(previous) && SecretShapes.NamesASecret(previous) ? Verdict.Is(Redacted) : Verdict.Pass;
+        (SafeShapes.IsFlagWithoutValue(previous) || SafeShapes.IsSlashSwitch(previous)) && SecretShapes.NamesASecret(previous) ? Verdict.Is(Redacted) : Verdict.Pass;
 
     /// <summary>Arm 2: the program's own password flags (<c>sshpass -p</c>, <c>mysql -pSECRET</c>, <c>curl -u user:pass</c>).</summary>
     private static Verdict ProgramSpecific(string argument, string previous, string program) =>
         SecretShapes.IsProgramPasswordValue(program, previous, argument) ? Verdict.Is(Redacted)
-        : SecretShapes.IsAttachedPassword(program, argument) ? Verdict.Is("-p" + Redacted)
+        : SecretShapes.IsAttachedPassword(program, argument) ? Verdict.Is(argument[..2] + Redacted)
         : Verdict.Pass;
 
     /// <summary>Arm 3: <c>name=value</c> — with or without leading dashes, the name of <c>[A-Za-z0-9_.-]</c>, so <c>a==b</c> and <c>=x</c>
@@ -60,11 +61,19 @@ internal static class ArgumentJudge
         }
 
         var name = argument[..equals];
-        return SecretShapes.NamesASecret(name) ? Verdict.Is(name + "=" + Redacted) : JudgedValue(argument, name, Judged(argument[(equals + 1)..], limits));
+        return NamesAToken(name, limits) ? Verdict.Is(Redacted)
+            : SecretShapes.NamesASecret(name) ? Verdict.Is(name + "=" + Redacted)
+            : JudgedValue(argument, name, Judged(argument[(equals + 1)..], limits));
     }
 
+    /// <summary>The NAME is judged too: <c>&lt;48 base64url&gt;=1</c> is a token before an equals sign, not an assignment (security
+    /// review B) — the whole argument goes.</summary>
+    private static bool NamesAToken(string name, RedactionLimits limits) => HighEntropy.Looks(name, limits.SecretMinChars) || SecretShapes.IsCredsShaped(name);
+
+    /// <summary>An assignment has a name, an equals sign and a VALUE: <c>--token=</c> (empty) and <c>a==b</c> are not assignments, and a
+    /// trailing <c>=</c> of base64 padding is not one either.</summary>
     private static bool IsAssignment(string argument, int equals) =>
-        equals > 0 && !(equals + 1 < argument.Length && argument[equals + 1] == '=') && argument[..equals].All(IsNameCharacter);
+        equals > 0 && equals + 1 < argument.Length && argument[equals + 1] != '=' && argument[..equals].All(IsNameCharacter);
 
     private static bool IsNameCharacter(char c) => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-';
 
@@ -83,13 +92,20 @@ internal static class ArgumentJudge
 
     private static IEnumerable<Verdict> ShapeArms(string text, RedactionLimits limits)
     {
-        yield return UrlArm(text);
+        yield return UrlArm(text, limits);
         yield return SecretShapes.IsCredsShaped(text) ? Verdict.Is(Redacted) : Verdict.Pass;
-        yield return SafeShapes.IsPath(text) ? Verdict.Is(text) : Verdict.Pass;
+        // The blob test runs BEFORE the path test: a Windows switch (/password:value) and a script holding a secret word look like paths.
         yield return SecretShapes.HoldsASecretBeforeASeparator(text) ? Verdict.Cut(Redacted, blob: true) : Verdict.Pass;
+        yield return SafeShapes.IsPath(text) ? Verdict.Is(text) : Verdict.Pass;
         yield return HighEntropy.Looks(text, limits.SecretMinChars) ? Verdict.Is(Redacted) : Verdict.Pass;
     }
 
-    /// <summary>Arm 4: a URL decides everything about itself (it never reaches the entropy test).</summary>
-    private static Verdict UrlArm(string text) => UrlRedaction.IsUrl(text) ? Verdict.Is(UrlRedaction.Shown(text)) : Verdict.Pass;
+    /// <summary>Arm 4: a URL decides everything about itself (it never reaches the entropy test); a detector that ran out of time cannot
+    /// say it is none, so the argument goes (fail closed).</summary>
+    private static Verdict UrlArm(string text, RedactionLimits limits) => UrlRedaction.Classify(text) switch
+    {
+        UrlMatch.Yes => Verdict.Is(UrlRedaction.Shown(text, limits.SecretMinChars)),
+        UrlMatch.Unknown => Verdict.Is(Redacted),
+        _ => Verdict.Pass,
+    };
 }

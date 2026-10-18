@@ -24,12 +24,13 @@ public static class ShownArguments
     /// <summary>The program (a file name, <c>.exe</c> stripped, never redacted — a program named after a secret is a residual), the safe
     /// prefix and the count of non-blank arguments. An empty argv falls back to <paramref name="name"/>, the
     /// <c>/proc/[pid]/status</c> name, as <c>Programs</c> does.</summary>
-    /// <remarks>Deviation from §2.5, which skips EMPTY arguments only: a whitespace-only argument is skipped too (node's title padding
-    /// is a run of spaces) — the safer reading, since it shows nothing a view could use.</remarks>
+    /// <remarks>The total counts every NON-EMPTY argument after argv[0], whitespace-only ones included (coai code round 3); only the SHOWN
+    /// PREFIX skips a whitespace-only argument (node's title padding is a run of spaces and shows nothing a view could use).</remarks>
     public static ShownCommandLine Of(string name, IReadOnlyList<string> argv, IReadOnlyList<string> redacted, RedactionLimits limits, int shownSafeArgs)
     {
-        var arguments = argv.Skip(1).Zip(redacted.Skip(1)).Where(pair => !string.IsNullOrWhiteSpace(pair.First)).ToList();
-        var safe = arguments.TakeWhile(pair => IsSafe(pair.First, pair.Second, limits)).Take(shownSafeArgs).Select(pair => pair.Second);
+        var arguments = argv.Skip(1).Zip(redacted.Skip(1)).Where(pair => pair.First.Length > 0).ToList();
+        var candidates = arguments.Where(pair => !string.IsNullOrWhiteSpace(pair.First));
+        var safe = candidates.TakeWhile(pair => IsSafe(pair.First, pair.Second, limits)).Take(shownSafeArgs).Select(pair => pair.Second);
         return new(ProgramOf(name, argv), [.. safe], arguments.Count);
     }
 
