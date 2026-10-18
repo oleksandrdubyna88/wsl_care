@@ -280,7 +280,7 @@
           "minimum": 5,
           "maximum": 300,
           "scope": "application",
-          "markdownDescription": "How long the ONE read-only Task Scheduler query may take, in seconds — it lists every task this extension registers in Task Scheduler and feeds the panel's *Windows Time guard* line and its Windows tasks lines. At the ceiling its PowerShell and everything it started are ended, and the panel says the read timed out."
+          "markdownDescription": "How long the ONE read-only Task Scheduler read may take, in seconds. It feeds both the panel's *Windows Time guard* line and its Windows tasks lines. At the ceiling its PowerShell and everything it started are ended, and the panel says the read timed out."
         },
         "wslCare.timeouts.windowsTasksStageSeconds": {
           "type": "integer",

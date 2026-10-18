@@ -203,45 +203,11 @@ export function guardTaskXml(options: GuardOptions): string {
 }
 
 /**
- * The PowerShell that prints a definition's canonical summary — ONE text, used by the status query over the REGISTERED task
- * and by the Windows-leg test over Task Scheduler's in-memory parse of `guardTaskXml`, so `guardSummary` cannot drift from
- * what Task Scheduler reads back. Reads only; the principal is translated to its SID (an account NAME is localised).
+ * The canonical summary's PowerShell and duration reading live in the peer both the guard and the Windows tasks consume (scheduler/taskSummary.ts):
+ * ONE text for what Task Scheduler reads back of a registered task, so guardSummary below cannot drift from it. Re-exported here for the
+ * guard's own consumers and tests.
  */
-export const SUMMARY_FUNCTION = [
-  'function Get-WslCareSummary($Definition) {',
-  '$p = $Definition.Principal; $sid = [string]$p.UserId;',
-  'try { $sid = (New-Object System.Security.Principal.NTAccount($p.UserId)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = [string]$p.UserId };',
-  "'principal=' + $sid + ' logon=' + $p.LogonType + ' level=' + $p.RunLevel;",
-  'foreach ($t in $Definition.Triggers) { switch ($t.Type) {',
-  "0 { 'trigger=event enabled=' + $t.Enabled + ' delay=' + $t.Delay + ' subscription=' + $t.Subscription }",
-  "1 { 'trigger=time enabled=' + $t.Enabled + ' interval=' + $t.Repetition.Interval }",
-  "8 { 'trigger=boot enabled=' + $t.Enabled + ' delay=' + $t.Delay }",
-  "9 { 'trigger=logon enabled=' + $t.Enabled + ' delay=' + $t.Delay + ' interval=' + $t.Repetition.Interval }",
-  "default { 'trigger=' + $t.Type } } };",
-  "$s = $Definition.Settings; 'settings limit=' + $s.ExecutionTimeLimit + ' instances=' + $s.MultipleInstances + ' whenAvailable=' + $s.StartWhenAvailable + ' battery=' + $s.DisallowStartIfOnBatteries + ' enabled=' + $s.Enabled;",
-  "foreach ($a in $Definition.Actions) { 'action type=' + $a.Type + ' path=' + $a.Path + ' args=' + $a.Arguments }",
-  '}',
-].join('\n');
-
-/** An ISO 8601 duration as Task Scheduler writes one — days, then hours, minutes and whole seconds: `P1D`, `PT1M`, `PT1M30S`. */
-const DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
-
-const SECONDS_PER = { day: 86_400, hour: 3_600, minute: 60 } as const;
-
-/**
- * A duration's length in seconds, or `undefined` for anything that is no duration of that shape (the empty "no delay" among
- * them). Task Scheduler stores a registered trigger's `PT60S` as `PT1M` (measured on the owner's machine, 2026-10-10), so the
- * summary's duration fields are compared by this VALUE, never by their spelling (`guardState.ts`, `summariesMatch`).
- */
-export function durationSeconds(text: string): number | undefined {
-  const match = DURATION.exec(text);
-  if (match === null || text === 'P' || text.endsWith('T')) {
-    return undefined;
-  }
-  const [days, hours, minutes, seconds] = match.slice(1).map((part) => Number(part ?? 0));
-
-  return days * SECONDS_PER.day + hours * SECONDS_PER.hour + minutes * SECONDS_PER.minute + seconds;
-}
+export { durationSeconds, SUMMARY_FUNCTION } from '../scheduler/taskSummary';
 
 /** The summary `SUMMARY_FUNCTION` prints for `guardTaskXml(options)` — what "this version, these settings" reads as. */
 export function guardSummary(options: GuardOptions): readonly string[] {

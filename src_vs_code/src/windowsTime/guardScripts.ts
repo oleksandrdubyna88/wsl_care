@@ -1,7 +1,7 @@
 import type { ProcessRequest } from '../process/runner';
-import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
-import { powerShellOf } from '../powershell/elevatedLauncher';
 import { TASK_NAMES } from '../client/verbs';
+import { NOT_FOUND_HRESULT, queryRequest as sharedQueryRequest, queryScript } from '../scheduler/queryScript';
+import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
 
 /** Every task this extension installs under `\wsl-care`: the two Windows tasks and the guard — the names the read must find or say it could not. */
 const EXPECTED_TASKS: readonly string[] = [...TASK_NAMES, GUARD_NAME];
@@ -25,8 +25,8 @@ export const OP_EXIT = { registerFailed: 30, unregisterFailed: 31, cleanupFailed
  */
 export const IMPORT_SCHEDULED_TASKS = `try { Import-Module -Name (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\\v1.0\\Modules\\ScheduledTasks') -ErrorAction Stop } catch { exit ${OP_EXIT.importFailed} }`;
 
-/** `0x80070002` as PowerShell prints an `HResult` — "the system cannot find the file specified": no such folder or task. */
-export const NOT_FOUND_HRESULT = -2147024894;
+/** `0x80070002` — no such folder or task: the peer's constant (scheduler/queryScript.ts), re-exported for the remove script and its tests. */
+export { NOT_FOUND_HRESULT };
 
 /** The here-string's terminator — a line of the XML that started with it would end the string early. */
 export const HERE_END = "'@";
@@ -71,47 +71,23 @@ export const REMOVE_SCRIPT = [
 ].join('\n');
 
 /**
- * The UNELEVATED status query (D5, D8) — since WR-E2 the ONE read of every task under `\wsl-care` (PLAN_windows_runner.md §3.8),
- * the guard's own task among them. It lists the folder through `Schedule.Service` and prints tagged lines, in two parts:
- *
- * - the folder's: `channel=` (whether the stop event is logged at all), `stamp=` (the rate-limit stamp under HKLM), `user=<sid>`
- *   (the reader's own SID) and `folder=absent` (`0x80070002` — a machine nothing was installed on: an EMPTY task set, never a
- *   failure), `folder=unreadable` + `hresult=` (anything else, e.g. `0x80070005`) or `folder=present`;
- * - then, per task, a section that opens with `task=<name>` and holds `enabled=`, `state=`, `lastRunUtc=` (`never` for Task
- *   Scheduler's 1899 zero date), `lastResult=` and the definition's `summary:` lines — or, when that ONE task cannot be read,
- *   `read=unreadable` + `hresult=` and nothing else of it (one task's trouble is its own). A task's lines are collected before
- *   they are printed, so a failure half way leaves no half section.
- *
- * Control characters of a task's name and line breaks in a summary line become `?` / a space: whatever a task's author wrote,
- * it cannot add a line to the answer. It changes nothing (no word of the tripwire's mutating list is in it — asserted).
+ * The facts of the ONE Task Scheduler read that are the Windows Time guard's: whether the stop event is logged at all (`channel=`) and
+ * whether the rate-limit stamp under HKLM outlived the task (`stamp=`). The query itself — the folder, every task's section, the
+ * by-name fallback — is `scheduler/queryScript.ts`, built once for the guard and the Windows tasks' part alike. The channel is
+ * printed right after it is computed, before the stamp (the folder's lines all precede the first task — the Opus own review B2).
  */
-export const QUERY_SCRIPT = [
-  MODULES,
-  SUMMARY_FUNCTION,
+const GUARD_FACTS: readonly string[] = [
   `$log = $null; try { $log = Get-WinEvent -ListLog '${TIME_SERVICE_CHANNEL}' -ErrorAction Stop } catch { $log = $null }`,
   "$channel = 'channel=unknown'; if ($null -ne $log) { if ($log.IsEnabled) { $channel = 'channel=enabled' } else { $channel = 'channel=disabled' } }",
-  // The folder's own lines first, ALL of them before the first task: the parser files every tag before the first `task=` into the
-  // folder, so a `channel=` printed last would be read as the last task's (review B2).
   '$channel',
   `if (Test-Path -Path '${STAMP_KEY}') { 'stamp=present' } else { 'stamp=absent' }`,
-  "'user=' + [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
-  '$tasks = @()',
-  `try { $service = New-Object -ComObject Schedule.Service; $service.Connect(); $folder = $service.GetFolder('\\${GUARD_FOLDER}'); $tasks = @($folder.GetTasks(1)) } catch { $code = $_.Exception.HResult; if ($code -eq ${NOT_FOUND_HRESULT}) { 'folder=absent' } else { 'folder=unreadable'; 'hresult=0x{0:X8}' -f $code }; exit 0 }`,
-  "'folder=present'",
-  // GetTasks skips a task this account may not read: each task this extension installs that the list lacks is asked for BY NAME —
-  // not found is absent, any other refusal is that task's unreadable section (review M1).
-  `foreach ($name in @(${EXPECTED_TASKS.map((n) => `'${n}'`).join(',')})) { if (@($tasks | Where-Object { $_.Name -eq $name }).Count -eq 0) { try { $tasks += $folder.GetTask($name) } catch { if ($_.Exception.HResult -ne ${NOT_FOUND_HRESULT}) { 'task=' + $name; 'read=unreadable'; 'hresult=0x{0:X8}' -f $_.Exception.HResult } } } }`,
-  'foreach ($task in $tasks) {',
-  "'task=' + ($task.Name -replace '[\\x00-\\x1f]', '?')",
-  'try {',
-  "$run = $task.LastRunTime; $runText = 'lastRunUtc=never'; if ($run.Year -ge 2000) { $runText = 'lastRunUtc=' + $run.ToUniversalTime().ToString('o') }",
-  "$lines = @(('enabled=' + $task.Enabled), ('state=' + [int]$task.State), $runText, ('lastResult=' + $task.LastTaskResult))",
-  "$lines += @(Get-WslCareSummary $task.Definition | ForEach-Object { 'summary:' + ($_ -replace '[\\r\\n]+', ' ') })",
-  '$lines',
-  "} catch { 'read=unreadable'; 'hresult=0x{0:X8}' -f $_.Exception.HResult }",
-  '}',
-  'exit 0',
-].join('\n');
+];
+
+/**
+ * The UNELEVATED status query (D5, D8) — since WR-E2 the ONE read of every task under `\wsl-care` (PLAN_windows_runner.md §3.8), the
+ * guard's own task among them, with the guard's facts. It changes nothing (no word of the tripwire's mutating list is in it — asserted).
+ */
+export const QUERY_SCRIPT = queryScript({ folder: GUARD_FOLDER, expectedTasks: EXPECTED_TASKS, facts: GUARD_FACTS });
 
 /**
  * The longest command line the elevated install may need (D3): `CreateProcess` caps a whole command line at 32 767
@@ -125,12 +101,7 @@ export function commandLineLength(request: ProcessRequest): number {
   return [request.file, ...request.args].reduce((sum, arg) => sum + arg.length + 3, 0);
 }
 
-/**
- * The read-only query, UNELEVATED: the absolute PowerShell with the fixed script — no `runas`, no encoded payload. At its ceiling
- * the runner ends the PowerShell's whole process TREE (`killTree`), not only the PowerShell (WR-E2, plan round 4fc3f328, finding 8).
- */
+/** The read-only query, UNELEVATED: the shared query request (`scheduler/queryScript.ts`) for this script. */
 export function queryRequest(env: Readonly<Record<string, string | undefined>>, timeoutMs: number): ProcessRequest | string {
-  const powerShell = powerShellOf(env);
-
-  return typeof powerShell === 'string' ? { file: powerShell, args: ['-NoProfile', '-NonInteractive', '-Command', QUERY_SCRIPT], timeoutMs, killTree: true } : powerShell.reason;
+  return sharedQueryRequest(env, QUERY_SCRIPT, timeoutMs);
 }

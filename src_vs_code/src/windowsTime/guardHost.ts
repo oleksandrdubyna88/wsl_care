@@ -2,7 +2,7 @@ import type { DurableStore } from '../cleanup/journal';
 import type { Runner } from '../process/runner';
 import { guardEngineLine, type EngineSource } from '../powershell/engineHost';
 import { Listeners } from '../shared/listeners';
-import type { SchedulerHost } from '../windowsTasks/schedulerHost';
+import type { SchedulerHost } from '../scheduler/schedulerHost';
 import type { FixPrompt } from './windowsTimeFix';
 import { runGuardOp, type GuardOp, type GuardOutcome } from './guardFlow';
 import { clearPending, readPending } from './guardPending';
@@ -16,8 +16,10 @@ import type { GuardOptions } from './guardTask';
  * run answered.
  *
  * Since WR-E2 (PLAN_windows_runner.md §3.8) the Task Scheduler read is NOT this host's: it is the ONE read of every task under
- * `\wsl-care` (`windowsTasks/schedulerHost.ts`), held in flight once for the guard and for the Windows tasks' part alike. The
- * guard consumes it — its state is that read's guard task, by name — and settles its pending run whenever any answer arrives.
+ * `\wsl-care` (`scheduler/schedulerHost.ts`, a peer of this module and of `windowsTasks/`), held in flight once for the guard and for
+ * the Windows tasks' part alike. The guard consumes it — its state is that read's guard task, by name — and settles its pending run
+ * whenever any answer arrives. The capability to run the query is not the guard's surfaces' either: `extension.ts` hands it, from
+ * the process layer, to the shared read.
  */
 
 /** The surfaces the guard uses — real, or recorded in Test mode (`guardUi.ts`). */
@@ -26,8 +28,6 @@ export interface GuardUi {
   readonly confirm: (prompt: FixPrompt) => Promise<boolean>;
   /** The ELEVATED install / remove. */
   readonly run: Runner;
-  /** The unelevated status query — the runner the shared Task Scheduler read (`SchedulerHost`) is given. */
-  readonly query: Runner;
   readonly report: (message: string, failed: boolean) => void;
 }
 

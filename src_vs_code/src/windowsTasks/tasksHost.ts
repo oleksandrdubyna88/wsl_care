@@ -2,19 +2,19 @@ import type { WindowsCareClient } from '../client/WindowsCareClient';
 import type { RenderResult } from '../client/windowsTasks';
 import { Listeners } from '../shared/listeners';
 import { SingleFlight } from '../shared/singleFlight';
-import type { SchedulerHost } from './schedulerHost';
+import type { SchedulerHost } from '../scheduler/schedulerHost';
 import { NOT_PROBED, windowsTasksState, type CopyState, type WindowsTasksState } from './tasksState';
 import { windowsTasksView, type WindowsTasksView } from './tasksView';
 
 /**
  * The host of the Windows tasks' part of the panel (WR-E2 of PLAN_windows_runner.md §3.8): the staged copy's last probe, ONE probe
- * in flight, and the part's lines derived from that and from the shared Task Scheduler read (`schedulerHost.ts`). E3 widens it with
- * the install and remove flows; this story only READS.
+ * in flight, and the part's lines derived from that and from the shared Task Scheduler read (`scheduler/schedulerHost.ts`). E3 widens
+ * it with the install and remove flows; this story only READS.
  *
- * <p><b>The trigger.</b> {@link refresh} is the only way anything is asked, and the panel's refresh is its only caller
- * (`extension.ts`, `panelRefresh`: the panel opening, becoming visible, or its *Refresh* — the same moments the guard's read has
- * always run at). It owns no timer and polls nothing. One refresh is ONE Task Scheduler read (the guard consumes the same one) and
- * ONE probe of the staged copy.</p>
+ * <p><b>The trigger.</b> {@link refresh} probes the staged copy and NOTHING else: the Task Scheduler read is the scheduler's, asked
+ * once by the panel's refresh (`extension.ts`, `panelRefresh`: the panel opening, becoming visible, or its *Refresh* — the same
+ * moments the guard's read has always run at), and this host, like the guard host, only FOLLOWS its change (the coai code round,
+ * finding 0). It owns no timer and polls nothing. One panel refresh is ONE Task Scheduler read and ONE probe of the staged copy.</p>
  *
  * <p><b>The probe.</b> The client hashes the bundled exe itself ({@link TasksClient.bundledDigest}, a file read) and `tasks render
  * watch` is asked of the staged copy named by that digest. If it ANSWERS (registrable or not, or the daemon refusing its
@@ -86,11 +86,11 @@ export class TasksHost {
   }
 
   /**
-   * The panel's refresh: the shared Task Scheduler read and the probe of the staged copy, side by side. Each follows the
-   * {@link SingleFlight} rule — a call while one is in flight is answered by ONE more after it, further calls share that one.
+   * The probe of the staged copy, for the panel's refresh (which also asks the shared Task Scheduler read, once, itself). It follows
+   * the {@link SingleFlight} rule — a call while one is in flight is answered by ONE more after it, further calls share that one.
    */
-  async refresh(): Promise<void> {
-    await Promise.all([this.deps.scheduler.refresh(), this.probing.request()]);
+  refresh(): Promise<void> {
+    return this.probing.request();
   }
 
   private async probeOnce(): Promise<void> {

@@ -4,7 +4,7 @@ import type { Runner } from '../process/runner';
 import type { GuardUi } from './guardHost';
 import type { GuardRecorder } from './guardRecorder';
 
-export { newGuardRecorder, type GuardRecorder } from './guardRecorder';
+export { newGuardRecorder, recordingQuery, type GuardRecorder } from './guardRecorder';
 
 /**
  * The surfaces the Windows Time guard uses (PLAN_windows_time_task.md D4), chosen the way *Start Windows Time*'s are: by
@@ -12,8 +12,9 @@ export { newGuardRecorder, type GuardRecorder } from './guardRecorder';
  *
  * - **not Test mode** — the elevated script in a READ-ONLY editor tab (a `TextDocumentContentProvider` under its own
  *   scheme: a content provider's documents cannot be edited, and each flow gets its own URI served from a snapshot, so
- *   nothing typed anywhere can reach the request), a modal, the real runner under a progress notification, the real
- *   runner for the unelevated query, and a notification with the outcome.
+ *   nothing typed anywhere can reach the request), a modal, the real runner under a progress notification, and a
+ *   notification with the outcome. (The unelevated Task Scheduler query is NOT one of the guard's surfaces: the shared read
+ *   is given its runner by `extension.ts` — `recordingQuery` below in Test mode.)
  * - **Test mode** — a RECORDER: what would be shown, every prompt and every request are recorded and answered from it;
  *   no PowerShell is started (the elevated one would raise UAC, and the tripwire refuses both shapes besides).
  */
@@ -50,7 +51,6 @@ function realUi(runner: Runner, subscriptions: vscode.Disposable[]): GuardUi {
     },
     confirm: async (prompt) => (await vscode.window.showWarningMessage(prompt.message, { modal: true, detail: prompt.detail }, prompt.confirm)) === prompt.confirm,
     run: (request) => Promise.resolve(vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Waiting for the elevated PowerShell (Windows Time guard)…' }, () => runner(request))),
-    query: runner,
     report: (message, failed) => { void (failed ? vscode.window.showErrorMessage(message) : vscode.window.showInformationMessage(message)); },
   };
 }
@@ -60,7 +60,6 @@ function recordingUi(recorder: GuardRecorder): GuardUi {
     show: (text) => { recorder.shown.push(text); return Promise.resolve(); },
     confirm: (prompt) => { recorder.prompts.push(prompt); return Promise.resolve(recorder.answer); },
     run: (request) => { recorder.requests.push(request); return Promise.resolve(recorder.result); },
-    query: (request) => { recorder.queries.push(request); return Promise.resolve(recorder.queryResult); },
     report: (message, failed) => { recorder.reports.push({ message, failed }); },
   };
 }

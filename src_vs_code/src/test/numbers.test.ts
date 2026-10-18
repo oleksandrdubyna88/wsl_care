@@ -94,6 +94,6 @@ test('WR-E2: `tasks render` has its ceiling as a setting (60 s, 10–600), and t
   assert.deepEqual([stage.key, stage.default, stage.minimum, stage.maximum], ['timeouts.windowsTasksStageSeconds', 60, 10, 600]);
   assert.equal(stage.default * 1000, TASKS_DEFAULT_TIMEOUT_MS, 'the client\'s default is the setting\'s default');
   assert.match(stage.description, /tasks render/);
-  assert.match(NUMBER_SETTINGS.windowsTimeGuardQuerySeconds.description, /every task this extension registers in Task Scheduler/, 'the one read is bounded by this setting, and says so');
+  assert.match(NUMBER_SETTINGS.windowsTimeGuardQuerySeconds.description, /feeds both the panel's \*Windows Time guard\* line and its Windows tasks lines/, 'the one read is bounded by this setting, and says so');
   assert.equal(NUMBER_NAMES.some((name) => /windowsTasksQuery/.test(name)), false, 'no second ceiling for the one read');
 });

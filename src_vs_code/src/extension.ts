@@ -32,12 +32,13 @@ import { clientRunner, type WslCareTestApi } from './testApi';
 import { fileInfoOf } from './powershell/elevatedEngine';
 import { EngineHost } from './powershell/engineHost';
 import { engineQueryFor, newEngineRecorder, type EngineRecorder } from './powershell/engineRecorder';
-import { SchedulerHost } from './windowsTasks/schedulerHost';
+import { SchedulerHost } from './scheduler/schedulerHost';
 import { TasksHost } from './windowsTasks/tasksHost';
 import { WindowsTimeGuardHost, type GuardUi } from './windowsTime/guardHost';
 import { sweepPending } from './windowsTime/guardPending';
 import type { GuardOptions } from './windowsTime/guardTask';
-import { guardUiFor, newGuardRecorder, type GuardRecorder } from './windowsTime/guardUi';
+import { QUERY_SCRIPT } from './windowsTime/guardScripts';
+import { guardUiFor, newGuardRecorder, recordingQuery, type GuardRecorder } from './windowsTime/guardUi';
 import { startWindowsTime } from './windowsTime/windowsTimeFix';
 import { newWindowsTimeRecorder, windowsTimeUiFor, type WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import { distroSettingText } from './wsl/distros';
@@ -171,7 +172,7 @@ function build(context: vscode.ExtensionContext): Parts {
   const engineRecorder = newEngineRecorder();
   const engine = engineHostOf(testMode, engineRecorder);
   const guardUi = guardUiFor(testMode, guardRecorder, runnerFor({ kind: 'real' }), context.subscriptions);
-  const scheduler = schedulerOf(guardUi);
+  const scheduler = schedulerOf(testMode, guardRecorder);
   const guard = windowsTimeGuard(context, guardUi, scheduler, engine);
   const archiveRecorder = newArchiveRecorder();
   const archive = archiveHostOf(testMode, client, runner, store, host, archiveRecorder, log);
@@ -296,12 +297,15 @@ function windowsTimeGuard(context: vscode.ExtensionContext, ui: GuardUi, schedul
 }
 
 /**
- * The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2): through the guard's UNELEVATED query runner (the real one,
- * or the recorder in Test mode), bounded by `wslCare.timeouts.windowsTimeGuardQuerySeconds`; the guard and the Windows tasks'
- * part both consume it.
+ * The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2), in `src/scheduler/`: its script is the guard's facts plus the
+ * folder's tasks (`windowsTime/guardScripts.ts`), its capability to run it comes from the process layer — the real UNELEVATED
+ * runner, or the recorder in Test mode — and is not one of the guard's surfaces; bounded by
+ * `wslCare.timeouts.windowsTimeGuardQuerySeconds`. The guard and the Windows tasks' part both consume it.
  */
-function schedulerOf(ui: GuardUi): SchedulerHost {
-  return new SchedulerHost({ env: process.env, queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000, query: ui.query });
+function schedulerOf(testMode: boolean, recorder: GuardRecorder): SchedulerHost {
+  const query = testMode ? recordingQuery(recorder) : runnerFor({ kind: 'real' });
+
+  return new SchedulerHost({ env: process.env, queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000, script: QUERY_SCRIPT, query });
 }
 
 /** Two subscriptions as one: the guard's part re-renders on Task Scheduler's answers AND on the engine read's (D6). */
@@ -356,14 +360,15 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
 }
 
 /**
- * The panel's refresh: the Windows tasks' read — the ONE Task Scheduler query the guard's line is derived from too, plus the probe
- * of the staged copy (WR-E2; the guard's own `refresh()` is not asked beside it: the same read would run twice) — the panel round
- * (`status`, `preview`, `doctor`) and, once that round's `status` is in the store (its capabilities decide what is asked), the
- * archive's two reads (E10.S1) — never more often. This is the ONE call site of the Windows tasks' read: it runs when the panel
- * opens, becomes visible or is refreshed, and nowhere else.
+ * The panel's refresh: the ONE shared Task Scheduler read — the guard host and the Windows tasks' host both FOLLOW its change, neither
+ * asks it itself (WR-E2, the coai code round finding 0) — and the tasks' probe of the staged copy, the panel round (`status`,
+ * `preview`, `doctor`) and, once that round's `status` is in the store (its capabilities decide what is asked), the archive's two
+ * reads (E10.S1) — never more often. These are the ONE call sites of the shared read and of the probe: they run when the panel
+ * opens, becomes visible or is refreshed, and nowhere else (an elevated guard run answering reads once more, through the guard).
  */
 function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
   return (options) => {
+    void parts.scheduler.refresh();
     void parts.tasks.refresh();
     void parts.engine.refresh();
     void parts.bundled.refresh();

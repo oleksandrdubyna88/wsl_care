@@ -9,7 +9,7 @@ import type { TaskName } from '../client/verbs';
 import { renderResultOf, type RenderResult } from '../client/windowsTasks';
 import { guardSummary, guardTaskXml, SUMMARY_FUNCTION } from '../windowsTime/guardTask';
 import { SCHEDULER_RESULTS, summariesMatch } from '../windowsTime/guardState';
-import { parseSchedulerAnswer, SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS } from '../windowsTasks/schedulerAnswer';
+import { parseSchedulerAnswer, SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS } from '../scheduler/schedulerAnswer';
 import { windowsTasksState, type CopyState, type WindowsTasksState } from '../windowsTasks/tasksState';
 import { NO_WINDOWS_TASKS, windowsTasksView, type WindowsTasksView } from '../windowsTasks/tasksView';
 import { MUTATING } from './support/noRealWsl';

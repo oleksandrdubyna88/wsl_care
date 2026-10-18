@@ -1,7 +1,7 @@
 import { TASK_NAMES, type TaskName } from '../client/verbs';
 import type { RenderAnswer, RenderResult } from '../client/windowsTasks';
-import { summariesMatch } from '../windowsTime/guardState';
-import { SCHEDULER_RESULT, taskOf, type LastRun, type SchedulerRead, type TaskRead } from './schedulerAnswer';
+import { summariesMatch } from '../scheduler/taskSummary';
+import { SCHEDULER_RESULT, taskOf, type LastRun, type SchedulerRead, type TaskRead } from '../scheduler/schedulerAnswer';
 
 /**
  * The Windows tasks' part of the panel, as ONE pure state (WR-E2 of PLAN_windows_runner.md §3.8): what Task Scheduler's ONE read

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { DurableStore } from '../cleanup/journal';
-import type { ProcessRequest, ProcessResult } from '../process/runner';
+import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { parsePageMessage } from '../panel/messages';
 import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
@@ -14,7 +14,7 @@ import { GUARD_NAME, guardScript, guardSummary, type GuardOptions } from '../win
 import { newGuardRecorder, type GuardRecorder } from '../windowsTime/guardRecorder';
 import { EXIT } from '../windowsTime/windowsTimeFix';
 import { elevatedRequest } from '../powershell/elevatedLauncher';
-import { SchedulerHost } from '../windowsTasks/schedulerHost';
+import { SchedulerHost } from '../scheduler/schedulerHost';
 import { elevatedProgramOf, failedRead, fixedEngine, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
 import { MapStore } from './support/memento';
 import { schedulerStdout } from './support/schedulerAnswers';
@@ -157,18 +157,21 @@ test('no SystemRoot, or a launcher that cannot start: told, nothing shown', asyn
 
 // ---- the host: one query in flight, one flow at a time, the view the panel posts ----
 
+/** The guard's surfaces plus the runner the shared read is handed — which is NOT one of the guard's surfaces (the coai code round, finding 8). */
+type UiWithQuery = GuardUi & { readonly query: Runner };
+
 /** A guard host whose Task Scheduler read is the ONE shared read (WR-E2), asked through `ui.query`. */
-function guardOf(ui: GuardUi, over: Partial<GuardHostDeps> = {}): WindowsTimeGuardHost {
+function guardOf(ui: UiWithQuery, over: Partial<GuardHostDeps> = {}): WindowsTimeGuardHost {
   return new WindowsTimeGuardHost({
     env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, ui,
-    scheduler: new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, query: ui.query }),
+    scheduler: new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query: ui.query }),
     durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
     ...over,
   });
 }
 
 /** A guard UI that shows and asks nothing and answers every query with `query`. */
-function quietUi(query: GuardUi['query']): GuardUi {
+function quietUi(query: Runner): UiWithQuery {
   return { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query, report: () => undefined };
 }
 
@@ -263,8 +266,8 @@ test('the Opus own review m3: a pending-run settle that fails (the durable store
     const store = new MapStore();
     await store.update(PENDING_KEY, { op: 'install', startedAtUtcMs: 500, deadlineUtcMs: 400_000 });
     const failing: DurableStore = { get: (key) => store.get(key), update: () => Promise.reject(new Error('the store refused')) };
-    const query: GuardUi['query'] = () => Promise.resolve(exited(0, presentStdout()));
-    const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, query });
+    const query: Runner = () => Promise.resolve(exited(0, presentStdout()));
+    const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
     const guard = guardOf(quietUi(query), { durable: failing, scheduler });
     let heard = 0;
     guard.onChange(() => { throw new Error('a listener\'s own fault'); });
@@ -361,11 +364,11 @@ test('pwsh D6: the guard part names the elevated runs\' engine from the LAST eng
 
 function hostDepsWith(engine: GuardFlowDeps['engine']): ConstructorParameters<typeof WindowsTimeGuardHost>[0] {
   const recorder = newGuardRecorder();
-  const query: GuardUi['query'] = () => Promise.resolve(recorder.queryResult);
+  const query: Runner = () => Promise.resolve(recorder.queryResult);
   return {
     env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000,
-    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(recorder.result), query, report: () => undefined },
-    scheduler: new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, query }),
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(recorder.result), report: () => undefined },
+    scheduler: new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query }),
     durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine,
   };
 }

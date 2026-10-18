@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { ProcessResult } from '../process/runner';
 import { NOT_FOUND_HRESULT, QUERY_SCRIPT } from '../windowsTime/guardScripts';
-import { parseSchedulerAnswer, schedulerReadOf, taskOf, type SchedulerRead } from '../windowsTasks/schedulerAnswer';
+import { parseSchedulerAnswer, schedulerReadOf, taskOf, type SchedulerRead } from '../scheduler/schedulerAnswer';
 import { MUTATING } from './support/noRealWsl';
 import { schedulerStdout, USER_SID } from './support/schedulerAnswers';
 

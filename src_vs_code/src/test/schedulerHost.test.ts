@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { ProcessRequest, ProcessResult } from '../process/runner';
-import { SchedulerHost } from '../windowsTasks/schedulerHost';
+import { SchedulerHost } from '../scheduler/schedulerHost';
 import { QUERY_SCRIPT } from '../windowsTime/guardScripts';
 import { schedulerStdout } from './support/schedulerAnswers';
 
@@ -20,7 +20,7 @@ function exited(stdout: string): ProcessResult {
 
 function hostOf(answer: (n: number) => Promise<ProcessResult>, timeoutMs = 30_000): { host: SchedulerHost; requests: ProcessRequest[] } {
   const requests: ProcessRequest[] = [];
-  const host = new SchedulerHost({ env: ENV, queryTimeoutMs: () => timeoutMs, query: (request) => { requests.push(request); return answer(requests.length); } });
+  const host = new SchedulerHost({ env: ENV, queryTimeoutMs: () => timeoutMs, script: QUERY_SCRIPT, query: (request) => { requests.push(request); return answer(requests.length); } });
 
   return { host, requests };
 }
@@ -61,7 +61,7 @@ test('a refresh asked during a flight is answered by one MORE read, not by the s
 test('plan round 7, 8: the query is the fixed script under the setting\'s ceiling — read at every query — and asks the runner for the tree kill', async () => {
   let ceiling = 30_000;
   const requests: ProcessRequest[] = [];
-  const host = new SchedulerHost({ env: ENV, queryTimeoutMs: () => ceiling, query: (r) => { requests.push(r); return Promise.resolve(exited(schedulerStdout())); } });
+  const host = new SchedulerHost({ env: ENV, queryTimeoutMs: () => ceiling, script: QUERY_SCRIPT, query: (r) => { requests.push(r); return Promise.resolve(exited(schedulerStdout())); } });
   await host.refresh();
   ceiling = 45_000;
   await host.refresh();
@@ -79,7 +79,7 @@ test('plan round 8: a read that hit its ceiling says it timed out — the runner
 
 test('no SystemRoot: no PowerShell can be named, so the read says why — and starts nothing', async () => {
   const requests: ProcessRequest[] = [];
-  const host = new SchedulerHost({ env: {}, queryTimeoutMs: () => 1_000, query: (r) => { requests.push(r); return Promise.resolve(exited('')); } });
+  const host = new SchedulerHost({ env: {}, queryTimeoutMs: () => 1_000, script: QUERY_SCRIPT, query: (r) => { requests.push(r); return Promise.resolve(exited('')); } });
   await host.refresh();
   assert.deepEqual(requests, []);
   assert.equal(host.current().kind, 'unknown');

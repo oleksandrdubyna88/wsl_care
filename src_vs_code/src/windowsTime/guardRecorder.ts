@@ -1,4 +1,4 @@
-import type { ProcessRequest, ProcessResult } from '../process/runner';
+import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import type { FixPrompt } from './windowsTimeFix';
 
 /** The Windows Time guard's Test-mode surfaces (`guardUi.ts`): everything recorded, every answer scripted, nothing started. */
@@ -18,6 +18,11 @@ export interface GuardRecorder {
 }
 
 const NOTHING = Buffer.alloc(0);
+
+/** The Test-mode runner of the ONE Task Scheduler read: every query request is recorded and answered from `queryResult` — nothing is started. */
+export function recordingQuery(recorder: GuardRecorder): Runner {
+  return (request) => { recorder.queries.push(request); return Promise.resolve(recorder.queryResult); };
+}
 
 export function newGuardRecorder(): GuardRecorder {
   return {
