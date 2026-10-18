@@ -31,7 +31,7 @@ public static class WorktreesStatus
         var empty = new ScanBasis("scan", null, null);
         if (configuredRoots.Count == 0)
         {
-            return (new WorktreesSection(false, NoRoot, empty, false, configuredRoots, null), Unknown(string.Empty, limit, NoRoot));
+            return (new WorktreesSection(false, NoRoot, empty, false, configuredRoots, null), Unknown(string.Empty, limit, NoRoot, empty));
         }
 
         return report switch
@@ -44,7 +44,7 @@ public static class WorktreesStatus
     private static (WorktreesSection, Verdict) NoScan(IReadOnlyList<string> roots, string why, ScanBasis empty, string limit)
     {
         var reason = $"no scan to read ({why}); run wsl-care.exe worktrees scan";
-        return (new WorktreesSection(false, reason, empty, false, roots, null), Unknown(string.Empty, limit, reason));
+        return (new WorktreesSection(false, reason, empty, false, roots, null), Unknown(string.Empty, limit, reason, empty));
     }
 
     private static (WorktreesSection, Verdict) FromScan(IReadOnlyList<string> roots, WorktreeReport report, WorktreeSettings settings, DateTimeOffset now, string limit)
@@ -55,14 +55,15 @@ public static class WorktreesStatus
         var reason = stale
             ? $"the last scan is {(int)age.TotalDays} days old (older than worktrees.reportMaxAgeDays = {settings.ReportMaxAgeDays}); {WorktreeReports.GitHasNotConfirmed}"
             : WorktreeReports.GitHasNotConfirmed;
-        return (new WorktreesSection(true, null, basis, stale, roots, Summary(report)), Unknown(Structure(report), limit, reason));
+        return (new WorktreesSection(true, null, basis, stale, roots, Summary(report)), Unknown(Structure(report), limit, reason, basis));
     }
 
     /// <summary>The report without its lists of names: the section is read on every poll.</summary>
     private static WorktreeReport Summary(WorktreeReport report) =>
         report with { Top = [], Roots = [.. report.Roots.Select(r => r with { NamedRetentions = [] })] };
 
-    private static Verdict Unknown(string value, string limit, string reason) => new(VerdictId, Level.Unknown, value, limit, reason);
+    private static Verdict Unknown(string value, string limit, string reason, ScanBasis basis) =>
+        new(VerdictId, Level.Unknown, value, limit, reason) { Basis = new VerdictBasis(VerdictSource.Scan, null, basis.ScannedAt, basis.AgeSeconds) };
 
     /// <summary>The structural counts, in a person's words — <c>5 worktrees (1 locked), 1 orphan, 4 build-output folders (3.0 GiB present)</c>.</summary>
     private static string Structure(WorktreeReport report)

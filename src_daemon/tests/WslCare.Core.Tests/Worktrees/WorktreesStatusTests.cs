@@ -67,6 +67,16 @@ public sealed class WorktreesStatusTests
     }
 
     [Fact]
+    public void Every_verdict_carries_the_scan_as_its_basis_so_status_never_shows_one_without()
+    {
+        var (_, none) = WorktreesStatus.From([], Reading.Missing<WorktreeReport>("no scan"), Settings, Now);
+        var (_, fresh) = WorktreesStatus.From([@"D:w"], Reading.Of(Report(Now.AddHours(-2))), Settings, Now);
+
+        none.Basis.Should().Be(new VerdictBasis(VerdictSource.Scan, null, null, null));
+        fresh.Basis.Should().Be(new VerdictBasis(VerdictSource.Scan, null, Now.AddHours(-2), 7200));
+    }
+
+    [Fact]
     public void The_verdict_value_never_calls_a_byte_figure_reclaimable()
     {
         var (_, verdict) = WorktreesStatus.From([@"D:\w"], Reading.Of(Report(Now.AddHours(-2))), Settings, Now);
