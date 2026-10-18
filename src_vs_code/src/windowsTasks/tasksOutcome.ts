@@ -35,7 +35,8 @@ export type TasksOutcome =
   | { readonly kind: 'declined'; readonly stagedPath?: string }
   | { readonly kind: 'busy' }
   | { readonly kind: 'failed'; readonly sentence: string }
-  | { readonly kind: 'timedOut'; readonly timeoutMs: number; readonly treeEnded: boolean | undefined }
+  /** `setting`: the ceiling that ended it, when it is not the PowerShell's own (`wslCare.timeouts.windowsTasksSeconds`). */
+  | { readonly kind: 'timedOut'; readonly timeoutMs: number; readonly treeEnded: boolean | undefined; readonly setting?: string }
   /** Nothing ran; `engineStart` when the PowerShell itself could not be started (the Store package's note belongs to that case only). */
   | { readonly kind: 'notStarted'; readonly reason: string; readonly engineStart?: true }
   /** The read right before the launch disagreed with the modal (another program, or no answer): nothing ran. */
@@ -145,7 +146,7 @@ const SENTENCE: { readonly [K in TasksOutcome['kind']]: Sentence<K> } = {
   declined: (o) => (o.stagedPath === undefined ? '' : `Nothing was registered. The staged copy stays at ${o.stagedPath}; *Remove the Windows tasks* deletes it.`),
   busy: () => 'An install or removal of the Windows tasks is still waiting (its PowerShell, or its stage) — nothing new was started.',
   failed: (o, op, engine) => `${subject(op)} failed: ${o.sentence}.${byProgram(engine)}`,
-  timedOut: (o, op, engine) => `${subject(op)} did not finish within ${Math.round(o.timeoutMs / 1000)} s (wslCare.timeouts.windowsTasksSeconds); ${treeVerdict(o.treeEnded)}. The panel shows what Task Scheduler holds.${byProgram(engine)}`,
+  timedOut: (o, op, engine) => `${subject(op)} did not finish within ${Math.round(o.timeoutMs / 1000)} s (${o.setting ?? 'wslCare.timeouts.windowsTasksSeconds'}); ${treeVerdict(o.treeEnded)}. The panel shows what Task Scheduler holds.${byProgram(engine)}`,
   notStarted: (o, op, engine) => `${subject(op)} could not start: ${o.engineStart === true ? withUnelevatedStoreNote(o.reason, engine) : o.reason}.`,
   notRun: (o) => o.sentence,
 };

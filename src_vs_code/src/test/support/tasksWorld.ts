@@ -41,6 +41,8 @@ export interface WorldOptions {
   readonly editRender?: (body: Record<string, unknown>) => Record<string, unknown>;
   readonly extensionFolder?: string;
   readonly busyRetryMs?: number;
+  /** A daemon call that ENDS in a scripted way (a timeout, say) instead of answering: by its argv joined with spaces. */
+  readonly ending?: (argv: string) => ProcessResult | undefined;
 }
 
 export interface World {
@@ -89,6 +91,11 @@ export function tasksWorld(options: WorldOptions = {}): World {
   const daemon = (request: ProcessRequest): ProcessResult => {
     const argv = request.args.join(' ');
     calls.push({ who: 'daemon', request });
+    const scripted = options.ending?.(argv);
+    if (scripted !== undefined) {
+      events.push(argv === TASKS_REMOVE_TAIL.join(' ') ? 'stageRemove' : 'daemon');
+      return scripted;
+    }
     if (argv === TASKS_STAGE_TAIL.join(' ')) {
       events.push('stage');
       const [name, code] = nextStage();

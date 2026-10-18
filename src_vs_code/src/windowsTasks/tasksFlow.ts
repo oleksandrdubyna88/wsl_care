@@ -251,15 +251,22 @@ function othersIn(read: SchedulerRead): string[] {
   return read.kind === 'read' ? [...read.sections.keys()].filter((name) => !(TASK_NAMES as readonly string[]).includes(name)) : [];
 }
 
-function removalWords(result: Exclude<RemoveResult, { kind: 'removed' }>): string {
+function removalWords(result: Extract<RemoveResult, { kind: 'busy' | 'wrongSide' | 'failed' | 'unavailable' }>): string {
   return result.kind === 'busy' ? `the daemon's run lock was held twice (${result.reason}) — press Remove again` : result.reason;
+}
+
+/** The staged copies' removal that did not finish: TYPED, so the pending record is kept to its deadline like the PowerShell's own timeout. */
+function removalNotDone(result: Exclude<RemoveResult, { kind: 'removed' }>): TasksOutcome {
+  return result.kind === 'timedOut'
+    ? { kind: 'timedOut', timeoutMs: result.timeoutMs, treeEnded: result.treeEnded, setting: 'wslCare.timeouts.windowsTasksStageSeconds' }
+    : { kind: 'failed', sentence: `the tasks are removed, but the staged copies were not: ${removalWords(result)}` };
 }
 
 /** The staged copies, after the tasks are gone: removed, or why not — the tasks stay removed either way. */
 async function copiesRemoved(deps: TasksFlowDeps, folder: Extract<DoneSummary, { op: 'remove' }>['folder']): Promise<TasksOutcome> {
   const result = await retriedOnce(() => deps.client.tasksStageRemove(), deps);
   if (result.kind !== 'removed') {
-    return { kind: 'failed', sentence: `the tasks are removed, but the staged copies were not: ${removalWords(result)}` };
+    return removalNotDone(result);
   }
   const { removed, kept, untouched } = result.report;
 

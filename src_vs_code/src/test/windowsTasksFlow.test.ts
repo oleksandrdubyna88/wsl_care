@@ -437,3 +437,16 @@ test('a busy staged-copy removal is retried once; twice is told as "tasks remove
   assert.equal(twice.w.daemon().filter((a) => a === TASKS_REMOVE_TAIL.join(' ')).length, 2);
   assert.equal(twice.w.store.get(PENDING_KEY), undefined);
 });
+
+test('a TYPED timeout of the daemon staged-copy removal keeps the pending record to its deadline, like the PowerShell own timeout', async () => {
+  const timeout: ProcessResult = { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  const { w, outcome } = await run(REMOVE, { ending: (argv) => (argv === TASKS_REMOVE_TAIL.join(' ') ? timeout : undefined) });
+  assert.equal(outcome.kind, 'timedOut', NOT_BUILT(outcome));
+  assert.notEqual(readPending(w.store, NOW), undefined, 'a timed-out staged-copy removal did not keep its record');
+  assert.equal(readPending(w.store, NOW)?.op, 'remove');
+  assert.equal(w.recorder.reports[0]?.failed, true);
+  assert.match(message(w), /did not finish within 60 s/);
+  assert.match(message(w), /the extension could not confirm that its PowerShell and everything it started were ended/);
+  const later = tasksWorld({ store: w.store, now: NOW + 1 });
+  assert.equal((await runTasksOp(WATCH, later.deps)).kind, 'busy', 'every button stays held while it stands');
+});
