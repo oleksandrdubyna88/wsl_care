@@ -27,7 +27,11 @@ public sealed class WorktreesStatusCommandTests
         [new RootReport(@"D:\w", null, 3, 2, 0, 1, 0, 0, 0, 0, 0, 900, new IdleOver(3, 1, 400), new BuildOutputTotals(new Tally(2, 5_000), new Tally(1, 3_000), new Tally(0, 0), new Tally(0, 0), []), new UnknownTotals(0, string.Empty), [])],
         [], new ReclaimableReport(false, "git has not confirmed the candidates yet (E19.S4)"));
 
-    private static JsonNode Status(ToDeleteRoot root, string? userConfig, WorktreeReport? report, out string stdout)
+    private static JsonNode Status(ToDeleteRoot root, string? userConfig, WorktreeReport? report, out string stdout) =>
+        StatusOverText(root, userConfig, report is null ? null : JsonSerializer.Serialize(report, WslCareJsonContext.Default.WorktreeReport), out stdout);
+
+    /// <summary>The Windows <c>status</c> over a <c>worktrees.json</c> holding exactly <paramref name="reportText"/> (none when null).</summary>
+    private static JsonNode StatusOverText(ToDeleteRoot root, string? userConfig, string? reportText, out string stdout)
     {
         var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
         var files = new Core.Files.PhysicalFileSystem(paths) { OwnersAreThisProcess = true };
@@ -37,10 +41,10 @@ public sealed class WorktreesStatusCommandTests
             File.WriteAllText(paths.UserConfigFile, userConfig);
         }
 
-        if (report is not null)
+        if (reportText is not null)
         {
             Directory.CreateDirectory(paths.StateDirectory);
-            File.WriteAllText(Path.Combine(paths.StateDirectory, "worktrees.json"), JsonSerializer.Serialize(report, WslCareJsonContext.Default.WorktreeReport));
+            File.WriteAllText(Path.Combine(paths.StateDirectory, "worktrees.json"), reportText);
         }
 
         var clock = new FixedTimeProvider(Now);
@@ -98,6 +102,44 @@ public sealed class WorktreesStatusCommandTests
 
         status["worktrees"]!["stale"]!.GetValue<bool>().Should().BeTrue();
         Verdict(status)["reason"]!.GetValue<string>().Should().Contain("10 days old");
+    }
+
+    /// <summary>Fable review of E19.S3, recommendation 4, end to end: a <c>worktrees.json</c> a crash or a person left in any shape never takes
+    /// the whole <c>status</c> down — the extension's poll reads it — it says the report could not be read, and the verdict stays unknown.</summary>
+    [Theory]
+    [InlineData("""{"schemaVersion":1}""", "it lacks its roots")]
+    [InlineData("""{"schemaVersion":1,"scannedAt":"2026-10-15T10:00:00+00:00","roots":[""", "is not a worktree report")]
+    [InlineData("""{"schemaVersion":1,"scannedAt":"2026-10-15T10:00:00+00:00","entries":4,"complete":true,"roots":[null],"top":[],"reclaimable":{"available":false,"reason":"x"}}""", "it lacks a root")]
+    [InlineData("not json at all", "is not a worktree report")]
+    public void A_corrupt_report_makes_status_say_it_could_not_be_read_never_fail(string text, string why)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var root = new ToDeleteRoot("status-corrupt");
+        var work = root.Dir("work");
+
+        var status = StatusOverText(root, new JsonObject { ["worktrees"] = new JsonObject { ["roots"] = new JsonArray(JsonValue.Create(work)) } }.ToJsonString(), text, out _);
+
+        status["worktrees"]!["available"]!.GetValue<bool>().Should().BeFalse();
+        status["worktrees"]!["reason"]!.GetValue<string>().Should().Contain(why).And.Contain("run wsl-care.exe worktrees scan");
+        Verdict(status)["level"]!.GetValue<string>().Should().Be("unknown");
+    }
+
+    /// <summary>The same review: the structural counts are summed in long and never overflow into an exception — a crafted report with byte figures
+    /// near the top of a long still gives an answer.</summary>
+    [Fact]
+    public void A_report_with_huge_figures_still_gives_a_status()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var root = new ToDeleteRoot("status-huge");
+        var work = root.Dir("work");
+        var huge = new BuildOutputTotals(new Tally(int.MaxValue, long.MaxValue), new Tally(0, 0), new Tally(0, 0), new Tally(0, 0), []);
+        var one = new RootReport(@"D:\w", null, int.MaxValue, int.MaxValue, int.MaxValue, 1, 0, 0, 0, 0, 0, 900, new IdleOver(3, 1, 400), huge, new UnknownTotals(0, string.Empty), []);
+        var report = new WorktreeReport(1, Now.AddHours(-1), 4, true, [one, one with { Path = @"D:\v" }], [], new ReclaimableReport(false, "git has not confirmed the candidates yet (E19.S4)"));
+
+        var status = Status(root, new JsonObject { ["worktrees"] = new JsonObject { ["roots"] = new JsonArray(JsonValue.Create(work)) } }.ToJsonString(), report, out _);
+
+        status["worktrees"]!["available"]!.GetValue<bool>().Should().BeTrue();
+        Verdict(status)["level"]!.GetValue<string>().Should().Be("unknown");
     }
 
     [Fact]

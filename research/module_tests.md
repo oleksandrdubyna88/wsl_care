@@ -880,7 +880,7 @@ substitutions), the workflow / configuration 36 on Windows; each red for its own
 
 ## The worktree report (E19.S3 of PLAN_disk_hygiene_windows_E19.md, 2026-10-15)
 
-Every tree the tests make is a REAL folder under `%TEMP%	estsToDelete-wsl-care-<purpose>-<guid>` (`TestSupport/ToDeleteRoot`, the shared test-leftovers rule: the prefix is on the folder's own name, removed in `Dispose`); the Windows legs skip elsewhere. The root rules are judged over a table standing in for the disk on every operating system.
+Every tree the tests make is a REAL folder under `%TEMP%\testsToDelete-wsl-care-<purpose>-<guid>` (`TestSupport/ToDeleteRoot`, the shared test-leftovers rule: the prefix is on the folder's own name, removed in `Dispose`); the Windows legs skip elsewhere. `ToDeleteRoot` duplicates `TempRoot` with the shared prefix for now; E21.S2 (DH-8) moves `TempRoot` onto the prefix and the two become one helper. The root rules are judged over a table standing in for the disk on every operating system.
 
 | guarantee | test |
 |---|---|

@@ -72,9 +72,14 @@ public static class WorktreesStatus
         var worktrees = roots.Sum(r => (long)r.Worktrees);
         var orphans = roots.Sum(r => (long)r.Orphans);
         var build = roots.Sum(r => (long)r.BuildOutput.All.Count);
-        var bytes = roots.Sum(r => r.BuildOutput.All.Bytes);
+        var bytes = Saturated(roots.Select(r => r.BuildOutput.All.Bytes));
         return string.Create(CultureInfo.InvariantCulture, $"{Count(worktrees, "worktree")} ({roots.Sum(r => (long)r.Locked)} locked), {Count(orphans, "orphan")}, {Count(build, "build-output folder")} ({bytes / BytesPerGibibyte:0.0} GiB present)");
     }
+
+    /// <summary>The sum of byte figures read back from a file a person or a crash may have made: it stops at <see cref="long.MaxValue"/> instead of
+    /// throwing, so one crafted figure never takes the whole status down (the counts are ints summed in long and cannot overflow).</summary>
+    private static long Saturated(IEnumerable<long> figures) =>
+        figures.Aggregate(0L, static (sum, next) => next > 0 && sum > long.MaxValue - next ? long.MaxValue : sum + Math.Max(0, next));
 
     private static string Count(long count, string noun) => $"{count} {noun}{(count == 1 ? string.Empty : "s")}";
 }
