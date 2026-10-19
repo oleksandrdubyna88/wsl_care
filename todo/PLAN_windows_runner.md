@@ -1172,3 +1172,14 @@ Each accepted fix has its RED message and its break-it (product code only, resto
 - **Minor 7 — two edges.** `extension.ts`'s activation sweep of the tasks' record has `.catch` + a log line (the guard's own `void sweepPending(…)` line is unchanged; noted); and a `clearPending` that throws in `underRecord` is logged (`deps.log`, new in `TasksFlowDeps` / `TasksHostDeps`) and the outcome is STILL told, the status read again. RED: `Error: the store refused` (the outcome was swallowed); break-it (rethrown): red. The activation catch is not observable in a test (wiring in `extension.ts`).
 - **Minor 5 — noted, not fixed:** `registrationPath.test.ts` reads string literals, so a SPLIT spelling of `Register-ScheduledTask` (two concatenated literals, a template built from parts) evades the one-home scan. The scan is a tripwire for a copied script, not a proof against an author who is hiding one; the tripwire of the test process refuses the registration by the decoded text anyway.
 - **Minor 8 — in the live gate's open tail above:** the unelevated register / delete inside a folder the guard created elevated.
+
+**Open tail (4) measured read-only (2026-10-19, unelevated, the owner's machine, the guard's folder present):** `GetFolder('\wsl-care')
+.GetSecurityDescriptor(0xF)` answers owner `BA` and the ACEs it inherits from the root — `(A;CIID;FA;;;BA)`, `(A;CIID;FA;;;SY)`,
+`(A;CIID;FW;;;AU)` (Authenticated Users may WRITE, i.e. create tasks, in the folder) and `(A;OICIIOID;FA;;;CO)` (CREATOR OWNER has
+full access to the tasks it created); the root folder carries the same ACEs, and per-user tasks registered unelevated already live
+there. So an unelevated `Register-ScheduledTask` into `\wsl-care` and an unelevated `DeleteTask` of the user's own `watch` /
+`archive` are ALLOWED by the descriptor — not a blocker. What it does NOT allow: `DeleteFolder` of a folder owned by `BA` (Authenticated
+Users have no DELETE right on it). That only arises once the folder is otherwise empty (the guard's task gone too); the remove flow
+then answers that the folder could not be removed (exit 32), honestly, with the tasks and the staged copies removed. A folder the
+extension itself creates unelevated is owned by the user and removable. Nothing was registered or deleted by the probe; the live gate
+still records what Windows answers.
