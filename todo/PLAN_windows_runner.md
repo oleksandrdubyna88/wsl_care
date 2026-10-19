@@ -1183,3 +1183,14 @@ Users have no DELETE right on it). That only arises once the folder is otherwise
 then answers that the folder could not be removed (exit 32), honestly, with the tasks and the staged copies removed. A folder the
 extension itself creates unelevated is owned by the user and removable. Nothing was registered or deleted by the probe; the live gate
 still records what Windows answers.
+Reading notes (the Fable re-check): `FW` (FILE_GENERIC_WRITE) on a container is "add file" (register a task) + "add subdirectory" +
+write attributes — no DELETE and no LIST right; the owner `BA` and `(A;CIID;FA;;;BA)` give the UNELEVATED owner nothing, because a
+filtered administrator token holds Administrators as deny-only — which is why `DeleteFolder` of the guard-created folder is refused.
+This is a descriptor READING, not a measured registration: Task Scheduler applies its own checks on top. Reproduce with
+`GetSecurityDescriptor(0xF)` from an unelevated PowerShell; it answered owner, group and DACL — no `S:` part (the SACL is not
+readable unelevated and was left out without an error).
+
+**Follow-ups from the Fable re-check (optional, not gate items):** (1) `ceilingPassed` has no margin: the record's `startedAtUtcMs` is
+taken before the store write and the spawn, so the runner's ceiling fires a few ms after `started + timeout` — a refresh in another
+window inside that gap could settle while the PowerShell is still alive; add the runner's kill grace as a margin. (2) A `writePending`
+that throws BEFORE the launch still escapes `told()`: nothing starts, but the person is told nothing — report it as `notStarted`.
