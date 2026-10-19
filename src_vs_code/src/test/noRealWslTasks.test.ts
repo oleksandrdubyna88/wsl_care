@@ -55,3 +55,18 @@ test('the real install and remove requests are what the tripwire refuses — so 
   assert.equal(isMachineChange(query.file, query.args), false, 'the Task Scheduler READ still passes (the WR-E2 assertion)');
   assert.equal(refusalOf(query.file, query.args), undefined);
 });
+
+test('Fable major 1: PowerShell method names are case-insensitive — .run( , .RUNEX( and an ENCODED lower-case start are refused too', () => {
+  const lower = "$s.GetFolder('x').GetTask('watch').run($null)";
+  const upper = "$s.GetFolder('x').GetTask('watch').RUNEX($null, 0, 0, '')";
+  const mixed = '$task.rUnEx  ($null)';
+  for (const words of [lower, upper, mixed]) {
+    assert.equal(TASK_RUN.test(words), true, 'TASK_RUN lets ' + words + ' through');
+    assert.equal(isMachineChange(POWERSHELL, ['-NoProfile', '-Command', words]), true, words);
+    assert.equal(isMachineChange(POWERSHELL, ['-NoProfile', '-EncodedCommand', encodedWords(words)]), true, words + ' (encoded)');
+    assert.equal(refusalOf(POWERSHELL, ['-NoProfile', '-enc', encodedWords(words)]), TASK_TRIPWIRE_MESSAGE, words + ' (encoded, refusalOf)');
+  }
+  for (const read of ['$x.runtime(1)', '$x.RunspaceId', 'Get-ScheduledTask -TaskName run']) {
+    assert.equal(isMachineChange(POWERSHELL, ['-NoProfile', '-Command', read]), false, read);
+  }
+});

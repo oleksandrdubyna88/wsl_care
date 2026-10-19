@@ -83,3 +83,20 @@ test('a terminator line and a wrong task path are refused', () => {
   assert.match(problem({ ...golden(), taskPath: '\\other\\watch' }), /task path .* is not \\wsl-care\\watch/);
   assert.match(problem(golden('archive'), READ, 'watch'), /is not \\wsl-care\\watch/, 'the task asked, not the task answered');
 });
+
+test('Fable minor 3: an element with an attribute is read too, and every opening tag must have a value (an xmlns on a second LogonType hides nothing)', () => {
+  const second = '<LogonType>InteractiveToken</LogonType><LogonType xmlns="urn:x">S4U</LogonType>';
+  assert.match(problem(withXml((x) => x.replace('<LogonType>InteractiveToken</LogonType>', second))), /S4U|interactive token/);
+  assert.match(problem(withXml((x) => x.replace('<RunLevel>LeastPrivilege</RunLevel>', '<RunLevel>LeastPrivilege</RunLevel><RunLevel id="x">HighestAvailable</RunLevel>'))), /HighestAvailable|least privilege/);
+  assert.match(problem(withXml((x) => x.replace('<LogonTrigger>', '<LogonTrigger><UserId xmlns="urn:x">S-1-5-21-9-9-9-500</UserId>'))), /names an account other than/);
+  assert.match(problem(withXml((x) => x.replace('<Enabled>true</Enabled>', '<Enabled>true</Enabled><RunLevel/>'))), /least privilege/, 'an opening tag with no value is not "only LeastPrivilege"');
+  assert.equal(problem(golden()), '', 'the golden still passes');
+});
+
+test('Fable minor 4: exactly one Exec, and every Command is the staged copy', () => {
+  const evil = '<Exec><Command>C:\\evil\\run.exe</Command></Exec>';
+  assert.match(problem(withXml((x) => x.replace('</Actions>', evil + '</Actions>'))), /one <Exec>|does not run its command/);
+  assert.match(problem(withXml((x) => x.replace('</Exec>', '</Exec><Exec><Command>' + STAGED_EXE + '</Command></Exec>'))), /one <Exec>|does not run its command/, 'a second Exec, even of the staged copy, is refused');
+  assert.match(problem(withXml((x) => x.replace('</Exec>', '<Command id="y">C:\\evil\\run.exe</Command></Exec>'))), /does not run its command/, 'a second Command, with an attribute, is read and compared');
+  assert.equal(problem(withXml((x) => x.replace('<Command>', '<Command id="x">'))), '', 'an attribute on the one Command, with the staged value, is harmless');
+});

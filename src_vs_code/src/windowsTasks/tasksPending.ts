@@ -42,6 +42,16 @@ export async function clearPending(store: DurableStore): Promise<void> {
   await clearPendingAt(store, PENDING_KEY);
 }
 
+/**
+ * Whether the ONE PowerShell of `record` must have answered or timed out by `nowUtcMs`: its deadline is twice its own ceiling (the flow writes
+ * `started + 2 × ceiling`), so the ceiling is the first half of the span. Before that, another window's run may still be registering — a read
+ * that already shows the task must not release its buttons (a second window's Remove would run beside the first one's Register); after it,
+ * the record is only waiting out the post-timeout half, and a read that shows the task finished may settle it early.
+ */
+export function ceilingPassed(record: PendingTimes, nowUtcMs: number): boolean {
+  return nowUtcMs >= record.startedAtUtcMs + (record.deadlineUtcMs - record.startedAtUtcMs) / 2;
+}
+
 /** At activation: a record past its deadline (or malformed) is removed, so nothing is stuck "waiting" forever. */
 export async function sweepPending(store: DurableStore, nowUtcMs: number): Promise<void> {
   await sweepPendingAt(store, PENDING_KEY, opOf, nowUtcMs);

@@ -185,7 +185,7 @@ function build(context: vscode.ExtensionContext): Parts {
   return {
     testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, scheduler, engine, engineRecorder, tasksRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
     bundled: new BundledHost({ version: () => windowsClient.version(), pin: BUNDLED_DAEMON }),
-    tasks: tasksHostOf(context, { testMode, recorder: tasksRecorder, scheduler, windowsClient, engine }),
+    tasks: tasksHostOf(context, { testMode, recorder: tasksRecorder, scheduler, windowsClient, engine, log: (line) => log.error(line) }),
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
 }
@@ -248,6 +248,7 @@ interface TasksParts {
   readonly scheduler: SchedulerHost;
   readonly windowsClient: WindowsCareClient;
   readonly engine: EngineHost;
+  readonly log: (line: string) => void;
 }
 
 /**
@@ -256,7 +257,8 @@ interface TasksParts {
  * tripwire would refuse the real thing besides). A pending run past its deadline is swept at activation, so nothing stays "waiting" after a crash.
  */
 function tasksHostOf(context: vscode.ExtensionContext, parts: TasksParts): TasksHost {
-  void sweepTasksPending(context.globalState, Date.now());
+  // A store that refuses leaves the record to its deadline: logged, never an unhandled rejection. (The guard's own sweep line is unchanged.)
+  void sweepTasksPending(context.globalState, Date.now()).catch((e: unknown) => { parts.log(`Windows tasks: the sweep of a stale pending record failed: ${String(e)}`); });
 
   return new TasksHost({
     scheduler: parts.scheduler,
@@ -272,6 +274,7 @@ function tasksHostOf(context: vscode.ExtensionContext, parts: TasksParts): Tasks
     stageTimeoutMs: () => numbers().windowsTasksStageSeconds * 1000,
     busyRetryMs: () => numbers().windowsTasksBusyRetrySeconds * 1000,
     extensionFolder: context.extensionUri.fsPath,
+    log: parts.log,
   });
 }
 

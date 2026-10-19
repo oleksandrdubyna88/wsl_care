@@ -450,3 +450,21 @@ test('a TYPED timeout of the daemon staged-copy removal keeps the pending record
   const later = tasksWorld({ store: w.store, now: NOW + 1 });
   assert.equal((await runTasksOp(WATCH, later.deps)).kind, 'busy', 'every button stays held while it stands');
 });
+
+test('Fable minor 6: with an unknown read the removal does not claim the folder was removed', async () => {
+  const { w, outcome } = await run(REMOVE, { read: { kind: 'unknown', cause: 'failed', reason: 'no answer' } });
+  assert.equal(outcome.kind, 'done');
+  assert.match(message(w), /, the folder \(when it was empty\), and 1 staged copy\./);
+  const known = await run(REMOVE);
+  assert.match(message(known.w), /, the folder, and 1 staged copy\./, 'a known read still says the folder');
+});
+
+test('Fable minor 7: a pending record that cannot be cleared is logged, and the outcome is still reported', async () => {
+  const w = tasksWorld();
+  const failing = { get: (key: string) => w.store.get(key), update: (key: string, value: unknown) => (value === undefined ? Promise.reject(new Error('the store refused')) : w.store.update(key, value)) };
+  const outcome = await runTasksOp(WATCH, { ...w.deps, durable: failing });
+  assert.equal(outcome.kind, 'done', 'the outcome is not swallowed by the store fault');
+  assert.equal(w.recorder.reports.length, 1, 'it is told exactly once');
+  assert.ok(w.events.includes('query'), 'the status is read again');
+  assert.match(w.logs.join('\n'), /the pending record could not be cleared: the store refused/, 'the fault is logged');
+});

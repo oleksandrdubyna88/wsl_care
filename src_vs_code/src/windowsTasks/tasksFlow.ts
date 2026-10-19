@@ -65,6 +65,8 @@ export interface TasksFlowDeps {
   readonly afterRun: () => void;
   /** The folder the extension runs from — no task may name it. */
   readonly extensionFolder: string;
+  /** The extension's log: a fault at an edge that must not stop the outcome from being told. */
+  readonly log: (line: string) => void;
 }
 
 const BUSY: TasksOutcome = { kind: 'busy' };
@@ -144,25 +146,37 @@ async function freshRender(task: TaskName, copy: StagedCopy, deps: TasksFlowDeps
 
 // ---- the ONE run, under its pending record ----
 
+/** The run's outcome; a step that THROWS is a failed outcome, so it is told and its record cleared like any other answer. */
+async function guarded(body: () => Promise<TasksOutcome>): Promise<TasksOutcome> {
+  try {
+    return await body();
+  } catch (e: unknown) {
+    return { kind: 'failed', sentence: `the run threw: ${messageOf(e)}` };
+  }
+}
+
 /**
  * The ONE run under its pending record: kept past a TIMEOUT (the PowerShell the extension ended may have left a registration half done),
  * cleared on EVERY other answer — a failure, a crash, a thrown step included. Then the status is read again.
  */
 async function underRecord(deps: TasksFlowDeps, record: PendingTasksOp, startedAtUtcMs: number, spanMs: number, body: () => Promise<TasksOutcome>): Promise<TasksOutcome> {
   await writePending(deps.durable, { ...record, startedAtUtcMs, deadlineUtcMs: startedAtUtcMs + spanMs });
-  let outcome: TasksOutcome = { kind: 'failed', sentence: 'the PowerShell did not answer' };
-  try {
-    outcome = await body();
-  } catch (e: unknown) {
-    outcome = { kind: 'failed', sentence: `the run threw: ${messageOf(e)}` };
-  } finally {
-    if (outcome.kind !== 'timedOut') {
-      await clearPending(deps.durable);
-    }
+  const outcome = await guarded(body);
+  if (outcome.kind !== 'timedOut') {
+    await clearedOrLogged(deps);
   }
   deps.afterRun();
 
   return outcome;
+}
+
+/** The record cleared — or, when the store refuses, the fault logged: the outcome is still told, and the sweep (or the deadline) ends the record later. */
+async function clearedOrLogged(deps: TasksFlowDeps): Promise<void> {
+  try {
+    await clearPending(deps.durable);
+  } catch (e: unknown) {
+    deps.log(`Windows tasks: the pending record could not be cleared: ${messageOf(e)}`);
+  }
 }
 
 /** The engine read AGAIN, the time, another window's pending run looked for once more — only then the record and the run. */
@@ -251,6 +265,17 @@ function othersIn(read: SchedulerRead): string[] {
   return read.kind === 'read' ? [...read.sections.keys()].filter((name) => !(TASK_NAMES as readonly string[]).includes(name)) : [];
 }
 
+type FolderGuess = Extract<DoneSummary, { op: 'remove' }>['folder'];
+
+/** What the read taken at the confirm says of the folder's fate: another task keeps it, it is empty — or the read did not answer, so it is only "when it was empty". */
+function folderOf(read: SchedulerRead, keepers: readonly string[]): FolderGuess {
+  if (read.kind !== 'read') {
+    return 'whenEmpty';
+  }
+
+  return keepers.length > 0 ? { keptBy: keepers } : 'removed';
+}
+
 function removalWords(result: Extract<RemoveResult, { kind: 'busy' | 'wrongSide' | 'failed' | 'unavailable' }>): string {
   return result.kind === 'busy' ? `the daemon's run lock was held twice (${result.reason}) — press Remove again` : result.reason;
 }
@@ -274,14 +299,13 @@ async function copiesRemoved(deps: TasksFlowDeps, folder: Extract<DoneSummary, {
 }
 
 /** The tasks' removal, then — only after exit 0 or 32 — the staged copies'. Exit 31 or any failure stops here: a registered task keeps its copy. */
-async function removeRun(deps: TasksFlowDeps, engine: Engine, request: ProcessRequest, keepers: readonly string[]): Promise<TasksOutcome> {
+async function removeRun(deps: TasksFlowDeps, engine: Engine, request: ProcessRequest, folder: FolderGuess): Promise<TasksOutcome> {
   const step = await psStep(deps, { kind: 'remove' }, engine, request, 'Removing the Windows tasks…');
   if (step.step === 'ended') {
     return step.outcome;
   }
-  const kept = keepers.length > 0 ? { keptBy: keepers } : 'removed';
 
-  return copiesRemoved(deps, step.step === 'folderStays' ? 'failed' : kept);
+  return copiesRemoved(deps, step.step === 'folderStays' ? 'failed' : folder);
 }
 
 async function remove(deps: TasksFlowDeps): Promise<TasksOutcome> {
@@ -295,10 +319,11 @@ async function remove(deps: TasksFlowDeps): Promise<TasksOutcome> {
   if (!(await deps.ui.confirm(removePrompt(script, engine)))) {
     return told(deps, op, { kind: 'declined' }, engine);
   }
-  const keepers = othersIn(deps.read());
+  const read = deps.read();
+  const keepers = othersIn(read);
   const span = 2 * (deps.timeoutMs() + 2 * deps.stageTimeoutMs() + deps.busyRetryMs());
 
-  return told(deps, op, await launched(deps, engine, { op: 'remove' }, span, () => removeRun(deps, engine, request, keepers)), engine);
+  return told(deps, op, await launched(deps, engine, { op: 'remove' }, span, () => removeRun(deps, engine, request, folderOf(read, keepers))), engine);
 }
 
 /**

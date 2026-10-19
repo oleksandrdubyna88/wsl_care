@@ -36,9 +36,14 @@ const FORBIDDEN_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
 
 const FORBIDDEN_LOGON: ReadonlyArray<string> = ['S4U', 'Password', 'ServiceAccount'];
 
-/** Every value of the element `name` in `xml` (no attributes, no nesting): what the definition says for it, each time it says it. */
+/** Every value of the element `name` in `xml` (attributes allowed, no nesting): what the definition says for it, each time it says it. */
 function valuesOf(xml: string, name: string): string[] {
-  return Array.from(xml.matchAll(new RegExp(`<${name}>([^<]*)</${name}>`, 'g')), (m) => m[1] ?? '');
+  return Array.from(xml.matchAll(new RegExp(`<${name}(?:\\s[^>]*)?>([^<]*)</${name}>`, 'g')), (m) => m[1] ?? '');
+}
+
+/** How many times `xml` OPENS the element `name` — a tag with no value, a self-closed one and an odd spelling count too. */
+function opened(xml: string, name: string): number {
+  return Array.from(xml.matchAll(new RegExp(`<${name}\\b`, 'g'))).length;
 }
 
 function shown(text: string): string {
@@ -63,7 +68,9 @@ function commandProblem(answer: RenderAnswer, stagedFile: string): string {
     return `the render's command ${shown(answer.command)} is not the staged copy ${shown(stagedFile)}`;
   }
 
-  return answer.xml.includes(`<Command>${xmlText(answer.command)}</Command>`) ? '' : 'the render\'s XML does not run its command (<Command>) as the staged copy';
+  const only = opened(answer.xml, 'Exec') === 1 && sayingOnly(answer.xml, 'Command', xmlText(answer.command));
+
+  return only ? '' : 'the render\'s XML does not run its command as the staged copy: it needs exactly one <Exec> whose <Command> is that copy';
 }
 
 function extensionProblem(answer: RenderAnswer, extensionFolder: string): string {
@@ -90,11 +97,11 @@ function forbiddenProblem(answer: RenderAnswer): string {
   return found === undefined ? '' : `the render's XML carries ${found}: a task here runs as you, interactive, never elevated`;
 }
 
-/** Every `<element>` of the XML says exactly `wanted`, and the XML says it at least once. */
+/** Every `<element>` of the XML says exactly `wanted`, the XML says it at least once, and every opening of it has a value (none hides unread). */
 function sayingOnly(xml: string, element: string, wanted: string): boolean {
   const values = valuesOf(xml, element);
 
-  return values.length > 0 && values.every((value) => value === wanted);
+  return values.length > 0 && values.length === opened(xml, element) && values.every((value) => value === wanted);
 }
 
 function principalProblem(answer: RenderAnswer): string {

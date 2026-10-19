@@ -6,7 +6,7 @@ import { Listeners } from '../shared/listeners';
 import { SingleFlight } from '../shared/singleFlight';
 import type { SchedulerHost } from '../scheduler/schedulerHost';
 import { runTasksOp, type TasksOp, type TasksOutcome, type TasksUi } from './tasksFlow';
-import { clearPending, readPending } from './tasksPending';
+import { ceilingPassed, clearPending, readPending, type PendingRecord } from './tasksPending';
 import { finishedBy, NOT_PROBED, windowsTasksState, type CopyState, type WindowsTasksState } from './tasksState';
 import { windowsTasksView, type WindowsTasksView } from './tasksView';
 
@@ -57,6 +57,8 @@ export interface TasksHostDeps {
   readonly busyRetryMs: () => number;
   /** The folder the extension runs from — no task may name it. */
   readonly extensionFolder: string;
+  /** The extension's log (`LogOutputChannel.error`). */
+  readonly log: (line: string) => void;
 }
 
 /** What the daemon gives for a render it ANSWERED: an answer (registrable or not), or the refusal of the configuration. */
@@ -141,6 +143,7 @@ export class TasksHost {
         busyRetryMs: this.deps.busyRetryMs,
         afterRun: () => { this.readAgain(); },
         extensionFolder: this.deps.extensionFolder,
+        log: this.deps.log,
       });
     } finally {
       this.opRunning = false;
@@ -169,9 +172,17 @@ export class TasksHost {
   /** A pending run whose end Task Scheduler and the probe already show (after a reload, say) is cleared, not waited out. */
   private async settlePending(): Promise<void> {
     const pending = readPending(this.deps.durable, this.deps.nowUtcMs());
-    if (pending !== undefined && !this.opRunning && finishedBy(this.state(), pending)) {
+    if (pending !== undefined && this.settleable(pending)) {
       await clearPending(this.durable);
     }
+  }
+
+  /**
+   * Whether the read may settle `pending`: no flow of this window runs, the record's PowerShell must already have answered or timed out (another
+   * window's live run is not ours to release) and the read and the probe show the end.
+   */
+  private settleable(pending: PendingRecord): boolean {
+    return !this.opRunning && ceilingPassed(pending, this.deps.nowUtcMs()) && finishedBy(this.state(), pending);
   }
 
   private async probeOnce(): Promise<void> {

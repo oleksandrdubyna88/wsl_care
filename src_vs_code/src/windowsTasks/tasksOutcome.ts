@@ -23,7 +23,7 @@ export type DoneSummary =
   | {
       readonly op: 'remove';
       /** The folder: deleted, kept because another task is in it (named), or a delete that failed. */
-      readonly folder: 'removed' | 'failed' | { readonly keptBy: readonly string[] };
+      readonly folder: 'removed' | 'whenEmpty' | 'failed' | { readonly keptBy: readonly string[] };
       readonly copies: number;
       readonly kept: readonly StagingFolder[];
       readonly untouched: readonly string[];
@@ -116,6 +116,9 @@ function installedSentence(done: Extract<DoneSummary, { op: 'install' }>, engine
 function folderWords(folder: Extract<DoneSummary, { op: 'remove' }>['folder']): string {
   if (folder === 'removed') {
     return 'the folder';
+  }
+  if (folder === 'whenEmpty') {
+    return 'the folder (when it was empty)';
   }
 
   return folder === 'failed' ? 'the folder could not be removed' : `the folder stays: another task is in it (${folder.keptBy.join(', ')}; the Windows Time guard's task keeps it)`;

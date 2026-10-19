@@ -75,7 +75,8 @@ export const MUTATING = /\b(?:(?:Enable|Disable)-PnpDevice|Register-ScheduledTas
  * daemon's supervisor on the machine running the tests (WR-E3, PLAN_windows_runner.md §4). Reading a task (`LastRunTime`, `State`,
  * `Get-ScheduledTask`) stays allowed. Matched over the SAME revealed text, so an encoded payload carrying it is refused too.
  */
-export const TASK_RUN = /\.Run(?:Ex)?\s*\(/;
+/** (Case-insensitive: PowerShell method names are — `.run(` and `.RUNEX(` start a task as surely as `.Run(`.) */
+export const TASK_RUN = /\.Run(?:Ex)?\s*\(/i;
 
 /** `-EncodedCommand`, and every prefix PowerShell accepts for it (`-e`, `-ec`, `-enc`, …). */
 const ENCODED_SWITCH = /^-(?:ec|e(?:n(?:c(?:o(?:d(?:e(?:d(?:c(?:o(?:m(?:m(?:a(?:n(?:d)?)?)?)?)?)?)?)?)?)?)?)?)?)$/i;

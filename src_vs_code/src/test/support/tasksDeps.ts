@@ -13,7 +13,7 @@ export interface QuietTasks {
   readonly recorder: TasksRecorder;
   readonly store: MapStore;
   readonly sleeps: number[];
-  readonly deps: Pick<TasksHostDeps, 'ui' | 'engine' | 'durable' | 'nowUtcMs' | 'sleep' | 'opTimeoutMs' | 'stageTimeoutMs' | 'busyRetryMs' | 'extensionFolder'>;
+  readonly deps: Pick<TasksHostDeps, 'ui' | 'engine' | 'durable' | 'nowUtcMs' | 'sleep' | 'opTimeoutMs' | 'stageTimeoutMs' | 'busyRetryMs' | 'extensionFolder' | 'log'>;
 }
 
 export function quietTasks(extensionFolder = EXTENSION.fsPath, now = () => 1_000_000): QuietTasks {
@@ -33,6 +33,7 @@ export function quietTasks(extensionFolder = EXTENSION.fsPath, now = () => 1_000
       stageTimeoutMs: () => 60_000,
       busyRetryMs: () => 3_000,
       extensionFolder,
+      log: () => undefined,
     },
   };
 }

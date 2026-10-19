@@ -52,6 +52,8 @@ export interface World {
   readonly recorder: TasksRecorder;
   readonly store: MapStore;
   readonly sleeps: number[];
+  /** The lines the flow wrote to the extension's log. */
+  readonly logs: string[];
   readonly client: WindowsCareClient;
   /** The requests of the ONE unelevated PowerShell, as the recorder saw them. */
   ps(): ProcessRequest[];
@@ -85,6 +87,7 @@ export function tasksWorld(options: WorldOptions = {}): World {
   const store = options.store ?? new MapStore();
   const now = options.now ?? 1_000_000;
   const sleeps: number[] = [];
+  const logs: string[] = [];
   const nextStage = sequence<readonly [string, number]>(options.stage ?? [['stage-staged.json', 0]]);
   const nextRemove = sequence<readonly [string, number]>(options.stageRemove ?? [['stage-remove-removed.json', 0]]);
   const renderOf = (task: 'watch' | 'archive'): string => options.renders?.[task] ?? `${task} from the staged copy`;
@@ -149,10 +152,11 @@ export function tasksWorld(options: WorldOptions = {}): World {
     busyRetryMs: () => options.busyRetryMs ?? 3_000,
     afterRun: () => { events.push('query'); },
     extensionFolder: options.extensionFolder ?? EXTENSION.fsPath,
+    log: (line) => { logs.push(line); },
   };
 
   return {
-    deps, events, calls, recorder, store, sleeps, client,
+    deps, events, calls, recorder, store, sleeps, logs, client,
     ps: () => calls.filter((c) => c.who === 'powershell').map((c) => c.request),
     daemon: () => calls.filter((c) => c.who === 'daemon').map((c) => c.request.args.join(' ')),
   };

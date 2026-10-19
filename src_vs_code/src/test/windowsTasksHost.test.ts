@@ -165,7 +165,7 @@ test('a pending removal is settled only when no task is left and no copy is stag
 
 test('a pending install Task Scheduler already shows finished is settled on the next read; a pending removal with a task present is not', async () => {
   const store = new MapStore();
-  await store.update(PENDING_KEY, { op: 'install', task: 'watch', startedAtUtcMs: NOW - 10, deadlineUtcMs: NOW + 120_000 });
+  await store.update(PENDING_KEY, { op: 'install', task: 'watch', startedAtUtcMs: NOW - 70_000, deadlineUtcMs: NOW + 50_000 });
   const finished = hostOf({ store, read: { tasks: [{ name: 'watch', summary: registered('watch') }] } });
   await ready(finished);
   assert.equal(store.get(PENDING_KEY), undefined, 'the record Task Scheduler shows finished was waited out');
@@ -212,4 +212,25 @@ test('the ceiling is read at every call: a changed setting gives the next op ano
   seconds = 90;
   await h.host.run({ kind: 'install', task: 'watch' });
   assert.deepEqual(h.quiet.recorder.requests.map((r) => r.timeoutMs), [60_000, 90_000]);
+});
+
+test('Fable major 2: a record another window\'s live PowerShell holds is NOT settled early from the read — only once its ceiling has passed', async () => {
+  const store = new MapStore();
+  // Window A confirmed an install of an ALREADY installed task: its PowerShell runs (ceiling 60 s, record deadline 120 s) while the read still shows the old task.
+  await store.update(PENDING_KEY, { op: 'install', task: 'watch', startedAtUtcMs: NOW, deadlineUtcMs: NOW + 120_000 });
+  let now = NOW + 1_000;
+  const b = hostOf({ store, now: () => now, read: { tasks: [{ name: 'watch', summary: registered('watch') }] } });
+  await ready(b);
+  assert.equal(readPending(store, now)?.op, 'install', 'window B settled window A\'s live record');
+  assert.deepEqual(ENABLED(b), [false, false, false], 'window B\'s buttons are enabled while A\'s PowerShell may still run');
+  assert.equal(await b.host.run({ kind: 'remove' }).then((o) => o?.kind), 'busy', 'B\'s Remove could run beside A\'s Register');
+  now = NOW + 59_999;
+  await b.scheduler.refresh();
+  await settle();
+  assert.equal(readPending(store, now)?.op, 'install', 'one millisecond before the ceiling it still holds');
+  now = NOW + 60_000;
+  await b.scheduler.refresh();
+  await settle();
+  assert.equal(store.get(PENDING_KEY), undefined, 'past the ceiling the read settles it');
+  assert.deepEqual(ENABLED(b), [true, true, true]);
 });
