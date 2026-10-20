@@ -4735,6 +4735,18 @@ touched). Windows, the focused classes:
 test on its dashes and CamelCase (`--sourceGeneratorExecutionPreference`); a "secret flag" must be a name with no value in it, or
 `--auth:"my secret value"` cost the `--port` after it; a name inside an earlier value span is part of that value (the backstop).
 
+**The security review and the code round (2026-10-18)** — A (a flag-shaped token), B (a trailing `=`), C (a Windows `/switch:value`), D (URL
+segments, query and fragment), E (a secret word then a space inside `sh -c`), G (U+2028 / U+2029), coai 0 (a timeout fails closed),
+coai 1 (the Windows split is internal), coai 2 (attached `-u` / `-p`), coai 3 (`argumentsTotal`): `SecurityReviewTests` and the changed
+tests were red first (28 of 248 in the Redaction namespace, e.g. *Expected Shown("cmdkey","/add:srv","/user:alice","/password:Hunter2Invented")
+to be the same string, but they differ at index 28*; *Expected typeof(WindowsCommandLine).GetMethod(Split, Public | Static) to be <null>,
+but found … Split*), then fourteen more break-its N1–N15 (N3 was not planned), each red and restored byte for byte: N1 dashes kept in the entropy test
+(3 red), N2 assignment name not judged (1), N4 path arm before the blob arm (3), N5 Windows switch not a secret flag (1), N6 URL segments
+not judged (5), N7 `pass` not a secret name (1), N8 whitespace no separator (4), N9 `sshpass` no secret word (1), N10 U+2028 / U+2029
+pass (1), N11 the URL detector fails open (1: *Expected offenders to be empty because a match that ran out of time must redact …
+{"UrlRedaction.cs"}*), N12 `Split` public (1), N13 no attached `-u` (2), N14 the total skips whitespace-only arguments (1), N15 the
+Telegram shape removed (3). The plan's *E15.S7 as built* has the table.
+
 **Totals** (rebased on `origin/main` a672ae74, 2026-10-18). Windows: Core 3202 (3113 passed, 89 skipped, 0 failed), CLI 443 (440
 passed, 3 skipped, 0 failed), Scenarios 635 (344 passed, 288 skipped, 3 failed: `FixtureAnonymisationTests` was REAL — the identity
 list rewrites an address-shaped `Inv3nted@db.example.invalid` in `realistic-leaks.txt`, fixed and committed; `EventsFlows…` and

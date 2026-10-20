@@ -882,13 +882,17 @@ flowchart LR
 ```
 
 **Order of judgement** (`ArgumentJudge`, per argument; the first arm that decides wins; a value is never partly redacted):
-over `processes.maxJudgedArgChars` → `<redacted>` unjudged · (1) the previous argument is a secret FLAG (a name with no value in it)
-· (2) the program's own password flag (`sshpass -p`, `mysql -pSECRET`, `curl -u user:pass`) · (3) `name=value`: a secret name loses
-its value, otherwise the value is judged as a positional and a value that fails gives `name=<redacted>` (a blob gives the whole
-argument) · (4) a URL — userinfo and secret query values cut, then the creds-shape test over what remains · (5) a creds shape ·
-(6) a path (shown whole) · (7) a secret word followed by a separator inside a blob · (8) high entropy (length, alphabet, classes,
-Shannon bits; a GUID and a flag name are exempt, a digest is NOT). `ShownText.Printable` (moved here from the CLI) then replaces
-control, format and unpaired-surrogate characters with `?`.
+over `processes.maxJudgedArgChars` → `<redacted>` unjudged · (1) the previous argument is a secret FLAG (a name with no value in it, or a
+Windows switch `/name`) · (2) the program's own password flag (`sshpass -p`, `mysql -pSECRET`, `curl -u user:pass`, and the attached
+`-pSECRET` / `-uuser:pass`, which keep their option) · (3) `name=value` with a non-empty value: a name that is a token goes whole, a
+secret name loses its value, otherwise the value is judged as a positional and a value that fails gives `name=<redacted>` (a blob
+gives the whole argument) · (4) a URL — userinfo and secret query / fragment values cut, then EACH path segment and kept value
+judged by the creds shapes and the entropy test and replaced alone (a detector timeout redacts) · (5) a creds shape ·
+(6) a secret word followed by a separator or by whitespace and a word, inside a blob (this arm runs BEFORE the path arm) ·
+(7) a path (shown whole) · (8) high entropy (length, alphabet, classes, Shannon bits, on the token without its leading dashes and
+trailing padding; a GUID is exempt, a digest is NOT). `ShownText.Printable` (moved here from the CLI) then replaces control, format,
+unpaired-surrogate and U+2028 / U+2029 characters with `?`. The numbering of the plan's §2.1 keeps the old order (path = 6, blob = 7):
+its amendments say so. `WindowsCommandLine.Shown` is the ONLY Windows entry (`Split` is internal); an architecture test holds it.
 
 | Entity | Role |
 |---|---|

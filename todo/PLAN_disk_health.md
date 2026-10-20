@@ -1620,24 +1620,39 @@ judged twice and a value is never partly redacted):
 3. The argument is `name=value` (with or without leading dashes; the name is the text before the first `=`, non-empty, of
    `[A-Za-z0-9_.-]`, so `a==b` and `=x` are not assignments) → the name holds a secret word → `name=<redacted>`; else the VALUE is
    judged by arms 4–8 as if it were a positional, and a value that fails gives `name=<redacted>` — never `name=abc<redacted>`.
+   *Amended 2026-10-18 (security review B):* a value that fails by arm 7 (a blob) gives the WHOLE argument `<redacted>`; the NAME is
+   judged too — a name that is creds-shaped or high-entropy (`<48 base64url>=1`) makes the whole argument `<redacted>`; an assignment
+   needs a NON-empty value (`<44 base64>=` and `<hex40>=` are tokens with padding, judged by arm 8, not assignments).
 4. A URL (`^[a-z][a-z0-9+.-]{1,15}://`) — judged FIRST among the shape arms (judge's review, 2026-10-16: the tests' and the
    design's order disagreed; a URL is the one token whose credential can be cut out cleanly). Its userinfo, when present,
    becomes `<redacted>` whole (`scheme://<redacted>@host/…` — the user name goes too); each query parameter whose name holds a
    secret word, or is `sig`, `signature`, `key`, `code`, `auth`, `access_token` → `name=<redacted>`. Then the creds-shape test
    (arm 5) runs over what REMAINS of the URL (scheme, host, port, path, the query's names and kept values): a hit there makes the
    whole token `<redacted>` (a `ghp_…` in a path segment). Otherwise the rest of the URL is shown. (A URL is judged before the
-   path arm: it holds `/`.) So `https://alice:ghp_…@host/o/r` → `https://<redacted>@host/o/r`, and `https://host/ghp_…/a.tgz` →
-   `<redacted>`.
+   path arm: it holds `/`.) So `https://alice:ghp_…@host/o/r` → `https://<redacted>@host/o/r`.
+   *Amended 2026-10-18 (security review D and coai code round 0):* after the userinfo and the secret parameters are cut (`pass` joins
+   the secret names; the fragment's `&` list is read like a query, so `#access_token=…` goes), EACH path segment and each KEPT query or
+   fragment value is judged by the creds shapes and the entropy test and a segment that fails is replaced ALONE —
+   `https://host/ghp_…/a.tgz` → `https://host/<redacted>/a.tgz`, a Slack or Discord webhook's last segment, a Telegram bot URL's
+   `bot<id>:<secret>` segment (a new creds family), `?t=<random>`. A creds shape still left in the host makes the whole token
+   `<redacted>`. A detector that runs out of time answers "unknown" and the argument is `<redacted>` (fail closed).
 5. A creds shape anywhere in the text (§2.3) → `<redacted>`.
-6. A PATH → shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
+6. *(Amended 2026-10-18, security review C: this arm now comes AFTER arm 7 — a Windows `/password:value` and a script holding a
+   secret word look like paths.)* A PATH → shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
    letters and digits of ANY script (`\p{L}`, `\p{N}`) plus space and `._~+@%:/\-()[],'&` (so `C:\Program Files (x86)\…`,
    `/mnt/c/Users/Фёдор Иванов/…` and `D:\dev\a&b` are paths; `/TelemetrySession:{"CollectorApiKey":…}` is NOT — it holds `{`
    and `"`) (plan round, finding 2; a RED case for each of the three paths). Paths carry
    programs, scripts and folders the view needs (R8); a secret used as a file NAME is a residual (§9).
 7. A secret WORD followed by a separator (`[:="']`) inside a positional (`CollectorApiKey":"…`, `Authorization: Bearer …`,
    `Server=…;Password=…` reached through arm 3) → `<redacted>` whole; the extent of a value inside a blob cannot be delimited,
-   so the blob goes.
-8. The high-entropy test (§2.4) → `<redacted>`.
+   so the blob goes. *Amended 2026-10-18 (security review E, C):* the separator also covers WHITESPACE followed by a non-space
+   (`sh -c "tool --password Hunter2 …"`), `sshpass` is a secret word (`bash -lc "sshpass -p x ssh host"`), and the arm runs BEFORE
+   arm 6. The cost: a free-text prompt holding a secret word (`claude -p "explain the token flow"`) is redacted whole (§9).
+   Arm 1's "secret flag" also accepts a Windows switch `/name` (so `/password x` redacts `x`), for that arm only; arm 2 gains the
+   attached short options (`curl -uuser:pass`, `sshpass -pVALUE` → the option stays, the rest goes).
+8. The high-entropy test (§2.4) → `<redacted>`. *Amended 2026-10-18 (security review A):* the test judges the token WITHOUT its
+   leading dashes and trailing padding (`-<48 base64url>` and `--<48 base64url>` are tokens, not flags); there is no flag
+   exemption (`--sourceGeneratorExecutionPreference` stays shown because its two classes are two without the dashes).
 9. Otherwise shown — after control and format characters are replaced (§3).
 
 **2.2 Secret words** (substring match, case-insensitive, as today — `token`, `secret`, `password`, `passwd`, `apikey`, `api-key`,
@@ -1694,7 +1709,9 @@ The false positives, each exempted by shape and each a RED test that it is SHOWN
 - **versions and dates** — digits with `.`, `-`, `:`, `+` only;
 - **base64 blobs** are NOT exempt: `-EncodedCommand <base64>` and a pasted blob are redacted. The daemon's own interop
   scripts are compared by the never-list over the RAW argv (R7), so nothing of the daemon changes behaviour;
-- **URLs with credentials** are arm 5's: the userinfo goes, the host and path stay (a URL never reaches the entropy test).
+- **URLs with credentials** are arm 4's: the userinfo goes and every path segment and query / fragment value is judged on its own
+  (§2.1 as amended 2026-10-18): the entropy test runs on each SEGMENT, never on the URL as a whole, and a segment that fails is
+  replaced alone.
 
 **2.5 `program` and `argumentsShown`** (`ShownArguments.Of(argv, redacted, limits)`):
 
@@ -1706,9 +1723,10 @@ The false positives, each exempted by shape and each a RED test that it is SHOWN
   flag without a value (`-x`, `--name`), a `--name=value` whose value passed, a path (arm 6), a GUID, an npm spec, or a plain
   word of `[A-Za-z0-9._@:+-]` shorter than `secretMinChars`; and it is at most `processes.shownCommandChars` long. The FIRST
   unsafe argument ends the prefix (so a value that follows a flag we do not know is never shown past the point where doubt
-  starts: `claude -p <prompt>` shows `["-p"]` and stops, because a prompt is free text). Empty arguments (node's title padding —
-  `status.json:548` carries the trailing spaces) are skipped and not counted.
-- `argumentsTotal` = the number of non-empty arguments after the program, so the view can say "+ N more" without the line.
+  starts: `claude -p <prompt>` shows `["-p"]` and stops, because a prompt is free text). Empty and whitespace-only arguments (node's
+  title padding — `status.json:548` carries the trailing spaces) never enter the shown prefix.
+- `argumentsTotal` = the number of non-EMPTY arguments after the program — a whitespace-only one counts (coai code round 3, 2026-10-18:
+  the total is what the process was given; only the prefix skips it) — so the view can say "+ N more" without the line.
 - Examples from the golden: `npm exec @playwright/mcp@latest` → `npm`, `["exec", "@playwright/mcp@latest"]`, 2;
   `…/claude --output-format stream-json --verbose …` → `claude`, `["--output-format", "stream-json"]`, 9;
   `…/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=…` → `agy`, `["--hub", "--hub-port=41790"]`, N;
@@ -1882,6 +1900,16 @@ Definition of Done:
   split on spaces.
 - **History already written** keeps what the old rule showed: detail files under `{state}/runs/` are never rewritten (§3.2's
   "raw files are never rewritten"); `runs.historyRetentionDays` retires them. The PR body says so.
+- **A free-text prompt that holds a secret WORD is redacted whole** (2026-10-18, security review E): `claude -p "explain the token flow"`
+  becomes `<redacted>` — the price of reading whitespace after a secret word as a separator, which is what catches
+  `sh -c "tool --password x"`. A prompt WITHOUT a secret word is still shown (and `argumentsShown` still stops at `-p`).
+- **F — base32 / TOTP seeds and letters-only mixed-case tokens** (2026-10-18): `JBSWY3DPEHPK3PXPMZXW6YTBOI4TQ3LX` (uppercase and digits,
+  digits below 30 %) and a random 24-letter mixed-case token (two classes, no digits) pass the entropy test's class rule; shown.
+- **H — Windows `--token= value`** (2026-10-18): the split of `tool.exe --token= abc` gives `--token=` and `abc`; an assignment needs a
+  non-empty value, so `--token=` is a blob (redacted) but the `abc` after a name that ends in `=` is judged on its own and shown.
+- **I — an unencoded `/` inside a userinfo password** (2026-10-18): `postgres://app:p/ss@db/x` has its authority end at the first
+  `/`, so the "userinfo" is `app:p`, the rest is read as a path and `ss@db` is shown. RFC 3986 requires `/` in a password to be
+  percent-encoded; a tool that does not encode it leaks the tail.
 - **Not read, so not leaked:** `/proc/[pid]/environ`, Docker's container environment (`DockerCommands.cs:31-35`), the Windows
   binary's command lines (R5, until E15.S6).
 
@@ -1969,6 +1997,43 @@ symbol class and their CamelCase as two letter cases); a flag name is now exempt
   follows. `McpStatusTests` compares the owner by value including its two new fields.
 - **Not done in this story**: the extension's own half (E18.W1b, the full view that shows `program` + `argumentsShown`); the
   open tail below.
+
+### The security judge's two golden verdicts (Fable, 2026-10-18) — decisions
+
+1. **The bare 40-hex commit id STAYS redacted, with no exemption.** It cannot be told apart from a 40-, 32- or 64-hex credential
+   (a pre-`ghp_` GitHub token is 40 hex), and the commit stays readable in the kept `.vscode-server/bin/<40hex>/` paths, which arm 6
+   shows whole. The golden line stays as regenerated.
+2. **`sh -c <redacted>` is RIGHT.** The live value is a real connection token inside one shell script argument; a narrower redaction
+   (the token alone) needs a POSIX-shell tokenizer, which this rule does not have. Open tail: a quoting-aware tokenizer for the
+   argument of `sh -c` / `bash -lc`, so only the token goes.
+
+### Security review (Fable) and code round (2026-10-18) — A–E, G and coai 0–3
+
+The security judge said "do not ship as is" and the coai code round accepted four findings. Every fix has a RED test
+(`SecurityReviewTests` and the changed tests, commit `test(daemon): E15.S7 security review RED`, 28 of 248 red) and a break-it on
+product code (restored byte for byte, `git diff` empty, green again):
+
+| Finding | Red message (against the pushed build) | Break-it and its red |
+|---|---|---|
+| **A** a token with one or two leading dashes passed the flag exemption into `commandLine` AND `argumentsShown` | *Expected Shown(argv) to be the same string, but they differ at index 5* (`tool -<48>` shown) | N1 the dashes kept again: 3 red (the two flag guards and the entropy theory) |
+| **B** a trailing `=` hid a token (`<44 base64>=`, `<hex40>=`, `<48>=1`) | the same message, 3 cases | N2 the assignment name not judged: 1 red (`<48>=1`) |
+| **C** Windows `/password:value` passed as a path; `/password x` kept `x`; the raw Windows line too | *Expected Shown("cmdkey","/add:srv","/user:alice","/password:Hunter2Invented") to be the same string, but they differ at index 28*; *Expected WindowsCommandLine.Shown(…) … differ at index 32* | N4 path arm before the blob arm: 3 red; N5 a Windows switch is no secret flag: 1 red (`/password` then `x`, differ at index 15) |
+| **D** a URL's path segments, kept query and fragment values were not judged (Slack / Discord / Telegram webhooks, `?pass=`, `?t=<random>`, `#access_token=`) | *Expected Shown("curl","https://hooks.slack.example/services/T0000000/B0000000/q7Hn…") to be the same string, but they differ at index 60* and six more | N6 segments and values not judged: 5 red; N7 `pass` not a secret name: 1 red; N15 the Telegram shape removed: 3 red |
+| **E** a secret word followed by a space inside `sh -c` / `bash -lc` was shown | *Expected Shown("sh","-c","tool --password Hunter2Invented --port 5") to be the same string, but they differ at index 6* | N8 whitespace is no separator: 4 red; N9 `sshpass` is no secret word: 1 red |
+| **G** U+2028 / U+2029 passed | *Expected ShownText.Printable("a b c") to be "a?b?c"* | N10 the two categories removed: 1 red |
+| **coai 0** the URL detector's timeout handler answered false (open) | *Expected offenders to be empty because a match that ran out of time must redact … {"UrlRedaction.cs"}* (a source scan of every timeout handler of the rule; `SafeShapes` alone answers false — a shape not proved is a shape not shown) | N11 the detector fails open again: 1 red |
+| **coai 1** a Windows caller could skip the backstop (`WindowsCommandLine.Split` was public) | *Expected typeof(WindowsCommandLine).GetMethod(Split, Public \| Static) to be <null>, but found … Split*; plus a scan that no other product code splits a Windows line | N12 `Split` public again: 1 red |
+| **coai 2** curl `-uuser:pass` and sshpass `-pVALUE` attached to their option | *Expected Shown("curl","-uuser:Pa55w0rdInvented","https://x.example/") to be the same string, but they differ at index 7* | N13 no attached `-u`: 2 red |
+| **coai 3** `argumentsTotal` skipped whitespace-only arguments | *Expected Of(["node","","script.js","   ",""]) to be ShownCommandLine {…, Total = 2}* | N14 the total skips whitespace-only again: 1 red |
+
+The code (commit `fix(daemon): E15.S7 security review - A to E and G, coai code round 0 to 3`): `HighEntropy` judges the token without
+its leading dashes and trailing padding and has no flag exemption; `ArgumentJudge` judges an assignment's name, requires a non-empty
+value, runs arm 7 before arm 6, takes a Windows switch as a secret flag for arm 1, and gives an attached short option its two-character
+prefix back; `UrlRedaction` classifies Yes / No / Unknown and judges each segment and value; `SecretShapes` adds the Telegram family, the
+whitespace separator, `sshpass` and the attached `-p` / `-u`; `ShownText` replaces U+2028 / U+2029; `ShownArguments` counts every
+non-empty argument; `WindowsCommandLine.Split` is internal. Costs and residuals recorded in §9: a free-text prompt holding a secret
+word is redacted whole, and F, H and I stay residuals. The judge's probe (`Program.cs`, outside the repository) was not re-run
+against the final build; the RED tests are its cases.
 
 ### Totals and checks
 
