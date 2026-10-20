@@ -8,8 +8,8 @@ using WslCare.TestSupport;
 namespace WslCare.Core.Tests.Worktrees;
 
 /// <summary>
-/// E19.S3 Fable security review, condition 1: a root is judged under its REAL name. <c>C:\Users\SHORT~1</c> passed every rule while the profile
-/// rule looked at the long name, and <c>D:\worktrees</c> beside <c>D:\WORKTR~1</c> counted as two roots. The folder is held and its final path
+/// E19.S3 Fable security review, condition 1: a root is judged under its REAL name. The profile spelt by its 8.3 short name passed every rule
+/// while the profile rule looked at the long name, and <c>D:\worktrees</c> beside <c>D:\WORKTR~1</c> counted as two roots. The folder is held and its final path
 /// must equal the spelling; otherwise it is refused as <c>spelt-differently</c> naming its real name. Windows legs over real folders under a
 /// <c>testsToDelete-</c> folder; an 8.3-free volume skips with that reason.
 /// </summary>
