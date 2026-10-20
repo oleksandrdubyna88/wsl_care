@@ -26,7 +26,11 @@ What must be true when W0 is done:
    `//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}`.
 2. Every CI job that installs the extension's dependencies (`ci-extension.yml`'s matrix job; `release-extension.yml`'s
    build job and the job that runs `npm ci --ignore-scripts`) has `permissions: packages: read` and passes
-   `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` to the install step ONLY.
+   `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` to the install step ONLY — and that step runs `npm ci --ignore-scripts`, so no
+   dependency's lifecycle script ever runs while the token is in its environment; a following step without the token
+   runs `npm rebuild` for the install scripts the build needs. A prerequisite, verified by W0's first CI run: the kit's
+   package grants this repository read access (public, or wsl_care added under the package's *Manage Actions access*); a
+   403 there is an owner setting, not a code fix.
 3. `npm run bundle` builds a second entry `src/webview/fullView.ts` → `dist/webview/full.js` (IIFE, `platform: 'browser'`,
    the Chromium of VS Code 1.85, no source map, not minified) and `dist/webview/full.css` (the kit's `components.css`,
    imported by the entry, emitted by esbuild). Both are in `.vscodeignore`'s allowlist and `vsix-files.txt`; the
@@ -62,15 +66,18 @@ What must be true when W0 is done:
 
 ### 3. Design
 
-- **The lock entry.** The dependency is added the ordinary way where a `read:packages` token exists. Without one, the
-  lock entry is written from the release artifact: the tarball is downloaded with the repo-scoped token, checked with
-  `gh attestation verify <tgz> -R oleksandrdubyna88/dew_flow_vscode_kit` and its sha512 compared with the published
-  integrity, and the lock records exactly that integrity; CI's `npm ci` then fetches from GitHub Packages and npm
-  refuses any byte that differs. The README's development section says a contributor needs a classic PAT with
+- **The lock entry** (plan round, 2026-10-20: the mechanism made exact). Where a `read:packages` token exists, the
+  ordinary `npm install --save-dev --save-exact`. Without one (this machine): (a) download the release run's
+  `release-tarball` artifact with the repo-scoped token; (b) `gh attestation verify <tgz> -R oleksandrdubyna88/dew_flow_vscode_kit`
+  and its sha512 equal to the published `npm notice integrity`; (c) `npm cache add <tgz>` into a cache folder outside
+  the repository and the home folder; (d) the lock entry written with that `version` and `integrity` and no `resolved`,
+  so npm takes the tarball from the scope's registry (`.npmrc`) and refuses any byte that differs; (e) `npm ci --offline`
+  green locally from that cache, and `npm ci` green in CI from GitHub Packages. If (e) fails in CI, the lock is written
+  by an install with a `read:packages` token instead — an owner item, said in the PR. The README's development section says a contributor needs a classic PAT with
   `read:packages` in `NODE_AUTH_TOKEN`.
 - **The webview entry.** `src/webview/fullView.ts` imports `…/components` and `…/components.css`, acquires the VS Code
   API once, and renders an empty root; W1b fills it. `src/webview/` gets its own `tsconfig.webview.json`
-  (`lib: ["ES2022", "DOM"]`), type-checked by `npm run typecheck`; the main `tsconfig.json` excludes `src/webview` so the
+  (`lib: ["ES2022", "DOM"]`), type-checked by `npm run typecheck` (the script runs `tsc` over both configs); the main `tsconfig.json` excludes `src/webview` so the
   host keeps "no DOM". An architecture test holds the boundary both ways: nothing under `src/webview/` imports
   `vscode`, a `node:` module or host code, and no host module imports `src/webview/`.
 - **The bundle.** A second `buildSync` in `bundle.mjs` with the options of goal 3; `manifest.test.ts` reads both option
@@ -93,7 +100,8 @@ What must be true when W0 is done:
 4. `manifest.test.ts`: the second entry's options (`iife`, `browser`, the target, `sourcemap: false`,
    `minify: false`, outfile `dist/webview/full.js`).
 5. After `npm run bundle`: `dist/webview/full.js` and `full.css` exist; `full.css` carries the kit's token block
-   (`--kit-fg`); the bundle scan passes over `full.js`.
+   (`--kit-fg`) and NO `url(`, `@import` or `@font-face` (the CSP is `default-src 'none'`); the bundle scan passes
+   over `full.js`.
 6. `vsix-files.txt` and `.vscodeignore` name both files; the `.vsix` check passes.
 7. The harness: `setAttribute('id')` and `('tabindex')` are accepted; `('style')`, `('onclick')`, `('href')` still
    refused; `addEventListener('keydown' | 'input')` accepted, `('change')`, `('focus')` still refused; `focus()` sets the
@@ -120,6 +128,14 @@ Pin `^0.2.0` → item 1 red. Drop `packages: read` from one job → item 3 red. 
    `src_vs_code/` (`ArchitectureTests`, `InteropModulePathTests`, `FullCheckLineTests`, `FixturePrivacy`,
    `ExtensionPackageName`, `ReleaseConfig`, `ReleaseExtension*`); the family checks. A private-data scan before the push.
 6. The code round, the pull request, CodeRabbit, the merge on every check green.
+
+### 6a. The gate's plan round (session `e9ba8ab4`, 2026-10-20)
+
+Two of three reviewers answered (kimi returned nothing parseable); `proceed` at 4 of 6. All five findings accepted and
+folded in above: the package-access prerequisite, the token never beside a lifecycle script (`--ignore-scripts` +
+`npm rebuild`), the exact lock-entry mechanism, no `url(` / `@import` / `@font-face` in `full.css`, `typecheck` over
+both configs. The gate's "split into 2–3 epics" order does not fit: W0 is ONE story of E18's existing split
+(PLAN_disk_health.md's E18 table), so it is not split again.
 
 ### 7. What W0 does not prove
 
