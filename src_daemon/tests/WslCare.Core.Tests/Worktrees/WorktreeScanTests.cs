@@ -143,6 +143,48 @@ public sealed class WorktreeScanTests
         result.Complete.Should().BeFalse();
     }
 
+    /// <summary>coai code round (E19.S3): the SCAN-wide entry budget charges every folder a walk entered and every entry a root listing returned,
+    /// not only files — two worktrees of empty folders, each within the budget alone, are more than the budget together.</summary>
+    [Fact]
+    public void Folders_count_against_the_scan_wide_budget_not_only_files()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
+        using var world = new WorktreeWorld("scan-folders-budget");
+        world.Main("main");
+        world.Worktree("wt1");
+        world.Worktree("wt2");
+        for (var i = 0; i < 25; i++)
+        {
+            world.Sandbox.Dir($"work/wt1/empty/d{i}");
+            world.Sandbox.Dir($"work/wt2/empty/d{i}");
+        }
+
+        world.Age(world.Work);
+
+        var result = Scan(world, WorktreeWorld.DefaultSettings() with { MaxEntries = 45 });
+
+        result.Complete.Should().BeFalse("about 60 folders and files were entered against a budget of 45");
+        result.Roots.SelectMany(r => r.Walked).Should().Contain(f => f.Idle.Kind == IdleKind.Unknown, "the walk the budget ran out on is unknown, never idle");
+    }
+
+    /// <summary>coai code round (E19.S3): a scan can take minutes, so it says which root it is on and when each ends.</summary>
+    [Fact]
+    public void The_scan_says_which_root_it_is_on_and_when_each_ends()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
+        using var world = new WorktreeWorld("scan-progress");
+        world.Main("main");
+        world.Worktree("wt1");
+        world.Age(world.Work);
+        var lines = new List<string>();
+
+        world.Scanner().Run([world.Work], WorktreeWorld.DefaultSettings(), CancellationToken.None, lines.Add);
+
+        lines.Should().HaveCount(2);
+        lines[0].Should().Be($"worktrees scan: root 1 of 1: {world.Work}");
+        lines[1].Should().Be("worktrees scan: root 1 of 1 done: 2 folders, 1 walked");
+    }
+
     [Fact]
     public void A_scan_past_its_time_budget_is_incomplete_and_names_no_folder_idle()
     {

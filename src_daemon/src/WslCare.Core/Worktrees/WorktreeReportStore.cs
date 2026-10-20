@@ -109,9 +109,23 @@ public sealed partial class WorktreeReportStore(IHostPaths paths, IFileSystem fi
     private static partial Regex OwnTempName();
 
     /// <summary>Removes the temp files of a scan that was killed between writing and renaming: this report's own temp names in the state
-    /// directory, last written at least <paramref name="olderThan"/> ago. Answers how many went.</summary>
-    public int SweepStaleTemp(DateTimeOffset now, TimeSpan olderThan) =>
-        files.ListEntries(paths.StateDirectory)
-            .Where(e => e.Kind == EntryKind.File && OwnTempName().IsMatch(e.Name) && now - e.LastWriteUtc >= olderThan)
-            .Count(e => files.DeleteFile(paths.Rules.Join(paths.StateDirectory, e.Name), Scope).IsAllowed);
+    /// directory, last written at least <paramref name="olderThan"/> ago. Answers how many went. Best effort: a sweep that cannot list or
+    /// remove stops there and answers what it removed — it never stops the scan (coai code round).</summary>
+    public int SweepStaleTemp(DateTimeOffset now, TimeSpan olderThan)
+    {
+        var removed = 0;
+        try
+        {
+            foreach (var entry in files.ListEntries(paths.StateDirectory).Where(e => e.Kind == EntryKind.File && OwnTempName().IsMatch(e.Name) && now - e.LastWriteUtc >= olderThan))
+            {
+                removed += files.DeleteFile(paths.Rules.Join(paths.StateDirectory, entry.Name), Scope).IsAllowed ? 1 : 0;
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Left for the next scan's sweep.
+        }
+
+        return removed;
+    }
 }

@@ -21,7 +21,7 @@ namespace WslCare.Core.Worktrees;
 /// </remarks>
 public sealed class WorktreeScanner(IHostPaths paths, IFileSystem files, TimeProvider clock, Func<char, DriveType> driveOf)
 {
-    public WorktreeScanResult Run(IReadOnlyList<string> configuredRoots, WorktreeSettings settings, CancellationToken cancellationToken)
+    public WorktreeScanResult Run(IReadOnlyList<string> configuredRoots, WorktreeSettings settings, CancellationToken cancellationToken, Action<string>? progress = null)
     {
         var started = clock.GetUtcNow();
         var watch = Stopwatch.StartNew();
@@ -31,15 +31,23 @@ public sealed class WorktreeScanner(IHostPaths paths, IFileSystem files, TimePro
         for (var i = 0; i < verdicts.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var where = $"worktrees scan: root {i + 1} of {verdicts.Count}";
+            progress?.Invoke($"{where}: {verdicts[i].Path}");
             var share = budget.Share(verdicts.Count - i);
-            roots.Add(verdicts[i].Accepted
+            var scanned = verdicts[i].Accepted
                 ? ScanRoot(verdicts[i].Path, settings, share, started, cancellationToken)
-                : new RootScan(configuredRoots[i], $"{verdicts[i].Rule}: {verdicts[i].Reason}", [], []));
+                : new RootScan(configuredRoots[i], $"{verdicts[i].Rule}: {verdicts[i].Reason}", [], []);
+            roots.Add(scanned);
             budget.Settle(share);
+            progress?.Invoke(Ended(where, scanned));
         }
 
         return new WorktreeScanResult(started, watch.Elapsed, !budget.RanOut, roots);
     }
+
+    /// <summary>The line a root's end gets on the progress channel (coai code round: a scan can take minutes, and a silent one looks hung).</summary>
+    private static string Ended(string where, RootScan scanned) =>
+        scanned.Refused.Length > 0 ? $"{where} refused: {scanned.Refused}" : $"{where} done: {scanned.Facts.Count} folders, {scanned.Walked.Count} walked";
 
     private RootScan ScanRoot(string root, WorktreeSettings settings, ScanBudget budget, DateTimeOffset now, CancellationToken cancellationToken) =>
         files.ListEntries(root, new ListingBounds(settings.MaxEntries, () => budget.OutOfTime, cancellationToken)) switch
@@ -51,6 +59,7 @@ public sealed class WorktreeScanner(IHostPaths paths, IFileSystem files, TimePro
 
     private RootScan ScanFolders(string root, EntryListing.Listed listed, WorktreeSettings settings, ScanBudget budget, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        budget.SpendListing(listed.Entries.Count);
         if (!listed.Complete)
         {
             budget.MarkRanOut();

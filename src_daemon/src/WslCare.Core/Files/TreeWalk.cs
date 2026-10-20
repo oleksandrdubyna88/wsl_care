@@ -197,6 +197,7 @@ internal static class TreeWalk
             Denied = probe.Denied,
             Found = probe.Found,
             NewestWriteUtc = probe.Newest,
+            Folders = probe.Directories,
         };
 
     private static void Keep(List<TreeFile> listed, TreeFile? file)

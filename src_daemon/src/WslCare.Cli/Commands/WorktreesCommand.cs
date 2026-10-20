@@ -125,7 +125,7 @@ internal static class WorktreesCommand
 
         var store = new WorktreeReportStore(host.Paths, host.Files);
         _ = store.SweepStaleTemp(host.Clock.GetUtcNow(), TimeSpan.FromSeconds(settings.MaxSeconds));
-        var report = WorktreeReports.From(new WorktreeScanner(host.Paths, host.Files, host.Clock, WorktreeRoots.ThisMachinesDrive).Run(roots, settings, cancellationToken), settings);
+        var report = WorktreeReports.From(new WorktreeScanner(host.Paths, host.Files, host.Clock, WorktreeRoots.ThisMachinesDrive).Run(roots, settings, cancellationToken, line => Output.Note(stderr, line)), settings);
         var failed = store.TryWrite(report);
         if (failed.Length > 0)
         {

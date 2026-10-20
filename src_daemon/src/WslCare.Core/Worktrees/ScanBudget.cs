@@ -36,12 +36,25 @@ internal sealed class ScanBudget
     /// <summary>The limits the next walk runs under: the entries and the time still left.</summary>
     public TreeLimits Limits() => new((int)Math.Clamp(_entriesLeft, 0, int.MaxValue), _deadline > _watch.Elapsed ? _deadline - _watch.Elapsed : TimeSpan.Zero);
 
-    /// <summary>What a walk visited, and whether it stopped short.</summary>
+    /// <summary>What a walk visited — its files AND the folders it entered (coai code round: a tree of empty folders costs entries too) — and
+    /// whether it stopped short.</summary>
     public void Spend(TreeMeasure.Measured walked)
     {
-        _entriesLeft -= walked.Files;
-        _spent += walked.Files;
+        Charge(walked.Files + walked.Folders);
         RanOut |= !walked.Complete;
+    }
+
+    /// <summary>The entries a root's listing returned: they are visited too, so they come out of the same budget.</summary>
+    public void SpendListing(int entries)
+    {
+        Charge(entries);
+        RanOut |= _entriesLeft < 0;
+    }
+
+    private void Charge(long entries)
+    {
+        _entriesLeft -= entries;
+        _spent += entries;
     }
 
     public void MarkRanOut() => RanOut = true;

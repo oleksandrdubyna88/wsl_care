@@ -21,7 +21,7 @@ public static class WorktreeRoots
         {
             return new DriveInfo(letter.ToString()).DriveType;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or PlatformNotSupportedException)
         {
             return DriveType.Unknown;
         }

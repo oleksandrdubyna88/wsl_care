@@ -226,6 +226,21 @@ public sealed class WorktreeRootsTests
         verdict.Rule.Should().Be(RootRule.LinkOnTheWay, verdict.Reason);
     }
 
+    /// <summary>coai code round (E19.S3): a file system that cannot tell a folder's real name refuses the root — admission fails closed, it never
+    /// takes the spelling on trust.</summary>
+    [Fact]
+    public void A_root_whose_real_name_cannot_be_read_is_refused()
+    {
+        var disk = Disk(@"D:\work");
+        disk.FinalPathUnreadable = true;
+
+        var verdict = JudgeOne(disk, @"D:\work");
+
+        verdict.Accepted.Should().BeFalse();
+        verdict.Rule.Should().Be(RootRule.SpeltDifferently, verdict.Reason);
+        verdict.Reason.Should().Contain("its real name could not be read");
+    }
+
     /// <summary>A table standing in for the disk: the folders and files that exist, the links among them and the drives' kinds.</summary>
     private sealed class RootsDisk : DelegatingFileSystem
     {
@@ -250,7 +265,11 @@ public sealed class WorktreeRootsTests
         public override bool FileExists(string path) => Files.Contains(Rules.Normalize(path));
 
         /// <summary>The table spells every folder as it is written: no 8.3 names here (the real-disk legs cover those).</summary>
-        public override Reading<string> FolderFinalPath(string path) => Reading.Of(Rules.Normalize(path));
+        public override Reading<string> FolderFinalPath(string path) =>
+            FinalPathUnreadable ? Reading.Missing<string>("the test's file system cannot read a folder's real name") : Reading.Of(Rules.Normalize(path));
+
+        /// <summary>The disk answers no real name (the interface's own default since the code round).</summary>
+        public bool FinalPathUnreadable { get; set; }
 
         public override RealPathResult ResolvePath(string path) =>
             new RealPathResult.Resolved(Links.TryGetValue(Rules.Normalize(path), out var target) ? target : Rules.Normalize(path));

@@ -197,6 +197,10 @@ public abstract record TreeMeasure
         /// <summary>Every file counted, when the rules asked to list them (<see cref="TreeRules.ListFiles"/>); empty otherwise.</summary>
         public IReadOnlyList<TreeFile> Listed { get; init; } = [];
 
+        /// <summary>How many folders a COUNTING walk (<see cref="TreeRules.CountDenied"/>) entered — what, with <see cref="Files"/>, its entry budget
+        /// counted; 0 for every other walk (E19.S3 coai code round: a scan-wide budget charges folders too).</summary>
+        public long Folders { get; init; }
+
         /// <summary>How many entries the enumeration could not open (access denied and the like), counted when the rules asked for it
         /// (<see cref="TreeRules.CountDenied"/>) — a figure that is 0 for every other walk, which ignores what it cannot open. Any count
         /// above 0 means the figures are a lower bound: an unreadable subtree may hold a fresh write (E19.S3).</summary>
@@ -356,8 +360,9 @@ public interface IFileSystem
 
     /// <summary>The real name of the FOLDER at <paramref name="path"/> as the operating system spells it — an 8.3 short name, a <c>subst</c> drive and a
     /// trailing dot or space expanded (Windows: the folder held, then its final path); a link is NOT followed (the folder is opened as itself). Unavailable
-    /// when it cannot be opened. A test's own file system without its own answers the path as given.</summary>
-    Collectors.Reading<string> FolderFinalPath(string path) => Collectors.Reading.Of(path);
+    /// when it cannot be opened. A file system that does not answer it is UNAVAILABLE, never the path as given: a root's admission fails closed
+    /// (E19.S3 coai code round) — every implementation that can answer overrides it.</summary>
+    Collectors.Reading<string> FolderFinalPath(string path) => Collectors.Reading.Missing<string>("this file system cannot read a folder's real name");
 
     /// <summary>
     /// Whether this process may create a file in <paramref name="directory"/> (creating the directory first when
