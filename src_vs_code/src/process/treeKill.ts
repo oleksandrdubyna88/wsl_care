@@ -1,4 +1,4 @@
-import { powerShellOf } from '../powershell/elevatedLauncher';
+import { powerShellOf } from '../powershell/commandLine';
 
 /**
  * Ending a child's whole PROCESS TREE under the family kill rule (WR-E2, plan round 4fc3f328 finding 8; the Opus own review B1):

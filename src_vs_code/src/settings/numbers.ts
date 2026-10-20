@@ -39,6 +39,7 @@ const TIMEOUTS = {
   windowsTimeGuardSeconds: { key: 'timeouts.windowsTimeGuardSeconds', default: 180, minimum: 30, maximum: 3600, description: 'How long installing or removing the Windows Time guard may take, in seconds — it waits for YOU at the UAC prompt, then registers or deletes one scheduled task.' },
   windowsTimeGuardQuerySeconds: { key: 'timeouts.windowsTimeGuardQuerySeconds', default: 30, minimum: 5, maximum: 300, description: 'How long the ONE read-only Task Scheduler read may take, in seconds. It feeds both the panel\'s *Windows Time guard* line and its Windows tasks lines. At the ceiling its PowerShell and everything it started are ended, and the panel says the read timed out.' },
   windowsTasksStageSeconds: { key: 'timeouts.windowsTasksStageSeconds', default: 60, minimum: 10, maximum: 600, description: 'How long the Windows daemon\'s `tasks render` (what the panel asks of the staged copy, to compare it with each registered task) and `tasks stage` may take, in seconds. A stage copies 13.7 MB and reads it back twice; a render reads one small file and the configuration.' },
+  windowsTasksSeconds: { key: 'timeouts.windowsTasksSeconds', default: 60, minimum: 10, maximum: 600, description: "How long installing or removing the Windows tasks may take, in seconds — the ONE PowerShell that runs as you (not elevated, no UAC prompt) registers or deletes scheduled tasks. At the ceiling it and everything it started are ended, and the panel keeps the buttons held until the deadline of twice this number." },
   engineProbeSeconds: { key: 'timeouts.engineProbeSeconds', default: 20, minimum: 5, maximum: 120, description: 'How long the read-only check of which PowerShell runs elevated (PowerShell 7 resolved and signature-checked, else Windows PowerShell 5.1) may take, in seconds — read when the panel opens or refreshes and again right before every elevated Windows Time run (measured: 0.9–1.8 s).' },
   gpuQuerySeconds: { key: 'timeouts.gpuQuerySeconds', default: 20, minimum: 5, maximum: 120, description: 'How long the read-only query of Windows\' display adapters behind the panel\'s GPU alert may take, in seconds (measured: 0.6–1.5 s, once 6.2 s).' },
   gpuEnableSeconds: { key: 'timeouts.gpuEnableSeconds', default: 120, minimum: 30, maximum: 600, description: 'How long *Enable <GPU>* may take, in seconds — it waits for YOU at the UAC prompt, then enables one display adapter.' },
@@ -79,12 +80,17 @@ const GPU = {
   gpuOllamaLogTailKiB: { key: 'gpu.ollamaLogTailKiB', default: 256, minimum: 16, maximum: 4096, description: 'How much of the end of Ollama\'s server.log is read for the device it last chose, in KiB.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
+/** The Windows tasks' install and remove (WR-E3, PLAN_windows_runner.md §3.6, §3.8). */
+const TASKS = {
+  windowsTasksBusyRetrySeconds: { key: 'windowsTasks.busyRetrySeconds', default: 3, minimum: 1, maximum: 60, description: "How long a busy answer of the Windows daemon (another run holds its run lock) is waited out before the ONE retry of the stage or removal that asked, in seconds. A second busy answer is told, never looped." },
+} as const satisfies Readonly<Record<string, NumberSetting>>;
+
 const LOGS = {
   maxRunIndex: { key: 'logs.maxRunIndex', default: 9_999, minimum: 100, maximum: 100_000, description: 'The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read).' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
 /** Every number setting, by the name the code uses. */
-export const NUMBER_SETTINGS = { ...TIMEOUTS, ...CLEANUP, ...GUARD, ...GPU, ...LOGS } as const;
+export const NUMBER_SETTINGS = { ...TIMEOUTS, ...CLEANUP, ...GUARD, ...GPU, ...TASKS, ...LOGS } as const;
 
 export type NumberName = keyof typeof NUMBER_SETTINGS;
 
