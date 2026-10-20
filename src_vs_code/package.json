@@ -109,6 +109,21 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.installWindowsWatchTask",
+        "title": "Install the Windows watch task (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.installWindowsArchiveTask",
+        "title": "Install the Windows archive task (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.removeWindowsTasks",
+        "title": "Remove the Windows tasks (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.chooseArchiveFolder",
         "title": "Choose the AI-session archive folder…",
         "category": "AI OS Care"
@@ -290,6 +305,14 @@
           "scope": "application",
           "markdownDescription": "How long the Windows daemon's `tasks render` (what the panel asks of the staged copy, to compare it with each registered task) and `tasks stage` may take, in seconds. A stage copies 13.7 MB and reads it back twice; a render reads one small file and the configuration."
         },
+        "wslCare.timeouts.windowsTasksSeconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long installing or removing the Windows tasks may take, in seconds — the ONE PowerShell that runs as you (not elevated, no UAC prompt) registers or deletes scheduled tasks. At the ceiling it and everything it started are ended, and the panel keeps the buttons held until the deadline of twice this number."
+        },
         "wslCare.timeouts.engineProbeSeconds": {
           "type": "integer",
           "default": 20,
@@ -423,6 +446,14 @@
           "maximum": 60,
           "scope": "application",
           "markdownDescription": "How long one run of the Windows Time guard may take before Task Scheduler stops it, in minutes. Applies when the guard is installed (again)."
+        },
+        "wslCare.windowsTasks.busyRetrySeconds": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 60,
+          "scope": "application",
+          "markdownDescription": "How long a busy answer of the Windows daemon (another run holds its run lock) is waited out before the ONE retry of the stage or removal that asked, in seconds. A second busy answer is told, never looped."
         },
         "wslCare.logs.maxRunIndex": {
           "type": "integer",
