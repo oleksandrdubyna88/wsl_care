@@ -1,6 +1,6 @@
 import { DAEMON_EXIT } from '../client/exitCodes';
 import type { TaskName } from '../client/verbs';
-import type { ViewLevel } from '../panel/view';
+import type { ViewLevel } from '../shared/viewLevel';
 import { noticeText } from '../text/safeText';
 import { SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS } from '../scheduler/schedulerAnswer';
 import type { PendingTasksOp } from './tasksPending';

@@ -1,6 +1,6 @@
 import type { ProcessRequest } from '../process/runner';
 import { TASK_NAMES } from '../client/verbs';
-import { ELEVATED_COMMAND_LINE_MAX, commandLineLength } from '../powershell/unelevatedLauncher';
+import { COMMAND_LINE_MAX, commandLineLength } from '../powershell/commandLine';
 import { NOT_FOUND_HRESULT, queryRequest as sharedQueryRequest, queryScript } from '../scheduler/queryScript';
 import { deleteTasksLines, HERE_END, IMPORT_SCHEDULED_TASKS, OP_EXIT, registerTaskScript } from '../scheduler/registerScript';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
@@ -64,7 +64,7 @@ const GUARD_FACTS: readonly string[] = [
 export const QUERY_SCRIPT = queryScript({ folder: GUARD_FOLDER, expectedTasks: EXPECTED_TASKS, facts: GUARD_FACTS });
 
 /** The longest command line one run may need, and its measure — the unelevated launcher's (`powershell/unelevatedLauncher.ts`); re-exported for the guard's flows. */
-export { commandLineLength, ELEVATED_COMMAND_LINE_MAX };
+export { commandLineLength, COMMAND_LINE_MAX as ELEVATED_COMMAND_LINE_MAX };
 
 /** The read-only query, UNELEVATED: the shared query request (`scheduler/queryScript.ts`) for this script. */
 export function queryRequest(env: Readonly<Record<string, string | undefined>>, timeoutMs: number): ProcessRequest | string {

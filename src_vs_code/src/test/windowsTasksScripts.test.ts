@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
 
-import { UNELEVATED_SWITCHES, unelevatedRequest, commandLineLength, ELEVATED_COMMAND_LINE_MAX } from '../powershell/unelevatedLauncher';
+import { UNELEVATED_SWITCHES, unelevatedRequest } from '../powershell/unelevatedLauncher';
+import { COMMAND_LINE_MAX, commandLineLength } from '../powershell/commandLine';
 import { NO_ENGINE } from '../powershell/elevatedEngine';
 import { HERE_END, registerTaskScript, removeTasksScript as peerRemove, terminatesHereString } from '../scheduler/registerScript';
 import { installTaskScript, removeTasksScript } from '../windowsTasks/tasksScripts';
@@ -82,10 +83,10 @@ test('no request is built without a program, for a path PowerShell cannot quote,
   assert.match(String(unelevatedRequest(NO_ENGINE, 'x', 1)), /no PowerShell can be named/);
   assert.match(String(unelevatedRequest({ ...PS51_ENGINE, file: "C:\\it's\\powershell.exe" }, 'x', 1)), /cannot be quoted safely/);
   assert.match(String(unelevatedRequest({ ...PS51_ENGINE, file: 'powershell.exe' }, 'x', 1)), /cannot be quoted safely/);
-  const long = unelevatedRequest(PS51_ENGINE, 'x'.repeat(ELEVATED_COMMAND_LINE_MAX), 1);
+  const long = unelevatedRequest(PS51_ENGINE, 'x'.repeat(COMMAND_LINE_MAX), 1);
   assert.match(String(long), /too long for one command line \(\d+ characters\)/);
   const fits = unelevatedRequest(PS51_ENGINE, installTaskScript('watch', XML), 1);
-  assert.ok(typeof fits !== 'string' && commandLineLength(fits) < ELEVATED_COMMAND_LINE_MAX);
+  assert.ok(typeof fits !== 'string' && commandLineLength(fits) < COMMAND_LINE_MAX);
 });
 
 // ---- structure: where the words live ----
@@ -138,4 +139,8 @@ test('no module under windowsTasks/ imports src/config/, child_process or the el
   // The render's guards NAME the word  — to refuse an XML that carries it — so the guards' own module is the one place it is spelt.
   const asking = tasksModules(sources()).filter((s) => s.file !== 'src/windowsTasks/tasksGuards.ts').filter((s) => stringLiteralsOf(s.text).some((l) => /runas|Start-Process|-Verb/i.test(l))).map((s) => s.file);
   assert.deepEqual(asking, [], 'no literal of the Windows tasks\' modules asks for elevation');
+});
+
+test('coai finding 4: the registration module\'s refusal of a terminator line names the terminator', () => {
+  assert.throws(() => registerTaskScript('wsl-care', 'watch', `${XML}\n'@\nx`), /'@/);
 });

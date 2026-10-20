@@ -1,7 +1,7 @@
 import type { DurableStore } from '../cleanup/journal';
 import type { WindowsCareClient } from '../client/WindowsCareClient';
 import type { RenderResult } from '../client/windowsTasks';
-import type { EngineSource } from '../powershell/engineHost';
+import type { EngineSource } from '../powershell/engineSource';
 import { Listeners } from '../shared/listeners';
 import { SingleFlight } from '../shared/singleFlight';
 import type { SchedulerHost } from '../scheduler/schedulerHost';

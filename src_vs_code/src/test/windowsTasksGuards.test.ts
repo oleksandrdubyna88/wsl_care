@@ -6,7 +6,7 @@ import { schedulerReadOf, type SchedulerRead } from '../scheduler/schedulerAnswe
 import { registrationProblem } from '../windowsTasks/tasksGuards';
 import { exited } from './support/recordingRunner';
 import { schedulerStdout, USER_SID } from './support/schedulerAnswers';
-import { EXTENSION, renderAnswer, STAGED_EXE } from './support/windowsTasks';
+import { EXTENSION, renderAnswerOf, STAGED_EXE } from './support/windowsTasks';
 
 /**
  * What the extension checks of the daemon's render before it shows or asks (WR-E3, PLAN_windows_runner.md §3.4): pure, fail closed, each
@@ -17,7 +17,7 @@ import { EXTENSION, renderAnswer, STAGED_EXE } from './support/windowsTasks';
 const READ: SchedulerRead = schedulerReadOf(exited(0, schedulerStdout()));
 
 function golden(name: 'watch' | 'archive' = 'watch'): RenderAnswer {
-  return { ...(renderAnswer(`${name} from the staged copy`) as unknown as RenderAnswer), task: name };
+  return renderAnswerOf(name + ' from the staged copy', name);
 }
 
 function withXml(edit: (xml: string) => string, name: 'watch' | 'archive' = 'watch'): RenderAnswer {
@@ -99,4 +99,8 @@ test('Fable minor 4: exactly one Exec, and every Command is the staged copy', ()
   assert.match(problem(withXml((x) => x.replace('</Exec>', '</Exec><Exec><Command>' + STAGED_EXE + '</Command></Exec>'))), /one <Exec>|does not run its command/, 'a second Exec, even of the staged copy, is refused');
   assert.match(problem(withXml((x) => x.replace('</Exec>', '<Command id="y">C:\\evil\\run.exe</Command></Exec>'))), /does not run its command/, 'a second Command, with an attribute, is read and compared');
   assert.equal(problem(withXml((x) => x.replace('<Command>', '<Command id="x">'))), '', 'an attribute on the one Command, with the staged value, is harmless');
+});
+
+test('coai finding 4: the terminator refusal names the terminator', () => {
+  assert.ok(problem(withXml((x) => `${x}\n'@`)).includes("'@"), 'the sentence does not name the terminator');
 });

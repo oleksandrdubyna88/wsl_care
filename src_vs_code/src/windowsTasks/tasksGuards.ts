@@ -1,6 +1,6 @@
 import type { TaskName } from '../client/verbs';
 import type { RenderAnswer } from '../client/windowsTasks';
-import { terminatesHereString } from '../scheduler/registerScript';
+import { HERE_END, terminatesHereString } from '../scheduler/registerScript';
 import type { SchedulerRead } from '../scheduler/schedulerAnswer';
 import { TASK_FOLDER } from '../scheduler/taskFolder';
 import { xmlText } from '../scheduler/xmlText';
@@ -116,7 +116,7 @@ function principalProblem(answer: RenderAnswer): string {
 }
 
 function embeddingProblem(answer: RenderAnswer): string {
-  return terminatesHereString(answer.xml) ? 'the render\'s XML has a line that starts with the here-string terminator, so it cannot be embedded in a script' : '';
+  return terminatesHereString(answer.xml) ? `the render's XML has a line that starts with the here-string terminator ${HERE_END}, so it cannot be embedded in a script` : '';
 }
 
 function pathProblem(answer: RenderAnswer, task: TaskName): string {

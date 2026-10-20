@@ -1,7 +1,7 @@
 import { firstLine } from '../client/windowsTasks';
 import type { StagingFolder } from '../client/windowsTasks';
 import type { TaskName } from '../client/verbs';
-import { byProgram, withUnelevatedStoreNote, type Engine } from '../powershell/elevatedEngine';
+import { byProgram, withUnelevatedStoreNote, type Engine } from '../powershell/engineTypes';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { OP_EXIT } from '../scheduler/registerScript';

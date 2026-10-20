@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { RenderAnswer } from '../client/windowsTasks';
 import { parsePageMessage } from '../panel/messages';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { schedulerReadOf } from '../scheduler/schedulerAnswer';
@@ -15,7 +14,7 @@ import { exited } from './support/recordingRunner';
 import { schedulerStdout, type SchedulerFixture, type TaskFixture } from './support/schedulerAnswers';
 import { quietTasks } from './support/tasksDeps';
 import { tasksWorld, type WorldOptions } from './support/tasksWorld';
-import { renderAnswer, STAGED_DIGEST } from './support/windowsTasks';
+import { renderAnswerOf, STAGED_DIGEST } from './support/windowsTasks';
 import { MapStore } from './support/memento';
 
 /**
@@ -29,7 +28,7 @@ const NOW = 1_000_000;
 
 /** What Task Scheduler reads back of a registered task: the render's summary, the delay as Task Scheduler spells it (`PT60S` → `PT1M`). */
 function registered(task: 'watch' | 'archive'): readonly string[] {
-  return (renderAnswer(`${task} from the staged copy`).summary as string[]).map((line) => line.replaceAll('delay=PT60S', 'delay=PT1M'));
+  return renderAnswerOf(task + ' from the staged copy', task).summary.map((line) => line.replaceAll('delay=PT60S', 'delay=PT1M'));
 }
 
 interface Options {
@@ -142,7 +141,7 @@ test('the host runs one op at a time, greys the buttons while it runs, and re-re
 });
 
 test('finding 4: an install settles only on ITS task\'s summary — the archive install is not settled by the watch\'s', () => {
-  const answers = { watch: { ...renderAnswer('watch from the staged copy'), task: 'watch' } as unknown as RenderAnswer, archive: { ...renderAnswer('archive from the staged copy'), task: 'archive' } as unknown as RenderAnswer };
+  const answers = { watch: renderAnswerOf('watch from the staged copy', 'watch'), archive: renderAnswerOf('archive from the staged copy', 'archive') };
   const copy: CopyState = { kind: 'staged', digest: STAGED_DIGEST, renders: { watch: { kind: 'registrable', answer: answers.watch }, archive: { kind: 'registrable', answer: answers.archive } } };
   const stateOf = (tasks: TaskFixture[], c: CopyState = copy) => windowsTasksState(schedulerReadOf(exited(0, schedulerStdout({ tasks }))), c);
   const pending = { op: 'install', task: 'archive' } as const;

@@ -1,4 +1,4 @@
-import { MODULES } from '../powershell/elevatedEngine';
+import { MODULES } from '../powershell/modulePath';
 import { NOT_FOUND_HRESULT } from './queryScript';
 
 /**
@@ -53,7 +53,7 @@ export function registerTaskScript(folder: string, name: string, xml: string): s
   const safeFolder = word('folder', folder);
   const safeName = word('task name', name);
   if (terminatesHereString(xml)) {
-    throw new RangeError('the task XML has a line that starts with the here-string terminator, so it cannot be embedded in a script');
+    throw new RangeError(`the task XML has a line that starts with the here-string terminator ${HERE_END}, so it cannot be embedded in a script`);
   }
 
   return [

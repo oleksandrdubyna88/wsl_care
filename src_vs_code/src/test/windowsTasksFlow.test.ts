@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { TASKS_REMOVE_TAIL, TASKS_STAGE_TAIL, tasksRenderTail } from '../client/verbs';
 import { UNELEVATED_SWITCHES } from '../powershell/unelevatedLauncher';
 import type { Engine } from '../powershell/elevatedEngine';
-import type { ProcessResult } from '../process/runner';
+import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { OP_EXIT } from '../scheduler/registerScript';
 import { runTasksOp, type TasksFlowDeps, type TasksOutcome, type TasksOp } from '../windowsTasks/tasksFlow';
 import { PENDING_KEY, readPending } from '../windowsTasks/tasksPending';
@@ -133,19 +133,19 @@ test('the engine is read before the modal and AGAIN before the launch; a change 
 // ---- the pending record: finding (1) of the plan round ----
 
 test('finding 1: the record is cleared on ANY answer but a timeout, and kept to its deadline after one', async () => {
-  const endings: readonly (readonly [string, (r: unknown) => Promise<ProcessResult>])[] = [
+  const endings: readonly (readonly [string, (request: ProcessRequest) => Promise<ProcessResult>])[] = [
     ['exit 0', () => Promise.resolve(exited(0))],
     ['exit 30', () => Promise.resolve(exited(30, '', 'Register-ScheduledTask: access denied'))],
     ['exit 33', () => Promise.resolve(exited(33))],
     ['exit 1', () => Promise.resolve(exited(1, '', 'boom'))],
     ['exit -1', () => Promise.resolve(exited(4294967295))],
-    ['failedToStart', () => Promise.resolve({ kind: 'failedToStart', reason: 'ENOENT' })],
+    ['failedToStart', () => Promise.resolve<ProcessResult>({ kind: 'failedToStart', reason: 'ENOENT' })],
     ['a runner that throws', () => Promise.reject(new Error('the runner broke'))],
-    ['signalled', () => Promise.resolve({ kind: 'signalled', signal: 'SIGKILL', stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) })],
-    ['tooMuchOutput', () => Promise.resolve({ kind: 'tooMuchOutput', stream: 'stdout', limitBytes: 1 })],
+    ['signalled', () => Promise.resolve<ProcessResult>({ kind: 'signalled', signal: 'SIGKILL', stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) })],
+    ['tooMuchOutput', () => Promise.resolve<ProcessResult>({ kind: 'tooMuchOutput', stream: 'stdout', limitBytes: 1 })],
   ];
   for (const [name, answer] of endings) {
-    const { w } = await run(WATCH, { run: answer as never });
+    const { w } = await run(WATCH, { run: answer });
     assert.equal(w.store.get(PENDING_KEY), undefined, `${name}: an answer left the pending record`);
     assert.equal(w.recorder.reports.length, 1, `${name}: not told exactly once`);
     assert.ok(w.events.includes('query'), `${name}: the status was not read again`);

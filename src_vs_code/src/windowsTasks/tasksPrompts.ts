@@ -1,6 +1,6 @@
 import type { TaskName } from '../client/verbs';
 import type { RenderAnswer } from '../client/windowsTasks';
-import { programLine, type Engine } from '../powershell/elevatedEngine';
+import { programLine, type Engine } from '../powershell/engineTypes';
 import { TASK_FOLDER } from '../scheduler/taskFolder';
 import { noticeText } from '../text/safeText';
 

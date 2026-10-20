@@ -1,7 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { powerShellOf, quotablePath } from './elevatedLauncher';
+import { powerShellOf, quotablePath } from './commandLine';
+import { engineChangedSentence, NO_ENGINE, programLine, byProgram, withUnelevatedStoreNote, type Engine } from './engineTypes';
+import { MODULES } from './modulePath';
+
+/** The vocabulary moved to `engineTypes.ts` and `modulePath.ts`; re-exported here: this module was its first home and its consumers still import it from here. */
+export { byProgram, engineChangedSentence, MODULES, NO_ENGINE, programLine, withUnelevatedStoreNote, type Engine };
 
 /**
  * The ONE resolver of the PowerShell that runs ELEVATED (PLAN_pwsh_engine_windows_time.md D1) — built by story G1 for
@@ -24,13 +29,6 @@ import { powerShellOf, quotablePath } from './elevatedLauncher';
 
 /** The probe's tags — the GPU query spreads them into its own, so the first four keep the names G1 shipped. */
 export const PWSH_TAGS = { pwshKind: 'pwsh.store', pwshPath: 'pwsh.path', msiKind: 'pwsh.msi', msiPath: 'pwsh.msiPath', programFiles: 'pwsh.programFiles' } as const;
-
-/**
- * The first line of EVERY PowerShell script this extension runs that resolves a program (§11 R1, the guard's own k2 rule):
- * the module path pinned to `$PSHOME\Modules` by an assignment — no command to autoload — so `Get-AppxPackage` and
- * `Get-AuthenticodeSignature` come from the administrator-only module folder, never from a user's Documents.
- */
-export const MODULES = "$env:PSModulePath = $PSHOME + '\\Modules'";
 
 /**
  * The ONE road every printed field takes (code round 2): a value carrying a line break — a device name, say — would end its
@@ -102,15 +100,6 @@ export interface PwshFacts {
    * the environment's. The Store shape is built from it, and the environment's `ProgramFiles` must name the same folder.
    */
   readonly programFiles?: string;
-}
-
-/** The engine that runs ELEVATED — the program, the words the modal and the outcome name it by, and which of the three it is. */
-export interface Engine {
-  readonly file: string;
-  /** "PowerShell 7 (C:\…\pwsh.exe)" / "Windows PowerShell 5.1 (C:\…\powershell.exe)". */
-  readonly label: string;
-  /** The MSI pwsh, the Store package, or Windows PowerShell 5.1 — the Store package is the one another account may not have (own review 2, F5). */
-  readonly kind: 'msi' | 'store' | 'windows';
 }
 
 /** This machine's Program Files, from the environment (as the Windows Time launcher reads `SystemRoot`), or nothing. */
@@ -225,9 +214,6 @@ export function elevatedPowerShellFor(env: Readonly<Record<string, string | unde
   return sevenOf(env, fileInfo, facts ?? NO_FACTS)?.file;
 }
 
-/** No engine can be named: no Windows PowerShell on this machine, or a run refused before any read. */
-export const NO_ENGINE: Engine = { file: '', label: '', kind: 'windows' };
-
 /** The engine an elevated run starts, named: PowerShell 7 when one is chosen, else Windows PowerShell 5.1 (or {@link NO_ENGINE}). */
 export function engineOf(env: Readonly<Record<string, string | undefined>>, fileInfo: FileInfoOf, facts: PwshFacts | undefined): Engine {
   const seven = sevenOf(env, fileInfo, facts ?? NO_FACTS);
@@ -278,32 +264,6 @@ export function byEngine(engine: Engine): string {
 /** The modal's line naming the program that runs elevated (G1's words, shared). */
 export function elevatedProgramLine(engine: Engine): string {
   return `The elevated program: ${engine.label}`;
-}
-
-/** The modal's line naming the program that runs UNELEVATED — the Windows tasks' install and remove (WR-E3), beside the elevated wording. */
-export function programLine(engine: Engine): string {
-  return `The program: ${engine.label}`;
-}
-
-/** The end of every outcome sentence of an unelevated run: " Program: <label>." — nothing when no engine can be named. */
-export function byProgram(engine: Engine): string {
-  return engine.label === '' ? '' : ` Program: ${engine.label}.`;
-}
-
-/**
- * Why the Store package may not start when the extension starts it by its package path (UNMEASURED, plan §10; ENOENT from `lstat` was
- * seen on the owner's machine, 2026-10-11): PowerShell 7 (MSI) is the program the resolver prefers anyway, and a second press tries once more.
- */
-const UNELEVATED_STORE_NOTE = ' (the Store package could not be started by its package path from this extension; install PowerShell 7 (MSI), or install again to try once more)';
-
-/** A refused start's sentence, with the Store note when the program was the Store package — the unelevated variant of {@link withStoreNote}. */
-export function withUnelevatedStoreNote(sentence: string, engine: Engine): string {
-  return sentence + (engine.kind === 'store' ? UNELEVATED_STORE_NOTE : '');
-}
-
-/** What a caller says when the engine its modal named is not the one the read after the modal chose: nothing ran. */
-export function engineChangedSentence(before: Engine, now: Engine): string {
-  return `Nothing ran: the elevated program changed while the question was open (${before.label} is now ${now.label}). Press the button again.`;
 }
 
 /** Node's `lstat` of a program the enable might elevate — `undefined` when it cannot be read (absent; ENOENT under WindowsApps, EACCES on an app-execution alias). */
