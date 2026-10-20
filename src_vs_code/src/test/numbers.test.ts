@@ -97,3 +97,15 @@ test('WR-E2: `tasks render` has its ceiling as a setting (60 s, 10–600), and t
   assert.match(NUMBER_SETTINGS.windowsTimeGuardQuerySeconds.description, /feeds both the panel's \*Windows Time guard\* line and its Windows tasks lines/, 'the one read is bounded by this setting, and says so');
   assert.equal(NUMBER_NAMES.some((name) => /windowsTasksQuery/.test(name)), false, 'no second ceiling for the one read');
 });
+
+test('WR-E3: the Windows tasks\' two settings are contributed with their ranges, and their text spells no UNC share and names the product only as the daemon', () => {
+  const ceiling = NUMBER_SETTINGS.windowsTasksSeconds;
+  const retry = NUMBER_SETTINGS.windowsTasksBusyRetrySeconds;
+  assert.deepEqual([ceiling.key, ceiling.default, ceiling.minimum, ceiling.maximum], ['timeouts.windowsTasksSeconds', 60, 10, 600]);
+  assert.deepEqual([retry.key, retry.default, retry.minimum, retry.maximum], ['windowsTasks.busyRetrySeconds', 3, 1, 60]);
+  for (const setting of [ceiling, retry]) {
+    assert.doesNotMatch(setting.description, /\\wsl-care|\wsl-care/, `${setting.key}: no folder path in a description`);
+    assert.equal(properties()[`wslCare.${setting.key}`]?.markdownDescription, setting.description);
+  }
+  assert.equal(readNumbers((key) => (key === 'windowsTasks.busyRetrySeconds' ? 9_000 : undefined)).windowsTasksBusyRetrySeconds, 60, 'a hand-edited value is clamped');
+});

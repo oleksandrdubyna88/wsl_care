@@ -1,3 +1,4 @@
+import type { ViewLevel } from '../shared/viewLevel';
 import type { ArchiveControls } from '../archive/archiveView';
 import type { WindowsDaemonView } from '../bundled/bundledView';
 import type { GpuView } from '../gpu/gpuState';
@@ -26,7 +27,7 @@ export type RowState =
   /** Not asked yet. */
   | 'checking';
 
-export type ViewLevel = 'none' | 'ok' | 'warn' | 'critical' | 'unknown';
+export type { ViewLevel } from '../shared/viewLevel';
 
 export interface ViewRow {
   readonly id: string;

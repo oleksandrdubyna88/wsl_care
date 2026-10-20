@@ -112,6 +112,8 @@ export interface RemoveReport {
 export type RemoveResult =
   | { readonly kind: 'removed'; readonly report: RemoveReport }
   | { readonly kind: 'busy'; readonly reason: string }
+  /** The call hit its ceiling (`treeEnded`: whether the runner VERIFIED the tree ended — false when no tree kill was asked): TYPED, so a caller that persists a pending run can keep it (WR-E3, plan round efc512d4 finding 1). */
+  | { readonly kind: 'timedOut'; readonly timeoutMs: number; readonly treeEnded: boolean }
   | { readonly kind: 'wrongSide'; readonly reason: string }
   | NotAnswered;
 
@@ -553,6 +555,10 @@ function removedResult(stdout: Buffer): RemoveResult {
 
 /** A finished `tasks stage --remove` on the bundled exe: exit 0 `removed` (what went and what was kept is in the report), 75 `busy`, 2 the wrong side. */
 export function removeResultOf(result: ProcessResult): RemoveResult {
+  if (result.kind === 'timedOut') {
+    return { kind: 'timedOut', timeoutMs: result.timeoutMs, treeEnded: result.treeEnded };
+  }
+
   return dispatch<RemoveResult>(result, {
     [DAEMON_EXIT.ok]: (exited) => removedResult(exited.stdout),
     [DAEMON_EXIT.busy]: busy,

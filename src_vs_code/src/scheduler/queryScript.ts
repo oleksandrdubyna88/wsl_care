@@ -1,5 +1,5 @@
-import { MODULES } from '../powershell/elevatedEngine';
-import { powerShellOf } from '../powershell/elevatedLauncher';
+import { powerShellOf } from '../powershell/commandLine';
+import { MODULES } from '../powershell/modulePath';
 import type { ProcessRequest } from '../process/runner';
 import { SUMMARY_FUNCTION } from './taskSummary';
 

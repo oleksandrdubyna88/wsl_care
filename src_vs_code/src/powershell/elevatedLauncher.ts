@@ -1,5 +1,5 @@
 import type { ProcessRequest } from '../process/runner';
-import { windowsPowerShell } from '../wsl/wslExecutable';
+import { encoded, NO_POWERSHELL, powerShellOf, quotablePath } from './commandLine';
 
 /**
  * The ONE elevated launcher (PLAN_windows_time_guard.md D7, built for *Start Windows Time*; moved here by
@@ -10,25 +10,11 @@ import { windowsPowerShell } from '../wsl/wslExecutable';
  * across the integrity boundary, so the launcher reads only exit codes: {@link LAUNCH_EXIT}.
  */
 
+/** The shared command-line pieces (`commandLine.ts`), re-exported: this module was their first home and its consumers still import them from here. */
+export { encoded, NO_POWERSHELL, powerShellOf, quotablePath };
+
 /** The launcher's own exits: the elevated program's 0, any launch failure 13, and the UAC refusal as the 1223 Process.Start throws. */
 export const LAUNCH_EXIT = { done: 0, launchFailed: 13, declined: 1223 } as const;
-
-/** `-EncodedCommand`'s form: base64 of the UTF-16LE text, as PowerShell documents it. */
-export function encoded(script: string): string {
-  return Buffer.from(script, 'utf16le').toString('base64');
-}
-
-/**
- * A path PowerShell reads inside single quotes with nothing to escape — no quote, backtick, `$`, double quote or line
- * break, and none of PowerShell's SMART quotes (U+2018–U+201F close a single- or double-quoted string just as the ASCII
- * ones do; a curly apostrophe is a legal character in a Windows user name — own review 2, F2).
- */
-const QUOTABLE_PATH = /^[A-Za-z]:\\[^'`$\r\n"‘-‟]*$/;
-
-/** Whether PowerShell reads `file` inside single quotes with nothing to escape — the test every program this launcher starts passes. */
-export function quotablePath(file: string): boolean {
-  return QUOTABLE_PATH.test(file);
-}
 
 /**
  * The UNELEVATED launcher's script: start the elevated PowerShell through `System.Diagnostics.Process.Start` with the
@@ -47,16 +33,6 @@ export function outerScript(powerShell: string, inner: string, elevated: string 
   ].join('\n');
 }
 
-/** Why no Windows PowerShell request can be built on this machine. */
-export const NO_POWERSHELL = 'SystemRoot does not name a drive folder holding System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-
-/** The absolute Windows PowerShell, when `SystemRoot` names a drive folder PowerShell can quote — else why not. */
-export function powerShellOf(env: Readonly<Record<string, string | undefined>>): string | { readonly reason: string } {
-  const powerShell = windowsPowerShell(env);
-
-  return powerShell === undefined || !QUOTABLE_PATH.test(powerShell) ? { reason: NO_POWERSHELL } : powerShell;
-}
-
 /**
  * ONE elevated run of `inner` — the request *Start Windows Time*, the Windows Time guard's install / remove and *Enable
  * <GPU>* build (PLAN_windows_time_task.md D3, PLAN_gpu_health.md D4): the absolute unelevated PowerShell runs `outerScript`,
@@ -71,7 +47,7 @@ export function elevatedRequest(env: Readonly<Record<string, string | undefined>
   }
   const target = elevated ?? powerShell;
 
-  return QUOTABLE_PATH.test(target)
+  return quotablePath(target)
     ? { file: powerShell, args: ['-NoProfile', '-NonInteractive', '-Command', outerScript(powerShell, inner, target)], timeoutMs }
     : `the elevated PowerShell's path cannot be quoted safely: ${target}`;
 }
