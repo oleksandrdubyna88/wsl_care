@@ -2056,6 +2056,19 @@ whole-argument compare and the unbounded word `key`; B3 first did not compile an
 names a value the golden diff changed, and the new fields are additive (read by key), so the claim "green without a change" rests on
 that reading until the extension suite is run by someone who may install.
 
+**Final totals after the security review and the code round (2026-10-20, on `origin/main` 5d7d193d, the fixes in place).** Windows:
+Core 3280 (3191 passed, 89 skipped, 0 failed), CLI 443 (440 passed, 3 skipped, 0 failed), Scenarios 635 (347 passed, 288 skipped,
+0 failed). Linux (WSL, a NEW `/tmp/testsToDelete-wc-e15s7-20261020T182754Z`, script files only): the goldens regenerated with
+`WSL_CARE_WRITE_GOLDENS=1` — NO file changed, so the `commandLine` diff is still the two known entries — and `GoldenContractTests`
+green without the write variable (7 of 7, twice); Core 3280 (3179 passed, 101 skipped, 0 failed), CLI 443 (399 passed, 44 skipped,
+0 failed), Scenarios 635 (618 passed, 15 skipped, 2 failed: the same two `StatusFlows` wall-clock budgets as before, 7.2 s against
+3 s and 4.1 s against 2 s, with the machine at 80–100 % CPU from other runs). The rule is not the cause: a timing probe over the
+captured tree's 51 processes ran 20 full `Redact` passes in well under 300 ms in total (under 15 ms a pass); five reruns of the
+`StatusFlows` class alone on the loaded machine failed 2, 2, 2, 2 and 1 of 9 and, on a quiet machine on 2026-10-18, passed 9 of 9
+twice — a budget that moves with the load. `dotnet format --verify-no-changes`, `plan-lifecycle` and the rules check: clean. The
+extension's `npm test` and `npm run lint` did NOT run (no `node_modules` in the worktree, installing is refused): CI's extension legs
+cover them, and nothing under `src_vs_code` changed.
+
 ### Open tail
 
 - `processes.extraSecretWords` (an OPEN, reviewed `TextRule.SecretWord` list with a `SafeDirection.Superset`) if the owner asks.

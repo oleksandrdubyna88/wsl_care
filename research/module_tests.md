@@ -4756,3 +4756,9 @@ skipped, 0 failed), CLI 443 (399 passed, 44 skipped, 0 failed), Scenarios 635 (6
 `StatusFlows` wall-clock budgets under load — 9/9 and 9/9 on two quiet reruns, one red at 3.003 s against 3 s on the third).
 Extension: not run here (no `node_modules`, and installing is refused on this machine); the change is additive and no extension
 source or test names a changed value.
+
+**Totals after the security review (2026-10-20).** Windows: Core 3280 (3191 passed, 89 skipped, 0 failed), CLI 443 (440 / 3 / 0),
+Scenarios 635 (347 / 288 / 0). Linux (a NEW `/tmp/testsToDelete-wc-e15s7-20261020T182754Z`): the goldens regenerated unchanged,
+`GoldenContractTests` 7 of 7 without the write variable, Core 3280 (3179 / 101 / 0), CLI 443 (399 / 44 / 0), Scenarios 635
+(618 / 15 / 2: the two `StatusFlows` wall-clock budgets on a machine at 80–100 % CPU; 20 `Redact` passes over the 51 captured
+processes take well under 300 ms). Format, plan-lifecycle and the rules check clean; the extension legs are CI's.
