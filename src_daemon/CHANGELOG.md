@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.6.0...daemon-v0.7.0) (2026-10-21)
+
+
+### Features
+
+* **daemon:** three read-only git questions for the worktree report (E19.S4) ([#159](https://github.com/oleksandrdubyna88/wsl_care/issues/159)) ([a48263c](https://github.com/oleksandrdubyna88/wsl_care/commit/a48263c7252e18e23afb1a8be3e6ac1e446495fa))
+* **tasks:** the Windows TEMP cleanup task, daemon side (WR-T2) ([#172](https://github.com/oleksandrdubyna88/wsl_care/issues/172)) ([bd6e642](https://github.com/oleksandrdubyna88/wsl_care/commit/bd6e642631309591834eb9e68f18919cef12a3d9))
+
 ## [0.6.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.5.0...daemon-v0.6.0) (2026-10-21)
 
 
