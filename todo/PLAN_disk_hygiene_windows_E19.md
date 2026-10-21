@@ -321,8 +321,29 @@ coai code round per story; the full test executables and `npm test` before the P
     `ConfigKeys.Worktrees` beside S3's.
   - **The scan's tripwire moved, it was not weakened**: `The_classifier_and_the_scan_start_no_process` now allows exactly `GitQuestions.cs`, `GitReplies.cs` and `GitSupport.cs` to name the
     runner (with companions proving they do, and that `WorktreeScanner` is handed `GitQuestions` and never a runner).
-  - **Not done**: a scan end-to-end against a REAL linked worktree (`git worktree add` needs a commit and so an identity, which tests never set); the real-git legs cover the three
-    questions, the ceiling, the orphan form and the index-time guarantee over `git init` repositories, and the scripted-git scan tests cover the scan.
+  - **After the Fable review and the coai plan round (2026-10-21)**:
+    - `ls-files` is asked per name as `:(literal,icase)<name>` and WITHOUT `--literal-pathspecs` (git's pathspec match ignores `core.ignorecase`; its ignore match
+      does not, so index `Bin/x` with disk `bin` read "ignored, nothing tracked"; under `--literal-pathspecs` git parses no magic). The `:(literal,icase)` is a template
+      literal in front of the unchanged `RelativeName` slot. Real-git RED/GREEN: `A_tracked_file_under_a_differently_cased_index_spelling_retains_the_candidate`.
+      `check-ignore` keeps the hole (it says ignored) — the `ls-files` question is the guard.
+    - The ACL judge keeps GENERIC_ALL, GENERIC_WRITE and MAXIMUM_ALLOWED (an entry may carry them unmapped); GENERIC_READ/EXECUTE are kept and grant no write
+      (deviation from the review's wording, which would have refused the ordinary read-and-execute of `Users`).
+    - `GitExecutable` also judges the real `git.exe` of each of `mingw64\bin`, `mingw32\bin` and `clangarm64\bin` that exists as a program file, checks each of those
+      folders, and refuses a git with none. It reuses a passed judgement for the life of the process while the program files keep their path, length, creation and
+      last-write time: **measured 12 ms a resolve without it (50 in 601 ms)**, a scan makes hundreds.
+    - A tracked gitlink ABOVE a candidate retains it (`HoldsTracked`). Measured: real git prints nothing for a pathspec inside a gitlink and `check-ignore` refuses it
+      (exit 128, "is in submodule"), so git retains it by name too; the scripted test pins the gitlink-above case.
+    - `check-ignore -v` lines are split at the LAST tab (a pattern may hold a tab and a colon; a name cannot); a line for a path nobody asked about maps to no name.
+    - No admitted `git.exe` is a named state: `reclaimable.available` is false, `gitUnavailable` holds the why, `retained` counts every candidate that needed git under
+      "git unavailable", the figures are absent, and the verdict is unknown with "git could not be asked: …" — never ok, never zero.
+    - A candidate named `clean`, `prune` or `worktree` is retained with "a folder named … cannot be put to git safely", not the generic refusal. Accepted blind spot:
+      the never-list scans argv tokens, so a path that merely contains the word as a segment is not a token and is asked about normally.
+    - A git timeout kills git and its descendants: the shared launcher (`Process.Kill(entireProcessTree: true)`) already did; `GitTimeoutTests` pins it with a fake git that
+      starts a child and hangs. No change was needed there.
+    - **For E20** (also its §4c): `a24Orphans` is ignore-only by construction (a pruned worktree has no index) — E20 may act on it only under the owner's explicit
+      per-run consent, never as `a24`; "tracked" means in the index at scan time; E20's delete-time re-run uses the same `GitQuestions`.
+    - A scan end-to-end over a REAL linked worktree is covered: `git worktree add --orphan` makes the linked worktree on an unborn branch, so no commit and no identity
+      is needed anywhere (`A_scan_over_a_real_linked_worktree_confirms_its_ignored_bin_end_to_end`).
 
 ### E19.S2b — the Windows `status` read in the extension (the narrow slice of WR-E1, decision 12)
 

@@ -13,12 +13,18 @@ namespace WslCare.Core.Processes;
 /// </summary>
 /// <param name="candidates">The files to try, in order; read at each resolve, so the configuration in force is the one asked.</param>
 /// <param name="acl">Whether only administrators could change a path.</param>
-public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdminOnlyPath acl)
+/// <param name="reuseJudgement">Remember a candidate that passed, and trust the permissions of its folders on a later call as long as the program files
+/// themselves are the SAME files (path, length, creation and last-write time) — measured at 12 ms a call without it (50 calls 601 ms, 2026-10-21), and a
+/// scan makes hundreds. A replaced program is judged afresh; a permission changed under an unchanged program during one short-lived process is not seen.</param>
+public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdminOnlyPath acl, bool reuseJudgement = false)
 {
     private static readonly string[] ProgramFilesVariables = ["ProgramFiles", "ProgramW6432"];
 
-    /// <summary>The product's: the Program Files install (and the machine layer's choice), judged by the real security descriptors.</summary>
-    public static GitExecutable Product { get; } = new(ProductCandidates, new WindowsAdminOnlyPath());
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _passed = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The product's: the Program Files install (and the machine layer's choice), judged by the real security descriptors, the judgement
+    /// reused while the program files are unchanged.</summary>
+    public static GitExecutable Product { get; } = new(ProductCandidates, new WindowsAdminOnlyPath(), reuseJudgement: true);
 
     private static IReadOnlyList<string> ProductCandidates() =>
         CandidatesOf(name => Environment.GetEnvironmentVariable(name) ?? string.Empty, Tuning.Current.Config.Text(ConfigKeys.Worktrees.GitPath));
@@ -33,10 +39,19 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
     /// <summary>The first candidate that passes every check, or why none did — each candidate named with its own reason.</summary>
     public ResolvedExecutable Resolve()
     {
-        var verdicts = candidates().Select(c => (Path: c, Problem: Problem(c))).ToList();
-        return verdicts.FirstOrDefault(v => v.Problem.Length == 0) is { Path.Length: > 0 } ok
-            ? new ResolvedExecutable.Found(ok.Path)
-            : new ResolvedExecutable.NotFound(NotFoundReason(verdicts));
+        var refused = new List<(string Path, string Problem)>();
+        foreach (var candidate in candidates())
+        {
+            var problem = Problem(candidate);
+            if (problem.Length == 0)
+            {
+                return new ResolvedExecutable.Found(candidate);
+            }
+
+            refused.Add((candidate, problem));
+        }
+
+        return new ResolvedExecutable.NotFound(NotFoundReason(refused));
     }
 
     private static string NotFoundReason(IReadOnlyList<(string Path, string Problem)> verdicts) =>
@@ -48,7 +63,43 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
     private string Problem(string path)
     {
         var own = FileProblem(path);
-        return own.Length > 0 ? own : ChainProblem(path);
+        if (own.Length > 0)
+        {
+            _passed.TryRemove(path, out _);
+            return own;
+        }
+
+        var identity = reuseJudgement ? Identity(path) : string.Empty;
+        if (reuseJudgement && _passed.TryGetValue(path, out var before) && before == identity)
+        {
+            return string.Empty;
+        }
+
+        var chain = ChainProblem(path);
+        if (reuseJudgement && chain.Length == 0)
+        {
+            _passed[path] = identity;
+        }
+        else
+        {
+            _passed.TryRemove(path, out _);
+        }
+
+        return chain;
+    }
+
+    /// <summary>Which files the program is: path, length, creation and last-write time of every program file of the install (the one given and the real
+    /// <c>git.exe</c> of each DLL folder). A replaced file changes it; an unreadable one makes it unique, so it is never reused.</summary>
+    private static string Identity(string path)
+    {
+        try
+        {
+            return string.Join('|', Checks(path).Where(c => c.Role == AdminOnlyRole.ProgramFile).Select(c => new FileInfo(c.Path)).Select(f => $"{f.FullName}:{f.Length}:{f.CreationTimeUtc.Ticks}:{f.LastWriteTimeUtc.Ticks}"));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return Guid.NewGuid().ToString("N");
+        }
     }
 
     private static string FileProblem(string path) => path switch
@@ -56,8 +107,13 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
         _ when !OperatingSystem.IsWindows() => "can be started on Windows only",
         _ when !File.Exists(path) => "is not a file",
         _ when !HasPeHeader(path) => "is not a Windows program (no MZ header)",
+        _ when DllFolders(path).Count == 0 => $"has none of {string.Join(", ", DllFolderNames.Select(n => n + @"\bin"))} beside it, so the program it starts and the DLLs it loads cannot be named",
         _ => string.Empty,
     };
+
+    /// <summary>The folders git for Windows keeps its real <c>git.exe</c> and its DLLs in, by architecture; <c>cmd\git.exe</c> only starts the one
+    /// of them that exists.</summary>
+    private static readonly string[] DllFolderNames = ["mingw64", "mingw32", "clangarm64"];
 
     /// <summary>The first two bytes are <c>MZ</c>. Read with an OS handle and a positioned read — two bytes of a program, not a
     /// file's contents.</summary>
@@ -81,26 +137,37 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
         return failed.Problem is { Length: > 0 } problem ? $"is not admin-only: {failed.Path} {problem}" : string.Empty;
     }
 
-    /// <summary>Every path whose change would change what runs: the file, the folders it and its DLLs load from, and all above.</summary>
+    /// <summary>Every path whose change would change what runs: the file; the real <c>git.exe</c> in each DLL folder (<c>cmd\git.exe</c> starts it, so
+    /// it is the program that actually runs); the folders they and the DLLs load from; and all above.</summary>
     internal static IReadOnlyList<(string Path, AdminOnlyRole Role)> Checks(string exe)
     {
         var folder = Path.GetDirectoryName(exe) ?? string.Empty;
-        var loaders = new[] { folder, MingwBin(folder) }.Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var dlls = DllFolders(exe);
+        var loaders = new[] { folder }.Concat(dlls).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var programs = new[] { exe }.Concat(dlls.Select(d => Path.Combine(d, "git.exe")).Where(File.Exists)).Distinct(StringComparer.OrdinalIgnoreCase);
         var above = loaders.SelectMany(Ancestors).Distinct(StringComparer.OrdinalIgnoreCase).Where(a => !loaders.Contains(a, StringComparer.OrdinalIgnoreCase));
         return
         [
-            (exe, AdminOnlyRole.ProgramFile),
+            .. programs.Select(p => (p, AdminOnlyRole.ProgramFile)),
             .. loaders.Select(p => (p, AdminOnlyRole.ProgramFolder)),
             .. above.Select(p => (p, AdminOnlyRole.Ancestor)),
         ];
     }
 
-    /// <summary>Git for Windows keeps its DLLs in <c>mingw64\bin</c> beside <c>cmd</c>; empty when this install has no such folder.</summary>
-    private static string MingwBin(string exeFolder)
+    /// <summary>The <c>&lt;arch&gt;\bin</c> folders of this install that exist: under the install's root — the folder above <c>cmd</c>, or above
+    /// <c>&lt;arch&gt;\bin</c> when the file given is the real <c>git.exe</c> itself.</summary>
+    private static IReadOnlyList<string> DllFolders(string exe)
     {
-        var root = Path.GetDirectoryName(exeFolder) ?? string.Empty;
-        var bin = Path.Combine(root, "mingw64", "bin");
-        return root.Length > 0 && Directory.Exists(bin) ? bin : string.Empty;
+        var folder = Path.GetDirectoryName(exe) ?? string.Empty;
+        var root = InstallRoot(folder);
+        return root.Length == 0 ? [] : [.. DllFolderNames.Select(n => Path.Combine(root, n, "bin")).Where(Directory.Exists)];
+    }
+
+    private static string InstallRoot(string exeFolder)
+    {
+        var parent = Path.GetDirectoryName(exeFolder) ?? string.Empty;
+        var inDllFolder = string.Equals(Path.GetFileName(exeFolder), "bin", StringComparison.OrdinalIgnoreCase) && DllFolderNames.Contains(Path.GetFileName(parent), StringComparer.OrdinalIgnoreCase);
+        return inDllFolder ? Path.GetDirectoryName(parent) ?? string.Empty : parent;
     }
 
     private static IEnumerable<string> Ancestors(string folder)

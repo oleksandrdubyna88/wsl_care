@@ -1451,5 +1451,13 @@ flowchart LR
   take ownership of the file, create a file in its folder or in git's `mingw64\bin`, or delete or re-permission any ancestor to the volume root
   (`AdminOnlyJudge`, pure). **Never `PATH`.** `ProcessCommandRunner` has a product constructor taking a resolver
   (`ProductExecutables.Resolve`: `git.exe` through `GitExecutable`, everything else as before); the policy still judges the bare name first.
+  Since the security review (2026-10-21): the real `git.exe` of each of `mingw64\bin`, `mingw32\bin`, `clangarm64\bin` that exists is judged as a program file too, and a
+  git with none is refused; GENERIC_ALL / GENERIC_WRITE / MAXIMUM_ALLOWED entries count as write (`AdminOnlyJudge.KnownRights`); a passed judgement is kept for the life
+  of the process while the program files keep their path, length, creation and last-write time (12 ms a resolve measured without it).
+- **The `ls-files` question** is asked per name as `:(literal,icase)<name>` (`GitCommands.TrackedNameMagic`), without `--literal-pathspecs`: git's pathspec match ignores
+  `core.ignorecase`, its ignore match does not (index `Bin/x`, disk `bin`). A tracked gitlink above a candidate retains it. `check-ignore -v` lines are split at the LAST tab.
+- **No admitted git** is a named state: `reclaimable.available` false, `gitUnavailable` the why, `retained` counting those candidates under "git unavailable", the verdict
+  unknown with "git could not be asked: …". A candidate named `clean`/`prune`/`worktree` says so in its own reason (`GitReasons.UnsafeNameOf`; the never-list scans argv
+  tokens, so a path merely containing the word is an accepted blind spot). `a24Orphans` is ignore-only by construction — see `todo/PLAN_disk_hygiene_windows_E20.md` §4c.
 - **Keys**: `worktrees.gitPath` (machine only), `worktrees.gitTimeoutSeconds` (30, 5..600), `worktrees.gitNamesPerCall` (64, 1..256),
   `worktrees.gitCommandLineMaxChars` (7000, 1000..30000) in `Config/ConfigKeys.Worktrees.cs` beside the scan's.

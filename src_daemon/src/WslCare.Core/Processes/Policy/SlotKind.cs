@@ -207,7 +207,10 @@ public abstract record SlotKind
         public override bool Accepts(string value) =>
             Checks.All(value, v => v.Length is > 0 and <= 260, v => v[0] != '-' && v[0] != '/', v => v.All(c => !char.IsControl(c)), v => v.IndexOfAny(Forbidden) < 0, HasOnlyPlainSegments, IsNoGitWord);
 
-        private static bool IsNoGitWord(string value) => !GitWords.Contains(value.TrimEnd('/'), StringComparer.OrdinalIgnoreCase);
+        private static bool IsNoGitWord(string value) => !IsGitWord(value);
+
+        /// <summary>Whether the whole name (a trailing <c>/</c> aside) is one of the words the never-list refuses as an argument of git.</summary>
+        public static bool IsGitWord(string name) => GitWords.Contains(name.TrimEnd('/'), StringComparer.OrdinalIgnoreCase);
 
         private static bool HasOnlyPlainSegments(string value) =>
             (value.EndsWith('/') ? value[..^1] : value).Split('/').All(segment => segment.Length > 0 && segment is not ("." or ".."));

@@ -67,6 +67,11 @@ public sealed record ReclaimableReport(bool Available, string Reason)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int NotAsked { get; init; }
 
+    /// <summary>Why NO git could be asked (none admitted, not started, refused by the policy) — the distinct reasons; empty when git was asked. A scan fact
+    /// <c>status</c> shows as "git could not be asked": while it is set the figures are absent, never zero, and the verdict is unknown.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GitUnavailable { get; init; }
+
     /// <summary>The confirmed bytes, worktrees and orphans together; 0 when nothing was confirmed or git was not asked (check <see cref="Available"/>).</summary>
     [JsonIgnore]
     public long ConfirmedBytes => (A24?.Bytes ?? 0) + (A24Orphans?.Bytes ?? 0);

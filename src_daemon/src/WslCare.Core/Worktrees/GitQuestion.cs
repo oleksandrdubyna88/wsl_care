@@ -17,8 +17,10 @@ public abstract record GitFolder
 
     /// <summary>An orphan — a folder whose <c>.git</c> file points at an admin folder that is gone: git is asked, from the orphan's own
     /// folder and with the repository <paramref name="AdminFolder"/> names, which rule decides each name. The index is NOT read, so the
-    /// tracked files stay unknown. <paramref name="AdminFolder"/> is the path the classifier read from the <c>.git</c> file under a
-    /// configured root — never a path from anywhere else; the command's slot re-checks its SHAPE, and this type's caller its source.</summary>
+    /// tracked files stay unknown: a pruned worktree has no index of its own, and <c>--no-index</c> reads none. <paramref name="AdminFolder"/> is the
+    /// repository derived from the admin folder the classifier read out of the <c>.git</c> FILE — that file lies under a configured root, the folder it
+    /// names may be anywhere, and git reads only its configuration and <c>info/exclude</c> there. Never a path from anywhere else; the command's slot
+    /// re-checks its SHAPE, and this type's caller its source.</summary>
     public sealed record Orphan(string AdminFolder) : GitFolder;
 }
 
@@ -68,25 +70,44 @@ public static class GitReasons
     public const string OrphanIgnoreOnly = "ignore rules confirmed; tracked files NOT checked";
     public const string Cut = "git's answer was cut at the output cap";
 
+    /// <summary>The group a candidate is counted under when no git could be run for it (none admitted, not started, refused by the policy).</summary>
+    public const string Unavailable = "git unavailable";
+
+    /// <summary>The group of a candidate whose own name is a git subcommand the never-list refuses as an argument (see <see cref="UnsafeNameOf"/>).</summary>
+    public const string UnsafeName = "a folder named like a git command cannot be put to git safely";
+
+    /// <summary>The reason for a name that IS one of the words the never-list refuses (<c>clean</c>, <c>prune</c>, <c>worktree</c>). Kept as a refusal: the
+    /// never-list scans argv tokens, so a path that merely contains the word as a segment is not a token and is asked about normally — an accepted blind spot.</summary>
+    public static string UnsafeNameOf(string name) => $"a folder named {name.TrimEnd('/')} cannot be put to git safely";
+
     public static string Refused(string firstLine) => $"git refused: {firstLine}";
 
     public static string TimedOut(TimeSpan timeout) => string.Create(CultureInfo.InvariantCulture, $"git did not answer within {timeout.TotalSeconds:0.###} s");
 
     public static string NotRun(string why) => $"git could not be run: {why}";
 
-    /// <summary>The first line of git's complaint, control characters replaced and cut — a reason is one line.</summary>
+    private const string NotRunPrefix = "git could not be run: ";
+
     /// <summary>The closed sentence a reason is COUNTED under in the report: git's own words after a refusal vary, the group does not.</summary>
     public static string GroupOf(string reason) => reason switch
     {
         _ when reason.StartsWith("git refused:", StringComparison.Ordinal) => "git refused the question",
         _ when reason.StartsWith("git did not answer", StringComparison.Ordinal) => "git did not answer in time",
-        _ when reason.StartsWith("git could not be run:", StringComparison.Ordinal) => "git could not be run",
+        _ when reason.StartsWith(NotRunPrefix, StringComparison.Ordinal) => Unavailable,
+        _ when reason.StartsWith("a folder named ", StringComparison.Ordinal) && reason.EndsWith(" cannot be put to git safely", StringComparison.Ordinal) => UnsafeName,
         _ => reason,
     };
 
     /// <summary>Whether a retained reason says git could not be ASKED (as against git answering no): the verdict then cannot be trusted as "none".</summary>
-    public static bool IsAFailureToAsk(string reason) => GroupOf(reason) is "git refused the question" or "git did not answer in time" or "git could not be run" or Cut or NoAnswer;
+    public static bool IsAFailureToAsk(string reason) => GroupOf(reason) is "git refused the question" or "git did not answer in time" or Unavailable or Cut or NoAnswer;
 
+    /// <summary>Whether no git could be run for the candidate at all (none admitted, not started, refused by the policy) — as against git failing a question.</summary>
+    public static bool IsGitUnavailable(string reason) => reason.StartsWith(NotRunPrefix, StringComparison.Ordinal);
+
+    /// <summary>The why of an unavailable git: <paramref name="reason"/> without the sentence it was wrapped in.</summary>
+    public static string UnavailableWhy(string reason) => IsGitUnavailable(reason) ? reason[NotRunPrefix.Length..] : reason;
+
+    /// <summary>The first line of git's complaint, control characters replaced and cut — a reason is one line.</summary>
     public static string FirstLine(string stderr, int maxChars)
     {
         var line = stderr.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;

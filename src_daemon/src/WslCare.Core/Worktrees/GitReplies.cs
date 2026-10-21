@@ -60,22 +60,27 @@ public static class GitReplies
     public static IReadOnlyList<string> TrackedPaths(string stdout) =>
         [.. stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries).Select(Slashed)];
 
-    /// <summary>Whether any of <paramref name="tracked"/> is <paramref name="name"/> or inside it.</summary>
+    /// <summary>Whether any of <paramref name="tracked"/> is <paramref name="name"/>, inside it, or — a tracked gitlink (a submodule) — above it. The match
+    /// ignores case, as the question itself does.</summary>
     public static bool HoldsTracked(IReadOnlyList<string> tracked, string name)
     {
         var folder = Slashed(name).TrimEnd('/');
-        return tracked.Any(path => string.Equals(path, folder, StringComparison.OrdinalIgnoreCase) || path.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase));
+        return tracked.Any(path => string.Equals(path, folder, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase)
+            || folder.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Each line <c>&lt;source&gt;:&lt;line&gt;:&lt;pattern&gt;\t&lt;path&gt;</c> (or <c>::\t&lt;path&gt;</c> for a path no rule ignores), keyed by path. The line
-    /// is split at its FIRST tab; a path named twice is ignored only if every line says so.</summary>
+    /// is split at its LAST tab: a <c>.gitignore</c> pattern may legally hold a tab (and a colon), a name cannot — <see cref="Processes.Policy.SlotKind.RelativeName"/>
+    /// refuses control characters. A path named twice is ignored only if every line says so; a line for a path nobody asked about maps to no name and
+    /// is never looked up.</summary>
     public static IReadOnlyDictionary<string, IgnoreLine> IgnoreLines(string stdout)
     {
         var lines = new Dictionary<string, IgnoreLine>(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in stdout.Split('\n'))
         {
             var line = raw.TrimEnd('\r');
-            var tab = line.IndexOf('\t');
+            var tab = line.LastIndexOf('\t');
             if (tab >= 0)
             {
                 lines[Slashed(line[(tab + 1)..])] = Worst(lines, Slashed(line[(tab + 1)..]), Classify(line[..tab]));

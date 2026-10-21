@@ -42,8 +42,11 @@ public sealed class GitQuestionsTests
 
         private static IReadOnlyList<string> Names(IReadOnlyList<string> argv) => [.. argv.SkipWhile(a => a != "--").Skip(1)];
 
+        /// <summary>What <c>ls-files --cached -- &lt;pathspecs&gt;</c> prints: the tracked paths a pathspec names or lies inside, or — a gitlink — lies above. The
+        /// pathspec magic is stripped and the match ignores case, as the real <c>:(literal,icase)</c> does.</summary>
         private string TrackedUnder(IReadOnlyList<string> names) =>
-            string.Concat(Tracked.Where(t => names.Any(n => t.StartsWith(n.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase))).Select(t => t + "\0"));
+            string.Concat(Tracked.Where(t => names.Select(n => n.Replace(":(literal,icase)", string.Empty, StringComparison.Ordinal).TrimEnd('/')).Any(n =>
+                t.StartsWith(n + "/", StringComparison.OrdinalIgnoreCase) || n.StartsWith(t + "/", StringComparison.OrdinalIgnoreCase))).Select(t => t + "\0"));
 
         private CommandOutcome Decide(IReadOnlyList<string> names)
         {
@@ -141,6 +144,58 @@ public sealed class GitQuestionsTests
         var answers = await Asker(repository.Runner()).AskAsync(Repo("bin"), CancellationToken.None);
 
         Of(answers, "bin").Should().Be(Retained(GitReasons.Tracked));
+    }
+
+    [Fact]
+    public async Task Ls_files_is_asked_with_the_icase_pathspec_magic_and_without_literal_pathspecs()
+    {
+        // git's pathspec matcher ignores core.ignorecase while its ignore matcher honours it (measured 2026-10-21): a literal pathspec for the
+        // on-disk spelling `bin` misses an index entry `Bin/x`, and the candidate would read "ignored, nothing tracked".
+        var repository = new FakeRepository { Ignored = { "bin" }, Tracked = ["Bin/x"] };
+        var runner = repository.Runner();
+
+        var answers = await Asker(runner).AskAsync(Repo("bin"), CancellationToken.None);
+
+        var lsFiles = runner.Requests.Single(r => r.Argv.Contains("ls-files")).Argv;
+        lsFiles.Should().NotContain("--literal-pathspecs", "under it git parses no pathspec magic");
+        lsFiles.SkipWhile(a => a != "--").Skip(1).Should().Equal(":(literal,icase)bin");
+        Of(answers, "bin").Should().Be(Retained(GitReasons.Tracked));
+    }
+
+    [Fact]
+    public async Task Every_sibling_of_a_batch_is_judged_by_its_own_line_even_when_one_rule_holds_a_tab_and_a_colon()
+    {
+        var names = Enumerable.Range(0, 40).Select(i => $"p{i:00}/obj").ToArray();
+        var lines = names.Select(n => n == "p07/obj" ? ".gitignore:3:ob[:\t-k]/\t" + n : n == "p08/obj" ? "::\t" + n : ".gitignore:1:obj/\t" + n);
+        var repository = new FakeRepository { CheckIgnore = RecordingCommandRunner.Exited(0, string.Join('\n', lines) + "\n") };
+
+        var answers = await Asker(repository.Runner()).AskAsync(Repo(names), CancellationToken.None);
+
+        Of(answers, "p07/obj").Should().Be(Confirmed, "its rule holds a tab and a colon, and it is still ITS line");
+        Of(answers, "p08/obj").Should().Be(Retained(GitReasons.NotIgnored));
+        answers.Count(a => a.Verdict.Equals(Confirmed)).Should().Be(39);
+    }
+
+    [Fact]
+    public async Task A_line_for_a_path_nobody_asked_about_maps_to_no_name_and_the_asked_name_is_retained()
+    {
+        var repository = new FakeRepository { CheckIgnore = RecordingCommandRunner.Exited(0, ".gitignore:1:obj/\tsomething/else\n.gitignore:1:bin/\tbin\n") };
+
+        var answers = await Asker(repository.Runner()).AskAsync(Repo("bin", "obj"), CancellationToken.None);
+
+        Of(answers, "bin").Should().Be(Confirmed);
+        Of(answers, "obj").Should().Be(Retained(GitReasons.NoAnswer));
+    }
+
+    [Fact]
+    public async Task A_candidate_inside_a_submodule_is_retained_as_tracked()
+    {
+        // The index lists a gitlink `sub` for a pathspec that lies INSIDE it.
+        var repository = new FakeRepository { Ignored = { "sub/bin" }, Tracked = ["sub"] };
+
+        var answers = await Asker(repository.Runner()).AskAsync(Repo("sub/bin"), CancellationToken.None);
+
+        Of(answers, "sub/bin").Should().Be(Retained(GitReasons.Tracked));
     }
 
     [Fact]
@@ -274,18 +329,31 @@ public sealed class GitQuestionsTests
     }
 
     [Fact]
-    public async Task A_name_that_would_spell_a_destructive_git_word_is_never_asked_and_is_retained_as_a_bad_name()
+    public async Task A_name_that_would_spell_a_destructive_git_word_is_never_asked_and_is_retained_with_a_reason_that_says_so()
     {
         var runner = new FakeRepository().Runner();
 
         var answers = await Asker(runner).AskAsync(Repo("bin", "clean", "Prune", "worktree/"), CancellationToken.None);
 
         Of(answers, "bin").Should().Be(Retained(GitReasons.NotIgnored));
-        Of(answers, "clean").Should().Be(Retained(GitReasons.BadName));
-        Of(answers, "Prune").Should().Be(Retained(GitReasons.BadName));
-        Of(answers, "worktree/").Should().Be(Retained(GitReasons.BadName));
+        Of(answers, "clean").Should().Be(Retained("a folder named clean cannot be put to git safely"));
+        Of(answers, "Prune").Should().Be(Retained("a folder named Prune cannot be put to git safely"));
+        Of(answers, "worktree/").Should().Be(Retained("a folder named worktree cannot be put to git safely"));
+        Of(answers, "clean").Should().NotBe(Retained(GitReasons.BadName), "its own reason, not the generic refusal");
         runner.Requests.SelectMany(r => r.Argv).Should().NotContain(["clean", "Prune", "worktree/"]);
     }
+
+    [Fact]
+    public void The_unsafe_word_reasons_are_counted_under_one_group_and_the_blind_spot_is_only_the_whole_name()
+    {
+        // Accepted blind spot (coai plan round 2026-10-21): the never-list scans argv TOKENS, so a path that merely CONTAINS the word as a segment
+        // (src/clean/bin) is not a token `clean` and is asked about normally; only a name that IS the word is refused, and now says so.
+        GitReasons.GroupOf("a folder named clean cannot be put to git safely").Should().Be(GitReasons.UnsafeName);
+        SlotKindAccepts("src/clean/bin").Should().BeTrue();
+        SlotKindAccepts("clean").Should().BeFalse();
+    }
+
+    private static bool SlotKindAccepts(string name) => new SlotKind.RelativeName().Accepts(name);
 
     [Fact]
     public async Task A_command_the_policy_refuses_retains_the_candidate_instead_of_running()
@@ -534,7 +602,7 @@ public sealed class GitSupportTests
     }
 
     [Fact]
-    public void Check_ignore_lines_are_read_by_their_first_tab_and_their_first_digits_between_colons()
+    public void Check_ignore_lines_are_read_by_their_last_tab_and_their_first_digits_between_colons()
     {
         var lines = GitReplies.IgnoreLines(string.Join('\n',
             ".gitignore:1:bin/\tbin",
@@ -544,7 +612,7 @@ public sealed class GitSupportTests
             "no tab here",
             ".gitignore::x\tbroken",
             ".gitignore:5:\tempty-pattern",
-            ".gitignore:1:a\tb\tc") + "\n");
+            ".gitignore:1:ob[:\t-k]/\tobj2") + "\n");
 
         lines["bin"].Should().Be(IgnoreLine.Ignored);
         lines["obj"].Should().Be(IgnoreLine.Ignored);
@@ -552,7 +620,7 @@ public sealed class GitSupportTests
         lines["keep"].Should().Be(IgnoreLine.NotIgnored);
         lines["broken"].Should().Be(IgnoreLine.Unreadable);
         lines["empty-pattern"].Should().Be(IgnoreLine.Unreadable);
-        lines["b\tc"].Should().Be(IgnoreLine.Ignored, "the path is everything after the FIRST tab");
+        lines["obj2"].Should().Be(IgnoreLine.Ignored, "a pattern may hold a tab and a colon; a name cannot hold a tab: the path is what follows the LAST tab");
         lines.Should().HaveCount(7);
     }
 
@@ -576,6 +644,9 @@ public sealed class GitSupportTests
         GitReplies.HoldsTracked(tracked, "bi").Should().BeFalse();
         GitReplies.HoldsTracked(tracked, "obj").Should().BeFalse();
         GitReplies.HoldsTracked([], "bin").Should().BeFalse();
+        GitReplies.HoldsTracked(["sub"], "sub/bin").Should().BeTrue("a tracked gitlink above the candidate");
+        GitReplies.HoldsTracked(["sub", "src/Lib"], "SUB/bin/").Should().BeTrue();
+        GitReplies.HoldsTracked(["sub2", "su"], "sub/bin").Should().BeFalse("only a whole path segment is above");
     }
 
     [Fact]

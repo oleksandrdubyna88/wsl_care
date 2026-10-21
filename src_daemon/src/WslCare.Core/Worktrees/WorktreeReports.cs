@@ -45,6 +45,15 @@ public static class WorktreeReports
         var placed = result.Roots.SelectMany(r => r.Walked).SelectMany(f => f.Candidates.Select(c => (Folder: f, Candidate: c, Place: PlaceOf(f, c)))).ToList();
         var retained = placed.Where(p => p.Place.Reason.Length > 0).GroupBy(p => p.Place.Reason).OrderByDescending(g => g.Sum(p => p.Candidate.Bytes)).ThenBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => new RetainedGroup(g.Key, g.Count(), g.Sum(p => p.Candidate.Bytes))).ToList();
+        var unavailable = placed.Select(p => p.Candidate.Git).OfType<CandidateGit.Retained>().Where(r => GitReasons.IsGitUnavailable(r.Reason)).Select(r => GitReasons.UnavailableWhy(r.Reason)).Distinct(StringComparer.Ordinal).ToList();
+        if (unavailable.Count > 0)
+        {
+            // No admitted git.exe (or the policy refused it) is a NAMED state: every candidate that needed git carries the reason, the figures are absent
+            // — never an empty list that reads as zero — and status says "git could not be asked".
+            var why = string.Join("; ", unavailable);
+            return new ReclaimableReport(false, $"git could not be asked: {why}") { Retained = retained, NotAsked = placed.Count(p => p.Place.NotAsked), GitUnavailable = why };
+        }
+
         return new ReclaimableReport(true, string.Empty)
         {
             A24 = Tally(placed.Where(p => p.Place.Kind == FolderKind.Worktree).Select(p => p.Candidate)),

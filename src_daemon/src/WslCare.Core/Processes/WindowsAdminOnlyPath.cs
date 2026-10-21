@@ -11,8 +11,6 @@ namespace WslCare.Core.Processes;
 /// </summary>
 public sealed class WindowsAdminOnlyPath : IAdminOnlyPath
 {
-    private const AclRight AllRights = AclRight.WriteData | AclRight.AppendData | AclRight.DeleteSubdirectoriesAndFiles | AclRight.Delete | AclRight.ChangePermissions | AclRight.TakeOwnership;
-
     public string Problem(string path, AdminOnlyRole role) =>
         OperatingSystem.IsWindows() ? ProblemOnWindows(path, role) : "the owner and permissions of a file can be judged on Windows only";
 
@@ -44,6 +42,6 @@ public sealed class WindowsAdminOnlyPath : IAdminOnlyPath
     private static AclEntry Entry(FileSystemAccessRule rule) => new(
         rule.IdentityReference.Value,
         rule.AccessControlType == AccessControlType.Allow,
-        (AclRight)((int)rule.FileSystemRights & (int)AllRights),
+        AdminOnlyJudge.KnownRights((int)rule.FileSystemRights),
         rule.PropagationFlags.HasFlag(PropagationFlags.InheritOnly));
 }

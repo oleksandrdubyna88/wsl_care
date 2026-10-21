@@ -90,12 +90,14 @@ public static class ReadCommandTemplates
         [.. GitOptions, L("rev-parse"), L("--show-toplevel")],
         ConfigKeys.Worktrees.GitTimeoutSeconds);
 
-    /// <summary><c>git.exe --literal-pathspecs ls-files -z --cached -- &lt;names&gt;</c>: the tracked files under 1 to
-    /// <c>worktrees.gitNamesPerCall</c> relative names.</summary>
+    /// <summary><c>git.exe ls-files -z --cached -- :(literal,icase)&lt;name&gt;…</c>: the tracked files under 1 to
+    /// <c>worktrees.gitNamesPerCall</c> relative names, each a literal pathspec matched without regard to case (<see cref="GitCommands.TrackedNameMagic"/>:
+    /// git's pathspec match ignores <c>core.ignorecase</c>, its ignore match does not). The magic is a template literal in front of the name slot, so the
+    /// slot itself is the one every git template shares.</summary>
     public static CommandTemplate GitLsFiles { get; } = Machine(
         "git-ls-files",
         GitCommands.Executable,
-        [.. GitOptions, L("--literal-pathspecs"), L("ls-files"), L("-z"), L("--cached"), L("--"), GitNames],
+        [.. GitOptions, L("ls-files"), L("-z"), L("--cached"), L("--"), new ArgPart.Repeat("name", new SlotKind.Prefixed(GitCommands.TrackedNameMagic, new SlotKind.RelativeName()), 1, ConfigKeys.Worktrees.GitNamesPerCall.Max)],
         ConfigKeys.Worktrees.GitTimeoutSeconds);
 
     /// <summary><c>git.exe check-ignore -v -n -- &lt;names&gt;</c>: the rule that decides each name (one line per name).</summary>
@@ -106,8 +108,9 @@ public static class ReadCommandTemplates
         ConfigKeys.Worktrees.GitTimeoutSeconds);
 
     /// <summary>The orphan form: <c>--git-dir=&lt;admin folder&gt; --work-tree=. check-ignore --no-index -v -n -- &lt;names&gt;</c> from the
-    /// orphan's own folder. The admin folder is a path the classifier read from a <c>.git</c> file under a configured root (the caller
-    /// checks that); the slot holds its shape.</summary>
+    /// orphan's own folder. The <c>.git</c> FILE the classifier read lies under a configured root; the admin folder it names, and so the repository
+    /// derived from it, may be anywhere (the caller proves it is that value); the slot holds only its shape. Git reads configuration and
+    /// <c>info/exclude</c> there and nothing else that matters: <c>--no-index</c> reads no index, so tracked files are NOT known.</summary>
     public static CommandTemplate GitCheckIgnoreOrphan { get; } = Machine(
         "git-check-ignore-orphan",
         GitCommands.Executable,

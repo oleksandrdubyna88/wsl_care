@@ -112,9 +112,17 @@ public sealed class GitExecutableTests
         AdminOnlyJudge.Problem(facts, AdminOnlyRole.Ancestor).Should().Contain("S-1-5-21-1-2-3-1001").And.Contain("owned");
     }
 
-    private static string DummyProgram(ThrowAwayFolder folder, string relative, string header = "MZ")
+    /// <summary>A program file with only a header; one named <c>.../cmd/git.exe</c> comes with the DLL folder git for Windows always has beside it,
+    /// <c>mingw64\bin</c> holding a <c>git.exe</c> of its own (the one <c>cmd\git.exe</c> starts), unless <paramref name="withDllFolder"/> is false.</summary>
+    private static string DummyProgram(ThrowAwayFolder folder, string relative, string header = "MZ", bool withDllFolder = true)
     {
-        return folder.Write(relative, header + "\0\0 this is not a program, only its header");
+        var exe = folder.Write(relative, header + "\0\0 this is not a program, only its header");
+        if (withDllFolder && relative.EndsWith("/cmd/git.exe", StringComparison.Ordinal))
+        {
+            folder.Write(relative[..^"/cmd/git.exe".Length] + "/mingw64/bin/git.exe", header + "\0\0 the program cmd\\git.exe starts");
+        }
+
+        return exe;
     }
 
     private sealed class ScriptedAcl(Func<string, AdminOnlyRole, string> answer) : IAdminOnlyPath
@@ -141,25 +149,111 @@ public sealed class GitExecutableTests
         resolved.Should().Be(new ResolvedExecutable.Found(exe));
     }
 
+    [Theory]
+    [InlineData(AclRight.GenericAll)]
+    [InlineData(AclRight.GenericWrite)]
+    [InlineData(AclRight.MaximumAllowed)]
+    public void A_generic_right_that_includes_write_is_refused_in_every_role(AclRight generic)
+    {
+        // An entry may carry GENERIC_ALL / GENERIC_WRITE / MAXIMUM_ALLOWED unmapped; dropping those bits read such an entry as "no rights".
+        foreach (var role in new[] { AdminOnlyRole.ProgramFile, AdminOnlyRole.ProgramFolder, AdminOnlyRole.Ancestor })
+        {
+            AdminOnlyJudge.Problem(Owned(Administrators, Allow(Users, generic)), role).Should().Contain(Users, role.ToString());
+        }
+    }
+
+    [Fact]
+    public void The_raw_generic_all_bit_of_an_access_rule_is_a_right_the_judge_keeps()
+    {
+        AdminOnlyJudge.Problem(Owned(Administrators, Allow(Users, (AclRight)0x10000000)), AdminOnlyRole.ProgramFile).Should().Contain(Users);
+        AdminOnlyJudge.KnownRights(0x10000000 | 0x001F01FF).Should().HaveFlag(AclRight.GenericAll).And.HaveFlag(AclRight.WriteData).And.HaveFlag(AclRight.Delete);
+        AdminOnlyJudge.KnownRights(0x001200A9).Should().Be(AclRight.None, "read and execute carry none of the bits the rule looks at");
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80000000))]
+    [InlineData(0x20000000)]
+    public void Generic_read_and_generic_execute_alone_grant_no_write_and_are_accepted(int bits)
+    {
+        var rights = AdminOnlyJudge.KnownRights(bits);
+
+        AdminOnlyJudge.Problem(Owned(Administrators, Allow(Users, rights)), AdminOnlyRole.ProgramFile).Should().BeEmpty();
+    }
+
     [Fact]
     public void The_file_its_folder_mingw64_bin_and_every_ancestor_up_to_the_volume_root_are_all_asked_with_their_role()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
         using var folder = new ThrowAwayFolder("gitexe");
         var exe = DummyProgram(folder, "Git/cmd/git.exe");
-        Directory.CreateDirectory(folder.Under("Git/mingw64/bin"));
         var acl = new ScriptedAcl((_, _) => string.Empty);
 
         new GitExecutable(() => [exe], acl).Resolve().Should().BeOfType<ResolvedExecutable.Found>();
 
         var root = Path.GetPathRoot(exe)!;
         acl.Asked.Should().Contain((exe, AdminOnlyRole.ProgramFile));
+        acl.Asked.Should().Contain((folder.Under("Git/mingw64/bin/git.exe"), AdminOnlyRole.ProgramFile), "the program cmd\\git.exe starts is judged as a program file too");
         acl.Asked.Should().Contain((folder.Under("Git/cmd"), AdminOnlyRole.ProgramFolder));
         acl.Asked.Should().Contain((folder.Under("Git/mingw64/bin"), AdminOnlyRole.ProgramFolder));
         acl.Asked.Should().Contain((folder.Under("Git/mingw64"), AdminOnlyRole.Ancestor));
         acl.Asked.Should().Contain((folder.Under("Git"), AdminOnlyRole.Ancestor));
         acl.Asked.Should().Contain((folder.Path, AdminOnlyRole.Ancestor));
         acl.Asked.Should().Contain((root, AdminOnlyRole.Ancestor), "the chain runs to the volume root");
+        acl.Asked.Select(a => a.Path).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void Every_dll_folder_git_for_windows_may_have_is_checked_when_it_exists_and_its_git_exe_is_judged_as_a_program()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe");
+        folder.Write("Git/mingw32/bin/git.exe", "MZ\0\0");
+        folder.Write("Git/clangarm64/bin/git.exe", "MZ\0\0");
+        var acl = new ScriptedAcl((_, _) => string.Empty);
+
+        new GitExecutable(() => [exe], acl).Resolve().Should().BeOfType<ResolvedExecutable.Found>();
+
+        foreach (var bin in new[] { "mingw64", "mingw32", "clangarm64" })
+        {
+            acl.Asked.Should().Contain((folder.Under($"Git/{bin}/bin"), AdminOnlyRole.ProgramFolder), bin);
+            acl.Asked.Should().Contain((folder.Under($"Git/{bin}/bin/git.exe"), AdminOnlyRole.ProgramFile), bin);
+        }
+    }
+
+    [Fact]
+    public void A_program_in_a_dll_folder_a_user_could_write_to_refuses_the_candidate()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe");
+        var started = folder.Under("Git/mingw64/bin/git.exe");
+        var acl = new ScriptedAcl((path, role) => path == started && role == AdminOnlyRole.ProgramFile ? "lets S-1-5-32-545 (WriteData) change it" : string.Empty);
+
+        new GitExecutable(() => [exe], acl).Resolve().Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().Contain("is not admin-only").And.Contain(started);
+    }
+
+    [Fact]
+    public void A_git_with_no_dll_folder_beside_it_is_refused_because_what_it_starts_cannot_be_named()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe", withDllFolder: false);
+
+        new GitExecutable(() => [exe], new ScriptedAcl((_, _) => string.Empty)).Resolve()
+            .Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().Contain("mingw64").And.Contain("mingw32").And.Contain("clangarm64");
+    }
+
+    [Fact]
+    public void A_git_exe_that_sits_in_a_dll_folder_itself_is_accepted_and_judged_once()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        DummyProgram(folder, "Git/cmd/git.exe");
+        var exe = folder.Under("Git/mingw64/bin/git.exe");
+        var acl = new ScriptedAcl((_, _) => string.Empty);
+
+        new GitExecutable(() => [exe], acl).Resolve().Should().Be(new ResolvedExecutable.Found(exe));
         acl.Asked.Select(a => a.Path).Should().OnlyHaveUniqueItems();
     }
 
@@ -255,6 +349,74 @@ public sealed class GitExecutableTests
         var resolved = GitExecutable.Product.Resolve();
 
         resolved.Should().Be(new ResolvedExecutable.Found(RealGit.Executable), (resolved as ResolvedExecutable.NotFound)?.Reason ?? "the supported install is admin-only by real ACLs");
+    }
+
+    [Fact]
+    public void A_judgement_is_reused_while_the_program_files_are_the_same_files_and_judged_afresh_when_one_is_replaced()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe");
+        var refuse = false;
+        var acl = new ScriptedAcl((_, _) => refuse ? "lets S-1-5-32-545 (WriteData) change it" : string.Empty);
+        var git = new GitExecutable(() => [exe], acl, reuseJudgement: true);
+
+        git.Resolve().Should().Be(new ResolvedExecutable.Found(exe));
+        var asked = acl.Asked.Count;
+        asked.Should().BeGreaterThan(0);
+        refuse = true;
+        git.Resolve().Should().Be(new ResolvedExecutable.Found(exe), "the same files: the earlier judgement stands within one process");
+        acl.Asked.Count.Should().Be(asked, "no descriptor was read again");
+
+        File.WriteAllText(folder.Under("Git/mingw64/bin/git.exe"), "MZ\0\0 a different program, replaced after the judgement");
+        git.Resolve().Should().BeOfType<ResolvedExecutable.NotFound>("a replaced program is judged afresh, and the permissions now refuse it");
+        acl.Asked.Count.Should().BeGreaterThan(asked);
+    }
+
+    [Fact]
+    public void Without_reuse_every_resolve_reads_every_descriptor_again()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe");
+        var acl = new ScriptedAcl((_, _) => string.Empty);
+        var git = new GitExecutable(() => [exe], acl);
+
+        git.Resolve();
+        var once = acl.Asked.Count;
+        git.Resolve();
+
+        acl.Asked.Count.Should().Be(once * 2);
+    }
+
+    [Fact]
+    public void Reusing_a_judgement_makes_resolving_git_at_least_twice_as_cheap_as_judging_it_afresh()
+    {
+        // The decision of E19.S4 gap 3 (measured 2026-10-21 on this machine WITHOUT the reuse: 50 resolves took 601 ms, 12 ms a call; a scan makes hundreds):
+        // the product keeps the judgement of a passed candidate for the life of the process and re-checks the identity of its program files at every call
+        // (GitExecutable reuseJudgement). A wall-clock bound is not stable on a saturated machine (5.07 ms was seen inside a full suite, under 5 ms alone), so the
+        // bound is RELATIVE: the reused resolve is at least twice as fast as the same resolve judged afresh, measured side by side.
+        Assert.SkipUnless(RealGit.Available, "this machine has no Git for Windows under Program Files");
+        var afresh = new GitExecutable(() => [RealGit.Executable], new WindowsAdminOnlyPath());
+        var reused = new GitExecutable(() => [RealGit.Executable], new WindowsAdminOnlyPath(), reuseJudgement: true);
+        afresh.Resolve().Should().BeOfType<ResolvedExecutable.Found>("warm-up, and the install is the supported one");
+        reused.Resolve().Should().BeOfType<ResolvedExecutable.Found>();
+
+        var freshTime = Time(afresh);
+        var reusedTime = Time(reused);
+
+        reusedTime.Should().BeLessThan(freshTime / 2, $"50 afresh took {freshTime.TotalMilliseconds:0.0} ms, 50 reused {reusedTime.TotalMilliseconds:0.0} ms");
+    }
+
+    private static TimeSpan Time(GitExecutable git)
+    {
+        var watch = global::System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < 50; i++)
+        {
+            git.Resolve();
+        }
+
+        return watch.Elapsed;
     }
 
     [Fact]

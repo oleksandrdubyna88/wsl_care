@@ -152,20 +152,30 @@ public sealed class ReclaimableTests
     }
 
     [Fact]
-    public void A_git_that_cannot_be_run_retains_every_candidate_by_name_and_counts_them_as_not_asked()
+    public void No_admitted_git_is_a_named_state_not_an_empty_reclaimable_list()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
         using var world = Fates("reclaim-gitgone");
-        var runner = new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("git.exe is not started: it is never looked up on PATH"), Policy = CommandPolicy.Product };
+        const string why = "git.exe is not started: no admitted git (it is never looked up on PATH)";
+        var runner = new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart(why), Policy = CommandPolicy.Product };
         var questions = new GitQuestions(runner, Limits, _ => string.Empty, Directory.Exists);
 
         var report = WorktreeReports.From(world.Scanner(git: questions).Run([world.Work], WorktreeWorld.DefaultSettings(), CancellationToken.None), WorktreeWorld.DefaultSettings());
 
-        report.Reclaimable.Available.Should().BeTrue();
-        report.Reclaimable.A24!.Count.Should().Be(0);
-        report.Reclaimable.A24Orphans!.Count.Should().Be(0);
-        report.Reclaimable.Retained!.Should().Contain(r => r.Reason == "git could not be run");
-        report.Reclaimable.NotAsked.Should().BeGreaterThan(0);
+        var reclaimable = report.Reclaimable;
+        reclaimable.Available.Should().BeFalse("nothing was confirmed because git could not be asked: absent, not zero");
+        reclaimable.A24.Should().BeNull();
+        reclaimable.A24Orphans.Should().BeNull();
+        reclaimable.GitUnavailable.Should().Contain(why);
+        reclaimable.Reason.Should().StartWith("git could not be asked").And.Contain(why);
+        reclaimable.Retained!.Should().Contain(r => r.Reason == GitReasons.Unavailable && r.Count >= 4, "every candidate that needed git carries the reason");
+        reclaimable.NotAsked.Should().BeGreaterThan(0);
+
+        var status = WorktreesStatus.From([world.Work], Reading.Of(report), WorktreeWorld.DefaultSettings(), DateTimeOffset.UtcNow);
+
+        status.Verdict.Level.Should().Be(Level.Unknown, "never ok, never zero");
+        status.Verdict.Reason.Should().Contain("git could not be asked").And.Contain(why);
+        status.Section.Report!.Reclaimable.GitUnavailable.Should().Contain(why, "the scan fact reaches status");
     }
 
     [Fact]
@@ -193,6 +203,39 @@ public sealed class ReclaimableTests
         scanner.OrphanRepository(@"D:\w\main\.git\modules\x").Should().BeEmpty();
         scanner.OrphanRepository(@"D:\somewhere\x").Should().BeEmpty();
         scanner.OrphanRepository(string.Empty).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_scan_over_a_real_linked_worktree_confirms_its_ignored_bin_end_to_end()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows() && RealGit.Available, "the real git.exe of Git for Windows: the Windows legs");
+        using var world = new WorktreeWorld("reclaim-real");
+        var isolated = new Dictionary<string, string> { ["GIT_CONFIG_GLOBAL"] = "NUL", ["GIT_CONFIG_NOSYSTEM"] = "1" };
+        var main = Path.Combine(world.Work, "main");
+        var worktree = Path.Combine(world.Work, "wt1");
+        RealGit.Run(world.Work, ["init", "-q", "main"], isolated).ExitCode.Should().Be(0);
+        // `worktree add --orphan` makes a linked worktree on an unborn branch: no commit, so no identity is needed or set anywhere.
+        var added = RealGit.Run(main, ["worktree", "add", "--orphan", "-b", "feature", "../wt1"], isolated);
+        added.ExitCode.Should().Be(0, added.Stderr);
+        world.Sandbox.File("work/wt1/.gitignore", "bin/\nobj/\n");
+        world.Sandbox.File("work/wt1/src/Program.cs", "class P {}\n");
+        world.BuildOutput(worktree);
+        RealGit.Run(worktree, ["add", "--", ".gitignore", "src/Program.cs", "App.csproj"], isolated).ExitCode.Should().Be(0);
+        world.Age(worktree);
+        world.Age(world.AdminOf("wt1"));
+        var questions = new GitQuestions(new ProcessCommandRunner(CommandPolicy.Product), Limits, name => GitEnvironment.ThisProcess(name), Directory.Exists);
+
+        var result = world.Scanner(git: questions).Run([world.Work], WorktreeWorld.DefaultSettings(), CancellationToken.None);
+
+        var facts = result.Roots.Single().Facts.Single(f => f.Name == "wt1");
+        facts.Kind.Should().Be(FolderKind.Worktree, facts.Why);
+        var walked = result.Roots.Single().Walked.Single(f => f.Facts.Name == "wt1");
+        walked.Idle.Kind.Should().Be(IdleKind.Idle, walked.Idle.Reason);
+        var bin = walked.Candidates.Single(c => c.Relative == "bin");
+        bin.Retained.Should().BeEmpty();
+        bin.Git.Should().Be(new CandidateGit.Confirmed(TrackedFilesChecked: true));
+        var report = WorktreeReports.From(result, WorktreeWorld.DefaultSettings());
+        report.Reclaimable.A24.Should().Be(new Tally(1, BinBytes), "the ignored, untracked bin of an idle linked worktree is what a cleanup may delete");
     }
 
     private static ReclaimableReport Confirmed(long a24, long orphans, params RetainedGroup[] kept) =>
@@ -266,7 +309,9 @@ public sealed class ReclaimableTests
     {
         GitReasons.GroupOf("git refused: fatal: detected dubious ownership in repository at 'D:/x'").Should().Be("git refused the question");
         GitReasons.GroupOf("git did not answer within 30 s").Should().Be("git did not answer in time");
-        GitReasons.GroupOf("git could not be run: git.exe is not started").Should().Be("git could not be run");
+        GitReasons.GroupOf("git could not be run: git.exe is not started").Should().Be("git unavailable");
+        GitReasons.IsGitUnavailable("git could not be run: x").Should().BeTrue();
+        GitReasons.UnavailableWhy("git could not be run: git.exe is not started").Should().Be("git.exe is not started");
         GitReasons.GroupOf(GitReasons.Tracked).Should().Be(GitReasons.Tracked);
         GitReasons.IsAFailureToAsk("git refused: x").Should().BeTrue();
         GitReasons.IsAFailureToAsk(GitReasons.NotIgnored).Should().BeFalse();

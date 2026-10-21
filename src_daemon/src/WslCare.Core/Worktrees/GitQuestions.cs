@@ -41,7 +41,12 @@ public sealed class GitQuestions(ICommandRunner runner, GitLimits limits, Func<s
     }
 
     private static GitVerdict VerdictOf(IReadOnlyDictionary<string, GitVerdict> verdicts, string asked) =>
-        verdicts.TryGetValue(asked, out var verdict) ? verdict : new GitVerdict.Retained(new SlotKind.RelativeName().Accepts(asked) ? GitReasons.NoAnswer : GitReasons.BadName);
+        verdicts.TryGetValue(asked, out var verdict) ? verdict : new GitVerdict.Retained(WhyNone(asked));
+
+    /// <summary>Why a name has no verdict: it was asked and git said nothing about it, it is a word the never-list refuses as a git argument (which
+    /// says so by name — an accepted blind spot is only that a path merely CONTAINING the word is not a token), or it is no name git may be asked about.</summary>
+    private static string WhyNone(string asked) =>
+        new SlotKind.RelativeName().Accepts(asked) ? GitReasons.NoAnswer : SlotKind.RelativeName.IsGitWord(asked) ? GitReasons.UnsafeNameOf(asked) : GitReasons.BadName;
 
     private async Task<IReadOnlyDictionary<string, GitVerdict>> VerdictsAsync(GitQuestion question, IReadOnlyList<string> names, CancellationToken cancellationToken)
     {

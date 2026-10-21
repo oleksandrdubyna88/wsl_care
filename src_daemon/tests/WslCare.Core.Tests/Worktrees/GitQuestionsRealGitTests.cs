@@ -52,6 +52,79 @@ public sealed class GitQuestionsRealGitTests
     }
 
     [Fact]
+    public async Task A_tracked_file_under_a_differently_cased_index_spelling_retains_the_candidate()
+    {
+        NeedGit();
+        // Windows folders are case-insensitive: the index can say Bin/x while the disk says bin. Git's ignore matcher honours core.ignorecase and
+        // says "ignored", but its pathspec matcher does not — a literal ls-files for "bin" finds nothing, and a tracked file would be counted reclaimable.
+        using var repo = new ThrowAwayGitRepo("git-icase");
+        repo.Write(".gitignore", "bin/\nobj/\n");
+        repo.Write("Bin/x", "x");
+        repo.Write("src/Obj/y", "x");
+        repo.Write("clean/bin/z", "x");
+        repo.Track("Bin/x", force: true);
+        repo.Track("src/Obj/y", force: true);
+        Directory.Move(repo.Under("Bin"), repo.Under("bin-moving"));
+        Directory.Move(repo.Under("bin-moving"), repo.Under("bin"));
+        Directory.Move(repo.Under("src/Obj"), repo.Under("src/obj-moving"));
+        Directory.Move(repo.Under("src/obj-moving"), repo.Under("src/obj"));
+
+        // The control: git's own answers for the on-disk spelling are the hole — ignored, and no tracked file found by a literal pathspec.
+        RealGit.Run(repo.Path, ["check-ignore", "-v", "-n", "--", "bin"]).Stdout.Should().Contain(".gitignore:1:bin/", "the ignore matcher honours core.ignorecase");
+        RealGit.Run(repo.Path, ["--literal-pathspecs", "ls-files", "--cached", "--", "bin"]).Stdout.Trim().Should().BeEmpty("the control must show the literal pathspec missing the file, or this test proves nothing");
+
+        var answers = await Product().AskAsync(Repository(repo, repo.Parent, "bin", "src/obj", "clean/bin"), CancellationToken.None);
+
+        Of(answers, "bin").Should().Be(new GitVerdict.Retained(GitReasons.Tracked), "the index holds Bin/x");
+        Of(answers, "src/obj").Should().Be(new GitVerdict.Retained(GitReasons.Tracked), "the index holds src/Obj/y");
+        Of(answers, "clean/bin").Should().Be(new GitVerdict.Confirmed(TrackedFilesChecked: true), "nothing tracked: the case-insensitive match does not widen into other folders");
+    }
+
+    [Fact]
+    public async Task A_rule_whose_pattern_holds_a_tab_and_a_colon_does_not_hide_its_own_line_among_siblings()
+    {
+        NeedGit();
+        // `check-ignore -v` prints `<source>:<line>:<pattern><TAB><path>`; a pattern may hold a tab and a colon (here a character class that matches j),
+        // a path cannot. Splitting at the first tab read the path as "-k]/<TAB>obj" and left obj without an answer.
+        using var repo = new ThrowAwayGitRepo("git-tabpattern");
+        repo.Write(".gitignore", "bin/\nob[:\t-k]/\n");
+        var names = new List<string> { "bin", "obj", "objx" };
+        names.AddRange(Enumerable.Range(0, 30).Select(i => $"pkg{i:00}/bin"));
+        foreach (var name in names.Where(n => n != "objx"))
+        {
+            repo.Write(name + "/a.dll", "x");
+        }
+
+        repo.Write("objx/a.dll", "x");
+        RealGit.Run(repo.Path, ["check-ignore", "-v", "-n", "--", "obj"]).Stdout.Should().Contain("\t-k]/\tobj", "the control must show the tab inside the printed pattern");
+
+        var answers = await Product().AskAsync(Repository(repo, repo.Parent, [.. names]), CancellationToken.None);
+
+        Of(answers, "obj").Should().Be(new GitVerdict.Confirmed(TrackedFilesChecked: true));
+        Of(answers, "bin").Should().Be(new GitVerdict.Confirmed(TrackedFilesChecked: true));
+        Of(answers, "objx").Should().Be(new GitVerdict.Retained(GitReasons.NotIgnored));
+        answers.Count(a => a.Verdict is GitVerdict.Confirmed).Should().Be(32, "every sibling is judged by its own line");
+    }
+
+    [Fact]
+    public async Task A_candidate_inside_a_tracked_submodule_is_retained()
+    {
+        NeedGit();
+        // Measured 2026-10-21: `ls-files` for a pathspec INSIDE a gitlink prints nothing (only the pathspec `sub` itself lists it), and `check-ignore`
+        // refuses with exit 128, "Pathspec 'sub/bin' is in submodule 'sub'". So git itself retains the candidate; the scripted test pins the other
+        // safeguard, a gitlink listed above the candidate (HoldsTracked), for a git version that answers the first question differently.
+        using var repo = new ThrowAwayGitRepo("git-submodule");
+        repo.Write(".gitignore", "bin/\n");
+        repo.Write("sub/bin/a.dll", "x");
+        repo.Git("update-index", "--add", "--cacheinfo", "160000,0123456789012345678901234567890123456789,sub");
+        RealGit.Run(repo.Path, ["check-ignore", "-v", "-n", "--", "sub/bin"]).Stderr.Should().Contain("is in submodule", "the control must show git refusing a pathspec inside a submodule");
+
+        var answers = await Product().AskAsync(Repository(repo, repo.Parent, "sub/bin"), CancellationToken.None);
+
+        Of(answers, "sub/bin").Should().BeOfType<GitVerdict.Retained>().Which.Reason.Should().Contain("is in submodule");
+    }
+
+    [Fact]
     public async Task A_user_excludes_file_does_not_change_the_answer()
     {
         NeedGit();

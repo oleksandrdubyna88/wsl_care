@@ -29,9 +29,15 @@ public static class GitCommands
     /// <summary><c>rev-parse --show-toplevel</c>: which working tree git believes the working directory is in.</summary>
     public static IReadOnlyList<string> TopLevel() => [Executable, .. Options, "rev-parse", "--show-toplevel"];
 
-    /// <summary><c>ls-files -z --cached</c>: the tracked files under each name.</summary>
+    /// <summary>The pathspec magic every <c>ls-files</c> name carries: a literal name, matched WITHOUT regard to case. Git's pathspec matcher ignores
+    /// <c>core.ignorecase</c> while its ignore matcher honours it, so on NTFS an index entry <c>Bin/x</c> would be missed by a bare <c>bin</c> — and a tracked
+    /// file counted reclaimable (measured 2026-10-21). <c>--literal-pathspecs</c> is NOT used: under it git parses no magic at all, and the
+    /// <see cref="Processes.Policy.SlotKind.RelativeName"/> slot already refuses every glob and magic character.</summary>
+    public const string TrackedNameMagic = ":(literal,icase)";
+
+    /// <summary><c>ls-files -z --cached</c>: the tracked files under each name (or, a gitlink, above it).</summary>
     public static IReadOnlyList<string> TrackedFiles(IReadOnlyList<string> names) =>
-        [Executable, .. Options, "--literal-pathspecs", "ls-files", "-z", "--cached", "--", .. names];
+        [Executable, .. Options, "ls-files", "-z", "--cached", "--", .. names.Select(n => TrackedNameMagic + n)];
 
     /// <summary><c>check-ignore -v -n</c>: the rule that decides each name, one line per name.</summary>
     public static IReadOnlyList<string> CheckIgnore(IReadOnlyList<string> names) =>

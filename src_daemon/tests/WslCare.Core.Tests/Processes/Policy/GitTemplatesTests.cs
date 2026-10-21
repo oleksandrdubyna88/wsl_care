@@ -126,10 +126,24 @@ public sealed class GitTemplatesTests
     public void The_check_ignore_commands_carry_no_z_and_no_literal_pathspecs_because_git_refuses_both()
     {
         // Measured 2026-10-15 (research/2026-10-15_disk_hygiene_git_probe.md): `check-ignore -z` without --stdin and
-        // `check-ignore --literal-pathspecs` both exit 128. ls-files keeps both.
+        // `check-ignore --literal-pathspecs` both exit 128.
         GitCommands.CheckIgnore(Questions("bin")).Should().NotContain(["-z", "--literal-pathspecs"]);
         GitCommands.CheckIgnoreOrphan(@"C:\r\.git", Questions("bin")).Should().NotContain(["-z", "--literal-pathspecs"]);
-        GitCommands.TrackedFiles(Questions("bin")).Should().Contain(["-z", "--literal-pathspecs", "--cached"]);
+    }
+
+    [Fact]
+    public void Ls_files_asks_each_name_with_literal_and_icase_magic_and_without_literal_pathspecs()
+    {
+        // git's pathspec match ignores core.ignorecase, so a bare name misses an index entry spelt `Bin/x` for a folder on disk spelt `bin`; and under
+        // --literal-pathspecs git parses no pathspec magic at all (measured 2026-10-21, research/2026-10-15_disk_hygiene_git_probe.md).
+        var lsFiles = GitCommands.TrackedFiles(Questions("bin", "obj/"));
+
+        lsFiles.Should().Contain(["-z", "--cached"]).And.NotContain("--literal-pathspecs");
+        lsFiles.SkipWhile(a => a != "--").Skip(1).Should().Equal(":(literal,icase)bin", ":(literal,icase)obj/");
+        CommandPolicy.Product.Review(Request(lsFiles)).IsAllowed.Should().BeTrue();
+        CommandPolicy.Product.Review(Request([.. lsFiles.Take(lsFiles.Count - 2), "bin", "obj/"])).IsAllowed.Should().BeFalse("a bare name is not the template's shape");
+        CommandPolicy.Product.Review(Request([.. lsFiles.Take(lsFiles.Count - 1), ":(glob)obj/"])).IsAllowed.Should().BeFalse("only the one magic the template spells");
+        CommandPolicy.Product.Review(Request([.. lsFiles.Take(lsFiles.Count - 1), ":(literal,icase)*"])).IsAllowed.Should().BeFalse("the name behind the magic is still a plain name");
     }
 
     [Fact]

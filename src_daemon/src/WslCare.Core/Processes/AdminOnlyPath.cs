@@ -28,6 +28,21 @@ public enum AclRight
     Delete = 0x10000,
     ChangePermissions = 0x40000,
     TakeOwnership = 0x80000,
+
+    /// <summary>MAXIMUM_ALLOWED: whatever the principal can be given — everything.</summary>
+    MaximumAllowed = 0x02000000,
+
+    /// <summary>GENERIC_EXECUTE. Grants no write.</summary>
+    GenericExecute = 0x20000000,
+
+    /// <summary>GENERIC_WRITE: includes <see cref="WriteData"/> and <see cref="AppendData"/>.</summary>
+    GenericWrite = 0x40000000,
+
+    /// <summary>GENERIC_READ. Grants no write.</summary>
+    GenericRead = unchecked((int)0x80000000),
+
+    /// <summary>GENERIC_ALL: everything.</summary>
+    GenericAll = 0x10000000,
 }
 
 /// <summary>One access-control entry as the judge reads it: who, allow or deny, which rights, and whether it only applies to children.</summary>
@@ -71,11 +86,22 @@ public static class AdminOnlyJudge
             ? $"is owned by {facts.OwnerSid}, who can change its permissions"
             : facts.Entries.Where(e => Grants(e, Forbidden(role))).Select(e => Describe(e, Forbidden(role))).FirstOrDefault() ?? string.Empty;
 
+    private const AclRight Looked = AclRight.WriteData | AclRight.AppendData | AclRight.DeleteSubdirectoriesAndFiles | AclRight.Delete | AclRight.ChangePermissions | AclRight.TakeOwnership;
+
+    /// <summary>GENERIC_ALL, GENERIC_WRITE and MAXIMUM_ALLOWED each include every right the rule forbids to others.</summary>
+    private const AclRight GrantsWrite = AclRight.GenericAll | AclRight.GenericWrite | AclRight.MaximumAllowed;
+
+    /// <summary>The bits of a raw access mask the rule looks at: the specific rights it names, and the generic ones that include them. An entry
+    /// may carry GENERIC_ALL or GENERIC_WRITE unmapped; dropping them would read it as "no rights". GENERIC_READ and GENERIC_EXECUTE are kept
+    /// but grant no write.</summary>
+    public static AclRight KnownRights(int accessMask) =>
+        (AclRight)accessMask & (Looked | GrantsWrite | AclRight.GenericRead | AclRight.GenericExecute);
+
     private static bool IsAdministrative(string sid) => sid is Administrators or System or TrustedInstaller;
 
     private static bool Grants(AclEntry entry, AclRight forbidden) =>
-        entry.Allow && !entry.InheritOnly && !IsAdministrative(entry.Sid) && (entry.Rights & forbidden) != 0;
+        entry.Allow && !entry.InheritOnly && !IsAdministrative(entry.Sid) && (entry.Rights & (forbidden | GrantsWrite)) != 0;
 
     private static string Describe(AclEntry entry, AclRight forbidden) =>
-        string.Create(CultureInfo.InvariantCulture, $"lets {entry.Sid} ({entry.Rights & forbidden}) change it");
+        string.Create(CultureInfo.InvariantCulture, $"lets {entry.Sid} ({entry.Rights & (forbidden | GrantsWrite)}) change it");
 }

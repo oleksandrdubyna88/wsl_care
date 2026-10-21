@@ -31,6 +31,26 @@
   days. `--no-optional-locks` plus the three read-only questions leave the index's bytes and mtime unchanged
   (`The_scan_never_changes_the_index_time`, with a `git status` control that does change them).
 
+## Measured 2026-10-21 (after the security review of PR #159), same git, throw-away `testsToDelete-` repositories
+
+- **Case.** Index `Bin/x` (force-added), folder renamed to `bin` on disk, `.gitignore` `bin/`, `core.ignorecase=true`: `check-ignore -v -n -- bin` says
+  ignored (the ignore matcher honours `core.ignorecase`); `ls-files --cached -- bin` and `--literal-pathspecs ls-files --cached -- bin` print NOTHING (the
+  pathspec matcher does not); `ls-files --cached -- ':(icase)bin'` and `':(literal,icase)bin'` print `Bin/x`, with or without a trailing `/`. With
+  `GIT_LITERAL_PATHSPECS=1` the same `:(icase)` pathspec prints nothing (no magic is parsed). So the question is asked per name as `:(literal,icase)<name>`
+  and without `--literal-pathspecs`; `check-ignore` alone would have counted the tracked file reclaimable.
+- **Submodule.** Index gitlink `sub` (`update-index --add --cacheinfo 160000,<sha>,sub`), folder `sub/bin` on disk: `ls-files --cached -- ':(literal,icase)sub/bin'`
+  prints nothing, `... -- ':(literal,icase)sub'` prints `sub`, and `check-ignore -v -n -- sub/bin` exits 128, "fatal: Pathspec 'sub/bin' is in submodule 'sub'". So git
+  itself refuses the candidate (retained by name); a tracked gitlink listed ABOVE a candidate is also treated as tracked.
+- **Last tab.** `check-ignore -v` prints `<source>:<line>:<pattern><TAB><path>`; a pattern may hold a tab and a colon (`ob[:<TAB>-k]/` matches `obj`), a path cannot
+  (a control character is no Windows file name): the path is what follows the LAST tab.
+- **A linked worktree needs no commit.** `git worktree add --orphan -b feature ../wt1` makes a linked worktree on an unborn branch: a `.git` file, an admin folder whose
+  `gitdir` points back, and no identity needed anywhere.
+- **Cost of judging `git.exe` at every call.** Reading the security descriptors of the install (file, `cmd`, `mingw64\bin` and its `git.exe`, and every ancestor to `C:\`)
+  costs about 12 ms a resolve on this machine (50 resolves in 601 ms; a second run 465 ms, 9 ms a call), against a 5 ms / 1 s budget. The product therefore keeps the
+  judgement of a passed candidate for the life of the process and re-checks the identity (path, length, creation and last-write time) of every program file at each call.
+- **A timeout kills the tree.** A fake `git.exe` that starts a child and hangs is cut at `worktrees.gitTimeoutSeconds` by the shared launcher
+  (`Process.Kill(entireProcessTree: true)`); the child is gone when the call returns (`GitTimeoutTests`).
+
 ## Consequences recorded in the code
 
 `Core/Worktrees/GitCommands.cs` (the argv), `GitQuestions.cs` (the three questions and their parse), `GitEnvironment` (the clean
