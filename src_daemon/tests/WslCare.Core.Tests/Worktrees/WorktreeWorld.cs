@@ -42,8 +42,8 @@ internal sealed class WorktreeWorld : IDisposable
 
     public static WorktreeSettings DefaultSettings() => WorktreeSettings.From(ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config);
 
-    public WorktreeScanner Scanner(Func<char, DriveType>? drives = null, IFileSystem? files = null) =>
-        new(Paths, files ?? Files, Clock, drives ?? (_ => DriveType.Fixed));
+    public WorktreeScanner Scanner(Func<char, DriveType>? drives = null, IFileSystem? files = null, GitQuestions? git = null) =>
+        new(Paths, files ?? Files, Clock, drives ?? (_ => DriveType.Fixed), git);
 
     /// <summary>A main clone: <c>work\&lt;name&gt;\.git\</c> a folder, and a project beside nothing.</summary>
     public string Main(string name)

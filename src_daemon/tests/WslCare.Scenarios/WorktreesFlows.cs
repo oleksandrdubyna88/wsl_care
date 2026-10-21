@@ -58,15 +58,17 @@ public sealed class WorktreesFlows
         root["notGit"]!.GetValue<int>().Should().Be(1);
         root["orphans"]!.GetValue<int>().Should().Be(1);
         root["buildOutput"]!["inOrphans"]!["bytes"]!.GetValue<long>().Should().Be(700);
-        report["reclaimable"]!["available"]!.GetValue<bool>().Should().BeFalse();
+        report["reclaimable"]!["available"]!.GetValue<bool>().Should().BeTrue("the built binary has git to ask");
+        report["reclaimable"]!["a24Orphans"]!["count"]!.GetValue<int>().Should().Be(0, "the orphan was written to just now: it is recent, so git is not asked and nothing is confirmed");
+        report["reclaimable"]!["retained"]!.AsArray().Single()!["reason"]!.GetValue<string>().Should().Contain("within worktrees.idleDays");
         File.Exists(Path.Combine(home.Paths.StateDirectory, "worktrees.json")).Should().BeTrue();
-        home.Calls.Should().BeEmpty("the scan starts no process, not even a fake tool");
+        home.Calls.Should().BeEmpty("the scan starts no fake tool, and no git either: a recent folder is kept by that reason alone");
 
         var status = JsonNode.Parse((await home.RunAsync("status", "--json")).Stdout)!;
 
         status["worktrees"]!["basis"]!["source"]!.GetValue<string>().Should().Be("scan");
         status["worktrees"]!["basis"]!["ageSeconds"]!.GetValue<double>().Should().BeLessThan(600);
-        status["verdicts"]!.AsArray().Single(v => v!["id"]!.GetValue<string>() == "worktrees.reclaimable")!["level"]!.GetValue<string>().Should().Be("unknown");
+        status["verdicts"]!.AsArray().Single(v => v!["id"]!.GetValue<string>() == "worktrees.reclaimable")!["level"]!.GetValue<string>().Should().Be("ok", "a complete scan that confirmed nothing and had nothing to ask git is a confirmed zero, with its reasons");
     }
 
     [Fact]

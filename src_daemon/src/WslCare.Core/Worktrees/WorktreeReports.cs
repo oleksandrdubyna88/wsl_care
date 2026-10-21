@@ -8,12 +8,20 @@ namespace WslCare.Core.Worktrees;
 /// <remarks>
 /// <b>Build output</b> <c>all</c> is every build-output folder the walk found, whatever became of it; <c>inIdleUnlocked</c>,
 /// <c>inIdleLocked</c> and <c>inOrphans</c> hold only those that passed every STRUCTURAL check (not retained), by where they lie — and
-/// which of them a cleanup would delete is git's word (E19.S4), so nothing here is called reclaimable: <see cref="ReclaimableReport"/>
-/// says <c>available: false</c> and why, and absent is not zero.
+/// which of them a cleanup would delete is git's word (E19.S4): <see cref="ReclaimableReport"/> counts only the candidates that pass every
+/// check including git's, names the rest by reason, and says <c>available: false</c> when git was not asked — absent is not zero.
 /// </remarks>
 public static class WorktreeReports
 {
-    public const string GitHasNotConfirmed = "git has not confirmed the candidates yet (E19.S4)";
+    public const string GitHasNotConfirmed = "git has not confirmed the candidates (the scan had no git to ask)";
+
+    public const string LockedReason = "its worktree is locked";
+
+    public const string RecentReason = "its folder was written to within worktrees.idleDays";
+
+    public const string UnknownReason = "its folder could not be established (a budget ran out or an entry could not be read)";
+
+    public const string GitNotAskedReason = GitReasons.ScanTimeUp;
 
     public static WorktreeReport From(WorktreeScanResult result, WorktreeSettings settings) =>
         new(
@@ -23,7 +31,57 @@ public static class WorktreeReports
             result.Complete,
             [.. result.Roots.Select(root => RootOf(root, settings))],
             Top(result, settings),
-            new ReclaimableReport(false, GitHasNotConfirmed));
+            ReclaimableOf(result));
+
+    /// <summary>The reclaimable part (§3.3): every walked candidate lands in exactly one place — a24, a24Orphans, or one retained reason, the FIRST that
+    /// applies: a structural retention, then the folder unknown, recent, locked, then git's word.</summary>
+    private static ReclaimableReport ReclaimableOf(WorktreeScanResult result)
+    {
+        if (!result.GitAsked)
+        {
+            return new ReclaimableReport(false, GitHasNotConfirmed);
+        }
+
+        var placed = result.Roots.SelectMany(r => r.Walked).SelectMany(f => f.Candidates.Select(c => (Folder: f, Candidate: c, Place: PlaceOf(f, c)))).ToList();
+        var retained = placed.Where(p => p.Place.Reason.Length > 0).GroupBy(p => p.Place.Reason).OrderByDescending(g => g.Sum(p => p.Candidate.Bytes)).ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new RetainedGroup(g.Key, g.Count(), g.Sum(p => p.Candidate.Bytes))).ToList();
+        var unavailable = placed.Select(p => p.Candidate.Git).OfType<CandidateGit.Retained>().Where(r => GitReasons.IsGitUnavailable(r.Reason)).Select(r => GitReasons.UnavailableWhy(r.Reason))
+            .Concat(result.GitProbe.Usable ? Array.Empty<string>() : new[] { result.GitProbe.Why }).Distinct(StringComparer.Ordinal).ToList();
+        if (unavailable.Count > 0)
+        {
+            // No admitted git.exe (not installed, not admitted, not started) is a NAMED state, learnt by the probe even when no candidate needed a question:
+            // every candidate that needed git carries the reason, the figures are absent — never an empty list that reads as zero — and status says
+            // "git could not be asked". A policy refusal of ONE question is not this: it is that folder's, and the others are still asked.
+            var why = string.Join("; ", unavailable);
+            return new ReclaimableReport(false, $"git could not be asked: {why}") { Retained = retained, NotAsked = placed.Count(p => p.Place.NotAsked), GitUnavailable = why };
+        }
+
+        return new ReclaimableReport(true, string.Empty)
+        {
+            A24 = Tally(placed.Where(p => p.Place.Kind == FolderKind.Worktree).Select(p => p.Candidate)),
+            A24Orphans = Tally(placed.Where(p => p.Place.Kind == FolderKind.Orphan).Select(p => p.Candidate)),
+            Retained = retained,
+            NotAsked = placed.Count(p => p.Place.NotAsked),
+            NothingNeededGit = placed.All(p => !p.Place.NeededGit),
+        };
+    }
+
+    /// <summary>Where one candidate lands: <c>Kind</c> set when confirmed (empty reason), else the reason it stays; <c>NeededGit</c> when every other check
+    /// passed, so git's word was the one still wanted.</summary>
+    private readonly record struct Placement(FolderKind? Kind, string Reason, bool NotAsked, bool NeededGit = false);
+
+    private static Placement PlaceOf(FolderScan folder, BuildCandidate candidate) => candidate switch
+    {
+        { Retained.Length: > 0 } => Stays(BuildOutputRule.GroupOf(candidate.Retained)),
+        _ when folder.Idle.Kind == IdleKind.Unknown => Stays(UnknownReason),
+        _ when folder.Idle.Kind == IdleKind.Active => Stays(RecentReason),
+        _ when folder.Facts.Locked => Stays(LockedReason),
+        { Git: CandidateGit.Confirmed } => new Placement(folder.Facts.Kind, string.Empty, false, NeededGit: true),
+        { Git: CandidateGit.Retained retained } => new Placement(null, GitReasons.GroupOf(retained.Reason), GitReasons.IsAFailureToAsk(retained.Reason), NeededGit: true),
+        _ => new Placement(null, GitNotAskedReason, true, NeededGit: true),
+    };
+
+    private static Placement Stays(string reason) => new(null, reason, false);
 
     private static RootReport RootOf(RootScan root, WorktreeSettings settings)
     {

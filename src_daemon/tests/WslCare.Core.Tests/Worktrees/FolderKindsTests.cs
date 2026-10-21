@@ -276,15 +276,22 @@ public sealed class FolderKindsTests
         facts.AdminFolder.Should().BeEmpty();
     }
 
+    /// <summary>The only files of <c>Core/Worktrees</c> that may name the runner: git's three read-only questions (E19.S4).</summary>
+    private static readonly string[] GitFilesThatStartTheProcess = ["GitQuestions.cs", "GitReplies.cs", "GitSupport.cs"];
+
     [Fact]
     public void The_classifier_and_the_scan_start_no_process()
     {
         var offenders = Directory.EnumerateFiles(WorktreeSources.Directory, "*.cs")
+            .Where(f => !GitFilesThatStartTheProcess.Contains(Path.GetFileName(f)))
             .Where(f => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(f), @"\bICommandRunner\b|\bCommandRequest\b|\bCommandTemplate\b|\bProcessStartInfo\b|\bProcess\s*\.\s*Start\b|ProcessCommandRunner"))
             .Select(Path.GetFileName)
             .ToList();
 
-        offenders.Should().BeEmpty("the worktree classifier and scan reach the disk through IFileSystem and nothing else — git's three questions are E19.S4's, and a different file");
+        offenders.Should().BeEmpty("the worktree classifier and scan reach the disk through IFileSystem and nothing else — git's three questions (E19.S4) are asked in GitQuestions, GitReplies and GitSupport, which the scan is handed");
+        // The companion: those three files DO name the runner, so the scan above passes because it is clean, not because the scan found nothing.
+        System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(Path.Combine(WorktreeSources.Directory, "GitQuestions.cs")), @"\bICommandRunner\b").Should().BeTrue("GitQuestions is the one place the runner is used");
+        System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(Path.Combine(WorktreeSources.Directory, "WorktreeScanner.cs")), @"\bICommandRunner\b|\bCommandRequest\b|ProcessCommandRunner").Should().BeFalse("the scanner is handed GitQuestions and never a runner");
         Directory.EnumerateFiles(WorktreeSources.Directory, "*.cs").Should().Contain(f => f.EndsWith("FolderKinds.cs", StringComparison.Ordinal), "the scan reads the real source folder");
     }
 }

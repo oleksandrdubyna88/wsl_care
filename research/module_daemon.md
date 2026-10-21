@@ -1524,3 +1524,71 @@ refused N, already gone N; logical bytes N`, `by group: coai-* 2 (… bytes), �
 
 **Not here.** The panel (WR-T3; the scheduled task and `tasks preview cleanup` are WR-T2's); the `testsToDelete-` rename of the harness
 (DH-8 — `wsl-care-test-*` stays on the allow-list for the existing backlog); a lease shared with the future A26 sweep.
+
+## Worktrees: git's three read-only questions (E19.S4 of PLAN_disk_hygiene_windows_E19.md, 2026-10-15)
+
+Measured behaviour is in [2026-10-15_disk_hygiene_git_probe.md](2026-10-15_disk_hygiene_git_probe.md); it overrides the command shapes
+the plan was written with (`check-ignore` runs without `-z` and without `--literal-pathspecs`).
+
+```mermaid
+flowchart LR
+  scan["WorktreeScanner.WithGit"] -->|GitQuestion| gq["GitQuestions.Ask"]
+  gq --> gate{"folder beneath root?"}
+  gate -- no --> ret["Retained: outside the root"]
+  gate -- yes --> rp["rev-parse --show-toplevel"]
+  rp -- other top --> ret2["Retained: another repository"]
+  rp -- same --> ls["ls-files -z --cached"] --> ci["check-ignore -v -n"]
+  ci --> v["Confirmed or Retained per name"]
+  gq --> pol["ProcessCommandRunner + CommandPolicy.Product"]
+  pol --> ge["GitExecutable: Program Files + ACL, never PATH"]
+```
+
+- **The questions** (`Core/Worktrees/GitQuestions.cs`): `AskAsync(GitQuestion)` answers one `GitAnswer(name, GitVerdict)` per candidate. A
+  `GitQuestion` is the working directory (the candidates' parent), the relative names, the configured root and the kind: `GitFolder.Repository`
+  (working tree or submodule, with the top level it must be) or `GitFolder.Orphan` (the admin folder the classifier read from the `.git` file).
+  `GitVerdict.Confirmed(TrackedFilesChecked)` or `GitVerdict.Retained(reason)`; the reasons are `GitReasons` (one place, so the report can
+  group by them). **The scan calls it** (`WorktreeScanner.WithGit`, handed a `GitQuestions`, never a runner): for the candidates that passed every
+  structural check in a folder that is idle and unlocked, within the scan's time — one batch of questions per folder. `CandidateGit` (NotAsked / Confirmed /
+  Retained) rides on each `BuildCandidate`; an orphan's repository is the `.git` folder two levels above its admin folder, derived by the scanner from the
+  classifier's value (`WorktreeScanner.OrphanRepository`).
+- **Reclaimable** (`WorktreeReports.ReclaimableOf`, §3.3): every walked candidate lands in exactly ONE place — `a24` (worktrees), `a24Orphans` (ignore-confirmed, tracked
+  files not checked), or one retained reason, the FIRST that applies: structural (`BuildOutputRule.GroupOf`), the folder unknown, recent, locked, then git's word
+  (`GitReasons.GroupOf`: a closed set). Absent figures, not zeros, when the scan had no git. `WorktreesStatus`: warn above `worktrees.reclaimableWarnGib`; `unknown` for
+  a stale scan, an unfinished scan or candidates git could not be asked about while below the limit; else `ok`.
+- **Safety order**: the folder must be at or beneath the root by segments (`FolderBeneath`; the policy never judges a working directory);
+  no path on argv except an orphan's admin folder (the repository is the working directory, names are relative); `GIT_CEILING_DIRECTORIES`
+  is the root; `rev-parse` must name the expected top level or every candidate of the folder is retained; names are judged per line of
+  `check-ignore`, never by its exit code; a negation or a `::` line retains; 128, an undocumented exit, a cut output, a timeout and a policy
+  refusal each retain the whole call with git's own first line.
+- **Orphan**: `--git-dir=<admin> --work-tree=. check-ignore --no-index`: "ignore rules confirmed; tracked files NOT checked" when the admin
+  folder exists, "not confirmed by git" otherwise (nothing started).
+- **Batches** (`GitBatches`): bounded by `worktrees.gitNamesPerCall` (64) AND the encoded command line (`worktrees.gitCommandLineMaxChars`,
+  7000, measured with `WindowsCommandLine`); a name that cannot fit alone is retained "too long for one git call".
+- **Environment** (`GitEnvironment`): `SystemRoot`, `WINDIR`, `TEMP`, `TMP` copied; `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`,
+  `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=NUL`, `GIT_CEILING_DIRECTORIES`; no `HOME`/`USERPROFILE`/`XDG_CONFIG_HOME`; `-c core.excludesFile=`
+  in argv. The request also asks for UTF-8 output (`CommandRequest.Utf8Output`).
+- **Templates** (`ReadCommandTemplates.GitTopLevel`, `GitLsFiles`, `GitCheckIgnore`, `GitCheckIgnoreOrphan`): the bare `git.exe`, each beginning
+  `-c core.fsmonitor=false -c core.excludesFile= -c core.quotePath=false --no-optional-locks`. New slot kinds `SlotKind.RelativeName` (refuses
+  empty, leading `-` or `/`, `..`, `.` and empty segments, `* ? [ : \ " < > |`, control characters, over 260) and `SlotKind.AdminFolder` (a plain
+  drive path; that it is the classifier's value is the caller's to prove).
+- **Which `git.exe`** (`Processes/GitExecutable.cs`): candidates `%ProgramFiles%\Git\cmd\git.exe`, `%ProgramW6432%`'s, then the machine layer's
+  `worktrees.gitPath`; admitted only when the file exists, starts with `MZ`, and `IAdminOnlyPath` (real: `WindowsAdminOnlyPath` reading the
+  security descriptor with the managed `GetAccessControl`, AOT-safe) says no non-administrator can write, append, delete, re-permission or
+  take ownership of the file, create a file in its folder or in git's `mingw64\bin`, or delete or re-permission any ancestor to the volume root
+  (`AdminOnlyJudge`, pure). **Never `PATH`.** `ProcessCommandRunner` has a product constructor taking a resolver
+  (`ProductExecutables.Resolve`: `git.exe` through `GitExecutable`, everything else as before); the policy still judges the bare name first.
+  Since the security review (2026-10-21): the real `git.exe` of each of `mingw64\bin`, `mingw32\bin`, `clangarm64\bin` that exists is judged as a program file too, and a
+  git with none is refused; GENERIC_ALL / GENERIC_WRITE / MAXIMUM_ALLOWED entries count as write (`AdminOnlyJudge.KnownRights`); a passed judgement is kept for the life
+  of the process while the program files keep their path, length, creation and last-write time (12 ms a resolve measured without it).
+- **The `ls-files` question** is asked per name as `:(literal,icase)<name>` (`GitCommands.TrackedNameMagic`), without `--literal-pathspecs`: git's pathspec match ignores
+  `core.ignorecase`, its ignore match does not (index `Bin/x`, disk `bin`). A tracked gitlink above a candidate retains it. `check-ignore -v` lines are split at the LAST tab.
+- **The probe and the time** (second pass, 2026-10-21): `GitQuestions.Probe` runs `git.exe --version` ONCE per scan through the same launcher (template `git-version`), so a
+  git that is not admitted is a scan fact (`gitUnavailable`) even when no candidate needed a question, and `nothingNeededGit` says git was asked nothing. The scan's time bounds
+  the git time: each question carries `Remaining` and no call outlives it, once the time is spent no further folder is asked and the scan is incomplete. A POLICY refusal of one
+  question ("refused by the policy: …", e.g. an orphan under `<home>\git`) is that folder's and NOT "git unavailable". The reused `git.exe` judgement expires after 60 s; attribute
+  writes (`WriteAttributes`, `WriteExtendedAttributes`) are forbidden on the program file and its folders.
+- **No admitted git** is a named state: `reclaimable.available` false, `gitUnavailable` the why, `retained` counting those candidates under "git unavailable", the verdict
+  unknown with "git could not be asked: …". A candidate named `clean`/`prune`/`worktree` says so in its own reason (`GitReasons.UnsafeNameOf`; the never-list scans argv
+  tokens, so a path merely containing the word is an accepted blind spot). `a24Orphans` is ignore-only by construction — see `todo/PLAN_disk_hygiene_windows_E20.md` §4c.
+- **Keys**: `worktrees.gitPath` (machine only), `worktrees.gitTimeoutSeconds` (30, 5..600), `worktrees.gitNamesPerCall` (64, 1..256),
+  `worktrees.gitCommandLineMaxChars` (7000, 1000..30000) in `Config/ConfigKeys.Worktrees.cs` beside the scan's.

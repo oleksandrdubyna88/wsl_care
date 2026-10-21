@@ -9,7 +9,7 @@ namespace WslCare.Core.Tests.Worktrees;
 /// <summary>
 /// E19.S3 (PLAN_disk_hygiene_windows.md §3.3, E19 stories §3 decision 10 and the story's brief): what the Windows <c>status</c> says of the
 /// worktrees — the section with its basis (<c>scan</c>, when, how old) and the verdict <c>worktrees.reclaimable</c>, which in this story is
-/// ALWAYS <c>unknown</c>: git has not confirmed the candidates, so no byte figure is called reclaimable and absent is not zero.
+/// <c>unknown</c> while the scan had no git to ask (E19.S4 makes it real when it had: ReclaimableTests); no byte figure is called reclaimable then and absent is not zero.
 /// </summary>
 public sealed class WorktreesStatusTests
 {
@@ -23,7 +23,7 @@ public sealed class WorktreesStatusTests
             new RootReport(@"D:\w", null, 6, 3, 1, 1, 0, 1, 1, 0, 0, 5000, new IdleOver(3, 2, 4000), new BuildOutputTotals(new Tally(4, 3_221_225_472), new Tally(1, 1000), new Tally(1, 2000), new Tally(1, 3000), []), new UnknownTotals(1, "budget"), []),
             new RootReport(@"E:\x", null, 2, 2, 0, 0, 0, 0, 0, 0, 0, 100, new IdleOver(3, 0, 0), new BuildOutputTotals(new Tally(0, 0), new Tally(0, 0), new Tally(0, 0), new Tally(0, 0), []), new UnknownTotals(0, string.Empty), []),
         ],
-        [], new ReclaimableReport(false, "git has not confirmed the candidates yet (E19.S4)"));
+        [], new ReclaimableReport(false, "git has not confirmed the candidates (the scan had no git to ask)"));
 
     [Fact]
     public void With_no_root_the_verdict_is_unknown_and_says_how_to_choose_folders()
@@ -57,7 +57,7 @@ public sealed class WorktreesStatusTests
         var (section, verdict) = WorktreesStatus.From([@"D:\w", @"E:\x"], Reading.Of(Report(Now.AddHours(-2))), Settings, Now);
 
         verdict.Level.Should().Be(Level.Unknown, "never ok, never a byte figure called reclaimable");
-        verdict.Reason.Should().Contain("git has not confirmed the candidates yet (E19.S4)");
+        verdict.Reason.Should().Contain("git has not confirmed the candidates (the scan had no git to ask)");
         verdict.Value.Should().Contain("5 worktrees").And.Contain("1 orphan").And.Contain("1 locked").And.Contain("4 build-output folders");
         verdict.Limit.Should().Contain("20 GiB", "the warn limit in force, for when git can confirm");
         section.Available.Should().BeTrue();

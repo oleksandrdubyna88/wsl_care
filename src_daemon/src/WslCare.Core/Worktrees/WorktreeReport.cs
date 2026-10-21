@@ -42,8 +42,45 @@ public sealed record RootReport(
 /// <summary>One of the largest folders, by name — never its contents. In this story the size is the build output present, NOT a reclaimable figure.</summary>
 public sealed record TopFolder(string Root, string Folder, string Kind, bool Locked, string Idle, long BuildOutputBytes, long SizeBytes);
 
-/// <summary>What a cleanup could reclaim — absent until git has confirmed the candidates (E19.S4): <c>available: false</c> and why, never a byte figure.</summary>
-public sealed record ReclaimableReport(bool Available, string Reason);
+/// <summary>
+/// What a cleanup would actually be allowed to delete (PLAN_disk_hygiene_windows.md §3.3, owner 2026-10-14): the logical bytes of the candidates
+/// that pass EVERY check — structural, idle, unlocked, and git's confirmation — as <paramref name="A24"/> (worktrees) and
+/// <paramref name="A24Orphans"/> (orphans: ignore-confirmed only, their tracked files NOT checked), with everything else counted under
+/// <paramref name="Retained"/> by reason. <see cref="Available"/> is false, and the figures absent, when git was not asked: absent is not zero.
+/// </summary>
+public sealed record ReclaimableReport(bool Available, string Reason)
+{
+    /// <summary>Worktree candidates git confirmed; absent (not zero) when <see cref="Available"/> is false.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Tally? A24 { get; init; }
+
+    /// <summary>Orphan candidates git's ignore rules confirmed (their tracked files were not checked); absent when <see cref="Available"/> is false.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Tally? A24Orphans { get; init; }
+
+    /// <summary>The candidates that stay, by reason (a closed set of sentences), largest first; absent when <see cref="Available"/> is false.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<RetainedGroup>? Retained { get; init; }
+
+    /// <summary>How many candidates git could not be ASKED about (a refusal, a timeout, no git.exe): their bytes are in <see cref="Retained"/>,
+    /// and while any exist a figure below the warning level is not "ok". Written only when above 0.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int NotAsked { get; init; }
+
+    /// <summary>Why NO git could be asked (none admitted, not started, refused by the policy) — the distinct reasons; empty when git was asked. A scan fact
+    /// <c>status</c> shows as "git could not be asked": while it is set the figures are absent, never zero, and the verdict is unknown.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? GitUnavailable { get; init; }
+
+    /// <summary>Git could be asked, but no candidate needed it: every candidate was kept by another check (structural, recent, locked, unknown). Written only
+    /// when true — "git confirmed nothing" and "nothing was put to git" are different facts.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool NothingNeededGit { get; init; }
+
+    /// <summary>The confirmed bytes, worktrees and orphans together; 0 when nothing was confirmed or git was not asked (check <see cref="Available"/>).</summary>
+    [JsonIgnore]
+    public long ConfirmedBytes => (A24?.Bytes ?? 0) + (A24Orphans?.Bytes ?? 0);
+}
 
 /// <summary><c>worktrees.json</c> (PLAN_disk_hygiene_windows.md §3.3): the report <c>worktrees scan</c> writes under <c>%LOCALAPPDATA%\wsl-care</c>.</summary>
 public sealed record WorktreeReport(

@@ -417,6 +417,10 @@
     "scanMaxSeconds": 900,
     "reportTop": 20,
     "reportMaxAgeDays": 7,
-    "reclaimableWarnGib": 20
+    "reclaimableWarnGib": 20,
+    "gitPath": "",
+    "gitTimeoutSeconds": 30,
+    "gitNamesPerCall": 64,
+    "gitCommandLineMaxChars": 7000
   }
 }

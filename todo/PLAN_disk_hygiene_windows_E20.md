@@ -800,6 +800,19 @@ the code, and WR-T1 (`feat/wc-wr-t1-windows-temp`, in review) was read. Where th
    retained by §A.4 and checked again in B.3.2; refusing every reparse point would retain clean candidates with an ordinary
    junction. No change; the proof stays tests 21–25 plus "a tag that appears after the verify pass is never traversed".
 
+## 4c. What E19.S4's report means for A24Orphans (2026-10-21)
+
+Written after the Fable security review and the coai plan round of E19.S4 (PR #159); binding on E20.S1.
+
+- **(a) `a24Orphans` is IGNORE-ONLY by construction.** A pruned worktree has no index of its own, and `check-ignore --no-index` cannot establish
+  "untracked" — it only says an ignore rule covers the folder. E20 may therefore delete under `a24Orphans` ONLY with the owner's explicit consent,
+  given per run in the panel's confirmation. It is never treated like `a24`, never automatic, and never under an `auto.*` switch.
+- **(b) "Tracked" means in the index at the time of the question.** The delete-time re-run narrows that window but cannot close it; a file
+  staged after the question and before the removal is not seen.
+- **(c) Case.** The `ls-files` question is asked with `:(literal,icase)` per name, because NTFS case can differ from the index spelling (`Bin/x` in the
+  index, `bin` on disk: git's ignore matcher honours `core.ignorecase`, its pathspec matcher does not — Fable's S4 Major 1, measured in
+  `research/2026-10-15_disk_hygiene_git_probe.md`). E20's delete-time re-run uses the SAME `GitQuestions`, never a copy of its own.
+
 ## 5. Order and gates
 
 E20.S1 after E19.S3+S4; E20.S2 after its runner dependencies. One coai plan round for this document (the gate's epic

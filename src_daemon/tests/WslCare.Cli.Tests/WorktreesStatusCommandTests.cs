@@ -25,7 +25,7 @@ public sealed class WorktreesStatusCommandTests
     private static WorktreeReport Report(DateTimeOffset scannedAt) =>
         new(1, scannedAt, 4, true,
         [new RootReport(@"D:\w", null, 3, 2, 0, 1, 0, 0, 0, 0, 0, 900, new IdleOver(3, 1, 400), new BuildOutputTotals(new Tally(2, 5_000), new Tally(1, 3_000), new Tally(0, 0), new Tally(0, 0), []), new UnknownTotals(0, string.Empty), [])],
-        [], new ReclaimableReport(false, "git has not confirmed the candidates yet (E19.S4)"));
+        [], new ReclaimableReport(false, "git has not confirmed the candidates (the scan had no git to ask)"));
 
     private static JsonNode Status(ToDeleteRoot root, string? userConfig, WorktreeReport? report, out string stdout) =>
         StatusOverText(root, userConfig, report is null ? null : JsonSerializer.Serialize(report, WslCareJsonContext.Default.WorktreeReport), out stdout);
@@ -87,7 +87,7 @@ public sealed class WorktreesStatusCommandTests
         section["stale"]!.GetValue<bool>().Should().BeFalse();
         section["report"]!["reclaimable"]!["available"]!.GetValue<bool>().Should().BeFalse();
         Verdict(status)["level"]!.GetValue<string>().Should().Be("unknown");
-        Verdict(status)["reason"]!.GetValue<string>().Should().Contain("git has not confirmed the candidates yet (E19.S4)");
+        Verdict(status)["reason"]!.GetValue<string>().Should().Contain("git has not confirmed the candidates (the scan had no git to ask)");
         stdout.Should().NotContain("reclaimableBytes");
     }
 
@@ -134,7 +134,7 @@ public sealed class WorktreesStatusCommandTests
         var work = root.Dir("work");
         var huge = new BuildOutputTotals(new Tally(int.MaxValue, long.MaxValue), new Tally(0, 0), new Tally(0, 0), new Tally(0, 0), []);
         var one = new RootReport(@"D:\w", null, int.MaxValue, int.MaxValue, int.MaxValue, 1, 0, 0, 0, 0, 0, 900, new IdleOver(3, 1, 400), huge, new UnknownTotals(0, string.Empty), []);
-        var report = new WorktreeReport(1, Now.AddHours(-1), 4, true, [one, one with { Path = @"D:\v" }], [], new ReclaimableReport(false, "git has not confirmed the candidates yet (E19.S4)"));
+        var report = new WorktreeReport(1, Now.AddHours(-1), 4, true, [one, one with { Path = @"D:\v" }], [], new ReclaimableReport(false, "git has not confirmed the candidates (the scan had no git to ask)"));
 
         var status = Status(root, new JsonObject { ["worktrees"] = new JsonObject { ["roots"] = new JsonArray(JsonValue.Create(work)) } }.ToJsonString(), report, out _);
 
