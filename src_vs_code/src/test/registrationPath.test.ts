@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { test } from 'node:test';
 
 import { fromExtensionRoot, shippedSources } from './support/paths';
+import { TASK_RUN } from './support/noRealWsl';
 import { stringLiteralsOf } from './support/sourceScan';
 
 /**
@@ -57,4 +58,23 @@ test('the scan finds a planted second registration — in a literal, a template 
     'src/windowsTasks/y.ts': ['DeleteTask('],
     'src/windowsTasks/z.ts': ['CreateFolder('],
   });
+});
+
+/** The shipped sources whose string literals start a task — the tripwire's own pattern (`TASK_RUN`, `.Run(` and `.RunEx(`, any case), one pattern in two places. */
+function starters(all: readonly Source[]): string[] {
+  return all.filter((source) => stringLiteralsOf(source.text).some((literal) => TASK_RUN.test(literal))).map((source) => source.file).sort();
+}
+
+test('the start of a task has one home — scheduler/runScript.ts — found by the tripwire\'s own TASK_RUN', () => {
+  assert.deepEqual(starters(sources()), ['src/scheduler/runScript.ts'], '.Run( spelt outside scheduler/runScript.ts');
+});
+
+test('the start scan finds a planted second spelling — plain, mixed case, over lines — and ignores a comment', () => {
+  const planted: Source[] = [
+    { file: 'src/windowsTasks/x.ts', text: "const s = '$t.Run($null)';" },
+    { file: 'src/windowsTasks/y.ts', text: 'const t = `$task.rUnEx(${a}, 0)`;' },
+    { file: 'src/windowsTasks/z.ts', text: "const u = [\n  'a.run',\n  '(1)',\n];\nconst v = \"$x.run ($null)\";" },
+    { file: 'src/windowsTasks/w.ts', text: '// the task\'s $t.Run($null) belongs to the peer\nconst w = 1;' },
+  ];
+  assert.deepEqual(starters(planted), ['src/windowsTasks/x.ts', 'src/windowsTasks/y.ts', 'src/windowsTasks/z.ts']);
 });

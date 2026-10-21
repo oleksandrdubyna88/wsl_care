@@ -60,10 +60,11 @@ public sealed partial class ReleaseExtensionWorkflowTests
         {
             ["guard"] = read,
             // E7.S5a: attestations: read — the fetch verifies the bundled daemon's attestation; reading one, never making one.
-            ["build"] = new Dictionary<string, string> { ["contents"] = "read", ["attestations"] = "read" },
+            // W0 of todo/PLAN_disk_health_E18.md: packages: read — the kit comes from GitHub Packages; reading one, never publishing.
+            ["build"] = new Dictionary<string, string> { ["contents"] = "read", ["attestations"] = "read", ["packages"] = "read" },
             ["attest"] = new Dictionary<string, string> { ["contents"] = "read", ["id-token"] = "write", ["attestations"] = "write" },
             ["github-draft"] = write,
-            ["publish-marketplace"] = read,
+            ["publish-marketplace"] = new Dictionary<string, string> { ["contents"] = "read", ["packages"] = "read" },
             ["github-public"] = new Dictionary<string, string> { ["contents"] = "write", ["attestations"] = "read" },
         };
 
@@ -189,6 +190,151 @@ public sealed partial class ReleaseExtensionWorkflowTests
     private static int Number(Match match, int group) => Number(match.Groups[group].Value);
 
     private static int Number(string text) => int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+
+    private const string AuthToken = "NODE_AUTH_TOKEN";
+
+    private const string PackagesToken = "${{ secrets.GITHUB_TOKEN }}";
+
+    private static bool InstallsDependencies(YamlMap step) => InstallCommand().IsMatch(Run(step));
+
+    [GeneratedRegex(@"\bnpm (ci|install)\b", RegexOptions.CultureInvariant)]
+    private static partial Regex InstallCommand();
+
+    private static IEnumerable<(string File, string Id, YamlMap Job)> EveryJob() =>
+        ReleaseFiles.AllWorkflows.SelectMany(path => Jobs(WorkflowYaml.Load(path)).Entries.Select(e => (Path.GetFileName(path), e.Key, e.Value.Map)));
+
+    private static bool CarriesToken(YamlMap owner) => owner.Find("env") is YamlMap env && env.Has(AuthToken);
+
+    /// <summary>W0 of todo/PLAN_disk_health_E18.md (§4 item 3): the extension's one private dependency, the kit, is fetched from
+    /// GitHub Packages, which wants a token. The token is the job's own read-only one (<c>packages: read</c>), handed to the
+    /// install step ALONE — never the workflow, never the job, never another step — and that step runs
+    /// <c>npm ci --ignore-scripts</c>, so no dependency's lifecycle script ever runs while the token is in its environment.</summary>
+    [Fact]
+    public void Every_install_of_the_extensions_dependencies_reads_packages_with_the_token_on_that_step_alone_and_runs_no_script_beside_it()
+    {
+        foreach (var path in ReleaseFiles.AllWorkflows)
+        {
+            CarriesToken(WorkflowYaml.Load(path)).Should().BeFalse($"{Path.GetFileName(path)}: never workflow-wide");
+        }
+
+        var installs = EveryJob().SelectMany(j => CheckedInstallSteps(j.File, j.Id, j.Job)).ToList();
+
+        installs.Should().BeEquivalentTo(["ci-extension.yml/extension", $"{Workflow}/build", $"{Workflow}/publish-marketplace"], "the three installs of src_vs_code's dependencies — a fourth is a new job to hold to the same rule");
+    }
+
+    /// <summary>Holds one job to the rule and answers <c>file/id</c> once for each install step it found.</summary>
+    private static List<string> CheckedInstallSteps(string file, string id, YamlMap job)
+    {
+        CarriesToken(job).Should().BeFalse($"{file}/{id}: never job-wide, where every step — dependency code included — would read it");
+        var found = new List<string>();
+        foreach (var step in Steps(job))
+        {
+            CheckedStep(file, id, job, step);
+            if (InstallsDependencies(step))
+            {
+                found.Add($"{file}/{id}");
+            }
+        }
+
+        return found;
+    }
+
+    private static void CheckedStep(string file, string id, YamlMap job, YamlMap step)
+    {
+        if (!InstallsDependencies(step))
+        {
+            CarriesToken(step).Should().BeFalse($"{file}/{id}: a step that installs nothing never carries the packages token ({Run(step)[..Math.Min(40, Run(step).Length)]})");
+            return;
+        }
+
+        Permissions(job).Should().Contain(new KeyValuePair<string, string>("packages", "read"), $"{file}/{id} installs the kit from GitHub Packages");
+        step["env"].Map[AuthToken].Text.Should().Be(PackagesToken, $"{file}/{id}: the job's own token, through env:, never pasted into the shell");
+        TokenStepOddities(step).Should().BeEmpty($"{file}/{id}: the token step carries the token and NOTHING that changes how npm runs");
+        IsTheBareInstall(Run(step)).Should().BeTrue($"{file}/{id}: the token step is exactly `{BareInstall}` — nothing chained, no second line, no comment (it ran: {Run(step)})");
+    }
+
+    private const string BareInstall = "npm ci --ignore-scripts";
+
+    /// <summary>What else on the token step could change how npm runs while the token is in its environment: any env key beside the
+    /// token (<c>NODE_OPTIONS</c>, <c>npm_config_script_shell</c>, ...) or a <c>shell:</c> override. Empty when the step is clean.</summary>
+    private static List<string> TokenStepOddities(YamlMap step)
+    {
+        var odd = new List<string>();
+        var keys = step.Find("env") is YamlMap env ? env.Keys : [];
+        odd.AddRange(keys.Where(key => key != AuthToken).Select(key => $"the env key {key}"));
+        if (step.Has("shell"))
+        {
+            odd.Add("a shell: override");
+        }
+
+        return odd;
+    }
+
+    [Fact]
+    public void The_token_step_check_rejects_an_extra_env_key_and_a_shell_override()
+    {
+        TokenStepOddities(OneStep("run: npm ci --ignore-scripts\n        env:\n          NODE_AUTH_TOKEN: x")).Should().BeEmpty("the clean step");
+        string[] rejected =
+        [
+            "run: npm ci --ignore-scripts\n        env:\n          NODE_AUTH_TOKEN: x\n          NODE_OPTIONS: --require ./evil.js",
+            "run: npm ci --ignore-scripts\n        env:\n          NODE_AUTH_TOKEN: x\n          npm_config_script_shell: ./evil.sh",
+            "run: npm ci --ignore-scripts\n        shell: bash -e {0}\n        env:\n          NODE_AUTH_TOKEN: x",
+        ];
+        foreach (var step in rejected)
+        {
+            TokenStepOddities(OneStep(step)).Should().NotBeEmpty($"{step.Replace("\n", " | ", StringComparison.Ordinal)} must be rejected");
+        }
+    }
+
+    private static YamlMap OneStep(string body) =>
+        Steps(WorkflowYaml.Parse($"on:\n  push:\njobs:\n  j:\n    steps:\n      - {body}\n", "fixture.yml").Map["jobs"].Map["j"].Map)[0];
+
+    /// <summary>The token step's <c>run</c> must BE the install: a substring would let <c>npm ci --ignore-scripts &amp;&amp; npm test</c>, a
+    /// comment or an <c>echo</c> of the flag pass while a script runs beside the token.</summary>
+    private static bool IsTheBareInstall(string run) => string.Equals(run.Trim(), BareInstall, StringComparison.Ordinal);
+
+    [Fact]
+    public void The_token_step_check_rejects_a_flag_that_is_only_mentioned_or_a_command_chained_beside_the_install()
+    {
+        IsTheBareInstall("npm ci --ignore-scripts").Should().BeTrue();
+        IsTheBareInstall("  npm ci --ignore-scripts\n").Should().BeTrue("surrounding whitespace is no second command");
+        string[] rejected =
+        [
+            "npm ci # --ignore-scripts",
+            "npm ci --ignore-scripts && npm install",
+            "npm ci --ignore-scripts; npm test",
+            "echo \"npm ci --ignore-scripts\" && npm ci",
+            "npm ci --ignore-scripts || npm ci",
+            "npm ci --ignore-scripts\nnpm rebuild",
+            "npm ci",
+        ];
+        foreach (var run in rejected)
+        {
+            IsTheBareInstall(run).Should().BeFalse($"`{run}` is not the bare install");
+        }
+    }
+
+    /// <summary>The same plan: the jobs that BUILD and test (the pull-request leg and the release build) still need the install
+    /// scripts the dependencies carry, so the step right after the install runs <c>npm rebuild</c> — without the token. (The
+    /// Marketplace job runs none by design: it holds the Marketplace secret.)</summary>
+    [Fact]
+    public void The_jobs_that_build_run_the_install_scripts_in_the_step_after_the_install_and_without_the_token()
+    {
+        foreach (var (file, id) in new[] { ("ci-extension.yml", "extension"), (Workflow, "build") })
+        {
+            var job = Jobs(WorkflowYaml.Load(ReleaseFiles.Workflow(file)))[id].Map;
+            var install = StepIndex(job, "npm ci");
+            var rebuild = StepIndex(job, "npm rebuild");
+
+            install.Should().BeGreaterThanOrEqualTo(0, $"{file}/{id} installs");
+            rebuild.Should().Be(install + 1, $"{file}/{id}: the install scripts run in the very next step");
+            CarriesToken(Steps(job)[rebuild]).Should().BeFalse($"{file}/{id}: the scripts run without the token");
+            StepIndex(job, "npm test").Should().BeGreaterThan(rebuild, $"{file}/{id}: before the tests that need them");
+        }
+
+        var publish = Job("publish-marketplace");
+        StepIndex(publish, "npm rebuild").Should().Be(-1, "the Marketplace job runs no dependency script beside its secret");
+    }
 
     /// <summary>E5 code round (security #2): a re-run of ALL jobs rebuilds a different .vsix, while the Marketplace may
     /// already serve the first. So an asset on the release is never replaced — not even on a draft — and the release is

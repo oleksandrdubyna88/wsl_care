@@ -124,6 +124,16 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.runWindowsWatchTask",
+        "title": "Run the Windows watch now (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.runWindowsArchiveTask",
+        "title": "Archive Windows sessions now (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.chooseArchiveFolder",
         "title": "Choose the AI-session archive folder…",
         "category": "AI OS Care"
@@ -311,7 +321,7 @@
           "minimum": 10,
           "maximum": 600,
           "scope": "application",
-          "markdownDescription": "How long installing or removing the Windows tasks may take, in seconds — the ONE PowerShell that runs as you (not elevated, no UAC prompt) registers or deletes scheduled tasks. At the ceiling it and everything it started are ended, and the panel keeps the buttons held until the deadline of twice this number."
+          "markdownDescription": "How long installing, removing or starting now the Windows tasks may take, in seconds — the ONE PowerShell that runs as you (not elevated, no UAC prompt) registers, deletes or starts a scheduled task. At the ceiling it and everything it started are ended, and the panel keeps the buttons held until the deadline of twice this number."
         },
         "wslCare.timeouts.engineProbeSeconds": {
           "type": "integer",
@@ -525,7 +535,7 @@
   "scripts": {
     "clean": "node scripts/clean.mjs out dist",
     "compile": "node scripts/clean.mjs out && tsc -p ./",
-    "typecheck": "tsc -p ./ --noEmit",
+    "typecheck": "tsc -p ./ --noEmit && tsc -p tsconfig.webview.json --noEmit",
     "lint": "eslint .",
     "bundle": "node scripts/clean.mjs dist && node scripts/bundle.mjs",
     "test": "npm run compile && npm run bundle && node scripts/run-tests.mjs",
@@ -539,6 +549,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@oleksandrdubyna88/vscode-webview-kit": "0.2.0",
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
     "@vscode/test-electron": "3.1.0",

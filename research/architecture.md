@@ -142,6 +142,13 @@ extension: status bar, read-only panel and polling* of [module_vs_code.md](modul
     replay ([module_vs_code.md](module_vs_code.md), plan S7b.2b).
   Since E10.S2b the Archive page's *Restore*: the selected entry ids, as text, to the cleanup host — A20 through the cleanup transaction and two
   new root ops, the ids on stdin (section *The extension: Restore from the Archive page*).
+  Since E18.W0 (2026-10-21) the build has a SECOND bundle and ONE dependency from outside the public registry: `src/webview/fullView.ts` →
+  `dist/webview/full.js` (an IIFE for the Chromium of VS Code 1.85) and `dist/webview/full.css`, with the kit's components compiled in
+  (devDependency `@oleksandrdubyna88/vscode-webview-kit`, exactly `0.2.0`). The kit comes from GitHub Packages through the committed
+  `src_vs_code/.npmrc` (the scope's registry and `${NODE_AUTH_TOKEN}`, no secret); every CI job that installs hands the job's own read-only
+  token (`packages: read`) to the install step alone, which runs `npm ci --ignore-scripts`, and `npm rebuild` follows without it. Nothing
+  opens the page yet, so the extension's behaviour is unchanged (section *The full view's webview bundle and the kit* of
+  [module_vs_code.md](module_vs_code.md)).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
@@ -2181,6 +2188,7 @@ flowchart LR
     client -->|"bundled exe: stage, remove · staged copy: render"| daemon["wsl-care.exe (Windows daemon)<br/>renders the task XML, stages and removes copies"]
     flow -->|"the reader's SID, what else is in the folder"| sched["scheduler/ (the peer)<br/>schedulerHost: ONE read of \wsl-care"]
     flow -->|"installTaskScript / removeTasksScript"| reg["scheduler/registerScript<br/>the ONE home of Register-ScheduledTask and the deletes"]
+    flow -->|"run-now: runNowScript, after a read pre-check (no daemon call)"| run["scheduler/runScript<br/>the ONE home of a task's start: the task's own Run"]
     flow -->|"unelevatedRequest: engine.file, -EncodedCommand, killTree"| launch["powershell/unelevatedLauncher<br/>(+ commandLine, modulePath, engineTypes: shared, not elevated)"]
     launch --> runner["process/runner<br/>ceiling + verified tree kill by pid and creation time"]
     runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive"]
@@ -2189,7 +2197,7 @@ flowchart LR
     guard["windowsTime/ (the guard)<br/>same registration scripts, run ELEVATED"] --> reg
 ```
 
-The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own.
+The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own. Since WR-E4 the same flow also STARTS a registered task now (*Run the Windows watch now*, *Archive Windows sessions now*): after a read of the task's row it asks Task Scheduler, through the same unelevated launcher and the one runner, to `Run` the registered task exactly as its next trigger would — the daemon is not called at all, and `scheduler/runScript.ts` is the one shipped source that spells a task's start (`registrationPath.test.ts`, with the tripwire's own `TASK_RUN` pattern).
 
 ## Containers — the system on one page
 

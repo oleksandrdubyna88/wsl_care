@@ -23,6 +23,12 @@ export const FAKE_SCRIPT = path.join(EXTENSION_ROOT, 'out', 'test', 'fake', 'fak
 /** The bundle esbuild writes — what ships. */
 export const BUNDLE = path.join(EXTENSION_ROOT, 'dist', 'extension.js');
 
+/** The full view's script esbuild writes (W0 of `todo/PLAN_disk_health_E18.md`) — a second file of the .vsix, run by a webview. */
+export const WEBVIEW_BUNDLE = path.join(EXTENSION_ROOT, 'dist', 'webview', 'full.js');
+
+/** The stylesheet esbuild emits beside it: the kit's `components.css`, imported by the entry. */
+export const WEBVIEW_STYLES = path.join(EXTENSION_ROOT, 'dist', 'webview', 'full.css');
+
 /** `contracts/golden/` — written by the daemon's scenario harness (E5.S0), only READ here (plan §15g m7). */
 export const GOLDEN_ROOT = path.join(REPOSITORY_ROOT, 'contracts', 'golden');
 

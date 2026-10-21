@@ -69,6 +69,9 @@ export interface PanelActions {
   readonly installWindowsWatchTask: () => void;
   readonly installWindowsArchiveTask: () => void;
   readonly removeWindowsTasks: () => void;
+  /** WR-E4: *Run the Windows watch now* and *Archive Windows sessions now* — ONE unelevated PowerShell asking Task Scheduler to start the registered task. */
+  readonly runWindowsWatchTask: () => void;
+  readonly runWindowsArchiveTask: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -130,6 +133,8 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       installWindowsWatchTask: () => this.actions.installWindowsWatchTask(),
       installWindowsArchiveTask: () => this.actions.installWindowsArchiveTask(),
       removeWindowsTasks: () => this.actions.removeWindowsTasks(),
+      runWindowsWatchTask: () => this.actions.runWindowsWatchTask(),
+      runWindowsArchiveTask: () => this.actions.runWindowsArchiveTask(),
       chooseArchiveFolder: () => this.actions.chooseArchiveFolder(),
       stopArchiving: () => this.actions.stopArchiving(),
       archiveNow: () => this.actions.archiveNow(),

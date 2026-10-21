@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+
 import * as ts from 'typescript';
 
 /**
@@ -63,4 +65,9 @@ export function stringLiteralsAt(text: string, kind: ts.ScriptKind = ts.ScriptKi
 /** Whether a module specifier names Node's child_process, with or without the `node:` scheme. */
 export function isChildProcess(specifier: string): boolean {
   return specifier === 'child_process' || specifier === 'node:child_process';
+}
+
+/** A relative specifier resolved against the file that imports it, the way the structural tests name files: `src/panel/view` (no extension). */
+export function resolveRelative(file: string, specifier: string): string {
+  return path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
 }

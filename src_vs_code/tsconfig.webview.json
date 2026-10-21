@@ -1,0 +1,25 @@
+{
+  // The PAGE half of the extension (W0 of todo/PLAN_disk_health_E18.md): what a webview runs, compiled WITH the DOM and never
+  // with Node or the VS Code API. tsconfig.json keeps the host DOM-less and excludes these folders; `npm run typecheck` runs
+  // both. Nothing is emitted: esbuild bundles src/webview/fullView.ts (scripts/bundle.mjs) and the kit page test bundles its
+  // own entry, so this configuration only CHECKS. The strict set is the host's, unchanged.
+  "compilerOptions": {
+    "module": "ESNext",
+    // The kit's package maps its entries through `exports`, which only a modern resolution reads.
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    // No @types/node, no @types/vscode: a page file that reached for `process` or `vscode` fails to compile.
+    "types": [],
+    "noEmit": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/webview", "src/test/webview"]
+}

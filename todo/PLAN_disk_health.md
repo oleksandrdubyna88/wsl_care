@@ -1,11 +1,8 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
 > Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b merged (#151, *E15.S1b as built*); E15.S7 merged (#161, 2026-10-21, *E15.S7 as built*); E15.S10 built on its branch `feat/wc-e15s10-defender-cpu` (draft PR #162, *E15.S10 design* and *E15.S10 as built*, 2026-10-21); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
-> and E15.S6 onwards (E15.S7 aside) not started; E18 is built by another coordinator (the owner's go, 2026-10-15).** Scope: four epics, E15–E18 — the daemon's read-only disk
-
-> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
-> not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b merged (#151, *E15.S1b as built* at the end); E15.S7 merged (#161, 2026-10-17; *E15.S7 as built* at the end); E15.S10 built on its branch `feat/wc-e15s10-defender-cpu` (draft PR #162, *E15.S10 design* and *E15.S10 as built*, 2026-10-21); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> and E15.S6 onwards (E15.S7 aside) not started; E18 started on the owner's go (2026-10-12), its stories in [PLAN_disk_health_E18.md](PLAN_disk_health_E18.md).** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
