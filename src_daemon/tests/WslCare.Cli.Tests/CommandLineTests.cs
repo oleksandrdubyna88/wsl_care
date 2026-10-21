@@ -188,4 +188,33 @@ public sealed class CommandLineTests
     {
         CommandLine.HelpText.Should().Contain("three layers").And.Contain("config set").And.Contain("config get");
     }
+
+    /// <summary>E19.S3: the worktree verbs take only <c>--json</c> — and the folders arrive on STDIN, never as a word on the command line.</summary>
+    [Fact]
+    public void The_worktrees_verbs_take_only_json_and_no_path()
+    {
+        CommandLine.Parse(["worktrees", "roots", "set"]).Should().Be(new Request.WorktreesRootsSet(false));
+        CommandLine.Parse(["worktrees", "roots", "set", "--json"]).Should().Be(new Request.WorktreesRootsSet(true));
+        CommandLine.Parse(["worktrees", "roots", "clear"]).Should().Be(new Request.WorktreesRootsClear(false));
+        CommandLine.Parse(["worktrees", "roots", "clear", "--json"]).Should().Be(new Request.WorktreesRootsClear(true));
+        CommandLine.Parse(["worktrees", "scan"]).Should().Be(new Request.WorktreesScan(false));
+        CommandLine.Parse(["worktrees", "scan", "--json"]).Should().Be(new Request.WorktreesScan(true));
+        foreach (var refused in new[] { new[] { "worktrees", "roots", "set", @"D:\work" }, ["worktrees", "roots", "set", "--json", "--json"], ["worktrees", "roots", "clear", "x"], ["worktrees", "scan", "--force"], ["worktrees", "scan", @"D:\work"] })
+        {
+            CommandLine.Parse(refused).Should().BeOfType<Request.Failed>($"\"{string.Join(' ', refused)}\" must be refused");
+        }
+    }
+
+    [Fact]
+    public void A_path_on_the_command_line_is_refused_saying_it_comes_on_stdin()
+    {
+        CommandLine.Parse(["worktrees", "roots", "set", @"D:\work"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("stdin");
+    }
+
+    [Fact]
+    public void A_bare_worktrees_verb_names_what_it_needs()
+    {
+        CommandLine.Parse(["worktrees"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("roots").And.Contain("scan");
+        CommandLine.Parse(["worktrees", "roots"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("set").And.Contain("clear");
+    }
 }

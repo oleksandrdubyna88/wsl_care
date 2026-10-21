@@ -39,6 +39,7 @@ public sealed class NumbersAreConfigurationTests
         "disk.growthMinHours", "thresholds.hostCommitWarnPercent", "thresholds.hostCommitCriticalPercent", "thresholds.hostCompressionWarnGb",
         "disk.volumeFreeWarnGib", "disk.volumeFreeCriticalGib", "disk.volumeFreeWarnPercent", "disk.volumeFreeCriticalPercent",
         "disk.volumeFreeMinSizeGib", "disk.volumeFreeAbsoluteMinSizeGib", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
+        "worktrees.idleDays", "worktrees.artifactSkewMinutes", "worktrees.scanMaxEntries", "worktrees.scanMaxSeconds", "worktrees.reportTop", "worktrees.reportMaxAgeDays", "worktrees.reclaimableWarnGib",
     ];
 
     /// <summary>The inventory's group B (root-safety limits) — machine-layer-only keys.</summary>
@@ -68,7 +69,7 @@ public sealed class NumbersAreConfigurationTests
         "archive.runBudgetMinutes", "archive.finishGraceMinutes", "archive.minRunMinutes", "archive.previewTimeoutSeconds",
         "archive.reachabilitySeconds", "archive.progressSilenceSeconds", "archive.restoreLimitMinutes", "archive.maxSessionsPerRun", "archive.maxRestoreEntries",
         "archive.maxIndexBytes", "archive.maxStateFileBytes", "archive.childOutputCapBytes", "archive.progressLineMaxBytes",
-        "archive.inUseScanSeconds",
+        "archive.inUseScanSeconds", "worktrees.maxRoots",
     ];
 
     [Theory]

@@ -57,6 +57,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual (uint Major, uint Minor)? DeviceOf(string path) => inner.DeviceOf(path);
 
+    public virtual WslCare.Core.Collectors.Reading<string> FolderFinalPath(string path) => inner.FolderFinalPath(path);
+
     public virtual WriteAccess ProbeWriteAccess(string directory) => inner.ProbeWriteAccess(directory);
 
     public virtual ExclusiveLock TryLockExclusive(string lockPath) => inner.TryLockExclusive(lockPath);
