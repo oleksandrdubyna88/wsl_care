@@ -7,6 +7,7 @@ import type { GpuHost } from './gpu/gpuHost';
 import type { GpuRecorder } from './gpu/gpuUi';
 import type { InstallRecorder } from './install/installUi';
 import type { TasksHost } from './windowsTasks/tasksHost';
+import type { TasksRecorder } from './windowsTasks/tasksRecorder';
 import type { WindowsTimeGuardHost } from './windowsTime/guardHost';
 import type { GuardRecorder } from './windowsTime/guardUi';
 import type { WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
@@ -45,6 +46,8 @@ export interface WslCareTestApi {
   windowsTimeGuard(): WindowsTimeGuardHost;
   /** WR-E2: the Windows tasks' part — its probe of the staged copy and its lines, over the same shared Task Scheduler read. */
   windowsTasks(): TasksHost;
+  /** WR-E3: the Windows tasks' recorded document, prompts, requests and reports — and the answers they give (no PowerShell runs). */
+  tasksRecorder(): TasksRecorder;
   /** The guard's recorded document, prompts, elevated requests, queries and reports — and the answers they give. */
   guardRecorder(): GuardRecorder;
   /** The GPU host (PLAN_gpu_health.md) — its state, its view, its bar mark and its enable. */

@@ -1,4 +1,6 @@
 import { MODULES } from '../powershell/elevatedEngine';
+import { TASK_FOLDER } from '../scheduler/taskFolder';
+import { xmlText } from '../scheduler/xmlText';
 import { BODY, EXIT, SET_AUTOMATIC } from './windowsTimeFix';
 
 /**
@@ -30,7 +32,8 @@ export interface GuardOptions {
   readonly timeLimitMinutes: number;
 }
 
-export const GUARD_FOLDER = 'wsl-care';
+/** The guard's task folder is the peer's one (`scheduler/taskFolder.ts`), which the Windows tasks use too. */
+export const GUARD_FOLDER = TASK_FOLDER;
 export const GUARD_NAME = 'windows-time-guard';
 
 /** Where the rate limit's stamp lives: HKLM\SOFTWARE, which only administrators and SYSTEM may write (D2). */
@@ -153,12 +156,8 @@ export function commandAfterArgv(argumentText: string): string {
   return at < 0 ? '' : words.slice(at + 1).join(' ');
 }
 
-const XML_ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
-
-/** Text content for an XML element. */
-export function xmlText(text: string): string {
-  return text.replace(/[&<>]/g, (c) => XML_ESCAPES[c] ?? c);
-}
+/** Text content for an XML element — the peer's (`scheduler/xmlText.ts`), re-exported for the guard's own consumers and tests. */
+export { xmlText };
 
 function delayElement(seconds: number): string {
   return seconds > 0 ? `<Delay>PT${seconds}S</Delay>` : '';

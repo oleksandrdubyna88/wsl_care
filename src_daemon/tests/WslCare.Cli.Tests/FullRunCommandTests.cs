@@ -122,7 +122,8 @@ public sealed class FullRunCommandTests
             detail.Thresholds.Where(t => carried.Any(c => c.Id == t.Id)).Select(t => t with { Basis = basis }),
             "each is the record the run's detail holds, read back from the file the run wrote");
         carried.Select(v => v.Id).Should().Contain(["clock.jumps", "docker.A4", "collectors.sysstat"]);
-        status.Verdicts!.Select(v => v.Id).Should().Equal(detail.Thresholds.Select(t => t.Id), "status answers every id the run recorded, in its order");
+        // E19.S3: the Windows binary also answers worktrees.reclaimable, its own scan's verdict — the full run records none of that, and says so by not having it.
+        status.Verdicts!.Select(v => v.Id).Where(id => id != Core.Worktrees.WorktreesStatus.VerdictId).Should().Equal(detail.Thresholds.Select(t => t.Id), "status answers every id the run recorded, in its order");
     }
 
     [Fact]

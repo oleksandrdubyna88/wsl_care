@@ -80,6 +80,8 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Scheduler.TasksRenderReport))]
 [JsonSerializable(typeof(Scheduler.StageRecord))]
 [JsonSerializable(typeof(Scheduler.StageReport))]
+[JsonSerializable(typeof(Worktrees.WorktreeReport))]
+[JsonSerializable(typeof(Worktrees.RootVerdictsReport))]
 [JsonSerializable(typeof(Scheduler.StageRemoveReport))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {

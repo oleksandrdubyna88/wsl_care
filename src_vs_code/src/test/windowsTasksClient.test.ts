@@ -303,3 +303,9 @@ test('a run read uses the read ceiling the caller sets, else the default of that
   assert.equal(r.requests[1]?.timeoutMs, 12_345);
   assert.ok((r.requests[0]?.timeoutMs ?? 0) > 0);
 });
+
+test('WR-E3: a timeout of tasks stage --remove is TYPED (a caller that persists a pending run must be able to keep it); the other calls stay failed', async () => {
+  const ended: ProcessResult = { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  assert.deepEqual(await client(recording(ended).runner).tasksStageRemove(), { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false });
+  assert.equal((await client(recording(ended).runner).tasksStage()).kind, 'failed');
+});

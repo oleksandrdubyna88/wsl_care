@@ -389,6 +389,11 @@
     const box = element('div', undefined, { 'windows-tasks': '' });
     const copy = element('p', part.copy.line, { 'windows-tasks-copy': '', level: levelOf(part.copy) });
     [copy].concat((Array.isArray(part.tasks) ? part.tasks : []).map(windowsTaskLine), optionalLine(part.dry, { 'windows-tasks-dry': '' })).forEach(function (line) { box.appendChild(line); });
+    // WR-E3: the install and remove buttons, each posting its bare id — no task, path or value ever comes from the page.
+    (Array.isArray(part.buttons) ? part.buttons : []).forEach(function (b) {
+      const id = b.id;
+      box.appendChild(actionButton(b.label, { 'windows-tasks-action': id }, !b.enabled, function () { return { type: id }; }));
+    });
     return [box];
   }
 

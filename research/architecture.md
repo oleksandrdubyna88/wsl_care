@@ -406,6 +406,7 @@ figure (E2.S3).
   the user's programs) through `Win32ProcessTable` — a Toolhelp snapshot plus `PROCESS_QUERY_LIMITED_INFORMATION` handles,
   read-only, real even under `WSL_CARE_ROOT` — into `windowsMcpServers`, and adds `host.vmmemAdvice` (text, never acted on)
   when `vmmemWSL` holds more than `wslConfig.vmmemAdviceGb`. Details: [module_mcp_servers.md](module_mcp_servers.md) § *The Windows side*.
+- **E19.S3:** the Windows binary has three more verbs — `worktrees roots set` (folders on stdin, all-or-nothing, a verdict per path), `worktrees roots clear` and `worktrees scan` (read-only, no process) — and its `status` carries `worktrees` (basis `scan`) and the verdict `worktrees.reclaimable`, always `unknown` until git confirms (E19.S4). The distro's binary refuses all three naming the Windows side. Details: [module_daemon.md](module_daemon.md) § *The worktree report*.
 - `status` without `--json` prints a short ASCII summary; the JSON is what the extension reads.
 
 ## The Docker collectors and `preview` (E2.S2)
@@ -2154,6 +2155,27 @@ shellcheck is on `PATH` (without it actionlint silently skips the `run:` blocks)
 pinned by digest, `-x` to follow a sourced file — over `install.sh` (E4.S1) and `.github/scripts/` (E4.S2). `pr-title.yml` requires
 a conventional-commit pull request title. `dependabot.yml` watches NuGet and GitHub Actions weekly,
 FluentAssertions held below 8.x.
+
+## The Windows tasks: install and remove, across the modules (WR-E3, 2026-10-18)
+
+Two opt-in per-user scheduled tasks — `\wsl-care\watch` and `\wsl-care\archive` — run a verified staged copy of the bundled Windows daemon (plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md); the module level is [module_vs_code.md](module_vs_code.md), the daemon's half [module_daemon.md](module_daemon.md)). What crosses the modules when a person presses *Install the Windows watch task* or *Remove the Windows tasks*:
+
+```mermaid
+flowchart LR
+    panel["panel: bare button id<br/>(panel/messages.ts)"] --> flow["windowsTasks/tasksFlow<br/>stage, fresh render, checks, read-only tab, modal,<br/>engine again, pending record, ONE run"]
+    flow -->|"closed tails: tasks stage / render / stage --remove"| client["client/WindowsCareClient<br/>(typed answers, provenance, own digest)"]
+    client -->|"bundled exe: stage, remove · staged copy: render"| daemon["wsl-care.exe (Windows daemon)<br/>renders the task XML, stages and removes copies"]
+    flow -->|"the reader's SID, what else is in the folder"| sched["scheduler/ (the peer)<br/>schedulerHost: ONE read of \wsl-care"]
+    flow -->|"installTaskScript / removeTasksScript"| reg["scheduler/registerScript<br/>the ONE home of Register-ScheduledTask and the deletes"]
+    flow -->|"unelevatedRequest: engine.file, -EncodedCommand, killTree"| launch["powershell/unelevatedLauncher<br/>(+ commandLine, modulePath, engineTypes: shared, not elevated)"]
+    launch --> runner["process/runner<br/>ceiling + verified tree kill by pid and creation time"]
+    runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive"]
+    flow -->|"pending record before the launch; cleared on every answer but a timeout"| state["globalState<br/>wslCare.windowsTasks.pending"]
+    sched -->|"refresh after an answer; settle past the ceiling"| flow
+    guard["windowsTime/ (the guard)<br/>same registration scripts, run ELEVATED"] --> reg
+```
+
+The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own.
 
 ## Containers — the system on one page
 

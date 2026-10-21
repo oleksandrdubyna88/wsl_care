@@ -65,6 +65,10 @@ export interface PanelActions {
   /** WR-E2: the Windows tasks' lines — the shared Task Scheduler read and the staged copy's probe (`windowsTasks/tasksHost.ts`). */
   readonly windowsTasks: () => WindowsTasksView;
   readonly onWindowsTasksChange: (listener: () => void) => () => void;
+  /** WR-E3: the Windows tasks' three buttons — each ONE unelevated PowerShell, after the host's own modal (`windowsTasks/tasksFlow.ts`). */
+  readonly installWindowsWatchTask: () => void;
+  readonly installWindowsArchiveTask: () => void;
+  readonly removeWindowsTasks: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -123,6 +127,9 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       startWindowsTime: () => this.actions.startWindowsTime(),
       installWindowsTimeGuard: () => this.actions.installWindowsTimeGuard(),
       removeWindowsTimeGuard: () => this.actions.removeWindowsTimeGuard(),
+      installWindowsWatchTask: () => this.actions.installWindowsWatchTask(),
+      installWindowsArchiveTask: () => this.actions.installWindowsArchiveTask(),
+      removeWindowsTasks: () => this.actions.removeWindowsTasks(),
       chooseArchiveFolder: () => this.actions.chooseArchiveFolder(),
       stopArchiving: () => this.actions.stopArchiving(),
       archiveNow: () => this.actions.archiveNow(),

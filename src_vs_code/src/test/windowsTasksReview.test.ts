@@ -133,7 +133,7 @@ test('m3: the sentence for a process that did not exit is written once — the W
   assert.equal(spelling.length, 1, spelling.join(', '));
   const timedOut = { kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } as const;
   assert.match(JSON.stringify(await windowsClient(recording(timedOut).runner).version()), /did not answer within 20 s \(wslCare\.timeouts\.versionSeconds\)/);
-  assert.match(JSON.stringify(await windowsClient(recording(timedOut).runner).tasksStageRemove()), /did not answer within 20 s"/);
+  assert.match(JSON.stringify(await windowsClient(recording(timedOut).runner).tasksStage()), /did not answer within 20 s"/);
 });
 
 // ---- m6: the client computes the expected digest of the bundled exe itself ----

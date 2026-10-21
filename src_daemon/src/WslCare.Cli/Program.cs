@@ -125,6 +125,9 @@ internal static class Program
             Request.TasksRender render => TasksCommand.Render(render, host, loaded, stdout, stderr),
             Request.TasksRun run => TasksCommand.Run(run, host, loaded, stderr, cancellationToken),
             Request.TasksStage stage => TasksCommand.Stage(stage, host, loaded, stdout, stderr),
+            Request.WorktreesRootsSet rootsSet => WorktreesCommand.RootsSet(rootsSet, host, loaded, stdout, stderr),
+            Request.WorktreesRootsClear rootsClear => WorktreesCommand.RootsClear(rootsClear, host, stdout, stderr),
+            Request.WorktreesScan scan => WorktreesCommand.Scan(scan, host, loaded, stdout, stderr, cancellationToken),
             Request.ActStop stop => RunStops.Stop(stop, host, stdout, stderr, logger.ForContext(typeof(RunStops)), cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };

@@ -1,6 +1,7 @@
 import { TASK_NAMES, type TaskName } from '../client/verbs';
 import type { RenderAnswer, RenderResult } from '../client/windowsTasks';
 import { summariesMatch } from '../scheduler/taskSummary';
+import type { PendingTasksOp } from './tasksPending';
 import { SCHEDULER_RESULT, taskOf, type LastRun, type SchedulerRead, type TaskRead } from '../scheduler/schedulerAnswer';
 
 /**
@@ -152,4 +153,18 @@ export function windowsTasksState(read: SchedulerRead, copy: CopyState): Windows
   const tasks = read.kind === 'unknown' ? allTasks(() => unknownRow(read)) : allTasks((name) => rowOf(read, name, copy));
 
   return { copy, tasks, dry: dryOf(copy) };
+}
+
+/**
+ * Whether Task Scheduler's read and the copy's probe already show a pending run FINISHED (WR-E3): an install of one task is finished when
+ * THAT task's row is `installed` — registered, enabled, idle and its summary equal to the one the staged copy's render of THAT task gives
+ * (`summariesMatch`, in `stagedRow`); a removal when both tasks are `notInstalled` and the copy probe found no staged copy. A task that is
+ * running, disabled, unreadable or different is not finished — the record then stands to its deadline, the conservative end.
+ */
+export function finishedBy(state: WindowsTasksState, pending: PendingTasksOp): boolean {
+  if (pending.op === 'install') {
+    return state.tasks[pending.task].kind === 'installed';
+  }
+
+  return TASK_NAMES.every((name) => state.tasks[name].kind === 'notInstalled') && state.copy.kind === 'notStaged';
 }
