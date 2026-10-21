@@ -356,7 +356,7 @@ function guardFlow(parts: Parts, op: 'install' | 'remove'): () => void {
 }
 
 /** The three flows of the Windows tasks, as the panel's buttons and the palette commands run them. */
-type TasksFlows = Pick<PanelActions, 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks'>;
+type TasksFlows = Pick<PanelActions, 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks' | 'runWindowsWatchTask' | 'runWindowsArchiveTask'>;
 
 /** A Windows tasks flow from a button or the palette — its faults logged at the detached edge, never thrown into VS Code. */
 function tasksFlow(parts: Parts, op: Parameters<TasksHost['run']>[0]): () => void {
@@ -368,6 +368,8 @@ function tasksFlowsOf(parts: Parts): TasksFlows {
     installWindowsWatchTask: tasksFlow(parts, { kind: 'install', task: 'watch' }),
     installWindowsArchiveTask: tasksFlow(parts, { kind: 'install', task: 'archive' }),
     removeWindowsTasks: tasksFlow(parts, { kind: 'remove' }),
+    runWindowsWatchTask: tasksFlow(parts, { kind: 'run', task: 'watch' }),
+    runWindowsArchiveTask: tasksFlow(parts, { kind: 'run', task: 'archive' }),
   };
 }
 
@@ -455,7 +457,7 @@ function relayActions(parts: Parts): Pick<PanelActions, 'relays' | 'stopRelays'>
   };
 }
 
-/** The panel's parts beyond the cleanup and the guard: the archive's (E10.S1), the relays' (S7b.2b) and the Windows tasks' three flows (WR-E3). */
+/** The panel's parts beyond the cleanup and the guard: the archive's (E10.S1), the relays' (S7b.2b) and the Windows tasks' five flows (WR-E3, WR-E4). */
 function panelExtras(parts: Parts, page: ArchivePanel): ReturnType<typeof archiveActions> & ReturnType<typeof relayActions> & TasksFlows {
   return { ...archiveActions(parts, page), ...relayActions(parts), ...tasksFlowsOf(parts) };
 }
@@ -468,6 +470,8 @@ function extraCommands(extras: ReturnType<typeof panelExtras>): vscode.Disposabl
     vscode.commands.registerCommand('wslCare.installWindowsWatchTask', extras.installWindowsWatchTask),
     vscode.commands.registerCommand('wslCare.installWindowsArchiveTask', extras.installWindowsArchiveTask),
     vscode.commands.registerCommand('wslCare.removeWindowsTasks', extras.removeWindowsTasks),
+    vscode.commands.registerCommand('wslCare.runWindowsWatchTask', extras.runWindowsWatchTask),
+    vscode.commands.registerCommand('wslCare.runWindowsArchiveTask', extras.runWindowsArchiveTask),
   ];
 }
 

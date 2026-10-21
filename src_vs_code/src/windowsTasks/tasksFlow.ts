@@ -6,14 +6,15 @@ import { engineProblem, type EngineSource } from '../powershell/engineSource';
 import { NO_ENGINE, type Engine } from '../powershell/engineTypes';
 import { unelevatedRequest } from '../powershell/unelevatedLauncher';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
-import type { SchedulerRead } from '../scheduler/schedulerAnswer';
+import { principalLine } from '../scheduler/principalPolicy';
+import { taskOf, type SchedulerRead, type TaskRead } from '../scheduler/schedulerAnswer';
 import { isFailure, stepOf, tasksOutcomeSentence, type DoneSummary, type RunStep, type TasksOp, type TasksOutcome } from './tasksOutcome';
 import { clearPending, readPending, writePending, type PendingTasksOp } from './tasksPending';
-import { cadenceOf, installPrompt, removePrompt, whatOf, type TasksPrompt } from './tasksPrompts';
+import { cadenceOf, installPrompt, removePrompt, runPrompt, whatOf, type TasksPrompt } from './tasksPrompts';
 import { registrationProblem } from './tasksGuards';
-import { installTaskScript, removeTasksScript } from './tasksScripts';
+import { installTaskScript, removeTasksScript, runNowScript } from './tasksScripts';
 
-export { installPrompt, removePrompt, INSTALL_CONFIRM, REMOVE_CONFIRM, type TasksPrompt } from './tasksPrompts';
+export { installPrompt, removePrompt, runPrompt, INSTALL_CONFIRM, REMOVE_CONFIRM, RUN_CONFIRM, type TasksPrompt } from './tasksPrompts';
 export { tasksOutcomeSentence, type TasksOp, type TasksOutcome } from './tasksOutcome';
 
 /**
@@ -326,6 +327,83 @@ async function remove(deps: TasksFlowDeps): Promise<TasksOutcome> {
   return told(deps, op, await launched(deps, engine, { op: 'remove' }, span, () => removeRun(deps, engine, request, folderOf(read, keepers))), engine);
 }
 
+// ---- run now ----
+
+/**
+ * The principal line a task of THIS extension has: the reader's own SID, an interactive token (`logon=3`), the least privilege (`level=0`) — the numbers
+ * of the canonical summary (`SUMMARY_FUNCTION`, pinned by `summaryOfXml.ts`). A registered task whose line is anything else was registered elsewhere (an
+ * elevated run level, another account, a stored password): a start now would run IT, while the modal says "your account, interactive, the least
+ * privilege" — so it starts nothing, the install's rule ("a problem starts nothing") applied to a task that already exists.
+ */
+/** The refusal for a registered task that does not run as the reader (naming the principal line it has), or none. */
+function principalRefusal(row: Extract<TaskRead, { kind: 'present' }>, user: string): TasksOutcome | undefined {
+  const line = row.summary[0];
+
+  return line === principalLine(user) ? undefined : notStarted(`the registered task does not run as you at the least privilege (${line ?? 'no principal line'}) — install it again`);
+}
+
+function presentBlock(task: TaskName, row: Extract<TaskRead, { kind: 'present' }>, user: string): TasksOutcome | undefined {
+  if (!row.enabled) {
+    return notStarted('the task is disabled in Task Scheduler — install it again to enable it');
+  }
+  const foreign = principalRefusal(row, user);
+  if (foreign !== undefined) {
+    return foreign;
+  }
+
+  return row.running ? { kind: 'alreadyRunning', task } : undefined;
+}
+
+const ROW_BLOCKS: { readonly [K in TaskRead['kind']]: (task: TaskName, row: Extract<TaskRead, { kind: K }>, user: string) => TasksOutcome | undefined } = {
+  absent: (task) => notStarted(`install the Windows ${task} task first: it is not registered`),
+  unreadable: (_task, row) => notStarted(row.reason),
+  present: presentBlock,
+};
+
+/** The read, asked BEFORE anything is started (R2): not answered, not installed, unreadable, disabled — and already running, which starts nothing and is told as information. */
+function runBlock(task: TaskName, read: SchedulerRead): TasksOutcome | undefined {
+  if (read.kind !== 'read') {
+    return notStarted('Task Scheduler has not answered what is registered; refresh the panel and try again');
+  }
+  const row = taskOf(read, task);
+
+  return (ROW_BLOCKS[row.kind] as (t: TaskName, r: TaskRead, u: string) => TasksOutcome | undefined)(task, row, read.user);
+}
+
+/** The ONE PowerShell that asks Task Scheduler to start the task: exit 0 is started, 35 is "it was running" (nothing started), every other ending as the install's. */
+async function runBody(deps: TasksFlowDeps, op: Extract<TasksOp, { kind: 'run' }>, engine: Engine, request: ProcessRequest): Promise<TasksOutcome> {
+  const step = await psStep(deps, op, engine, request, `Starting the Windows ${op.task} task…`);
+  if (step.step === 'ended') {
+    return step.outcome;
+  }
+
+  return step.step === 'alreadyRunning' ? { kind: 'alreadyRunning', task: op.task } : { kind: 'done', done: { op: 'run', task: op.task, what: whatOf(op.task) } };
+}
+
+/**
+ * *Run the Windows watch now* / *Archive Windows sessions now*: the install flow with the stage, the render and the guards taken out and ONE read put in
+ * — no daemon call at all (the task's own `Run` starts the registered copy). The read first; the engine; ONE modal with the exact script; then the
+ * install's own launch (the engine again, the record BEFORE the spawn, cleared on every answer but a timeout, the read again).
+ */
+async function runNow(task: TaskName, deps: TasksFlowDeps): Promise<TasksOutcome> {
+  const op: Extract<TasksOp, { kind: 'run' }> = { kind: 'run', task };
+  const blocked = runBlock(task, deps.read());
+  if (blocked !== undefined) {
+    return told(deps, op, blocked, NO_ENGINE);
+  }
+  const { engine } = await deps.engine.engine();
+  const script = runNowScript(task);
+  const request = unelevatedRequest(engine, script, deps.timeoutMs());
+  if (typeof request === 'string') {
+    return told(deps, op, notStarted(request), engine);
+  }
+  if (!(await deps.ui.confirm(runPrompt(task, script, engine)))) {
+    return told(deps, op, { kind: 'declined' }, engine);
+  }
+
+  return told(deps, op, await launched(deps, engine, { op: 'run', task }, 2 * request.timeoutMs, () => runBody(deps, op, engine, request)), engine);
+}
+
 /**
  * One operation, end to end: the outcome, told once (the declined install's single notice included). `undefined` is never returned here —
  * the host's "one at a time in this window" answers that case before it gets this far.
@@ -335,5 +413,12 @@ export async function runTasksOp(op: TasksOp, deps: TasksFlowDeps): Promise<Task
     return told(deps, op, BUSY, NO_ENGINE);
   }
 
-  return op.kind === 'install' ? install(op.task, deps) : remove(deps);
+  switch (op.kind) {
+    case 'install':
+      return install(op.task, deps);
+    case 'run':
+      return runNow(op.task, deps);
+    default:
+      return remove(deps);
+  }
 }

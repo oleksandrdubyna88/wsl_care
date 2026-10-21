@@ -29,7 +29,8 @@ export const HERE_END = "'@";
 
 const WORD = /^[a-z-]+$/;
 
-function word(kind: string, text: string): string {
+/** A folder or task name that is safe to put inside single quotes: lower-case letters and hyphens, else a `RangeError`. Shared with `runScript.ts` (reuse-first: widened, not copied). */
+export function taskWord(kind: string, text: string): string {
   if (!WORD.test(text)) {
     const shown = JSON.stringify(text.slice(0, 40));
     throw new RangeError(`a ${kind} in a task script is lower-case letters and hyphens, not ${shown}`);
@@ -50,8 +51,8 @@ export function terminatesHereString(xml: string): boolean {
  * registering. An XML with a terminator line is refused with a `RangeError` (callers refuse it earlier, with a sentence).
  */
 export function registerTaskScript(folder: string, name: string, xml: string): string {
-  const safeFolder = word('folder', folder);
-  const safeName = word('task name', name);
+  const safeFolder = taskWord('folder', folder);
+  const safeName = taskWord('task name', name);
   if (terminatesHereString(xml)) {
     throw new RangeError(`the task XML has a line that starts with the here-string terminator ${HERE_END}, so it cannot be embedded in a script`);
   }
@@ -76,13 +77,13 @@ export function registerTaskScript(folder: string, name: string, xml: string): s
  * caller adds what is its own (the guard's stamp) and the final `exit 0`.
  */
 export function deleteTasksLines(folder: string, names: readonly string[]): string[] {
-  const safeFolder = word('folder', folder);
+  const safeFolder = taskWord('folder', folder);
 
   return [
     `try { $service = New-Object -ComObject Schedule.Service; $service.Connect() } catch { exit ${OP_EXIT.unregisterFailed} }`,
     `$folder = $null; try { $folder = $service.GetFolder('\\${safeFolder}') } catch { $folder = $null }`,
     'if ($null -ne $folder) {',
-    ...names.map((name) => `  try { $folder.DeleteTask('${word('task name', name)}', 0) } catch { if ($_.Exception.HResult -ne ${NOT_FOUND_HRESULT}) { exit ${OP_EXIT.unregisterFailed} } }`),
+    ...names.map((name) => `  try { $folder.DeleteTask('${taskWord('task name', name)}', 0) } catch { if ($_.Exception.HResult -ne ${NOT_FOUND_HRESULT}) { exit ${OP_EXIT.unregisterFailed} } }`),
     `  try { if (@($folder.GetTasks(1)).Count -eq 0 -and @($folder.GetFolders(0)).Count -eq 0) { $service.GetFolder('\\').DeleteFolder('${safeFolder}', 0) } } catch { exit ${OP_EXIT.cleanupFailed} }`,
     '}',
   ];

@@ -52,7 +52,7 @@ function reachable(all: readonly Source[], roots: readonly string[]): Map<string
 }
 
 function roots(all: readonly Source[]): string[] {
-  return all.filter((s) => s.file.startsWith('src/windowsTasks/') || s.file === 'src/scheduler/registerScript.ts').map((s) => s.file);
+  return all.filter((s) => s.file.startsWith('src/windowsTasks/') || s.file === 'src/scheduler/registerScript.ts' || s.file === 'src/scheduler/runScript.ts').map((s) => s.file);
 }
 
 /** The chains from a root to a forbidden module, as readable lines. */
@@ -64,7 +64,7 @@ function offenders(all: readonly Source[], from: readonly string[]): string[] {
 
 test('nothing reachable from windowsTasks/ or the registration module imports the elevated launcher or the elevated engine module', () => {
   const all = sources();
-  assert.ok(roots(all).length >= 9, 'the scan reads the Windows tasks\' modules');
+  assert.ok(roots(all).length >= 10 && roots(all).includes('src/scheduler/runScript.ts'), 'the scan reads the Windows tasks\' modules');
   assert.deepEqual(offenders(all, roots(all)), []);
 });
 
