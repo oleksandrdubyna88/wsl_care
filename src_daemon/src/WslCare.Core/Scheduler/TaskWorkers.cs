@@ -17,6 +17,10 @@ namespace WslCare.Core.Scheduler;
 /// <item><term><c>archive</c></term><description>the archive body (WR-D5, <see cref="ArchiveBody"/>, §3.5): <c>&lt;self&gt; archive preview</c> while the
 /// timer's dry-run window is open, <c>&lt;self&gt; archive run</c> once it is not (+ <c>--json</c>), deadline <c>timer.runLimitMinutes</c>. The
 /// dry decision is taken only for this task — a <c>watch</c> never starts the archive's week.</description></item>
+/// <item><term><c>cleanup</c></term><description>the Windows <c>%TEMP%</c> cleanup (WR-T2, §3.12): <c>&lt;self&gt; act A23 --timer --confirm</c> (+ <c>--json</c>),
+/// deadline <c>timer.runLimitMinutes</c>. <c>--timer</c> so A23's own dry week and its <c>auto</c> switch gate the run; <c>--confirm</c>
+/// because the parser refuses an <c>act</c> without a mode. The dry decision lives in the WORKER (the engine, on A23's own stamp); this
+/// table never calls <c>decide</c>, so the supervisor cannot start any week.</description></item>
 /// </list>
 /// </remarks>
 public static class TaskWorkers
@@ -32,6 +36,7 @@ public static class TaskWorkers
     [
         new(WindowsTask.Watch, static _ => ["watch", "--timer"], ConfigKeys.McpWatchdog.RunLimitMinutes),
         new(WindowsTask.Archive, static decide => ArchiveBody.ArgumentsFor(decide()), ConfigKeys.Timer.RunLimitMinutes),
+        new(WindowsTask.Cleanup, static _ => ["act", "A23", "--timer", "--confirm"], ConfigKeys.Timer.RunLimitMinutes),
     ];
 
     /// <summary>The launch of <paramref name="task"/>'s worker, or why there is none.</summary>

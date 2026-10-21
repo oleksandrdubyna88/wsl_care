@@ -19,18 +19,7 @@ namespace WslCare.Scenarios;
 /// </summary>
 public sealed class WindowsTempFlows
 {
-    private static string Make(string temp, string relative, int daysOld, string file)
-    {
-        var folder = Path.Combine(temp, relative);
-        Directory.CreateDirectory(folder);
-        var path = Path.Combine(folder, file);
-        File.WriteAllText(path, "scratch");
-        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-daysOld));
-        File.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-daysOld));
-        Directory.SetLastWriteTimeUtc(folder, DateTime.UtcNow.AddDays(-daysOld));
-        Directory.SetCreationTimeUtc(folder, DateTime.UtcNow.AddDays(-daysOld));
-        return folder;
-    }
+    private static string Make(string temp, string relative, int daysOld, string file) => TempTrees.Make(temp, relative, daysOld, (file, daysOld));
 
     private static ActReport Report(ChildResult result) =>
         JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.ActReport) ?? throw new InvalidOperationException($"act printed no report: {result.Stderr}");

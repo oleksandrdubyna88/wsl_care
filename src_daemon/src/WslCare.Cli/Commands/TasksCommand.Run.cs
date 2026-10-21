@@ -36,7 +36,7 @@ internal static partial class TasksCommand
         var archive = new Lazy<DryRunDecision>(() => ArchiveBody.Decide(loaded, host.Privilege.IsRoot, windows, host.Files, host.Clock.GetUtcNow()));
         return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config, () => archive.Value) switch
         {
-            Reading<WorkerLaunch>.Available launch => Started(request.Task, launch.Value, host.Supervisor, archive, stderr, cancellationToken),
+            Reading<WorkerLaunch>.Available launch => Started(request.Task, launch.Value, host.Supervisor, archive, () => DryRunWindow.Peek(windows, host.Files, loaded.Config, host.Clock.GetUtcNow(), request.Task.DryWindowStamp), stderr, cancellationToken),
             Reading<WorkerLaunch>.Unavailable refused => Refused(request.Task, refused.Reason, stderr),
             _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
         };
@@ -87,11 +87,17 @@ internal static partial class TasksCommand
     /// <summary>The start of a launch that exists: the archive body's window said first (WR-D5, §3.5: why it is a preview, or why it is
     /// a real run — the decision the table already took for this launch), then the supervised run. Explicit per task, never inferred from
     /// the decision's own state (the coai code round on WR-D5, finding 0); the watch takes no decision and says none.</summary>
-    private static int Started(WindowsTask task, WorkerLaunch launch, IWorkerSupervisor supervisor, Lazy<DryRunDecision> archive, TextWriter stderr, CancellationToken cancellationToken)
+    private static int Started(WindowsTask task, WorkerLaunch launch, IWorkerSupervisor supervisor, Lazy<DryRunDecision> archive, Func<DryRunPeek> cleanupWindow, TextWriter stderr, CancellationToken cancellationToken)
     {
         if (task == WindowsTask.Archive)
         {
             Output.Note(stderr, $"tasks run {WindowsTask.Archive}: {ArchiveBody.Note(archive.Value)}");
+        }
+
+        if (task == WindowsTask.Cleanup)
+        {
+            // A PEEK, never Decide: the worker's engine decides on A23's stamp; a supervisor that wrote it would start the week for a run the worker may refuse.
+            Output.Note(stderr, $"tasks run {WindowsTask.Cleanup}: A23's dry-run window: {cleanupWindow().Reason}");
         }
 
         return Supervised(task, launch, supervisor, stderr, cancellationToken);

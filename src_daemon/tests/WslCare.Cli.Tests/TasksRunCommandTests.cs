@@ -28,6 +28,10 @@ public sealed class TasksRunCommandTests
         { ["tasks", "run", "watch", "--json", "--json"] },
         { ["tasks", "run", "watch", "act", "A19"] },
         { ["tasks", "run", "--json", "watch"] },
+        { ["tasks", "run", "cleanup", "--timer"] },
+        { ["tasks", "run", "A23"] },
+        { ["tasks", "run", "cleanup", "--confirm"] },
+        { ["tasks", "run", "act A23 --timer"] },
     };
 
     [Theory]
@@ -41,6 +45,8 @@ public sealed class TasksRunCommandTests
     [InlineData(new[] { "tasks", "run", "watch" }, "watch", false)]
     [InlineData(new[] { "tasks", "run", "watch", "--json" }, "watch", true)]
     [InlineData(new[] { "tasks", "run", "archive", "--json" }, "archive", true)]
+    [InlineData(new[] { "tasks", "run", "cleanup" }, "cleanup", false)]
+    [InlineData(new[] { "tasks", "run", "cleanup", "--json" }, "cleanup", true)]
     public void A_task_of_the_closed_set_parses(string[] argv, string task, bool json)
     {
         var request = CommandLine.Parse(argv).Should().BeOfType<Request.TasksRun>().Subject;
@@ -93,20 +99,22 @@ public sealed class TasksRunCommandTests
             "wsl-care: tasks run watch: the worker exited 75");
     }
 
-    [Fact]
-    public void A_worker_past_its_deadline_exits_84_with_one_stderr_line_naming_the_deadline()
+    [Theory]
+    [InlineData("watch", "mcpWatchdog.runLimitMinutes", 10)]
+    [InlineData("cleanup", "timer.runLimitMinutes", 276)]
+    public void A_worker_past_its_deadline_exits_84_with_one_stderr_line_naming_the_deadline(string task, string key, int minutes)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         using var world = new World("tasks-run-deadline");
 
-        var (exit, stdout, stderr) = CliRun.Over(world.Host(new RecordingSupervisor(new WorkerOutcome.DeadlinePassed(TimeSpan.FromMinutes(10)))), "tasks", "run", "watch");
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(new RecordingSupervisor(new WorkerOutcome.DeadlinePassed(TimeSpan.FromMinutes(minutes)))), "tasks", "run", task);
 
         exit.Should().Be((int)ExitCode.TaskEnded).And.Be(84);
         stdout.Should().BeEmpty();
-        var lines = stderr.TrimEnd().Split('\n');
-        lines.Should().HaveCount(2, "the start line and ONE terminal line");
-        lines[0].Should().Contain("starting").And.Contain("(mcpWatchdog.runLimitMinutes)");
-        lines[1].Should().StartWith("wsl-care: tasks run watch:").And.Contain("10 min").And.Contain("mcpWatchdog.runLimitMinutes").And.Contain("whole tree");
+        var lines = stderr.TrimEnd().Split('\n').Where(l => !l.Contains("A23's dry-run window", StringComparison.Ordinal)).ToArray();
+        lines.Should().HaveCount(2, "the start line and ONE terminal line (the cleanup task's read-only dry-window line aside)");
+        lines[0].Should().Contain("starting").And.Contain($"({key})");
+        lines[1].Should().StartWith($"wsl-care: tasks run {task}:").And.Contain($"{minutes} min").And.Contain(key).And.Contain("whole tree");
     }
 
     [Fact]

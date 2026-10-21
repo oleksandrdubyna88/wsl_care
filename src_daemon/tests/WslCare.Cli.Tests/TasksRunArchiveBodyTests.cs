@@ -272,24 +272,6 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
         File.WriteAllBytes(LeaseFile(baseFolder), JsonSerializer.SerializeToUtf8Bytes(holder, WslCareJsonContext.Compact.LeaseRecord));
     }
 
-    /// <summary>Records the launch, then runs its argv through the same program over the same host — what the real worker would do.</summary>
-    private sealed class RunningSupervisor(Func<CliHost> host) : IWorkerSupervisor
-    {
-        public List<WorkerLaunch> Launches { get; } = [];
-
-        public List<(int Exit, string Stdout, string Stderr)> Workers { get; } = [];
-
-        public Action WhileRunning { get; init; } = static () => { };
-
-        public WorkerOutcome Run(WorkerLaunch launch, CancellationToken cancellationToken)
-        {
-            Launches.Add(launch);
-            WhileRunning();
-            var worker = CliRun.Over(host(), Serilog.Core.Logger.None, cancellationToken, [.. launch.Arguments]);
-            Workers.Add(worker);
-            return new WorkerOutcome.Exited(worker.Exit);
-        }
-    }
 
     private sealed class NoClaude : IWindowsProcessTable
     {
