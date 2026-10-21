@@ -12,7 +12,7 @@ using WslCare.Core.Scheduler;
 namespace WslCare.Cli.Commands;
 
 /// <summary>
-/// <c>tasks render &lt;watch|archive&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's per-user task XML
+/// <c>tasks render &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's per-user task XML
 /// from its configuration, its own path and the user's SID (<see cref="WindowsTaskDefinitions"/>), whether it may be registered
 /// (<see cref="StagedCopies.Check"/>), and the Windows dry state (<see cref="DryRunWindow.Peek"/>). Read-only: nothing is registered,
 /// nothing is written — the extension registers what this answers, and only when it says <c>registrable</c>. And

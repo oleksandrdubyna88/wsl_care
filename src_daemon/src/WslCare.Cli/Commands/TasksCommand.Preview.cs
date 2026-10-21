@@ -32,10 +32,12 @@ internal static partial class TasksCommand
             return (int)ExitCode.Usage;
         }
 
-        if (ActCommand.Elevated(host) is { } elevated)
+        if (host.Privilege.IsRoot)
         {
-            Output.Note(stderr, $"tasks preview {request.Task}: {elevated.Message}");
-            return (int)elevated.Code;
+            // Refused for the PREVIEW's own reason: an elevated process sees the entries the Administrators group owns, so its picture of what the
+            // unelevated cleanup would delete would be misleading (the owner check is the user's SID).
+            Output.Note(stderr, $"tasks preview {request.Task}: an elevated (administrator) process is refused ({host.Privilege.Basis}): it sees entries owned by the Administrators group, so its picture of what the cleanup would delete as you would be misleading; run it from a terminal that is not elevated. Nothing was read");
+            return (int)ExitCode.NotAsRoot;
         }
 
         var report = Previewed(host, paths, loaded, cancellationToken);
@@ -77,6 +79,11 @@ internal static partial class TasksCommand
 
         Groups(text, report.Groups.Where(g => g.Verdict == "eligible"), string.Empty, report.GroupsNotShown.Eligible);
         Groups(text, report.Groups.Where(g => g.Verdict == "wouldBeEligible"), "would be eligible if allowed (widen temp.allowGlobs with \"wsl-care.exe config set ...\"):", report.GroupsNotShown.WouldBeEligible);
+        if (report.WouldBeEligibleLimited)
+        {
+            text.AppendLine("the scan of the names the allow-list does not cover ran out of the scan budget (temp.scanMaxNodes / temp.scanMaxSeconds): the would-be-eligible figures are a lower bound");
+        }
+
         foreach (var excluded in report.ExcludedByReason)
         {
             text.AppendLine(ShownText.Printable(string.Create(CultureInfo.InvariantCulture, $"excluded {excluded.Count}: {excluded.Reason}")));

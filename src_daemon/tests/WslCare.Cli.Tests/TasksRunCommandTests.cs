@@ -207,6 +207,29 @@ public sealed class TasksRunCommandTests
         Directory.Exists(newest).Should().BeTrue("the newest verified copy is kept: the tasks may be registered to it already");
     }
 
+    /// <summary>WR-T2 own review (minor 2): an elevated supervisor refuses BEFORE the run-start sweep and starts no worker - for every
+    /// task. The sweep retires folders and the worker would refuse itself anyway; neither should happen from a process the tasks never run as.</summary>
+    [Theory]
+    [InlineData("watch")]
+    [InlineData("archive")]
+    [InlineData("cleanup")]
+    public void An_elevated_supervisor_refuses_with_81_before_the_sweep_and_starts_no_worker(string task)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new World("tasks-run-elevated");
+        var older = world.PlantVerified("an older copy", TimeSpan.FromDays(3));
+        var running = world.PlantVerified("the copy this run comes from", TimeSpan.FromDays(1));
+        var supervisor = new RecordingSupervisor(new WorkerOutcome.Exited(0));
+
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(supervisor, Path.Combine(running, Core.Scheduler.StagedCopies.ExeName), elevated: true), "tasks", "run", task, "--json");
+
+        exit.Should().Be((int)ExitCode.NotAsRoot);
+        stdout.Should().BeEmpty();
+        stderr.Should().Contain($"tasks run {task}").And.Contain("elevated").And.Contain("Nothing was started");
+        supervisor.Launches.Should().BeEmpty("no worker was started");
+        Directory.Exists(older).Should().BeTrue("the staging sweep did not run: it would have retired the older copy");
+    }
+
     /// <summary>The coai code round on WR-D2, finding 3: a run-start sweep skipped because the run lock is held is said in ONE stderr
     /// line naming why; the run goes on.</summary>
     [Fact]
@@ -278,7 +301,7 @@ public sealed class TasksRunCommandTests
 
         private WindowsHostPaths Paths => new(WindowsEnvironment.Sandboxed(_root.Path));
 
-        public CliHost Host(IWorkerSupervisor supervisor, string self = Self)
+        public CliHost Host(IWorkerSupervisor supervisor, string self = Self, bool elevated = false)
         {
             var paths = Paths;
             return new CliHost(paths, new Core.Files.PhysicalFileSystem(paths) { OwnersAreThisProcess = true }, _clock, new RecordingCommandRunner())
@@ -286,6 +309,7 @@ public sealed class TasksRunCommandTests
                 Probe = new FakeProbe(HostSide.Windows, _clock),
                 ProcessPath = () => self,
                 Supervisor = supervisor,
+                Privilege = new ProcessPrivilege(elevated, elevated ? "this process is elevated" : "this process is not elevated"),
             };
         }
 

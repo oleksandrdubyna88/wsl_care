@@ -101,7 +101,7 @@ public sealed class TasksRunCleanupBodyTests : IDisposable
     }
 
     [Fact]
-    public void An_elevated_cleanup_worker_is_refused_with_81_and_deletes_nothing()
+    public void An_elevated_cleanup_supervisor_is_refused_with_81_before_any_worker_and_deletes_nothing()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         var old = Make("coai-old", 30, ("a.txt", 30));
@@ -113,8 +113,8 @@ public sealed class TasksRunCleanupBodyTests : IDisposable
         var (exit, _, stderr) = CliRun.Over(_host, "tasks", "run", "cleanup", "--json");
 
         exit.Should().Be((int)ExitCode.NotAsRoot);
-        supervisor.Workers.Should().ContainSingle().Which.Stderr.Should().Contain("NOT elevated");
-        Lines(stderr).Should().Contain(l => l.Contains("the worker exited 81", StringComparison.Ordinal));
+        supervisor.Launches.Should().BeEmpty("the supervisor refuses before any worker");
+        Lines(stderr).Should().Contain(l => l.Contains("tasks run cleanup", StringComparison.Ordinal) && l.Contains("elevated", StringComparison.Ordinal) && l.Contains("Nothing was started", StringComparison.Ordinal));
         Directory.Exists(old).Should().BeTrue();
         File.Exists(Cursor).Should().BeFalse();
     }
@@ -147,11 +147,16 @@ public sealed class TasksRunCleanupBodyTests : IDisposable
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         var supervisor = new RunningSupervisor(() => _host);
-        _host = Host(supervisor, elevated: true);
+        _host = Host(supervisor);
 
-        CliRun.Over(_host, "tasks", "run", "cleanup", "--json");
+        int exit;
+        using (HoldTheRunLock())
+        {
+            (exit, _, _) = CliRun.Over(_host, "tasks", "run", "cleanup", "--json");
+        }
 
-        File.Exists(DryRunWindow.File(_sandbox.Paths, "A23")).Should().BeFalse("an elevated worker refuses itself before the engine: no week was started by the supervisor");
+        exit.Should().Be((int)ExitCode.Busy, "the worker meets a held lock before A23's gate");
+        File.Exists(DryRunWindow.File(_sandbox.Paths, "A23")).Should().BeFalse("a run the worker refuses (busy) must not have started A23's week: the supervisor only peeks");
         File.Exists(DryRunWindow.File(_sandbox.Paths)).Should().BeFalse();
     }
 

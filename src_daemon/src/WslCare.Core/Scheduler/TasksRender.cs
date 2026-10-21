@@ -4,7 +4,7 @@ using WslCare.Core.Config;
 namespace WslCare.Core.Scheduler;
 
 /// <summary>
-/// <c>tasks render &lt;watch|archive&gt; --json</c> (WR-D1 of PLAN_windows_runner.md §3.2): the task XML, the numbers it used, the
+/// <c>tasks render &lt;watch|archive|cleanup&gt; --json</c> (WR-D1 of PLAN_windows_runner.md §3.2): the task XML, the numbers it used, the
 /// canonical summary lines the extension compares Task Scheduler's read-back with, whether the XML may be registered, and the
 /// Windows dry-run state — read-only. The contract the extension's WR-E1..E3 read; its golden is
 /// <c>contracts/golden/windows-tasks-render.json</c>.

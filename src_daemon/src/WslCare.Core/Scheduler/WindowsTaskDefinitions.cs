@@ -17,7 +17,7 @@ public sealed record TaskNumber(string Key, int Value);
 public sealed record WindowsTaskDefinition(WindowsTask Task, string Xml, IReadOnlyList<TaskNumber> Numbers, int ExecutionTimeLimitMinutes, IReadOnlyList<string> Summary);
 
 /// <summary>
-/// WR-D1 (PLAN_windows_runner.md §3.4): the task XML of <c>\wsl-care\watch</c> and <c>\wsl-care\archive</c>, a pure function of the
+/// WR-D1 (PLAN_windows_runner.md §3.4): the task XML of the three tasks (<c>\wsl-care\watch</c>, <c>\wsl-care\archive</c> and <c>\wsl-care\cleanup</c>), a pure function of the
 /// configuration, the user's SID and the staged exe's path — the precedent is <see cref="Systemd.UnitDropIns"/>, the systemd units
 /// rendered from configuration.
 /// </summary>

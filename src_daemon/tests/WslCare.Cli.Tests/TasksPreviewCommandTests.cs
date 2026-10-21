@@ -90,7 +90,7 @@ public sealed class TasksPreviewCommandTests : IDisposable
 
         exit.Should().Be((int)ExitCode.NotAsRoot);
         stdout.Should().BeEmpty();
-        stderr.Should().Contain("NOT elevated");
+        stderr.Should().Contain("Administrators").And.Contain("misleading").And.NotContain("act ", "the preview is refused for its own reason, not act's");
         Directory.Exists(_sandbox.Paths.StateDirectory).Should().BeFalse();
         Directory.Exists(old).Should().BeTrue();
         Snapshot().Should().Equal(before);
@@ -214,6 +214,25 @@ public sealed class TasksPreviewCommandTests : IDisposable
         lines.Should().Contain(l => l.StartsWith("eligible coai-*: 25", StringComparison.Ordinal) && l.EndsWith("showing 20:", StringComparison.Ordinal));
         lines.Should().Contain(l => l.Trim() == "... and 5 more");
         lines.Count(l => l.TrimStart().StartsWith(Temp, StringComparison.OrdinalIgnoreCase)).Should().Be(20, "the paths are bounded");
+    }
+
+    [Fact]
+    public void The_text_and_the_json_say_when_the_would_be_eligible_scan_ran_out_of_the_scan_budget()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        for (var i = 0; i < 600; i++)
+        {
+            Make($"tool-{i:000}", 30, ("a.txt", 30));
+        }
+
+        _sandbox.WriteUserConfig("""{ "temp": { "scanMaxNodes": 1000 } }""");
+
+        var json = JsonNode.Parse(CliRun.Over(Host(), "tasks", "preview", "cleanup", "--json").Stdout)!;
+        var (exit, text, _) = CliRun.Over(Host(), "tasks", "preview", "cleanup");
+
+        json["wouldBeEligibleLimited"]!.GetValue<bool>().Should().BeTrue();
+        exit.Should().Be((int)ExitCode.Ok);
+        text.Should().Contain("ran out of the scan budget").And.Contain("temp.scanMaxNodes");
     }
 
     private sealed class LockRecorder(IFileSystem inner) : DelegatingFileSystem(inner)

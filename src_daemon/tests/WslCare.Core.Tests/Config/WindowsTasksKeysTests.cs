@@ -69,7 +69,8 @@ public sealed class WindowsTasksKeysTests
         var exactly = Load(machine: """{ "timer": { "runLimitMinutes": 60 }, "temp": { "scanMaxSeconds": 1770 } }""");
 
         inside.IsObserveOnly.Should().BeTrue("a deadline inside the scans would end every cleanup before its first delete");
-        inside.Errors.Should().Contain(e => e.Message.Contains("timer.runLimitMinutes", StringComparison.Ordinal) && e.Message.Contains("temp.scanMaxSeconds", StringComparison.Ordinal));
+        inside.Errors.Should().Contain(e => e.Message.Contains("timer.runLimitMinutes", StringComparison.Ordinal) && e.Message.Contains("temp.scanMaxSeconds", StringComparison.Ordinal) && e.Message.Contains("minimum", StringComparison.Ordinal) && e.Message.Contains("delete walk", StringComparison.Ordinal),
+            "the text says what the rule is - the minimum to reach a first delete - and that the delete walk is not covered; it must not read as a cap on a run");
         // timer.runLimitMinutes 60 also breaks the older worst-case rule of a timer run, so the boundary is read off THIS rule's own error.
         exactly.Errors.Should().NotContain(e => e.Message.Contains("temp.scanMaxSeconds", StringComparison.Ordinal), "2 x 1770 + 60 s is exactly 60 minutes");
     }

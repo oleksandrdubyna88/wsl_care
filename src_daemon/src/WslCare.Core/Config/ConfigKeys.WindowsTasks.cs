@@ -1,6 +1,6 @@
 namespace WslCare.Core.Config;
 
-/// <summary>The <c>windowsTasks.*</c> keys (WR-D1 of PLAN_windows_runner.md §3.6): the numbers of the two per-user scheduled tasks
+/// <summary>The <c>windowsTasks.*</c> keys (WR-D1 of PLAN_windows_runner.md §3.6): the numbers of the per-user scheduled tasks
 /// the Windows binary renders with <c>tasks render</c> — in their own file so <c>ConfigKeys.Numbers.cs</c> does not grow (the
 /// doctrine caps a file at 800 lines). They join <c>NumberKeys()</c> like every other number key. None is machine-only: an
 /// unelevated runner's own user layer is the natural place for them (the plan's Q2).</summary>

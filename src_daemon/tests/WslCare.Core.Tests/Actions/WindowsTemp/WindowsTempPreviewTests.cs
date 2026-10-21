@@ -33,6 +33,35 @@ public sealed class WindowsTempPreviewTests : IDisposable
         return TempPreviews.Report(context, TempSettings.From(context.Config), NotStarted, TestContext.Current.CancellationToken);
     }
 
+    /// <summary>WR-T2 own review, major 1: the preview shows what the TIMER run will do. A person-trigger plan spends the shared scan budget on
+    /// names the allow-list does not cover, so its eligible and deferred counts would fall short of the task's; the counts, the groups and the
+    /// eligible verdict come from a Timer-trigger plan, and "would be eligible if allowed" from a second plan, flagged when its budget ran out.</summary>
+    [Fact]
+    public void The_preview_counts_what_the_timer_run_decides_and_says_when_the_would_be_eligible_scan_ran_out_of_budget()
+    {
+        for (var i = 0; i < 1000; i++)
+        {
+            _world.Dir($"aaa-{i:0000}", Old).File($@"aaa-{i:0000}\f", Old);
+        }
+
+        for (var i = 0; i < 50; i++)
+        {
+            _world.Dir($"coai-{i:00}", Old).File($@"coai-{i:00}\f", Old);
+        }
+
+        var tight = _world.Context();
+        var settings = TempSettings.From(tight.Config) with { ScanMaxNodes = 1200 };
+        var timerPlan = Planning.Of(tight with { Trigger = RunTrigger.Timer }, settings, TestContext.Current.CancellationToken).Should().BeOfType<Planning.Planned>().Subject.Plan;
+
+        var report = TempPreviews.Report(tight, settings, NotStarted, TestContext.Current.CancellationToken);
+
+        timerPlan.Count(TempVerdict.Eligible).Should().Be(50, "the task will find all fifty: it spends one node on each name it does not scan");
+        report.Counts.Eligible.Should().Be(50, "the preview says what the task will do");
+        report.Counts.Deferred.Should().Be(timerPlan.Deferred);
+        report.WouldBeEligibleLimited.Should().BeTrue("the person-trigger scan of the uncovered names ran out of the budget before it reached them all");
+        report.Counts.WouldBeEligible.Should().BeLessThan(1000);
+    }
+
     [Fact]
     public void The_preview_asks_for_no_delete_and_leaves_the_cursor_where_it_was()
     {
@@ -109,7 +138,8 @@ public sealed class WindowsTempPreviewTests : IDisposable
 
         cli.Groups.Should().ContainSingle(g => g.Verdict == "wouldBeEligible").Which.Pattern.Should().Be("sometool-*");
         cli.Counts.WouldBeEligible.Should().Be(1);
-        timer.Counts.WouldBeEligible.Should().Be(0, "a timer trigger would not scan them: the preview is a person's, so it does");
+        cli.WouldBeEligibleLimited.Should().BeFalse("the budget was not exhausted");
+        timer.Counts.WouldBeEligible.Should().Be(1, "the report plans both ways itself, whatever trigger its context carries: it is a person's preview of the timer's task");
     }
 
     [Fact]

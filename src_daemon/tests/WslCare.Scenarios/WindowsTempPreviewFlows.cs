@@ -67,7 +67,7 @@ public sealed class WindowsTempPreviewFlows
 
         result.Exit.Should().Be((int)ExitCode.NotAsRoot);
         result.Stdout.Should().BeEmpty();
-        result.Stderr.Should().Contain("NOT elevated");
+        result.Stderr.Should().Contain("Administrators").And.NotContain("act ");
         Directory.Exists(old).Should().BeTrue();
     }
 

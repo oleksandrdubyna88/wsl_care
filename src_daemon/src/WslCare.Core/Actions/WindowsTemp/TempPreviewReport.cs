@@ -58,5 +58,6 @@ public sealed record TempPreviewReport(
     string Basis,
     IReadOnlyList<TempExcludedReason> ExcludedByReason,
     IReadOnlyList<TempPreviewGroup> Groups,
-    TempGroupsNotShown GroupsNotShown);
+    TempGroupsNotShown GroupsNotShown,
+    bool WouldBeEligibleLimited);
 

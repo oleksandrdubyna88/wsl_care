@@ -10,7 +10,7 @@ using WslCare.Core.Scheduler;
 namespace WslCare.Cli.Commands;
 
 /// <summary>
-/// <c>tasks run &lt;watch|archive&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): what each per-user task's action runs —
+/// <c>tasks run &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): what each per-user task's action runs —
 /// the supervisor. It names the worker from the CLOSED table (<see cref="TaskWorkers"/>: this binary's own path, the arguments spelt
 /// there), and hands it to <see cref="CliHost.Supervisor"/>: created suspended inside a kill-on-close job, resumed only inside it,
 /// ended with its whole tree at its deadline. The worker's stdout and stderr ARE this process's (inherited), so the worker's answer is
@@ -30,6 +30,14 @@ internal static partial class TasksCommand
         {
             Output.Note(stderr, $"\"{CommandLine.BinaryName} tasks\" is the Windows binary's: the per-user scheduled tasks run the staged wsl-care.exe on the Windows host; nothing was done");
             return (int)ExitCode.Usage;
+        }
+
+        if (host.Privilege.IsRoot)
+        {
+            // WR-T2 own review (minor 2): refused BEFORE the sweep - for every task. The sweep retires folders, and a worker started from a
+            // process the tasks never run as would only refuse itself.
+            Output.Note(stderr, $"tasks run {request.Task}: the per-user tasks run as the user and never elevated, and this process is elevated ({host.Privilege.Basis}); run it from a terminal that is not elevated. Nothing was started");
+            return (int)ExitCode.NotAsRoot;
         }
 
         SweepStagingAtRunStart(host, windows, loaded.Config, stderr);

@@ -102,11 +102,11 @@ internal abstract record Request
     /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
     internal sealed record UnitsDropIn(string Unit) : Request;
 
-    /// <summary><c>tasks render &lt;watch|archive&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's task
+    /// <summary><c>tasks render &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's task
     /// XML from its configuration, its own path and the user's SID, whether it may be registered, and the Windows dry state.</summary>
     internal sealed record TasksRender(Core.Scheduler.WindowsTask Task, bool Json) : Request;
 
-    /// <summary><c>tasks run &lt;watch|archive&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): the supervisor — the task's
+    /// <summary><c>tasks run &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): the supervisor — the task's
     /// worker from the CLOSED table (<see cref="Core.Scheduler.TaskWorkers"/>) in a kill-on-close job, bounded by its deadline.</summary>
     internal sealed record TasksRun(Core.Scheduler.WindowsTask Task, bool Json) : Request;
 
@@ -315,7 +315,7 @@ internal static class CommandLine
         new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted; --restorable: only the verified entries removed at their source, newest first, at most archive.maxRestoreEntries (what the restore button offers)", ["archive", "list", "--json"], ArchiveArguments.ParseArchiveList),
         new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ArchiveArguments.ParseArchiveReconcile),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
-        new([["tasks", "render"]], "tasks render <task> [--json]", "the Windows binary's: the XML of one per-user scheduled task, <task> watch, archive or cleanup (\\wsl-care\\watch, \\wsl-care\\archive), from the configuration, this process's own path and the current user's SID; the numbers it used, the summary lines Task Scheduler's read-back must print, whether it may be registered (only a verified staged copy under %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\ is), and the Windows dry-run state (read-only: nothing is registered, nothing is written)", ["tasks", "render", "watch", "--json"], ParseTasksRender),
+        new([["tasks", "render"]], "tasks render <task> [--json]", "the Windows binary's: the XML of one per-user scheduled task, <task> watch, archive or cleanup (\\wsl-care\\watch, \\wsl-care\\archive, \\wsl-care\\cleanup), from the configuration, this process's own path and the current user's SID; the numbers it used, the summary lines Task Scheduler's read-back must print, whether it may be registered (only a verified staged copy under %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\ is), and the Windows dry-run state (read-only: nothing is registered, nothing is written)", ["tasks", "render", "watch", "--json"], ParseTasksRender),
         new([["tasks", "run"]], "tasks run <task> [--json]", "the Windows binary's supervisor, what each per-user task's action runs: <task> watch (this binary's own watch --timer) archive (this binary's own archive preview while the timer's dry-run window is open, archive run once it is not) or cleanup (this binary's own act A23 --timer --confirm: the Windows %TEMP% cleanup under A23's own dry-run week, deadline timer.runLimitMinutes), started suspended inside a kill-on-close job, resumed only inside it, and ended with its whole tree at its deadline (mcpWatchdog.runLimitMinutes, timer.runLimitMinutes; counted on the unbiased clock, so a sleep is not run time): exit 84 then, else the worker's own exit code; the worker's answer is this process's stdout", ["tasks", "run", "watch", "--json"], ParseTasksRun),
 
         new([["tasks", "preview"]], "tasks preview cleanup [--json]", "the Windows binary's, read-only: what the Windows %TEMP% cleanup (A23) would do now - the resolved temp folder, the age cutoff and the allow-list in force, the counts (eligible, would be eligible if allowed, young, excluded by reason, unknown, deferred), the groups with their first exact paths (at most preview.maxItems groups and paths, the remainders counted), where the cursor stands and A23's own dry-run week. It deletes nothing, moves no cursor, starts no week, writes nothing and takes no lock; the one task it takes is cleanup", ["tasks", "preview", "cleanup", "--json"], ParseTasksPreview),
@@ -716,7 +716,7 @@ internal static class CommandLine
         _ => new Request.Failed($"\"{BinaryName} units dropin\" takes exactly one unit: {string.Join(", ", Core.Systemd.UnitDropIns.Units)}."),
     };
 
-    /// <summary><c>tasks render &lt;watch|archive&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c>.</summary>
+    /// <summary><c>tasks render &lt;watch|archive|cleanup&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c>.</summary>
     private static Request ParseTasksRender(IReadOnlyList<string> rest) => rest switch
     {
         [var name] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRender(task, false),
@@ -724,7 +724,7 @@ internal static class CommandLine
         _ => new Request.Failed($"\"{BinaryName} tasks render\" takes exactly one task ({string.Join(", ", Core.Scheduler.WindowsTask.All)}) and optionally {JsonFlag}: {BinaryName} tasks render <task> [{JsonFlag}]."),
     };
 
-    /// <summary><c>tasks run &lt;watch|archive&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c> — nothing
+    /// <summary><c>tasks run &lt;watch|archive|cleanup&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c> — nothing
     /// else, so no word a person or a task types reaches the worker (§4: never free argv through the supervisor).</summary>
     private static Request ParseTasksRun(IReadOnlyList<string> rest) => rest switch
     {

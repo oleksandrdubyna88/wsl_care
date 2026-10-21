@@ -809,7 +809,9 @@ flowchart TD
     RX --> G{"registrable?"}
     G -- "staged copy, a user-account SID, not elevated" --> OK[registrable]
     G -- "SYSTEM / a service or group SID / elevated" --> NO[not registrable, XML still shown]
-    U["tasks run cleanup --json"] --> SW["start sweep of the staging folders"] --> PK["stderr: A23's dry-run window (Peek, never Decide)"]
+    U["tasks run cleanup --json"] --> EL{"elevated?"}
+    EL -- yes --> E81["exit 81, nothing started"]
+    EL -- no --> SW["start sweep of the staging folders"] --> PK["stderr: A23's dry-run window (Peek, never Decide)"]
     PK --> JOB["kill-on-close job: self act A23 --timer --confirm --json, deadline timer.runLimitMinutes"]
     JOB --> W["the worker: act --confirm"]
     W --> L{"run lock, no waiting"}
@@ -827,28 +829,42 @@ flowchart TD
 **The closed set is three.** `WindowsTask.All` = watch, archive, cleanup; `tasks render` and `tasks run` take all three, `tasks preview` takes
 `cleanup` only (`ParseTasksPreview`), and the E11/DH task words stay refused. Every task now answers with the reader's SID as its ONE principal;
 a render is not registrable for a SID that is not a user account (`TasksRender.IsUserAccount`: `S-1-5-21-…` or Entra `S-1-12-1-…`, an
-allow-list) or from an elevated process (`host.Privilege.IsRoot`), and a staged-copy check still applies.
+allow-list) or from an elevated process (`host.Privilege.IsRoot`), and a staged-copy check still applies. **With UAC off** (or the built-in
+Administrator account) every process is elevated, so for that account the render is NEVER registrable, `tasks run` and `tasks preview cleanup`
+answer 81, and nothing of the three tasks can be installed, previewed or run: the extension's modal (WR-T3) must say so.
 
 **Cadence and keys.** `windowsTasks.cleanupLogonDelayMinutes` (30, 0–720, Higher) and `windowsTasks.cleanupEveryHours` (24, 1–168, Higher); the
-deadline is `timer.runLimitMinutes` (276), the execution limit 286 min. One rule: `timer.runLimitMinutes` covers twice `temp.scanMaxSeconds` and 60 s
-(one A23 run scans once for its preview and once more, from a shared allowance, for its re-validations before it deletes anything); the older
-worst-case rule of a timer run already holds it far above that at any real configuration.
+deadline is `timer.runLimitMinutes` (276), the execution limit 286 min. One rule: `timer.runLimitMinutes` covers twice `temp.scanMaxSeconds` and 60 s.
+That is the MINIMUM a run needs to delete anything, not a cap on it: the plan scan (one allowance of `temp.scanMaxSeconds`, the top-level listing
+included) plus one re-validation (the run's shared allowance of the same size). It does not bound the delete walk, which is the deadline's job
+(84, with A23's checkpoint making the kill safe); the older worst-case rule of a timer run already holds the key far above that at any real
+configuration.
 
 **`tasks run cleanup`.** The closed table's third entry spells `act A23 --timer --confirm` (+ `--json`): `--timer` so A23's own dry week and its `auto`
 switch gate the run, `--confirm` because `act` needs a mode. The supervisor holds no lock at launch and calls no decision (the entry ignores
 the archive body's `decide`); it PEEKS A23's window for one stderr line. The worker takes the run lock without waiting: a held lock (a watch
 sampling) is exit **75**, passed through exactly as the watch's and the archive's are (plan §3.9; the gate's record of a mapping to 0 was a
 mistake and was not applied). A23's first week is its own (`first-timer-run-A23.json`), never the common stamp. Exits passed through: 0, 3, 1, 75,
-78, 81 (an elevated process: the worker refuses itself), 130; the supervisor's own: 84 at the deadline, 1 with a reason, 2.
+78, 130; the supervisor's own: 81 (**an elevated process, refused for all three tasks before the staging sweep and before anything starts**: the per-user
+tasks run as the user and never elevated, so the message says to run it from a terminal that is not elevated), 84 at the deadline, 1 with a reason, 2.
 
-**`tasks preview cleanup`** (in-process, no job): refused on the distro's binary (2) and from an elevated process (81); a configuration in error
-does not refuse it (`observeOnly` + the errors). It builds `Planning.Of` (the SAME call the engine's preview makes, trigger `Cli`, so the names the
-allow-list does not cover are scanned for the "would be eligible if allowed" groups) and shapes it as `TempPreviewReport`: the resolved root, the
+**`tasks preview cleanup`** (in-process, no job): refused on the distro's binary (2) and from an elevated process (81, before anything is read; the
+message says WHY: an elevated process sees entries owned by the Administrators group, so its picture of what the cleanup would delete as the
+user would be misleading); a configuration in error does not refuse it (`observeOnly` + the errors). It is faithful to what the task will do:
+the counts are those of the **Timer** plan (what the scheduled run would do: names the allow-list does not cover are not scanned), and a second
+plan under the `Cli` trigger (which does scan them) fills only the "would be eligible if allowed" groups; `wouldBeEligibleLimited` is true (and
+the text form says so) when that second scan ran out of budget, so the list is a lower bound. Both plans are read-only. It builds `Planning.Of`
+(the SAME call the engine's preview makes) and shapes it as `TempPreviewReport`: the resolved root, the
 refusal (a refused root answers zero counts, exit 0), the numbers in force, A23's dry state (`DryRunWindow.Peek`), the pass (the cursor ON DISK:
 `last`, `inProgress`), the counts (the `act A23 --preview` facts), the eligible bytes, the excluded reasons, and the groups with at most
 `preview.maxItems` groups per verdict and paths per group and the remainders counted. It deletes nothing, moves no cursor, starts no week, writes
 nothing, asks for no lock (so it answers while a watch or a cleanup holds it). There is no second selection code: one listing call site
 (`TempPlanning.cs`).
+
+**No recursive folder delete under `%TEMP%`.** A23 removes a folder only through `IFileSystem.DeleteEmptyDirectory`, after its entries went one by one. The recursive
+`IFileSystem.DeleteDirectory` has a closed list of callers (`ArchitectureTests.RecursiveDeleters`: the run-log prune, the run-detail retention, the staging sweep, the
+user-cache actions), each under the daemon's own state or log directory; only the log prune runs inside the cleanup's worker. A new caller is a red test until it is
+justified and recorded (plan WR-T2 §14, own review item 8).
 
 ## Windows memory pressure, one rule on both roads (E15.S5, 2026-10-12) — a report
 

@@ -2,6 +2,7 @@ using System.Globalization;
 
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Config;
+using WslCare.Core.Records;
 
 namespace WslCare.Core.Actions.WindowsTemp;
 
@@ -22,21 +23,30 @@ internal static class TempPreviews
     public static TempPreviewReport Report(ActionContext context, TempSettings settings, DryRunPeek dry, CancellationToken token)
     {
         var limit = context.Config.Int(ConfigKeys.Preview.MaxItems);
-        return Planning.Of(context, settings, token) switch
+
+        // The counts, the groups and the eligible verdict are the TASK's: planned as the timer plans (the names the allow-list does not cover
+        // cost one node each and are not scanned), so the shared scan budget is spent as the task will spend it (the Fable own review of
+        // WR-T2, major 1). "Would be eligible if allowed" needs those names scanned, so it comes from a second, person-trigger plan.
+        return Planning.Of(context with { Trigger = RunTrigger.Timer }, settings, token) switch
         {
-            Planning.Planned planned => FromPlan(context, settings, dry, planned.Plan, limit),
+            Planning.Planned planned => FromPlan(context, settings, dry, planned.Plan, Uncovered(context, settings, token), limit),
             Planning.Refused refused => Nothing(context, settings, dry, string.Empty, refused.Reason, limit),
             Planning.Unreadable unreadable => Nothing(context, settings, dry, string.Empty, unreadable.Reason, limit),
             _ => throw new System.Diagnostics.UnreachableException("Planning is a closed set"),
         };
     }
 
-    private static TempPreviewReport FromPlan(ActionContext context, TempSettings settings, DryRunPeek dry, TempPlan plan, int limit)
+    /// <summary>The plan a PERSON's trigger makes, which scans the names the allow-list does not cover; <c>null</c>-free: an empty plan when it
+    /// cannot be made (the same root was just planned, so this is not expected).</summary>
+    private static TempPlan? Uncovered(ActionContext context, TempSettings settings, CancellationToken token) =>
+        Planning.Of(context with { Trigger = RunTrigger.Cli }, settings, token) is Planning.Planned planned ? planned.Plan : null;
+
+    private static TempPreviewReport FromPlan(ActionContext context, TempSettings settings, DryRunPeek dry, TempPlan plan, TempPlan? uncovered, int limit)
     {
         var eligible = Groups(plan, TempVerdict.Eligible, Eligible, limit);
-        var would = Groups(plan, TempVerdict.WouldBeEligible, WouldBeEligible, limit);
+        (IReadOnlyList<TempPreviewGroup> Shown, int NotShown) would = uncovered is null ? ([], 0) : Groups(uncovered, TempVerdict.WouldBeEligible, WouldBeEligible, limit);
         var counts = new TempPreviewCounts(
-            plan.Count(TempVerdict.Eligible), plan.Count(TempVerdict.WouldBeEligible), plan.Count(TempVerdict.NotAllowed), plan.Count(TempVerdict.Young),
+            plan.Count(TempVerdict.Eligible), uncovered?.Count(TempVerdict.WouldBeEligible) ?? 0, plan.Count(TempVerdict.NotAllowed), plan.Count(TempVerdict.Young),
             plan.Count(TempVerdict.Excluded), plan.Count(TempVerdict.Unknown), plan.Count(TempVerdict.Changed), plan.Deferred, plan.Entries.Count, plan.Total);
         return Nothing(context, settings, dry, plan.Root, string.Empty, limit, plan.Total) with
         {
@@ -45,6 +55,7 @@ internal static class TempPreviews
             ExcludedByReason = [.. plan.Entries.Where(e => e.Judgement.Verdict == TempVerdict.Excluded).GroupBy(e => e.Judgement.Reason).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).Select(g => new TempExcludedReason(g.Key, g.Count()))],
             Groups = [.. eligible.Shown, .. would.Shown],
             GroupsNotShown = new TempGroupsNotShown(eligible.NotShown, would.NotShown),
+            WouldBeEligibleLimited = uncovered is { Deferred: > 0 },
         };
     }
 
@@ -84,6 +95,7 @@ internal static class TempPreviews
             Basis,
             [],
             [],
-            new TempGroupsNotShown(0, 0));
+            new TempGroupsNotShown(0, 0),
+            WouldBeEligibleLimited: false);
     }
 }

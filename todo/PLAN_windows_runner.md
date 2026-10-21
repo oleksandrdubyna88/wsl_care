@@ -211,12 +211,11 @@ existing readers, and the dry window of §3.5.
   `temp.allowGlobs` (`wsl-care.exe config set …` — the extension never writes daemon config) from evidence, not guesses.
 - **Budgets on every run:** `temp.scanMaxNodes`, `temp.scanMaxSeconds`, `temp.maxItemsPerRun`; a cursor in
   `%LOCALAPPDATA%\wsl-care\temp-cursor.json` resumes after the last decided candidate, so a 138 k backlog drains over runs. The two
-  scan budgets bound the PREVIEW's scans and, as one shared allowance, the run's re-validation scans (as built, the Fable own review
-  m6); the delete walk itself has no time cap of its own — the supervisor's deadline and the cancellation end it, and the checkpoint
-  makes that safe. The two
-  scan budgets bound the PREVIEW's scans and, as one shared allowance, the run's re-validation scans (as built, the Fable own review
-  m6); the delete walk itself has no time cap of its own — the supervisor's deadline and the cancellation end it, and the checkpoint
-  makes that safe.
+  scan budgets are spent by ONE shared allowance for the plan (the top-level listing included, as built after the coai code round,
+  finding 11) and by ONE shared allowance for the run's re-validation scans (the Fable own review m6) — neither is a cap on a whole
+  run: the delete walk itself has no time cap of its own, the supervisor's deadline and the cancellation end it, and the checkpoint
+  makes that safe. `timer.runLimitMinutes` must at least cover the two allowances (the NumberRule of WR-T2): the MINIMUM needed to
+  delete anything, not a guarantee that a run finishes.
 - **A stable order that wraps** (coai plan round, finding 1): candidates are the top-level names in ORDINAL order; a run starts
   after the cursor, and when it reaches the end it wraps to the first name and goes on until its budget or the cursor's own name,
   so an entry created before the cursor is reached on the same pass or the next. The cursor file records when the current pass
@@ -342,7 +341,11 @@ cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout
 - **The SID in the XML** ties the task to this account; a renamed or migrated profile needs *Install* again (the panel reads "install again").
 - **"Elevated" is the token's elevation flag** (`Environment.IsPrivilegedProcess`). With UAC off (`EnableLUA=0`) or on the
   built-in Administrator account every process reports elevated, so the Windows `watch` exits 81 every period and the task never
-  samples — a known limitation shared with the archive verbs (WR-D4 own review m3). WR-E3's modal must say it.
+  samples — a known limitation shared with the archive verbs (WR-D4 own review m3). WR-E3's modal must say it. **Since WR-T2's own
+  review the same holds for all three tasks:** `tasks render` is never registrable from an elevated process, and `tasks run` (any task)
+  and `tasks preview cleanup` answer 81 from one — so with UAC off the `render` is never registrable for that account (nothing can be
+  installed), and **WR-T3's modal and the panel's cleanup row must say so** (a machine where every process is elevated cannot install,
+  preview or run the cleanup task; "run it from an account that is not an administrator, or turn UAC on").
 - **The unelevated registration under pwsh 7 from the Store** is unmeasured (the elevated one worked, 2026-10-11); 5.1 is the resolver's own fallback when pwsh 7 is absent, not when it fails — a refusal is shown with its text.
 
 ## 11. Plan round (coai session `8138f140`, 2026-10-11)
@@ -1290,7 +1293,7 @@ that DELETES (through A23): no test resolves the real `%TEMP%`, `%LOCALAPPDATA%`
   `host.Privilege.IsRoot`; both answer exit 0 with `registrable: false` and the XML shown (the extension registers only on `registrable: true`).
 - **`tasks preview cleanup` runs in-process and is bounded by A23's own budgets** (`temp.scanMaxSeconds`, `temp.scanMaxNodes`,
   `temp.maxTopLevelEntries`); the extension's `windowsTempPreviewSeconds` (WR-T3) is the outer net. Refusals: the distro's binary (2), an
-  elevated process (81, `ActCommand.Elevated`'s sentence). A configuration in error does NOT refuse it: the report says `observeOnly` with the
+  elevated process (81, with its own reason - the Administrators-owned entries an elevated process sees; reworded in the own review below). A configuration in error does NOT refuse it: the report says `observeOnly` with the
   errors (`act --preview` does not refuse either; `tasks render` keeps its 78 because its answer would be registered). Its trigger is
   `RunTrigger.Cli`, so the names the allow-list does not cover are scanned for the "would be eligible if allowed" groups. It takes no lock, not
   even for a read; it PEEKS A23's week and never decides it.
@@ -1333,3 +1336,51 @@ that DELETES (through A23): no test resolves the real `%TEMP%`, `%LOCALAPPDATA%`
   B12 the preview taking a lock (2); B13 the preview's trigger Timer (2); B14 the path cap removed, and `more` fixed at 0 (1 each); B15 the group
   cap removed (1); B16 the number rule removed (1); B17 the parser accepting any task (2); B18 the preview's elevated refusal removed (2); B19 the
   busy 75 mapped to 0 (1). B20 (one listing call site) is reviewed: `ListEntries(root` appears once in `Core/Actions/WindowsTemp`, in `TempPlanning.cs`.
+
+**WR-T2, the Fable own review (2026-10-21).** Seven fixes on top of the first delivery; each behaviour change red first, then green, then a break-it.
+
+- **(1) The preview is faithful to the task.** The counts are those of the Timer plan (`TempPreviews.Report` plans with the Timer trigger, so names the
+  allow-list does not cover are not scanned and not eligible); a second plan under the Cli trigger fills ONLY `wouldBeEligible`.
+  `TempPreviewReport.WouldBeEligibleLimited` is true (the text says it) when that second scan ran out of its budget, so the list is a lower bound.
+  Both plans are read-only. RED: `Expected report.Counts.Eligible to be 50L because the preview says what the task will do, but found 0L`.
+- **(2) The rule is a minimum, not a cap.** The `timer.runLimitMinutes` rule's comment and error text now say it is the MINIMUM needed to delete anything
+  (the plan scan, the top-level listing included, plus one re-validation, both one allowance of `temp.scanMaxSeconds`) and that it does not bound the delete
+  walk. The reviewer's premise ("`TempRun` gives every candidate a fresh budget") was already stale - WR-T1 m6 shares the re-validation allowance - so only the
+  wording moved; the behaviour is unchanged. §3.12 "Budgets on every run" says the same.
+- **(3) Stale "two tasks" texts** (usage, summaries, the `TasksRender`, `WindowsTask`, `WindowsTaskDefinitions` and `ConfigKeys.WindowsTasks` comments) now name
+  watch, archive and cleanup.
+- **(4) `tasks run` refuses an elevated process before the sweep, for all three tasks** (81, "run it from a terminal that is not elevated. Nothing was started").
+  RED: `Expected exit to be 81, but found 0 (difference of -81)` for watch, archive and cleanup. The workers still refuse themselves; the supervisor now never
+  sweeps the staging folders, peeks a window or starts a job as an administrator. **Consequence for CI:** the scenarios that supervise a task on an elevated
+  runner assert 81.
+- **(5) Docs:** with UAC off (or the built-in Administrator) every process is elevated, so the `render` is NEVER registrable for that account and `run` and
+  `preview` answer 81 - WR-T3's modal and the panel's cleanup row must say so (§3.x "Elevated" bullet; module_daemon.md).
+- **(6) The preview's elevated message** explains why: an elevated process sees entries owned by the Administrators group, so its picture of what the cleanup
+  would delete as the user would be misleading; it no longer mentions `act`.
+- **(7)** A comment at `ActionEngine.RunStamp`: a mixed A23 + other batch falls back to the common stamp; unreachable on Windows today.
+- **Break-its** (product only, sandboxed, `cmp`-restored, `git diff` clean after each): N1 the supervisor's elevated refusal removed (6 red); N2 the preview's
+  counts planned with the Cli trigger (1); N3 the `wouldBeEligible` plan dropped (2); N4 the limited flag fixed false (2); N5 the old elevated message (1);
+  N6 the refusal after the sweep (5).
+
+**WR-T2 own review, item 8 - the recursive delete is a closed list (2026-10-21).** `IFileSystem.DeleteDirectory` (the recursive one,
+`PhysicalFileSystem.cs:624`) is pinned by `ArchitectureTests.RecursiveDelete.cs` (`Core.Tests`, the `ReadSites` style, source-reading):
+(a) no file under `Core/Actions/WindowsTemp/` spells `DeleteDirectory(` (so `DeleteEmptyDirectory(` stays the only folder removal there -
+`TempDeletion.cs:141`); (b) the src files that call `.DeleteDirectory(` are exactly `ArchitectureTests.RecursiveDeleters`, and a new caller goes red with a
+message that it must be justified (what, under which root, why a per-file delete does not do) and recorded (that table, this section,
+`module_daemon.md`). The scanner is proven on a planted fixture first (`..._scan_matches_a_planted_call_and_not_the_empty_folder_removal`: a one-line
+and a multi-line call match, `DeleteEmptyDirectory(`, a `//` comment and a declaration do not match as a member call, and the real
+`RunRetention.cs` is found). Break-its (product code, `cmp`-restored, `git diff` clean): (1) `TempDeletion.cs:141` `files.DeleteEmptyDirectory(path, scope)` ->
+`files.DeleteDirectory(path, scope)`: BOTH red - (a) `offenders ... {"...\WindowsTemp\TempDeletion.cs:141: DeleteDirectory("}` and (b) `... a NEW
+caller of the recursive IFileSystem.DeleteDirectory`; (2) a method calling it in a fifth file (`Scheduler/StagedCopies.cs`): (b) only red -
+`found at least one item {"WslCare.Core/Scheduler/StagedCopies.cs: a NEW caller of the recursive IFileSystem.DeleteDirectory"}`.
+
+The four callers, and which of them can run inside an `act A23 --timer` process (the scheduled cleanup's worker, `tasks run cleanup`):
+
+| Caller | Runs in the A23 worker? | Root it deletes under |
+|---|---|---|
+| `Cli/Logging/LogRetention.cs:70` (`PruneOne`), reached from `WslCareLogging.cs:56,94` | **YES** - the run-log prune runs at the start of EVERY CLI process that opens its file sink, so the worker prunes aged day folders before `act` starts | `DeletionScope(logRoot, ...)` (`LogRetention.cs:41`): `host.Paths.LogDirectory` = `%LOCALAPPDATA%\wsl-care\logs` (`WindowsHostPaths.cs:53`) |
+| `Core/Records/RunRetention.cs:102,119` | no - only `collect` (`CollectRun.cs:381`) and the Windows `watch` (`WatchRun.Windows.cs:63`); `act` never sweeps | `RunDetailStore.Root(paths)` (`RunRetention.cs:38`) and `paths.StateDirectory` (`:70`) = `%LOCALAPPDATA%\wsl-care` (`WindowsHostPaths.cs:51`) |
+| `Core/Scheduler/Staging.Sweep.cs:174` | no - the SUPERVISOR's start sweep (`TasksCommand.Run.cs:43,67`, after the elevated refusal), not the worker it launches | the staging root `StagedCopies.Root` (`StagedCopies.cs:37`), under the state directory |
+| `Core/Actions/UserCaches/CacheFolders.cs:94` | no - the Linux user-cache actions; A23's `act` runs A23 alone | the action's own cache root passed in (`RemoveFolder(context, folder, root, action)`) |
+
+None of them touches `%TEMP%`: the one that can run in the cleanup's process deletes only the daemon's own log day folders.

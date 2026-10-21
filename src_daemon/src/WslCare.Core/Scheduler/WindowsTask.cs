@@ -1,12 +1,12 @@
 namespace WslCare.Core.Scheduler;
 
 /// <summary>
-/// One of the two per-user scheduled tasks of the Windows binary (PLAN_windows_runner.md §3.4) — a CLOSED set: the constructor
+/// One of the three per-user scheduled tasks of the Windows binary (PLAN_windows_runner.md §3.4) — a CLOSED set: the constructor
 /// is private, so a task name a person typed is either one of <see cref="All"/> or refused naming them.
 /// </summary>
 public sealed record WindowsTask
 {
-    /// <summary>The Task Scheduler folder both tasks live in.</summary>
+    /// <summary>The Task Scheduler folder the tasks live in.</summary>
     public const string Folder = "\\wsl-care";
 
     private WindowsTask(string name, string dryWindowStamp = "")
