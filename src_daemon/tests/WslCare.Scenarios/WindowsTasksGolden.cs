@@ -43,18 +43,21 @@ internal static class WindowsTasksGolden
         var config = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
         using var sandbox = new SandboxHost("golden-windows-tasks");
         // An empty state directory: the week not started — the answer before the first task run.
-        var dry = DryRunWindow.Peek(sandbox.Paths, sandbox.Files, config, DateTimeOffset.Parse(GoldenContracts.FixedInstant, System.Globalization.CultureInfo.InvariantCulture));
+        var now = DateTimeOffset.Parse(GoldenContracts.FixedInstant, System.Globalization.CultureInfo.InvariantCulture);
+        var dry = DryRunWindow.Peek(sandbox.Paths, sandbox.Files, config, now);
+        DryRunPeek dryOf(WindowsTask task) => DryRunWindow.Peek(sandbox.Paths, sandbox.Files, config, now, task.DryWindowStamp);
         var staged = StagedCopies.VerifiedCopy(StagedExe, Digest, Release);
         // The path check refuses before anything is read, so the bundled exe's answer is the product's on every OS.
         var bundled = StagedCopies.Check(StagingRoot, BundledExe, Release, sandbox.Files, sandbox.Files, config.Int(ConfigKeys.Records.MaxStateFileBytes));
         return ContractFilesTests.Indented(new JsonObject
         {
             ["schemaVersion"] = 1,
-            ["description"] = "The answers of `wsl-care tasks render <task> --json` under the embedded defaults, for a fixed SID and staging root (no real account, no real build): the two tasks from a verified staged copy (registrable), and the watch from the extension folder's exe (not registrable). Built from the daemon's pure parts by ContractFilesTests; the extension's fake replays them and its Windows leg compares Task Scheduler's read-back of each xml with its summary.",
+            ["description"] = "The answers of `wsl-care tasks render <task> --json` under the embedded defaults, for a fixed SID and staging root (no real account, no real build): the three tasks from a verified staged copy (registrable), and the watch from the extension folder's exe (not registrable). Built from the daemon's pure parts by ContractFilesTests; the extension's fake replays them and its Windows leg compares Task Scheduler's read-back of each xml with its summary.",
             ["answers"] = new JsonArray(
-                Answer("watch from the staged copy", TasksRender.Report(WindowsTask.Watch, config, new TaskIdentity(Sid, StagedExe), staged, dry)),
-                Answer("archive from the staged copy", TasksRender.Report(WindowsTask.Archive, config, new TaskIdentity(Sid, StagedExe), staged, dry)),
-                Answer("watch from the extension folder", TasksRender.Report(WindowsTask.Watch, config, new TaskIdentity(Sid, BundledExe), bundled, dry))),
+                Answer("watch from the staged copy", TasksRender.Report(WindowsTask.Watch, config, new TaskIdentity(Sid, StagedExe), staged, dry, elevated: false)),
+                Answer("archive from the staged copy", TasksRender.Report(WindowsTask.Archive, config, new TaskIdentity(Sid, StagedExe), staged, dry, elevated: false)),
+                Answer("cleanup from the staged copy", TasksRender.Report(WindowsTask.Cleanup, config, new TaskIdentity(Sid, StagedExe), staged, dryOf(WindowsTask.Cleanup), elevated: false)),
+                Answer("watch from the extension folder", TasksRender.Report(WindowsTask.Watch, config, new TaskIdentity(Sid, BundledExe), bundled, dry, elevated: false))),
         });
     }
 

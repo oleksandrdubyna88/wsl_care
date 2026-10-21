@@ -125,6 +125,7 @@ internal static class Program
             Request.UnitsDropIn dropIn => UnitsDropIn(dropIn, loaded, stdout, stderr),
             Request.TasksRender render => TasksCommand.Render(render, host, loaded, stdout, stderr),
             Request.TasksRun run => TasksCommand.Run(run, host, loaded, stderr, cancellationToken),
+            Request.TasksPreview preview => TasksCommand.Preview(preview, host, loaded, stdout, stderr, cancellationToken),
             Request.TasksStage stage => TasksCommand.Stage(stage, host, loaded, stdout, stderr),
             Request.WorktreesRootsSet rootsSet => WorktreesCommand.RootsSet(rootsSet, host, loaded, stdout, stderr),
             Request.WorktreesRootsClear rootsClear => WorktreesCommand.RootsClear(rootsClear, host, stdout, stderr),

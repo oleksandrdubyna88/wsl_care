@@ -78,7 +78,7 @@ internal sealed class TempRun(ActionContext context, TempSettings settings, Acti
 
     public ActionRun Execute()
     {
-        var scope = new DeletionScope(_root, "A23");
+        var scope = new DeletionScope(_root, WindowsTempAction.IdText);
         foreach (var target in preview.Targets)
         {
             if (token.IsCancellationRequested)

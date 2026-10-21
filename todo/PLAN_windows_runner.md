@@ -1,6 +1,6 @@
 # PLAN — the Windows runner: two per-user scheduled tasks run the staged `wsl-care.exe` under one bounded supervisor
 
-> Status: **in progress, 2026-10-17 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 built (the archive body of `tasks run archive`: dry → `archive preview`, real → `archive run`, no run lock; *WR-D5 as built* in §14); WR-E1 built (the widened `WindowsCareClient`: the staged exe, `tasks render` / `stage` / `stage --remove` typed, the run reads; the strict fake learns them; *WR-E1 as built* in §14); WR-T1 built (A23 `windowsTemp`: the engine's first Windows action, the `temp.*` keys, `act` unelevated on the Windows side; *WR-T1 as built* and *the Fable own review* in §14); WR-E2 built (one Task Scheduler read for `\wsl-care`, the guard consuming it; the Windows tasks' state, host and panel lines, read only; the runner's tree kill; *WR-E2 as built* and *the story's plan round (4fc3f328)* in §14); WR-E3 built (the install / remove flows of the two Windows tasks: ONE unelevated PowerShell, the render checked before it is shown, the pending record cleared on every answer but a timeout, the peer `scheduler/registerScript.ts` the one home of the registration; *WR-E3 as built* and *the story's plan round (efc512d4)* in §14; the live gate waits for the owner's press); WR-E4 built (the run-now buttons: the task's own `Run` asked of Task Scheduler by ONE unelevated PowerShell after a read of the task's row, an overlap told and never silent, the same pending record holding all five buttons; *WR-E4 as built* and *the story's plan round (1c023671)* in §14; the live press is the owner's); WR-E5 onward (except WR-T1) not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
+> Status: **in progress, 2026-10-21 — WR-D1 built (`tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek`, the render golden; *WR-D1 as built* in §14); WR-D2 built (`tasks stage`, `tasks stage --remove`, the sweep `Staging.Sweep`, wired into the start of `tasks run`; *WR-D2 as built* in §14); WR-D3 built (`tasks run`, the Job Object supervisor, exit 84 `TaskEnded`, the job scan; *WR-D3 as built* in §14); WR-D4 built (the Windows `watch`: elevated refused with 81, the run lock, the ledger under the ledger lock `mcp-cpu.lock`, `RunRetention` swept, the A22 hook — nothing acts, no history line; *WR-D4 as built* in §14); WR-D5 built (the archive body of `tasks run archive`: dry → `archive preview`, real → `archive run`, no run lock; *WR-D5 as built* in §14); WR-E1 built (the widened `WindowsCareClient`: the staged exe, `tasks render` / `stage` / `stage --remove` typed, the run reads; the strict fake learns them; *WR-E1 as built* in §14); WR-T1 built (A23 `windowsTemp`: the engine's first Windows action, the `temp.*` keys, `act` unelevated on the Windows side; *WR-T1 as built* and *the Fable own review* in §14); WR-E2 built (one Task Scheduler read for `\wsl-care`, the guard consuming it; the Windows tasks' state, host and panel lines, read only; the runner's tree kill; *WR-E2 as built* and *the story's plan round (4fc3f328)* in §14); WR-E3 built (the install / remove flows of the two Windows tasks: ONE unelevated PowerShell, the render checked before it is shown, the pending record cleared on every answer but a timeout, the peer `scheduler/registerScript.ts` the one home of the registration; *WR-E3 as built* and *the story's plan round (efc512d4)* in §14; the live gate waits for the owner's press); WR-E4 built (the run-now buttons: the task's own `Run` asked of Task Scheduler by ONE unelevated PowerShell after a read of the task's row, an overlap told and never silent, the same pending record holding all five buttons; *WR-E4 as built* and *the story's plan round (1c023671)* in §14; the live press is the owner's); WR-T2 built (the cleanup task on the daemon side: `tasks render cleanup`, `tasks run cleanup` = the supervisor's third closed-table entry `act A23 --timer --confirm --json`, `tasks preview cleanup`, the `windowsTasks.cleanup*` keys, the principal guards for all three tasks; *WR-T2 as built* in §14); WR-E5 onward (except WR-T1, WR-T2) not built.** Scope: the `wsl-care` daemon (`src_daemon/`: a `tasks` verb family — `render`, `stage`, `run` — a Windows branch of `watch`, one new exit code, new `windowsTasks.*` keys) and the VS Code extension (`src_vs_code/`: a `windowsTasks/` module, the widened `WindowsCareClient`, five panel buttons, settings, the Archive page's Windows side), and the Windows `%TEMP%` cleanup (W-A2, §3.12, added 2026-10-11). Nothing elevated, nothing as SYSTEM.
 >
 > Related: [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7b (A22 = S7b.3, the Windows stop; S7b.1 the ledger; S2b the watch), [PLAN_windows_care.md](PLAN_windows_care.md) §2 and W-A15 (E11), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) D9 (:3010–3017), [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md), [PLAN_bundle_windows_binary.md](../research/PLAN_bundle_windows_binary.md) (E7.S5a, §4 and its forward note), [PLAN_windows_time_task.md](../research/PLAN_windows_time_task.md) (the task-registration precedent), [PLAN_pwsh_engine_windows_time.md](../research/PLAN_pwsh_engine_windows_time.md) (the engine rule, F1/F2), [2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md).
 >
@@ -211,12 +211,11 @@ existing readers, and the dry window of §3.5.
   `temp.allowGlobs` (`wsl-care.exe config set …` — the extension never writes daemon config) from evidence, not guesses.
 - **Budgets on every run:** `temp.scanMaxNodes`, `temp.scanMaxSeconds`, `temp.maxItemsPerRun`; a cursor in
   `%LOCALAPPDATA%\wsl-care\temp-cursor.json` resumes after the last decided candidate, so a 138 k backlog drains over runs. The two
-  scan budgets bound the PREVIEW's scans and, as one shared allowance, the run's re-validation scans (as built, the Fable own review
-  m6); the delete walk itself has no time cap of its own — the supervisor's deadline and the cancellation end it, and the checkpoint
-  makes that safe. The two
-  scan budgets bound the PREVIEW's scans and, as one shared allowance, the run's re-validation scans (as built, the Fable own review
-  m6); the delete walk itself has no time cap of its own — the supervisor's deadline and the cancellation end it, and the checkpoint
-  makes that safe.
+  scan budgets are spent by ONE shared allowance for the plan (the top-level listing included, as built after the coai code round,
+  finding 11) and by ONE shared allowance for the run's re-validation scans (the Fable own review m6) — neither is a cap on a whole
+  run: the delete walk itself has no time cap of its own, the supervisor's deadline and the cancellation end it, and the checkpoint
+  makes that safe. `timer.runLimitMinutes` must at least cover the two allowances (the NumberRule of WR-T2): the MINIMUM needed to
+  delete anything, not a guarantee that a run finishes.
 - **A stable order that wraps** (coai plan round, finding 1): candidates are the top-level names in ORDINAL order; a run starts
   after the cursor, and when it reaches the end it wraps to the first name and goes on until its budget or the cursor's own name,
   so an entry created before the cursor is reached on the same pass or the next. The cursor file records when the current pass
@@ -240,12 +239,12 @@ existing readers, and the dry window of §3.5.
 **On the runner:** a third task, `\wsl-care\cleanup` (`LogonTrigger` + `windowsTasks.cleanupLogonDelayMinutes` (30),
 repetition `PT<windowsTasks.cleanupEveryHours>H` (24), deadline `timer.runLimitMinutes`), runs `tasks run cleanup` under the
 same supervisor; the body is `act A23` with the timer trigger (the supervisor spells it, never the extension). Its own lock is
-the run lock, taken without waiting (a cleanup never runs beside a watch; a busy lock is "try at the next run").
+the run lock, taken without waiting (a cleanup never runs beside a watch; a busy lock is "try at the next run"). As built (WR-T2, §14): the body is `act A23 --timer --confirm --json`, a busy run is exit 75 as the watch's and the archive's are, and the dry week is A23's own.
 
 **In the panel:** *Preview the Windows TEMP cleanup* (read-only, through `WindowsCareClient` on the staged exe as `tasks preview
 cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout `wslCare.timeouts.windowsTempPreviewSeconds`),
 *Install the Windows cleanup task*, *Clean Windows TEMP now* (the task's own `Run`, as §3.8's run-now buttons), and the line
-"last cleanup: <t>, N deleted, M kept in use, <bytes> logical" from the run records.
+"last cleanup: <t>, N deleted, M kept in use, <bytes> logical" from the run records. As built (WR-T2): `tasks preview cleanup` answers with the exact paths on expand, bounded by `preview.maxItems` per group.
 
 ## 4. Never
 
@@ -342,7 +341,11 @@ cleanup` — the extension spells neither `act` nor `--confirm`; its own timeout
 - **The SID in the XML** ties the task to this account; a renamed or migrated profile needs *Install* again (the panel reads "install again").
 - **"Elevated" is the token's elevation flag** (`Environment.IsPrivilegedProcess`). With UAC off (`EnableLUA=0`) or on the
   built-in Administrator account every process reports elevated, so the Windows `watch` exits 81 every period and the task never
-  samples — a known limitation shared with the archive verbs (WR-D4 own review m3). WR-E3's modal must say it.
+  samples — a known limitation shared with the archive verbs (WR-D4 own review m3). WR-E3's modal must say it. **Since WR-T2's own
+  review the same holds for all three tasks:** `tasks render` is never registrable from an elevated process, and `tasks run` (any task)
+  and `tasks preview cleanup` answer 81 from one — so with UAC off the `render` is never registrable for that account (nothing can be
+  installed), and **WR-T3's modal and the panel's cleanup row must say so** (a machine where every process is elevated cannot install,
+  preview or run the cleanup task; "run it from an account that is not an administrator, or turn UAC on").
 - **The unelevated registration under pwsh 7 from the Store** is unmeasured (the elevated one worked, 2026-10-11); 5.1 is the resolver's own fallback when pwsh 7 is absent, not when it fails — a refusal is shown with its text.
 
 ## 11. Plan round (coai session `8138f140`, 2026-10-11)
@@ -872,6 +875,8 @@ message is in [module_tests.md](../research/module_tests.md)), and a break-it.
   too: `Candidate.Newest`), and a resumed candidate is also retained when anything inside was created after the checkpoint.
   `FileEntry.CreatedUtc`, `FileSizeResult.Measured.CreatedAt` and `DirectoryTimeResult.Measured.CreatedAt` carry it; each defaults to
   the far future, so a stat that does not say keeps rather than deletes.
+  **The residual (WR-T2 own review, Fable iv):** a copier that preserves the creation time as well (`robocopy /COPY:DAT /DCOPY:T`) can still place an
+  "old" file into a half-deleted candidate; nothing on the file system tells it from a file that was always there, and the plan accepts that class.
 - **M3 — "the first week is dry" is true for A23.** The common stamp `first-timer-run.json` is started by the Windows watch and by the
   archive body, so with `auto.A23` ON it would have opened deletion on the first A23 run. `ICleanupAction.DryWindowStamp` (empty for
   every action but A23) names a per-action stamp, `first-timer-run-A23.json`: `DryRunWindow.Decide` / `Peek` / `File` take the stamp
@@ -1246,3 +1251,176 @@ Rejected, with the reason:
 - **7** — the principal read coerces `[string]$p.UserId` first and translates only when it is not empty (an empty or null UserId keeps `$sid = ''`, so the refusal stands, as before). RED: `the script does not coerce the UserId`.
 - **3 — refuted:** the pending record IS cleared on a failed outcome (`underRecord` clears on every outcome except `timedOut`); the finding read the code before that line.
 - Break-its (each red, restored, `git status`/`git diff` clean): no unwrap (2), a `[uint32]` cast (2), the raw UserId to NTAccount (1), the empty-UserId test removed (1), the modal sentence back (1), the RangeError text back (1), the shared policy changed to RunLevel 1 (16 — the fixtures disagree with the moved policy).
+
+**Follow-up from the merge review of WR-E4 (#170, 2026-10-21):** in `scheduler/runScript.ts` the enabled check (`if (-not $task.Enabled) { exit 36 }`)
+sits outside a `try`: the enabled check falls through on an exception (PowerShell continues with the next statement); `Run` then fails as 37 (a
+disabled task cannot be started). It does not raise privilege — the principal check after it still refuses by default — but it departs from the
+refuse-by-default shape every other check of the script has; to align with refuse-by-default in the next runner story.
+
+**WR-T2 as built (2026-10-21).** `Core/Scheduler/WindowsTask.cs` (`Cleanup`, `All` of three, `DryWindowStamp`), `WindowsTaskDefinitions.cs` (the cleanup's
+cadence row and description), `TasksRender.cs` (the elevated guard and `IsUserAccount`), `TaskWorkers.cs` (the third closed-table entry),
+`Core/Actions/WindowsTemp/TempPlanning.cs` (new: the shared listing + plan), `TempPreviewReport.cs` + `TempPreviews.cs` (new: the report),
+`WindowsTempAction.cs` (`StampName`; `PreviewAsync` on `Planning`), `Core/Config/ConfigKeys.WindowsTasks.cs` / `ConfigKeys.Numbers.cs` /
+`default.json` (the two keys) and `NumberRules.cs` (the one rule), `Json/WslCareJsonContext.cs`, `Cli/CommandLine.cs` (`Request.TasksPreview`, the
+`tasks preview` row, the usage texts), `Cli/Program.cs`, `Cli/Commands/TasksCommand.cs` (the render passes the elevation and the task's own
+stamp), `TasksCommand.Run.cs` (A23's window line), `TasksCommand.Preview.cs` (new: the verb); `contracts/config-keys.json` and
+`contracts/golden/windows-tasks-render.json` regenerated (a FOURTH answer, *cleanup from the staged copy*); the extension's
+`windowsTasksState.test.ts` counts four golden answers. The docs are in [module_daemon.md](../research/module_daemon.md) § *The Windows
+runner's cleanup task and `tasks preview cleanup`* and [module_tests.md](../research/module_tests.md); no new exit code and no new
+contract file, so `architecture.md` is unchanged. The plan stays in `todo/`: WR-T3, WR-E5, WR-E6 and S7b.3 are open. The story adds a task
+that DELETES (through A23): no test resolves the real `%TEMP%`, `%LOCALAPPDATA%` or home - every path is a fake (`TempWorld`) or under a
+`TempRoot` (`SandboxHost`, `ScenarioHome`). Decisions the plan did not spell out, and where this story departs from its spec:
+
+- **The worker is exactly `<self> act A23 --timer --confirm --json`.** `--timer` so A23's own dry week and its `auto.A23` switch gate the run
+  (review m9); `--confirm` because the parser refuses an `act` without exactly one mode. The decision (dry or not) lives in the WORKER, on
+  A23's own stamp; the table's entry ignores the archive body's `decide`, so the supervisor can start no week (it only PEEKS and says the
+  window in one stderr line before `starting`).
+- **Exit 75 is KEPT for a busy run** (plan §3.9; the watch and archive tasks; the panel reads `lastResult` 75 as busy). The worker's `act
+  --confirm` takes the run lock without waiting, so "a cleanup never runs beside a watch" is the lock's own rule and the supervisor passes the
+  75 through. **The coai plan round on the story (session `4663beda`) shows its finding (2) - "map a busy run lock to exit 0" - as ACCEPTED:
+  that record is a MISTAKE of the orchestrator, not a decision. It was NOT applied; 75 stays**, held by `A_held_run_lock_makes_the_cleanup_task_answer_busy_75_and_delete_nothing`
+  (break-it B19, the mapping implemented, turns it red). Accepted and built: finding (0) - every task's principal is the reader's SID,
+  `InteractiveToken`, `LeastPrivilege`, exactly ONE `Principal`, and a non-account SID or an elevated render is not registrable (all three
+  tasks); finding (3) - `tasks preview cleanup` bounds its exact paths by `preview.maxItems`. Rejected: a dedicated deadline key
+  (`timer.runLimitMinutes` is the cleanup's deadline as it is the archive's), replaced by one `NumberRules` rule.
+- **The one rule (`timer.runLimitMinutes` covers twice `temp.scanMaxSeconds` and 60 s)** is enforced but never fires ALONE in a real
+  configuration: the older worst-case rule of a timer run (260 min at the defaults) already holds `timer.runLimitMinutes` far above 2 x the
+  scan maximum (3600 s). The spec's example (`runLimitMinutes` 60 with `scanMaxSeconds` 3600) is therefore refused by BOTH rules; the boundary
+  test (1770 s: 2 x 1770 + 60 = 3600) reads off the new rule's own error text, which is absent there while the older rule still names 60.
+- **The render's `dry` for the cleanup task is A23's own week** (`DryRunWindow.Peek(..., stamp: "A23")`), because the week that gates DELETION
+  is A23's, not the watch's (the T1 review M3); the watch and the archive keep the common one. `WindowsTask.DryWindowStamp` holds it; the
+  literal `A23` lives in `WindowsTempAction.StampName` only.
+- **The SID guard is an allow-list**: `S-1-5-21-n-n-n-rid` (local and domain accounts) and `S-1-12-1-n-n-n-n` (Entra ID accounts); SYSTEM, the
+  service accounts, groups, service SIDs and the empty SID are refused with a reason naming the SID. The elevated guard comes from
+  `host.Privilege.IsRoot`; both answer exit 0 with `registrable: false` and the XML shown (the extension registers only on `registrable: true`).
+- **`tasks preview cleanup` runs in-process and is bounded by A23's own budgets** (`temp.scanMaxSeconds`, `temp.scanMaxNodes`,
+  `temp.maxTopLevelEntries`); the extension's `windowsTempPreviewSeconds` (WR-T3) is the outer net. Refusals: the distro's binary (2), an
+  elevated process (81, with its own reason - the Administrators-owned entries an elevated process sees; reworded in the own review below). A configuration in error does NOT refuse it: the report says `observeOnly` with the
+  errors (`act --preview` does not refuse either; `tasks render` keeps its 78 because its answer would be registered). Its trigger is
+  `RunTrigger.Cli`, so the names the allow-list does not cover are scanned for the "would be eligible if allowed" groups. It takes no lock, not
+  even for a read; it PEEKS A23's week and never decides it.
+- **Reuse-first extraction:** `WindowsTempAction.PreviewRoot` became `Planning.Of(context, settings, token)` (`Planned` | `Refused` | `Unreadable`),
+  the ONE call site of the top-level listing; the engine's preview and the verb's report are two shapes of the same plan (no second selection
+  code). `RunningSupervisor` moved from the archive body's tests to `Cli.Tests/RunningSupervisor.cs`; the sandbox tree helper
+  (`TempTrees.Make`, write AND creation times) is in `TestSupport` and serves the engine tests, the scenarios and the new classes.
+- **The report's shape** (`TempPreviewReport`, `schemaVersion` 1): `pass.*` is the cursor ON DISK (where the next run starts: `last`,
+  `inProgress`), `total` the names now; `groups[]` carry `verdict`, `pattern`, `count`, `bytes`, `paths` (at most `preview.maxItems`) and `more`;
+  `groupsNotShown` counts the groups past the cap per verdict. `maxPathsPerGroup` is read from the configuration (`preview.maxItems`), not
+  passed in (the spec's signature took it as a parameter). Exact paths are NOT run through `ShownText.Printable` in JSON, as `ActionItem.Name` is not.
+- **No golden for the preview JSON** (the spec's D7): a golden built from pure parts would need an in-memory `%TEMP%` in `Scenarios`; its
+  shape is pinned by `TasksPreviewCommandTests` and `WindowsTempPreviewTests`. **WR-T3 should write its fixture from the daemon's real output.**
+- **The text form's control-character test (spec T-P12's last clause) is not written**: NTFS refuses file names with control characters, so
+  no sandbox tree can carry one; every line of the text form goes through `ShownText.Printable`, the one function `ControlCharacterTests` holds.
+- **A scenario's "writes nothing" snapshot leaves out the CLI's own state folder** (`AppData\Local\wsl-care`): every run of the built binary keeps
+  its per-run log there (the logging rule). Files are compared by length and write time, folders by name; the absence of `temp-cursor.json` and
+  of every `first-timer-run*.json` is asserted separately. The in-process tests have no log and compare everything.
+- **Clocks:** the cleanup-body tests use `TimeProvider.System` because the trees' times are real (a fixed 2026-10-02 clock would make "young" files
+  older than the cutoff as the date moves). The tests that need the current account use the owner of what they create as the SID (an elevated
+  CI runner creates Administrators-owned files); the two scenarios that need an unelevated child take the elevated leg (81) on such a runner.
+- **The extension:** the render golden gained an answer, so `windowsTasksState.test.ts` (which counted three golden answers) counts four; its
+  fake picks entries by `name`, so nothing else moved. `npm ci`, `compile`, `bundle` and the whole suite (1598 tests, 0 failed) ran in this worktree.
+- **For WR-T3:** `TASK_NAMES` gains `cleanup`; the preview argv is `tasks preview cleanup --json` on the STAGED exe under its own ceiling; the
+  install modal names A23, the allow-list, the age, `never %TEMP%\claude`, the cadence (30 min after logon, daily), the deadline, A23's own dry
+  week (the render's `dry`) and that `lastResult` 75 means "busy - a watch was sampling; the next run retries". The run-now button is the task's
+  own `Run` (`taskWord` must accept `cleanup`).
+- **RED evidence** (each against the unfixed product, an assertion or the table's own refusal, never a compile error): the keys -
+  `Expected key to be ConfigKey+IntKey ... but found <null>`; the closed set - `Expected WindowsTask.All.Select(t => t.TaskPath) to be equal to
+  {..., "\wsl-care\cleanup"}, but {...} contains 1 item(s) less`; the render - `ArgumentOutOfRangeException: not a task of this plan` and, for
+  the guards, `Expected answer["registrable"]!.GetValue<bool>() to be False`; the supervisor entry - `ArgumentOutOfRangeException: not a task of
+  this plan; one of: watch, archive, cleanup`; the preview verb - `Expected exit to be 81, but found 0` (the stub), `JsonReaderException: The input
+  does not contain any JSON tokens`; the report - `Expected report.MaxPathsPerGroup to be 5, but found 0`, `Expected report.Refusal "" to contain
+  "different folders"`, `Expected report.Counts.Eligible to be 2L ... but found 0L`; the contracts - `contracts/config-keys.json must be what the
+  types enumerate`.
+- **Break-its** (product code only, sandboxed; each restored with `cmp`, `git diff` clean after every one): B1 no `--timer` (5 red); B2 `--manual` (4);
+  B3 the watch's deadline key (3); B4 the entry calling `decide` (5); B5 the elevated guard removed (2); B6 the SID shape removed (5); B7 the
+  archive's cadence keys (3); B8 the render's common stamp (1); B9 `Decide` in the supervisor's line (1 - the elevated-supervisor test; the busy
+  test cannot see it because the planted stamp already exists); B10 the preview writing the cursor (3); B11 the preview deciding the week (3);
+  B12 the preview taking a lock (2); B13 the preview's trigger Timer (2); B14 the path cap removed, and `more` fixed at 0 (1 each); B15 the group
+  cap removed (1); B16 the number rule removed (1); B17 the parser accepting any task (2); B18 the preview's elevated refusal removed (2); B19 the
+  busy 75 mapped to 0 (1). B20 (one listing call site) is reviewed: `ListEntries(root` appears once in `Core/Actions/WindowsTemp`, in `TempPlanning.cs`.
+
+**WR-T2, the Fable own review (2026-10-21).** Seven fixes on top of the first delivery; each behaviour change red first, then green, then a break-it.
+
+- **(1) The preview is faithful to the task.** The counts are those of the Timer plan (`TempPreviews.Report` plans with the Timer trigger, so names the
+  allow-list does not cover are not scanned and not eligible); a second plan under the Cli trigger fills ONLY `wouldBeEligible`.
+  `TempPreviewReport.WouldBeEligibleLimited` is true (the text says it) when that second scan ran out of its budget, so the list is a lower bound.
+  Both plans are read-only. RED: `Expected report.Counts.Eligible to be 50L because the preview says what the task will do, but found 0L`.
+- **(2) The rule is a minimum, not a cap.** The `timer.runLimitMinutes` rule's comment and error text now say it is the MINIMUM needed to delete anything
+  (the plan scan, the top-level listing included, plus one re-validation, both one allowance of `temp.scanMaxSeconds`) and that it does not bound the delete
+  walk. The reviewer's premise ("`TempRun` gives every candidate a fresh budget") was already stale - WR-T1 m6 shares the re-validation allowance - so only the
+  wording moved; the behaviour is unchanged. §3.12 "Budgets on every run" says the same.
+- **(3) Stale "two tasks" texts** (usage, summaries, the `TasksRender`, `WindowsTask`, `WindowsTaskDefinitions` and `ConfigKeys.WindowsTasks` comments) now name
+  watch, archive and cleanup.
+- **(4) `tasks run` refuses an elevated process before the sweep, for all three tasks** (81, "run it from a terminal that is not elevated. Nothing was started").
+  RED: `Expected exit to be 81, but found 0 (difference of -81)` for watch, archive and cleanup. The workers still refuse themselves; the supervisor now never
+  sweeps the staging folders, peeks a window or starts a job as an administrator. **Consequence for CI:** the scenarios that supervise a task on an elevated
+  runner assert 81.
+- **(5) Docs:** with UAC off (or the built-in Administrator) every process is elevated, so the `render` is NEVER registrable for that account and `run` and
+  `preview` answer 81 - WR-T3's modal and the panel's cleanup row must say so (§3.x "Elevated" bullet; module_daemon.md).
+- **(6) The preview's elevated message** explains why: an elevated process sees entries owned by the Administrators group, so its picture of what the cleanup
+  would delete as the user would be misleading; it no longer mentions `act`.
+- **(7)** A comment at `ActionEngine.RunStamp`: a mixed A23 + other batch falls back to the common stamp; unreachable on Windows today.
+- **Break-its** (product only, sandboxed, `cmp`-restored, `git diff` clean after each): N1 the supervisor's elevated refusal removed (6 red); N2 the preview's
+  counts planned with the Cli trigger (1); N3 the `wouldBeEligible` plan dropped (2); N4 the limited flag fixed false (2); N5 the old elevated message (1);
+  N6 the refusal after the sweep (5).
+
+**WR-T2 own review, item 8 - the recursive delete is a closed list (2026-10-21).** `IFileSystem.DeleteDirectory` (the recursive one,
+`PhysicalFileSystem.cs:624`) is pinned by `ArchitectureTests.RecursiveDelete.cs` (`Core.Tests`, the `ReadSites` style, source-reading):
+(a) no file under `Core/Actions/WindowsTemp/` spells `DeleteDirectory(` (so `DeleteEmptyDirectory(` stays the only folder removal there -
+`TempDeletion.cs:141`); (b) the src files that call `.DeleteDirectory(` are exactly `ArchitectureTests.RecursiveDeleters`, and a new caller goes red with a
+message that it must be justified (what, under which root, why a per-file delete does not do) and recorded (that table, this section,
+`module_daemon.md`). The scanner is proven on a planted fixture first (`..._scan_matches_a_planted_call_and_not_the_empty_folder_removal`: a one-line
+and a multi-line call match, `DeleteEmptyDirectory(`, a `//` comment and a declaration do not match as a member call, and the real
+`RunRetention.cs` is found). Break-its (product code, `cmp`-restored, `git diff` clean): (1) `TempDeletion.cs:141` `files.DeleteEmptyDirectory(path, scope)` ->
+`files.DeleteDirectory(path, scope)`: BOTH red - (a) `offenders ... {"...\WindowsTemp\TempDeletion.cs:141: DeleteDirectory("}` and (b) `... a NEW
+caller of the recursive IFileSystem.DeleteDirectory`; (2) a method calling it in a fifth file (`Scheduler/StagedCopies.cs`): (b) only red -
+`found at least one item {"WslCare.Core/Scheduler/StagedCopies.cs: a NEW caller of the recursive IFileSystem.DeleteDirectory"}`.
+
+The four callers, and which of them can run inside an `act A23 --timer` process (the scheduled cleanup's worker, `tasks run cleanup`):
+
+| Caller | Runs in the A23 worker? | Root it deletes under |
+|---|---|---|
+| `Cli/Logging/LogRetention.cs:70` (`PruneOne`), reached from `WslCareLogging.cs:56,94` | **YES** - the run-log prune runs at the start of EVERY CLI process that opens its file sink, so the worker prunes aged day folders before `act` starts | `DeletionScope(logRoot, ...)` (`LogRetention.cs:41`): `host.Paths.LogDirectory` = `%LOCALAPPDATA%\wsl-care\logs` (`WindowsHostPaths.cs:53`) |
+| `Core/Records/RunRetention.cs:102,119` | no - only `collect` (`CollectRun.cs:381`) and the Windows `watch` (`WatchRun.Windows.cs:63`); `act` never sweeps | `RunDetailStore.Root(paths)` (`RunRetention.cs:38`) and `paths.StateDirectory` (`:70`) = `%LOCALAPPDATA%\wsl-care` (`WindowsHostPaths.cs:51`) |
+| `Core/Scheduler/Staging.Sweep.cs:174` | no - the SUPERVISOR's start sweep (`TasksCommand.Run.cs:43,67`, after the elevated refusal), not the worker it launches | the staging root `StagedCopies.Root` (`StagedCopies.cs:37`), under the state directory |
+| `Core/Actions/UserCaches/CacheFolders.cs:94` | no - the Linux user-cache actions; A23's `act` runs A23 alone | the action's own cache root passed in (`RemoveFolder(context, folder, root, action)`) |
+
+None of them touches `%TEMP%`: the one that can run in the cleanup's process deletes only the daemon's own log day folders.
+
+**WR-T2, the code round 4663beda: proceed (2026-10-21), and the last fix cycle.** The coai code round passed (`proceed`) and the Fable re-check said SHIP.
+Accepted and built: findings 1 and 8, 2, 6 and 10; the Fable minors i, ii, iii and iv. Rejected, each with its reason: **0, 3 and 5** - the closed
+task-worker binding is by design the one place that names a task's argv, and the literal is unified under finding 2; **4** - the preview is bounded by
+ONE allowance after finding 1, and no other read verb prints progress; **7** - one previewable task by plan; **9** - in-memory passes over a bounded
+plan, no measured cost.
+
+- **(1) One listing, one budget.** `tasks preview cleanup` lists the top level ONCE (`Planning.OfTaskThenPerson`; `ListEntries(root` is still at its one call
+  site, `TempPlanning.ListRoot`) and makes two plans over ONE `TempBudget`: the Timer plan first (what the task will do; it has the budget and the
+  priority), then the person's plan for `wouldBeEligible` on what is left. The cost of a preview is therefore ONE `temp.scanMaxSeconds` allowance plus
+  the listing (the listing's time is already spent from the same budget), not two. `WouldBeEligibleLimited` is `TempPlan.BudgetStopped` of the
+  second plan only: a name deferred because the SCAN BUDGET ran out; reaching `temp.maxItemsPerRun` is not that and is not flagged (it is in
+  `counts.deferred`, as it always was). **For WR-T3:** `windowsTempPreviewSeconds` must cover one `temp.scanMaxSeconds` allowance plus the top-level listing
+  (and the process start), not twice the allowance.
+  RED: `Expected _world.Listed.Count(path => PathRules.Windows.PathEquals(path, TempWorld.Root)) to be 1 because the Timer plan and the person-trigger plan read the same listing, but found 2.`;
+  `Expected report.Counts.WouldBeEligible to be less than 75L because after the task's plan the second plan has only what is left of the SAME budget, but found 150L`;
+  `Expected report.WouldBeEligibleLimited to be False because the scan budget was nowhere near exhausted: the cap is not the budget, but found True.`
+- **(2) One constant for A23's id:** `WindowsTempAction.IdText` is the action's `Id`, its `StampName`, the task worker's argv entry, `WindowsTask.Cleanup`'s
+  stamp, and the deletion scope's action name in `TempRun` and `TempCursor`. A pure refactor: the argv tests and the golden pass unchanged.
+- **(3) The triggers are explicit:** `TempPreviews.Report` sets BOTH (Timer for the task's plan, Cli for the person's) whatever its context carries, and
+  `TasksCommand.Previewed` says so; the stale "shows MORE than it would delete" comment is gone. No behaviour change.
+- **(4)** The preview's elevated refusal ends "Nothing was read." (pinned in `TasksPreviewCommandTests`).
+- **(5)** `ArchitectureTests.RecursiveDelete` catches a METHOD GROUP too: `\.\s*DeleteDirectory(?!\w)` and `(?<!\w)DeleteDirectory(?!\w)`; the planted
+  fixture gained `Remove(files.DeleteDirectory);`. No `nameof` or doc mention in src matches (doc lines are `//` comments, which the scanner drops; both
+  tests pass over the real tree). `DeleteEmptyDirectory` still does not match.
+- **Break-its** (product code, `cmp`-restored, `git diff` clean after each): M1 the person's plan with a fresh budget (1 red: the shared-budget test);
+  M2 the flag from `Deferred > 0` (1: the cap test); M3 the cap counted as a budget stop (1: the cap test); M4 the person's plan re-listing (2: the one-listing
+  and the shared-budget tests); M5 the person's plan first (2: the shared-budget test and the Timer-counts test); M6 the argv literal changed (2:
+  `TaskWorkersTests` cleanup worker, json and not); M7 the period dropped (1: `An_elevated_process_is_refused_before_anything_is_read`); M8 the OLD regexes in the
+  scanner (1: `Expected RecursiveDeleteMemberCall()... to be equal to {1, 3, 5}, but {1, 3} contains 1 item(s) less.`).
+
+**WR-T2, the CI lesson (2026-10-21, PR #172).** The Windows CI runner is ELEVATED, and the render tests in `TasksCommandTests` built their host with the real
+process privilege, so 11 of them (the registrable cases, the SID-reason cases and the text answer) read "an elevated process" and failed there while passing on an
+unelevated machine. Reproduced locally first by making `CliHost.Privilege`'s default elevated (the same 11 red, `Expected answer["registrable"]!.GetValue<bool>()
+to be True because an elevated process: the tasks run as the user and are registered unelevated; ... but found False.`); fixed in the TEST (`WindowsWorld.Host`
+pins `ProcessPrivilege(false, ...)`; the elevated render test overrides it), no product change. Re-run under the same simulation: Cli.Tests 521, 0 failed.
+Core.Tests read no process privilege (fake SIDs, `TempWorld`), and the Scenarios branch on `Environment.IsPrivilegedProcess` (skip or the 81 leg). **A render test
+must pin its privilege, because the Windows CI runner is elevated.**
