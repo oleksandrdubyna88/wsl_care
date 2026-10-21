@@ -1,20 +1,23 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ProcessRequest, ProcessResult } from '../process/runner';
+import type { DurableStore } from '../cleanup/journal';
+import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { parsePageMessage } from '../panel/messages';
 import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
 import { INSTALL_CONFIRM, REMOVE_CONFIRM, runGuardOp, type GuardFlowDeps } from '../windowsTime/guardFlow';
-import { WindowsTimeGuardHost } from '../windowsTime/guardHost';
+import { WindowsTimeGuardHost, type GuardHostDeps, type GuardUi } from '../windowsTime/guardHost';
 import { PENDING_KEY, readPending } from '../windowsTime/guardPending';
 import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, installScript, OP_EXIT, QUERY_SCRIPT, REMOVE_SCRIPT } from '../windowsTime/guardScripts';
-import { guardScript, guardSummary, type GuardOptions } from '../windowsTime/guardTask';
+import { GUARD_NAME, guardScript, guardSummary, type GuardOptions } from '../windowsTime/guardTask';
 import { newGuardRecorder, type GuardRecorder } from '../windowsTime/guardRecorder';
 import { EXIT } from '../windowsTime/windowsTimeFix';
 import { elevatedRequest } from '../powershell/elevatedLauncher';
+import { SchedulerHost } from '../scheduler/schedulerHost';
 import { elevatedProgramOf, failedRead, fixedEngine, PS51_READ, STORE_PWSH, STORE_READ } from './support/engines';
 import { MapStore } from './support/memento';
+import { schedulerStdout } from './support/schedulerAnswers';
 
 /**
  * *Install / Remove the Windows Time guard* (PLAN_windows_time_task.md D4, D8): the exact elevated script is shown BEFORE
@@ -122,7 +125,7 @@ test('every exit of the elevated run is one closed outcome with its own sentence
 });
 
 test('codex c4: a TIMED-OUT run keeps holding the buttons until its deadline — the elevated child may still run', async () => {
-  const h = harness(true, { kind: 'timedOut', timeoutMs: 180_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, ENV, 1_000_000);
+  const h = harness(true, { kind: 'timedOut', timeoutMs: 180_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, ENV, 1_000_000);
   assert.equal((await runGuardOp('install', h.deps)).kind, 'timedOut');
   assert.deepEqual(readPending(h.store, 1_000_000), { op: 'install', startedAtUtcMs: 1_000_000, deadlineUtcMs: 1_360_000 });
   assert.match(h.reports[0]?.message ?? '', /answering it still runs it/);
@@ -154,12 +157,26 @@ test('no SystemRoot, or a launcher that cannot start: told, nothing shown', asyn
 
 // ---- the host: one query in flight, one flow at a time, the view the panel posts ----
 
-function host(recorder: GuardRecorder, store = new MapStore()): WindowsTimeGuardHost {
+/** The guard's surfaces plus the runner the shared read is handed — which is NOT one of the guard's surfaces (the coai code round, finding 8). */
+type UiWithQuery = GuardUi & { readonly query: Runner };
+
+/** A guard host whose Task Scheduler read is the ONE shared read (WR-E2), asked through `ui.query`. */
+function guardOf(ui: UiWithQuery, over: Partial<GuardHostDeps> = {}): WindowsTimeGuardHost {
   return new WindowsTimeGuardHost({
-    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
-    ui: { show: (t) => { recorder.shown.push(t); return Promise.resolve(); }, confirm: (p) => { recorder.prompts.push(p); return Promise.resolve(recorder.answer); }, run: (r) => { recorder.requests.push(r); return Promise.resolve(recorder.result); }, query: (r) => { recorder.queries.push(r); return Promise.resolve(recorder.queryResult); }, report: (message, failed) => { recorder.reports.push({ message, failed }); } },
-    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
+    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, ui,
+    scheduler: new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query: ui.query }),
+    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
+    ...over,
   });
+}
+
+/** A guard UI that shows and asks nothing and answers every query with `query`. */
+function quietUi(query: Runner): UiWithQuery {
+  return { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query, report: () => undefined };
+}
+
+function host(recorder: GuardRecorder, store = new MapStore()): WindowsTimeGuardHost {
+  return guardOf({ show: (t) => { recorder.shown.push(t); return Promise.resolve(); }, confirm: (p) => { recorder.prompts.push(p); return Promise.resolve(recorder.answer); }, run: (r) => { recorder.requests.push(r); return Promise.resolve(recorder.result); }, query: (r) => { recorder.queries.push(r); return Promise.resolve(recorder.queryResult); }, report: (message, failed) => { recorder.reports.push({ message, failed }); } }, { durable: store });
 }
 
 test('the host reads Task Scheduler with the fixed query, at most one more while one is in flight, and tells the panel', async () => {
@@ -183,11 +200,7 @@ test('the host runs one flow at a time, greys the buttons while the elevated run
   const viewsWhileRunning: string[] = [];
   const pendingRun = new Promise<ProcessResult>((resolve) => { release = resolve; });
   const store = new MapStore();
-  const slow = new WindowsTimeGuardHost({
-    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
-    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(true), run: () => { viewsWhileRunning.push(slowView()); return pendingRun; }, query: (r) => { recorder.queries.push(r); return Promise.resolve(exited(0, `guard=present\r\nenabled=True\r\nlastRunUtc=never\r\nlastResult=267011\r\n${guardSummary(OPTIONS).map((l) => `summary:${l}`).join('\r\n')}\r\nchannel=enabled\r\n`)); }, report: () => undefined },
-    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
-  });
+  const slow = guardOf({ show: () => Promise.resolve(), confirm: () => Promise.resolve(true), run: () => { viewsWhileRunning.push(slowView()); return pendingRun; }, query: (r) => { recorder.queries.push(r); return Promise.resolve(exited(0, presentStdout())); }, report: () => undefined }, { durable: store });
   const slowView = (): string => `${slow.view().line}|${slow.view().buttons.map((b) => `${b.id}:${b.enabled}`).join(',')}`;
   const first = slow.run('install');
   assert.equal(await slow.run('remove'), undefined, 'a second press while one runs starts nothing');
@@ -200,20 +213,17 @@ test('the host runs one flow at a time, greys the buttons while the elevated run
   assert.match(slow.view().line, /installed — not run yet/);
 });
 
+/** The guard installed and never run, as the ONE query prints it. */
 function presentStdout(): string {
-  return `guard=present\r\nenabled=True\r\nlastRunUtc=never\r\nlastResult=267011\r\n${guardSummary(OPTIONS).map((l) => `summary:${l}`).join('\r\n')}\r\nchannel=enabled\r\n`;
+  return schedulerStdout({ tasks: [{ name: GUARD_NAME, lastRunUtc: 'never', lastResult: '267011', summary: guardSummary(OPTIONS) }] });
 }
 
 test('own code review k4: a refresh asked during a query in flight is answered by one MORE query, not by the stale one', async () => {
   const recorder = newGuardRecorder();
-  const answers = [exited(0, 'guard=absent\r\nchannel=enabled\r\n'), exited(0, presentStdout())];
+  const answers = [exited(0, schedulerStdout()), exited(0, presentStdout())];
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const guard = new WindowsTimeGuardHost({
-    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
-    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: async (r) => { recorder.queries.push(r); const answer = answers.shift() ?? exited(1); if (recorder.queries.length === 1) { await gate; } return answer; }, report: () => undefined },
-    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
-  });
+  const guard = guardOf(quietUi(async (r) => { recorder.queries.push(r); const answer = answers.shift() ?? exited(1); if (recorder.queries.length === 1) { await gate; } return answer; }));
   const first = guard.refresh();
   assert.match(guard.view().line, /checking…/);
   const second = guard.refresh();
@@ -226,22 +236,14 @@ test('own code review k4: a refresh asked during a query in flight is answered b
 test('gemini: a pending run Task Scheduler already shows finished is cleared on the next read — a reload does not wait out the deadline', async () => {
   const store = new MapStore();
   await store.update(PENDING_KEY, { op: 'install', startedAtUtcMs: 500, deadlineUtcMs: 400_000 });
-  const guard = new WindowsTimeGuardHost({
-    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
-    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
-    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
-  });
+  const guard = guardOf(quietUi(() => Promise.resolve(exited(0, presentStdout()))), { durable: store });
   assert.match(guard.view().line, /Waiting for the elevated PowerShell/);
   await guard.refresh();
   assert.equal(store.get(PENDING_KEY), undefined);
   assert.match(guard.view().line, /installed — not run yet$/);
   const still = new MapStore();
   await still.update(PENDING_KEY, { op: 'remove', startedAtUtcMs: 500, deadlineUtcMs: 400_000 });
-  const removing = new WindowsTimeGuardHost({
-    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
-    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
-    durable: still, nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
-  });
+  const removing = guardOf(quietUi(() => Promise.resolve(exited(0, presentStdout()))), { durable: still });
   await removing.refresh();
   assert.notEqual(still.get(PENDING_KEY), undefined, 'a removal is not finished while the task is still there');
 });
@@ -249,15 +251,34 @@ test('gemini: a pending run Task Scheduler already shows finished is cleared on 
 test('gemini: a changed guard setting re-derives the line at once — no query needed', () => {
   let everyHours = 4;
   let changes = 0;
-  const guard = new WindowsTimeGuardHost({
-    env: ENV, options: () => ({ ...OPTIONS, everyHours }), opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
-    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
-    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine: fixedEngine(PS51_READ),
-  });
+  const guard = guardOf(quietUi(() => Promise.resolve(exited(0, presentStdout()))), { options: () => ({ ...OPTIONS, everyHours }) });
   guard.onChange(() => { changes += 1; });
   everyHours = 5;
   guard.settingsChanged();
   assert.equal(changes, 1);
+});
+
+test('the Opus own review m3: a pending-run settle that fails (the durable store refuses) when ANOTHER consumer\'s read answers is no unhandled rejection — and a listener that throws does not stop the guard hearing the read', async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const store = new MapStore();
+    await store.update(PENDING_KEY, { op: 'install', startedAtUtcMs: 500, deadlineUtcMs: 400_000 });
+    const failing: DurableStore = { get: (key) => store.get(key), update: () => Promise.reject(new Error('the store refused')) };
+    const query: Runner = () => Promise.resolve(exited(0, presentStdout()));
+    const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
+    const guard = guardOf(quietUi(query), { durable: failing, scheduler });
+    let heard = 0;
+    guard.onChange(() => { throw new Error('a listener\'s own fault'); });
+    guard.onChange(() => { heard += 1; });
+    await scheduler.refresh();
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    assert.deepEqual(unhandled, [], 'the failed settle was caught');
+    assert.ok(heard >= 1, 'the second listener heard the read although the first threw');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
 });
 
 // ---- the panel and the page's message set ----
@@ -343,15 +364,17 @@ test('pwsh D6: the guard part names the elevated runs\' engine from the LAST eng
 
 function hostDepsWith(engine: GuardFlowDeps['engine']): ConstructorParameters<typeof WindowsTimeGuardHost>[0] {
   const recorder = newGuardRecorder();
+  const query: Runner = () => Promise.resolve(recorder.queryResult);
   return {
-    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
-    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(recorder.result), query: () => Promise.resolve(recorder.queryResult), report: () => undefined },
+    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000,
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(recorder.result), report: () => undefined },
+    scheduler: new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query }),
     durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso, engine,
   };
 }
 
 test('own code review, note 13: a timed-out guard run names the engine; exit 13 on the MSI engine carries no Store note', async () => {
-  const timedOut = harness(true, { kind: 'timedOut', timeoutMs: 180_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+  const timedOut = harness(true, { kind: 'timedOut', timeoutMs: 180_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
   await runGuardOp('install', withEngine(timedOut, fixedEngine(STORE_READ)));
   assert.match(timedOut.reports[0]?.message ?? '', /did not finish within 180 s .+ Elevated program: PowerShell 7 \(.+\)\.$/);
   const msi = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';

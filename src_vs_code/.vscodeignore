@@ -9,6 +9,9 @@
 !CHANGELOG.md
 !LICENSE
 !dist/extension.js
+# W0 of todo/PLAN_disk_health_E18.md: the full view's page script and the kit's stylesheet esbuild emits beside it — exactly these two
+!dist/webview/full.js
+!dist/webview/full.css
 # E7.S5a: the attested Windows daemon, fetched and verified (scripts/fetch-windows-daemon.mjs) — never its .sha256, never anything else in bin/
 !bin/wsl-care.exe
 !media/**

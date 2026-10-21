@@ -144,6 +144,78 @@ public sealed class TasksCommandTests
             .And.Contain(l => l.StartsWith("<Task ", StringComparison.Ordinal));
     }
 
+    /// <summary>WR-T2 (coai plan round 4663beda, finding 0): a principal that is not a user account, or an elevated process, is never
+    /// registrable — for every task. The Entra ID shape (<c>S-1-12-1-…</c>) is a real user and stays registrable.</summary>
+    [Theory]
+    [InlineData("watch", "S-1-5-18", false, "must be a user account")]
+    [InlineData("cleanup", "S-1-5-18", false, "must be a user account")]
+    [InlineData("cleanup", "S-1-5-19", false, "must be a user account")]
+    [InlineData("cleanup", "S-1-5-32-544", false, "must be a user account")]
+    [InlineData("archive", "S-1-5-80-0-0-0-0-0", false, "must be a user account")]
+    [InlineData("cleanup", "S-1-12-1-1-2-3-4", true, "")]
+    [InlineData("cleanup", Sid, true, "")]
+    public void A_principal_that_is_not_a_user_account_is_not_registrable(string task, string sid, bool registrable, string reasonPart)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new WindowsWorld("tasks-render-sid");
+        var exe = world.Stage();
+
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(exe) with { UserSid = () => sid }, "tasks", "render", task, "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var answer = JsonNode.Parse(stdout)!;
+        answer["registrable"]!.GetValue<bool>().Should().Be(registrable, answer["reason"]!.GetValue<string>());
+        if (!registrable)
+        {
+            answer["reason"]!.GetValue<string>().Should().Contain(reasonPart).And.Contain(sid);
+        }
+    }
+
+    [Theory]
+    [InlineData("watch")]
+    [InlineData("cleanup")]
+    public void An_elevated_render_is_not_registrable_but_still_shows_the_xml(string task)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new WindowsWorld("tasks-render-elevated");
+        var exe = world.Stage();
+
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(exe) with { Privilege = new ProcessPrivilege(true, "this process is elevated") }, "tasks", "render", task, "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var answer = JsonNode.Parse(stdout)!;
+        answer["registrable"]!.GetValue<bool>().Should().BeFalse();
+        answer["reason"]!.GetValue<string>().Should().Contain("elevated");
+        answer["xml"]!.GetValue<string>().Should().Contain($"<Arguments>tasks run {task} --json</Arguments>");
+    }
+
+    [Fact]
+    public void A_verified_staged_copy_renders_the_cleanup_task_registrable_with_its_numbers_and_a23s_dry_state()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new WindowsWorld("tasks-render-cleanup");
+        var exe = world.Stage();
+        Directory.CreateDirectory(world.Paths.StateDirectory);
+        var stamp = DryRunWindow.File(world.Paths, "A23");
+        File.WriteAllText(stamp, $$"""{ "schemaVersion": 1, "at": "{{FixedTimeProvider.DefaultNow.AddDays(-2):O}}" }""");
+        var before = File.ReadAllText(stamp);
+
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(exe), "tasks", "render", "cleanup", "--json");
+        var (_, watchOut, _) = CliRun.Over(world.Host(exe), "tasks", "render", "watch", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var answer = JsonNode.Parse(stdout)!;
+        answer["registrable"]!.GetValue<bool>().Should().BeTrue(answer["reason"]!.GetValue<string>());
+        answer["taskPath"]!.GetValue<string>().Should().Be("\\wsl-care\\cleanup");
+        answer["numbers"]!.AsArray().Select(n => (string)n!["key"]!).Should().Equal("windowsTasks.cleanupLogonDelayMinutes", "windowsTasks.cleanupEveryHours", "timer.runLimitMinutes");
+        answer["executionTimeLimitMinutes"]!.GetValue<int>().Should().Be(286);
+        answer["xml"]!.GetValue<string>().Should().Contain("<Arguments>tasks run cleanup --json</Arguments>");
+        answer["dry"]!["week"]!.GetValue<string>().Should().Be(DryWeek.Running, "the cleanup's dry line describes A23's week, which gates deletion");
+        JsonNode.Parse(watchOut)!["dry"]!["week"]!.GetValue<string>().Should().Be(DryWeek.NotStarted, "the watch reads the common stamp");
+        File.ReadAllText(stamp).Should().Be(before);
+        File.Exists(DryRunWindow.File(world.Paths)).Should().BeFalse("a render never starts a week");
+    }
+
     /// <summary>As <c>units dropin</c>: no task is rendered from a configuration the daemon itself refuses.</summary>
     [Fact]
     public void A_render_is_refused_while_the_configuration_is_in_error()
@@ -201,6 +273,8 @@ public sealed class TasksCommandTests
                 Probe = new FakeProbe(HostSide.Windows, clock),
                 UserSid = () => Sid,
                 ProcessPath = () => processPath,
+                // The Windows CI runner is ELEVATED: a render test pins its privilege and never inherits the runner's (the guard is the product's).
+                Privilege = new ProcessPrivilege(false, "a test says this process is not elevated"),
             };
         }
 

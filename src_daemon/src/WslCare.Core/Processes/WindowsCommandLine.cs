@@ -23,6 +23,19 @@ public static class WindowsCommandLine
         return line.ToString();
     }
 
+    /// <summary>The arguments <c>CommandLineToArgvW</c> splits a line into — the inverse of <see cref="Of"/> (E15.S7; see
+    /// <see cref="WindowsArgv"/> for the rules). INTERNAL on purpose (coai code round 1): the only way to a Windows SHOWN line is
+    /// <see cref="Shown"/>, whose raw-line backstop is not optional; an architecture test holds that no other product code splits a line.</summary>
+    internal static IReadOnlyList<string> Split(string line) => WindowsArgv.Split(line);
+
+    /// <summary>The Windows binary's ONLY entry to the ONE redaction rule (E15.S7): the line is split as Windows splits it, judged by
+    /// <see cref="Redaction.CommandLineRedaction"/>, and the raw-line backstop (<see cref="Redaction.RawLineBackstop"/>) redacts the whole
+    /// shown line when a secret the split cannot isolate (<c>--auth:'a b'</c>) survived as arguments. E15.S6 is its first wire consumer.</summary>
+    public static string Shown(string line, Redaction.RedactionLimits limits)
+    {
+        var redacted = Redaction.CommandLineRedaction.Redact(Split(line), limits);
+        return Redaction.CommandLineRedaction.Line(Redaction.RawLineBackstop.Fires(line, redacted) ? [Redaction.CommandLineRedaction.Redacted] : redacted, limits);
+    }
     private static void Append(StringBuilder line, string argument)
     {
         if (argument.Length > 0 && argument.IndexOfAny([' ', '\t', '"']) < 0)

@@ -59,6 +59,21 @@ public sealed class SystemDriveResolverTests : IDisposable
         resolved.Should().Be(new ResolvedExecutable.Found(OnDriveC) { OnTheSystemDrive = true }, "the resolver answered {0}", resolved);
     }
 
+    /// <summary>E15.S1b: the MSI PowerShell 7 joins the closed list — its ONE fixed folder on the drive, the same four questions
+    /// and the same file checks as the clock probe's <c>powershell.exe</c>; never a folder under a user's profile.</summary>
+    [Fact]
+    public void Under_a_services_minimal_path_pwsh_resolves_in_its_one_folder_on_the_mounted_system_drive_through_the_same_checks()
+    {
+        var resolved = ExecutableResolver.Resolve(HealthCommands.Pwsh, ServicePath, windows: false, Lookup(), TestContext.Current.CancellationToken);
+
+        resolved.Should().Be(new ResolvedExecutable.Found(Path.Combine(DriveC.MountPoint, "Program Files/PowerShell/7", HealthCommands.Pwsh)) { OnTheSystemDrive = true }, "the resolver answered {0}", resolved);
+        _asked.Should().Be(4, "the mount, interop, the mount point's ancestors and the file — the same four questions as for powershell.exe");
+        Reason(ExecutableResolver.Resolve(HealthCommands.Pwsh, ServicePath, windows: false, Lookup(inspect: "x is a symbolic link, which is never followed there"), TestContext.Current.CancellationToken))
+            .Should().Contain("not started from the Windows system drive").And.Contain("symbolic link");
+        WindowsSystemDrive.Programs.Keys.Should().BeEquivalentTo([HealthCommands.PowerShell, HealthCommands.Pwsh], "the closed list: the two PowerShells and nothing else");
+        WindowsSystemDrive.Programs.Values.Should().NotContain(f => f.Contains("Users", StringComparison.OrdinalIgnoreCase) || f.Contains("WindowsApps", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public void A_powershell_on_path_still_wins_and_the_system_drive_is_not_asked()
     {

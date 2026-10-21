@@ -130,6 +130,22 @@ public sealed class UserLayerTrustTests
     }
 
     [Fact]
+    public void The_three_redaction_numbers_are_taken_from_the_machine_layer_and_ignored_from_the_user_layer_even_where_root_trusts_it()
+    {
+        const string json = """{ "processes": { "secretMinChars": 12, "shownSafeArgs": 0, "maxJudgedArgChars": 1024 } }""";
+
+        var fromUser = ConfigLoader.Load([Defaults(), (Machine, new FileReadResult.Missing()), Layer(User, json)], RootWithInterop);
+        var fromMachine = ConfigLoader.Load([Defaults(), Layer(Machine, json), (User, new FileReadResult.Missing())]);
+
+        fromUser.Config.Int(ConfigKeys.Processes.SecretMinChars).Should().Be(20, "a user layer must not move what root writes into a shared history");
+        fromUser.Notices.Select(n => n.Key).Should().BeEquivalentTo(["processes.secretMinChars", "processes.shownSafeArgs", "processes.maxJudgedArgChars"]);
+        fromMachine.Config.Int(ConfigKeys.Processes.SecretMinChars).Should().Be(12);
+        fromMachine.Config.Int(ConfigKeys.Processes.ShownSafeArgs).Should().Be(0);
+        fromMachine.Config.Int(ConfigKeys.Processes.MaxJudgedArgChars).Should().Be(1024);
+        fromMachine.Notices.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Root_reading_the_target_users_layer_requires_that_user_to_own_it()
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "file owners are Linux's: run in WSL or on the Linux legs");

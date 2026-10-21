@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
 
+import { RUN_READ_VERBS, VERBS } from '../client/verbs';
 import { fromExtensionRoot, shippedSources } from './support/paths';
 import { importsOf, stringLiteralsOf } from './support/sourceScan';
 
@@ -86,4 +87,53 @@ test('the client starts through the runner it is given: no process API, no runne
   assert.deepEqual(imports.filter((spec) => /child_process|runnerSelection|windowsTime|powershell/.test(spec)), []);
   const code = client.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   assert.doesNotMatch(code, /runnerFor\(|spawnRunner|childProcess/, 'it never picks a runner of its own');
+});
+
+// ---- E19.S2b (todo/PLAN_disk_hygiene_windows_E19.md decision 12): the client may read `status` and `--version`, and nothing else ----
+
+const ALLOWED_VERBS: readonly string[] = ['status', 'version'];
+
+/**
+ * Every daemon word the closed verb tables spell — the words the client must not write itself. `status` alone is left out: it is also
+ * the outcome's own tag (`verb: 'status'`), a name and no argv; the argv it would be is `VERBS.status`, which the first scan holds.
+ */
+const DAEMON_WORDS: ReadonlySet<string> = new Set([...Object.values(VERBS), ...Object.values(RUN_READ_VERBS)].flat().filter((word) => word !== 'status'));
+
+function withoutComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
+/** The names the source takes from the closed verb table: `VERBS.<name>`. */
+function verbsTaken(text: string): string[] {
+  return [...withoutComments(text).matchAll(/\bVERBS\.(\w+)/g)].map((m) => m[1] ?? '');
+}
+
+/** The daemon words the source spells as string literals of its own. */
+function daemonWordsSpelled(text: string): string[] {
+  return stringLiteralsOf(text).filter((literal) => DAEMON_WORDS.has(literal));
+}
+
+/**
+ * What WR-E1 (the staged exe, `tasks` and the Windows run reads) takes from `verbs.ts` besides the table: the tails and ceilings it
+ * builds there. The name of a verb TABLE (`RUN_READ_VERBS`, `RUN_READ_NAMES`) is not among them — the words stay in `verbs.ts`.
+ */
+const WR_E1_VERB_IMPORTS: readonly string[] = ['RUN_READ_TIMEOUT_MS', 'runReadTail', 'TASKS_DEFAULT_TIMEOUT_MS', 'TASKS_REMOVE_TAIL', 'TASKS_STAGE_TAIL', 'tasksRenderTail', 'WINDOWS_READ_NAMES', 'type RunReadName', 'type TaskName', 'type WindowsRunRead'];
+
+/** What the source takes from `./verbs` besides the table itself. */
+function otherVerbImports(text: string): string[] {
+  return [...text.matchAll(/import\s*\{([^}]*)\}\s*from\s*'\.\/verbs'/g)].flatMap((m) => (m[1] ?? '').split(',').map((name) => name.trim())).filter((name) => name !== '' && name !== 'VERBS');
+}
+
+test('the client names no other verb than status and --version', () => {
+  const client = sources().find((s) => s.file === CLIENT)?.text ?? '';
+  assert.ok(verbsTaken(client).length > 0, 'the scan is alive: the client takes its tails from VERBS');
+  assert.deepEqual([...new Set(verbsTaken(client))].sort(), [...ALLOWED_VERBS].sort(), 'exactly status and version');
+  assert.deepEqual(daemonWordsSpelled(client), [], 'it spells no daemon word itself — only verbs.ts does');
+  assert.deepEqual(otherVerbImports(client).filter((name) => !WR_E1_VERB_IMPORTS.includes(name)), [], 'and takes from verbs.ts only the tail builders WR-E1 built — never a verb table of its own');
+});
+
+test('the verb scan finds a planted second verb, a planted literal and a planted run-read import', () => {
+  assert.deepEqual(verbsTaken("const a = VERBS.status; const b = VERBS.preview; // VERBS.doctor"), ['status', 'preview']);
+  assert.deepEqual(daemonWordsSpelled("const a = ['preview', '--all'];"), ['preview', '--all']);
+  assert.deepEqual(otherVerbImports("import { VERBS, runReadTail } from './verbs';"), ['runReadTail']);
 });

@@ -188,6 +188,19 @@ public sealed class CollectRunTests : IDisposable
         LastFullRun.Read(_sandbox.Paths, _sandbox.Files, _clock).ContainerStats.ReasonOrEmpty.Should().Contain(result.Detail!.RunId.Text);
     }
 
+    /// <summary>E15.S5 own review: the full run reads no vmmem, so its history line carries no <c>host.vmmem</c> warning — a verdict
+    /// that could only ever be <c>unknown</c> would be written into every run's history. The run's own host verdicts (here
+    /// <c>unknown</c>: the Windows disk script did not answer) are still recorded.</summary>
+    [Fact]
+    public async Task A_collect_writes_no_host_vmmem_warning_to_its_history_line()
+    {
+        await CollectRun.RunAsync(Context(_sandbox.Files), CancellationToken.None);
+
+        var warnings = History().Single().Warnings!;
+        warnings.Should().NotContain(w => w.Id == "host.vmmem");
+        warnings.Should().Contain(w => w.Id == "host.commit");
+    }
+
     /// <summary>The real file system, with every write recorded in order: <c>atomic:{path}</c>, <c>append:{path}</c>,
     /// <c>rewrite:{path}</c>, <c>delete:{path}</c>, <c>mkdir:{path}</c>.</summary>
     private sealed class OrderRecordingFileSystem(IFileSystem inner) : DelegatingFileSystem(inner)

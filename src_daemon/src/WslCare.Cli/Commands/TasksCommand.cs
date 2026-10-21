@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -11,7 +12,7 @@ using WslCare.Core.Scheduler;
 namespace WslCare.Cli.Commands;
 
 /// <summary>
-/// <c>tasks render &lt;watch|archive&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's per-user task XML
+/// <c>tasks render &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's per-user task XML
 /// from its configuration, its own path and the user's SID (<see cref="WindowsTaskDefinitions"/>), whether it may be registered
 /// (<see cref="StagedCopies.Check"/>), and the Windows dry state (<see cref="DryRunWindow.Peek"/>). Read-only: nothing is registered,
 /// nothing is written — the extension registers what this answers, and only when it says <c>registrable</c>. And
@@ -82,10 +83,10 @@ internal static partial class TasksCommand
         var head = report.Outcome is StageOutcomes.Refused or StageOutcomes.Busy
             ? $"tasks stage: {report.Outcome}: {report.Reason}"
             : $"tasks stage: {report.Outcome} {report.Digest} at {report.Path} (release {report.Version}): {report.Reason}";
-        var text = Folders(new StringBuilder().AppendLine(CommandLine.Printable(head)), "swept", report.Swept, report.Kept);
+        var text = Folders(new StringBuilder().AppendLine(ShownText.Printable(head)), "swept", report.Swept, report.Kept);
         foreach (var folder in report.Retained)
         {
-            text.AppendLine(CommandLine.Printable($"retained: {folder.Path} ({folder.Why})"));
+            text.AppendLine(ShownText.Printable($"retained: {folder.Path} ({folder.Why})"));
         }
 
         return text.ToString().TrimEnd('\n', '\r');
@@ -96,10 +97,10 @@ internal static partial class TasksCommand
         var head = report.Outcome == StageOutcomes.Busy
             ? $"tasks stage --remove: busy: {report.Reason}"
             : $"tasks stage --remove: {report.Removed.Count} removed, {report.Kept.Count} kept; {report.Root} {(report.RootRemoved ? "removed" : "stays")}";
-        var text = Folders(new StringBuilder().AppendLine(CommandLine.Printable(head)), "removed", report.Removed, report.Kept);
+        var text = Folders(new StringBuilder().AppendLine(ShownText.Printable(head)), "removed", report.Removed, report.Kept);
         foreach (var other in report.Untouched)
         {
-            text.AppendLine(CommandLine.Printable($"untouched (not a staging folder): {other}"));
+            text.AppendLine(ShownText.Printable($"untouched (not a staging folder): {other}"));
         }
 
         return text.ToString().TrimEnd('\n', '\r');
@@ -110,12 +111,12 @@ internal static partial class TasksCommand
     {
         foreach (var folder in gone)
         {
-            text.AppendLine(CommandLine.Printable($"{goneLabel}: {folder.Path} ({folder.Why})"));
+            text.AppendLine(ShownText.Printable($"{goneLabel}: {folder.Path} ({folder.Why})"));
         }
 
         foreach (var folder in kept)
         {
-            text.AppendLine(CommandLine.Printable($"kept: {folder.Path} ({folder.Why})"));
+            text.AppendLine(ShownText.Printable($"kept: {folder.Path} ({folder.Why})"));
         }
 
         return text;
@@ -133,8 +134,8 @@ internal static partial class TasksCommand
     {
         var identity = new TaskIdentity(host.UserSid(), host.ProcessPath());
         var staged = StagedCopies.Check(StagedCopies.Root(paths), identity.Command, Program.VersionText, host.Files, host.ArchiveFiles(), config.Int(ConfigKeys.Records.MaxStateFileBytes));
-        var dry = DryRunWindow.Peek(paths, host.Files, config, host.Clock.GetUtcNow());
-        return TasksRender.Report(task, config, identity, staged, dry);
+        var dry = DryRunWindow.Peek(paths, host.Files, config, host.Clock.GetUtcNow(), task.DryWindowStamp);
+        return TasksRender.Report(task, config, identity, staged, dry, host.Privilege.IsRoot);
     }
 
     /// <summary>What a person reads: the verdict, the task, the numbers, the dry state, the summary, then the XML itself.</summary>
@@ -143,14 +144,14 @@ internal static partial class TasksCommand
         var verdict = report.Registrable ? $"registrable ({report.Reason})" : $"not registrable: {report.Reason}";
         var numbers = string.Join(", ", report.Numbers.Select(n => string.Create(CultureInfo.InvariantCulture, $"{n.Key}={n.Value}")));
         var text = new StringBuilder()
-            .AppendLine(CommandLine.Printable($"tasks render {report.Task}: {verdict}"))
-            .AppendLine(CommandLine.Printable($"task {report.TaskPath} as {Shown(report.UserSid)}: {Shown(report.Command)} tasks run {report.Task} --json"))
-            .AppendLine(CommandLine.Printable(string.Create(CultureInfo.InvariantCulture, $"numbers: {numbers}; execution time limit {report.ExecutionTimeLimitMinutes} min")))
-            .AppendLine(CommandLine.Printable($"dry run: {(report.Dry.DryRun ? "yes" : "no")} - {report.Dry.Reason}"))
+            .AppendLine(ShownText.Printable($"tasks render {report.Task}: {verdict}"))
+            .AppendLine(ShownText.Printable($"task {report.TaskPath} as {Shown(report.UserSid)}: {Shown(report.Command)} tasks run {report.Task} --json"))
+            .AppendLine(ShownText.Printable(string.Create(CultureInfo.InvariantCulture, $"numbers: {numbers}; execution time limit {report.ExecutionTimeLimitMinutes} min")))
+            .AppendLine(ShownText.Printable($"dry run: {(report.Dry.DryRun ? "yes" : "no")} - {report.Dry.Reason}"))
             .AppendLine("summary (what Task Scheduler's read-back must print):");
         foreach (var line in report.Summary)
         {
-            text.AppendLine(CommandLine.Printable($"  {line}"));
+            text.AppendLine(ShownText.Printable($"  {line}"));
         }
 
         return text.AppendLine("xml:").Append(report.Xml).ToString();

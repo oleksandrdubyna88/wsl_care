@@ -151,7 +151,7 @@ test('exit 4 WITH a readable answer is an answer (the history unreadable, the re
 });
 
 test('a timeout reads as a timeout of the read\'s own ceiling; a refusal (2) as refused', async () => {
-  const slow = client({ ...wsl(true), [SHOW]: { kind: 'timedOut', timeoutMs: RUN_READ_TIMEOUT_MS.runsShow, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
+  const slow = client({ ...wsl(true), [SHOW]: { kind: 'timedOut', timeoutMs: RUN_READ_TIMEOUT_MS.runsShow, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
   const timedOut = await slow.c.read({ read: 'runsShow', runId: RUN });
   assert.ok(timedOut.kind === 'timedOut' && timedOut.timeoutMs === RUN_READ_TIMEOUT_MS.runsShow, JSON.stringify(timedOut));
   const usage = client({ ...wsl(true), [SHOW]: exited(2, '', 'wsl-care: "runs show" takes a run id\n') });

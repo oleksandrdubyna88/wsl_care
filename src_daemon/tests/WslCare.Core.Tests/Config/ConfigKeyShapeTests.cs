@@ -20,9 +20,15 @@ public sealed class ConfigKeyShapeTests
 
         lists.Should().NotBeEmpty("processes.families is a list key");
         // E14 S2c: the one OPEN list is bound by a declared member rule and a cap — never free text.
-        // 2026-10-12: a second OPEN list, systemd.ignoredFailedUnits, bound by its own reviewed rule (SystemdUnitName) and a cap.
-        lists.Should().OnlyContain(k => k.Allowed.Count > 0 || ((k.Member is TextRule.McpProgramName || k.Member is TextRule.SystemdUnitName) && k.MaxMembers <= 32));
-        lists.Where(k => k.Allowed.Count == 0).Should().Equal([ConfigKeys.McpServers.Programs, ConfigKeys.Systemd.IgnoredFailedUnits]);
+        // WR-T1: a third OPEN list, temp.allowGlobs, bound by TempGlobName. 2026-10-12: a second OPEN list, systemd.ignoredFailedUnits, bound by its own reviewed rule (SystemdUnitName) and a cap.
+        // 2026-10-15 (E19.S1): a fourth, disk.volumeFreeIgnoreLetters — one capital letter A-Z each, at most 26.
+        // E19.S3: three more, each reviewed — worktrees.roots (WindowsLocalPath, judged again against the disk at every use), and the two machine-only lists
+        // bound by a declared pattern and a cap: worktrees.buildArtifactPatterns and worktrees.wslAutomountRoots.
+        IReadOnlyList<ConfigKey> reviewedPatternLists = [ConfigKeys.Worktrees.BuildArtifactPatterns, ConfigKeys.Worktrees.WslAutomountRoots];
+        lists.Should().OnlyContain(k => k.Allowed.Count > 0 || ((k.Member is TextRule.McpProgramName || k.Member is TextRule.SystemdUnitName || k.Member is TextRule.TempGlobName || (k.Member is TextRule.Matching && k.Name == ConfigKeys.Disk.VolumeFreeIgnoreLetters.Name)) && k.MaxMembers <= 32)
+            || (k.Member is TextRule.WindowsLocalPath && k.MaxMembers <= 32)
+            || (reviewedPatternLists.Contains(k) && k.Member is TextRule.Matching && k.MaxMembers <= 128 && k.Trust.MachineOnly));
+        lists.Where(k => k.Allowed.Count == 0).Should().Equal([ConfigKeys.McpServers.Programs, ConfigKeys.Temp.AllowGlobs, ConfigKeys.Systemd.IgnoredFailedUnits, ConfigKeys.Disk.VolumeFreeIgnoreLetters, ConfigKeys.Worktrees.Roots, ConfigKeys.Worktrees.BuildArtifactPatterns, ConfigKeys.Worktrees.WslAutomountRoots]);
         ConfigKeys.Processes.Families.Allowed.Should().NotContain(ProcessFamilies.Other).And.NotContain(ProcessFamilies.AiAgents)
             .And.BeSubsetOf(ProcessFamilies.Catalogue.Select(f => f.Name));
     }

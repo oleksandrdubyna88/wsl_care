@@ -2,8 +2,13 @@ import { notAnsweredWords, type NotAnswered } from '../process/notAnswered';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
-import { engineChangedSentence, engineOf, MODULES, PWSH_PROBE, pwshFactsFromTags, TAG_HELPER, type Engine, type FileInfoOf, type PwshFacts } from './elevatedEngine';
-import { powerShellOf } from './elevatedLauncher';
+import { powerShellOf } from './commandLine';
+import { engineOf, PWSH_PROBE, pwshFactsFromTags, TAG_HELPER, type FileInfoOf, type PwshFacts } from './elevatedEngine';
+import { engineProblem, type EngineRead, type EngineSource } from './engineSource';
+import { MODULES } from './modulePath';
+
+/** The read's and the source's types moved to `engineSource.ts`; re-exported: the flows and tests still import them from here. */
+export { engineProblem, type EngineRead, type EngineSource };
 import { tagsOf } from './taggedAnswer';
 
 /**
@@ -23,12 +28,6 @@ export function engineQueryRequest(env: Readonly<Record<string, string | undefin
   const powerShell = powerShellOf(env);
 
   return typeof powerShell === 'string' ? { file: powerShell, args: ['-NoProfile', '-NonInteractive', '-Command', ENGINE_QUERY], timeoutMs } : powerShell.reason;
-}
-
-/** One read: the engine it chose, and why PowerShell 7 could not be checked ('' when the read answered). */
-export interface EngineRead {
-  readonly engine: Engine;
-  readonly failure: string;
 }
 
 /** Why this query did not answer — the shared wording (`process/notAnswered.ts`). */
@@ -85,34 +84,11 @@ export function engineReadOf(result: ProcessResult, env: Readonly<Record<string,
   return result.kind === 'exited' ? exitedRead(signed32(result.code), result.stdout, env, fileInfo) : failedRead(env, fileInfo, notAnswered(result));
 }
 
-/** Where an elevated flow gets its engine — the host, or a fixed one in a unit test. */
-export interface EngineSource {
-  /** The last read's engine, reading first when there is none — asked BEFORE the modal. */
-  readonly engine: () => Promise<EngineRead>;
-  /** A NEW read — asked AFTER the modal, right before the launch. */
-  readonly reread: () => Promise<EngineRead>;
-  /** The last read, or `undefined` before the first one answered — what the panel names. */
-  readonly last: () => EngineRead | undefined;
-}
-
 /** What the Windows Time part says of its engines (D6): the elevated runs' program, and the guard's task on 5.1 as SYSTEM. */
 export function guardEngineLine(read: EngineRead | undefined): string {
   const program = read === undefined ? 'checking which PowerShell…' : `${read.engine.label}.`;
 
   return `Elevated runs here (Start Windows Time, install / remove the guard): ${program} The guard's task runs as SYSTEM in Windows PowerShell 5.1.`;
-}
-
-/**
- * Why the launch must not go ahead with `before` (the engine the modal named) after the read taken right before it, or
- * `undefined` when it may: a read that did not answer says so (§11 R7) — never "the program changed" — and a read that chose
- * another program says that (G1's sentence). Both reads failing name the same 5.1, which runs: nothing is refused for a probe.
- */
-export function engineProblem(before: Engine, now: EngineRead): string | undefined {
-  if (now.engine.file === before.file) {
-    return undefined;
-  }
-
-  return now.failure === '' ? engineChangedSentence(before, now.engine) : `Nothing ran: the read of the elevated program right before the launch did not answer (${now.failure}). Press the button again.`;
 }
 
 export interface EngineHostDeps {

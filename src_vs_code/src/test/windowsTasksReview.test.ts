@@ -131,9 +131,9 @@ test('m3: the sentence for a process that did not exit is written once — the W
   assert.equal(modules.length, 2);
   const spelling = modules.filter((file) => fs.readFileSync(file, 'utf8').includes('did not answer within'));
   assert.equal(spelling.length, 1, spelling.join(', '));
-  const timedOut = { kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } as const;
+  const timedOut = { kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } as const;
   assert.match(JSON.stringify(await windowsClient(recording(timedOut).runner).version()), /did not answer within 20 s \(wslCare\.timeouts\.versionSeconds\)/);
-  assert.match(JSON.stringify(await windowsClient(recording(timedOut).runner).tasksStageRemove()), /did not answer within 20 s"/);
+  assert.match(JSON.stringify(await windowsClient(recording(timedOut).runner).tasksStage()), /did not answer within 20 s"/);
 });
 
 // ---- m6: the client computes the expected digest of the bundled exe itself ----
@@ -141,7 +141,7 @@ test('m3: the sentence for a process that did not exit is written once — the W
 test('m6: tasksStage hashes the bundled exe through the digest seam and judges the answer against THAT, the caller supplying nothing', async () => {
   const seen: string[] = [];
   const r = recording(exited(0, stageFixture('stage-staged.json')));
-  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: (file) => { seen.push(file); return Promise.resolve('e'.repeat(64)); } });
+  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: (file) => { seen.push(file); return Promise.resolve('e'.repeat(64)); } });
   const result = await c.tasksStage();
   assert.deepEqual(seen, [BUNDLED_EXE_FILE], 'it read the bundled exe, not the staged copy');
   assert.equal(result.kind, 'provenanceRefused');
@@ -151,7 +151,7 @@ test('m6: tasksStage hashes the bundled exe through the digest seam and judges t
 test('m6: a bundled exe that cannot be read fails the stage before anything starts, saying why; a digest that is no digest does the same', async () => {
   for (const digestOf of [() => Promise.reject(new Error('EBUSY: resource busy or locked')), () => Promise.resolve('NOT-A-DIGEST')]) {
     const r = recording(exited(0, stageFixture('stage-staged.json')));
-    const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf });
+    const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf });
     const result = await c.tasksStage();
     assert.equal(result.kind, 'failed');
     assert.deepEqual(r.requests, []);
@@ -172,7 +172,7 @@ test('m6: the default digest seam is the SHA-256 of the file\'s bytes, lower-cas
 
 test('m6: with the real digest seam a bundled exe that is not on this disk fails the stage naming the read, and starts nothing', async () => {
   const r = recording(exited(0, stageFixture('stage-staged.json')));
-  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: { scheme: 'file', fsPath: 'Z:\\testsToDelete-no-such-extension' }, timeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA });
+  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: { scheme: 'file', fsPath: 'Z:\\testsToDelete-no-such-extension' }, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA });
   const result = await c.tasksStage();
   assert.equal(result.kind, 'failed');
   assert.match(JSON.stringify(result), /bundled exe/);

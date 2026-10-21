@@ -118,6 +118,12 @@ public sealed class ContractFilesTests
         ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.McpProgramName } open =>
             [("shape", "textList"), ("memberPattern", Core.Mcp.McpUserPrograms.Pattern), ("maxMembers", open.MaxMembers), ("refused", new JsonArray([.. Core.Mcp.McpUserPrograms.Refused.Select(v => (JsonNode)v)])),
                 ("launchers", new JsonArray([.. Core.Mcp.McpUserPrograms.Launchers.Select(v => (JsonNode)v)])), ("launcherVersionSuffix", Core.Mcp.McpUserPrograms.LauncherVersionSuffix)],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.TempGlobName } glob =>
+            [("shape", "textList"), ("memberPattern", WslCare.Core.Actions.WindowsTemp.TempGlob.Pattern), ("maxMembers", glob.MaxMembers), ("neverMatches", new JsonArray(WslCare.Core.Actions.WindowsTemp.TempGlob.ClaudeName, WslCare.Core.Actions.WindowsTemp.TempGlob.TestLeftoverPrefix + "*"))],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.WindowsLocalPath } open =>
+            [("shape", "textList"), ("memberShape", "windowsLocalPath"), ("memberMaxLength", TextRule.AbsolutePathOrEmpty.MaxLength), ("maxMembers", open.MaxMembers)],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.Matching matching } open when open.Name.StartsWith("worktrees.", StringComparison.Ordinal) =>
+            [("shape", "textList"), ("memberPattern", matching.Expression), ("maxMembers", open.MaxMembers)],
         ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
         ConfigKey.AgentListKey => [("shape", "agentList"), ("maxEntries", ExtraAgentShape.MaxEntries), ("maxFolders", ExtraAgentShape.MaxFolders), ("maxPathLength", ExtraAgentShape.MaxPathLength), ("maxGlobLength", ExtraAgentShape.MaxGlobLength), ("maxNameLength", ExtraAgentShape.MaxNameLength), ("sides", new JsonArray(ExtraAgentShape.Wsl, ExtraAgentShape.Windows))],
         _ => throw new InvalidOperationException($"{key.Name}: a key shape the contract does not describe"),
@@ -130,13 +136,13 @@ public sealed class ContractFilesTests
     /// one Task Scheduler document naming the SID, and the summary is the shape the extension compares — a golden derived from
     /// nothing would pass the equality test as well.</summary>
     [Fact]
-    public void The_windows_tasks_render_golden_holds_both_tasks_and_both_verdicts()
+    public void The_windows_tasks_render_golden_holds_every_task_and_both_verdicts()
     {
         var answers = JsonNode.Parse(WindowsTasksGolden.Text())!["answers"]!.AsArray().Select(a => a!["answer"]!).ToList();
 
-        answers.Select(a => (string)a["task"]!).Should().Equal("watch", "archive", "watch");
-        answers.Select(a => (bool)a["registrable"]!).Should().Equal(true, true, false);
-        ((string)answers[2]["reason"]!).Should().Contain("not a staged copy");
+        answers.Select(a => (string)a["task"]!).Should().Equal("watch", "archive", "cleanup", "watch");
+        answers.Select(a => (bool)a["registrable"]!).Should().Equal(true, true, true, false);
+        ((string)answers[3]["reason"]!).Should().Contain("not a staged copy");
         foreach (var answer in answers)
         {
             var xml = System.Xml.Linq.XDocument.Parse((string)answer["xml"]!);
@@ -147,6 +153,7 @@ public sealed class ContractFilesTests
 
         ((string)answers[0]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT60S interval=PT5M");
         ((string)answers[1]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT20M interval=PT4H");
+        ((string)answers[2]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT30M interval=PT24H");
     }
 
     /// <summary>The companion of the config-keys contract: it carries every key, the closed families list and the trust of the

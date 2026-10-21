@@ -142,6 +142,13 @@ extension: status bar, read-only panel and polling* of [module_vs_code.md](modul
     replay ([module_vs_code.md](module_vs_code.md), plan S7b.2b).
   Since E10.S2b the Archive page's *Restore*: the selected entry ids, as text, to the cleanup host — A20 through the cleanup transaction and two
   new root ops, the ids on stdin (section *The extension: Restore from the Archive page*).
+  Since E18.W0 (2026-10-21) the build has a SECOND bundle and ONE dependency from outside the public registry: `src/webview/fullView.ts` →
+  `dist/webview/full.js` (an IIFE for the Chromium of VS Code 1.85) and `dist/webview/full.css`, with the kit's components compiled in
+  (devDependency `@oleksandrdubyna88/vscode-webview-kit`, exactly `0.2.0`). The kit comes from GitHub Packages through the committed
+  `src_vs_code/.npmrc` (the scope's registry and `${NODE_AUTH_TOKEN}`, no secret); every CI job that installs hands the job's own read-only
+  token (`packages: read`) to the install step alone, which runs `npm ci --ignore-scripts`, and `npm rebuild` follows without it. Nothing
+  opens the page yet, so the extension's behaviour is unchanged (section *The full view's webview bundle and the kit* of
+  [module_vs_code.md](module_vs_code.md)).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
@@ -385,9 +392,11 @@ figure (E2.S3).
 
 - The clock tick and page size come from `/proc/self/auxv` (the source glibc's `sysconf` reads), so no
   native call is needed on Linux and a captured tree carries its own values (100 / 4096 here).
-- Command lines are shown cut to 200 characters with secret-looking values redacted (`--x=v`, `--x v`
-  where the name holds token, secret, password, apikey or credential) — measured on this machine: the VS
-  Code server's `--connection-token=` and an agent hub's `--csrf_token=` are in plain argv.
+- Command lines are shown cut to 200 characters after ONE redaction rule (`CommandLineRedaction`, E15.S7; both binaries,
+  [module_daemon.md](module_daemon.md) § *One redaction rule for every command line*) — measured on this machine: the VS
+  Code server's `--connection-token=` and an agent hub's `--csrf_token=` are in plain argv. The rule replaces a secret flag's
+  value, `NAME=value` with a secret word, a URL's userinfo, creds-shaped tokens, a blob with a secret word and a separator and
+  bare high-entropy tokens with the one constant `<redacted>`; what a regex cannot catch is listed in the plan's §9.
 - Families are a built-in catalogue (`ProcessFamilies`, first match wins: build servers, testhost, AI
   agents, Docker Desktop proxy, vscode-server, node, other): regex-per-family settings need the
   object-shaped configuration keys E7 brings.
@@ -399,6 +408,7 @@ figure (E2.S3).
   the user's programs) through `Win32ProcessTable` — a Toolhelp snapshot plus `PROCESS_QUERY_LIMITED_INFORMATION` handles,
   read-only, real even under `WSL_CARE_ROOT` — into `windowsMcpServers`, and adds `host.vmmemAdvice` (text, never acted on)
   when `vmmemWSL` holds more than `wslConfig.vmmemAdviceGb`. Details: [module_mcp_servers.md](module_mcp_servers.md) § *The Windows side*.
+- **E19.S3:** the Windows binary has three more verbs — `worktrees roots set` (folders on stdin, all-or-nothing, a verdict per path), `worktrees roots clear` and `worktrees scan` (read-only, no process) — and its `status` carries `worktrees` (basis `scan`) and the verdict `worktrees.reclaimable`, always `unknown` until git confirms (E19.S4). The distro's binary refuses all three naming the Windows side. Details: [module_daemon.md](module_daemon.md) § *The worktree report*.
 - `status` without `--json` prints a short ASCII summary; the JSON is what the extension reads.
 
 ## The Docker collectors and `preview` (E2.S2)
@@ -1427,6 +1437,18 @@ E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `da
     that names its detail; `act` lines and the reconcile's `interrupted` lines are not full runs) and reads ONE file, its
     detail, through a narrow DTO (`RunDetailVerdicts`: the head and `thresholds`), normalising null strings (C# doctrine
     §4a). `status` reads `history.jsonl` once for the slow parts and the verdicts (`LastFullRun.From`).
+  - **E15.S5, Windows memory pressure** ([module_daemon.md](module_daemon.md) § *Windows memory pressure*): the full run judges
+    `host.commit` and `host.compression` from the Windows disk script (no `host.vmmem`: the script reads no vmmem), so the
+    distro's `status` carries those two from the full run. On the Windows binary ONLY, `StatusVerdicts.From` judges the `host.*`
+    rule (`HostRules`) over its OWN sample; a sampled verdict REPLACES the carried full-run verdict of the same id in its place,
+    and one nothing carried (`host.vmmem`) is appended after the carried ones, so no id is listed twice. The extension's status
+    bar colours on `host.*` ([module_vs_code.md](module_vs_code.md)).
+  - **E15.S7, the shown command line** ([module_daemon.md](module_daemon.md) § *One redaction rule for every command line*):
+    additive, `schemaVersion` still 1, `commandLine` stays. Every `vm.processes.top[]` / `mntWalkers[]` row gains `program`,
+    `argumentsShown` and `argumentsTotal` after `commandLine`; `mcpServers.instances[].owner` gains `program` and `argumentsShown`.
+    `commandLine`'s VALUE changes only where the widened rule bites (the golden: a bare 40-hex commit id, and a `sh -c` script
+    holding `connection-token=`). Three machine-only keys, `processes.secretMinChars`, `processes.shownSafeArgs`,
+    `processes.maxJudgedArgChars`, join `contracts/config-keys.json`.
 - **`productVersion`** — the assembly's informational version, `Program.VersionText`, the ONE expression `--version` prints
   too (`0.0.0+<sha>` before the first release). The default JSON encoder writes the `+` as `\u002B`; a reader parses.
 - The text form adds one line, `verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown`.
@@ -1538,7 +1560,7 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
 | Swap | Swap total | `vm.memory.swapTotal` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Swap | Swap trend today | — | — | — | arrives in E6 — needs the logs / runs verbs |
 | Disk | The distribution's / file system | `vm.disk` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
-| Disk | C: free | — | — | — | arrives in E7 — read by wsl-care.exe on the Windows side (E7.S3) |
+| Disk | Windows volumes: worst free | `verdicts[id=disk.volumeFree]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Disk | Virtual disks: file − guest = gap (E15.S2) | `verdicts[id=disk.vhdxGap]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Folders | Big folders (the daily walk) | `folders` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Containers | Running now | `vm.containers` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
@@ -2141,6 +2163,28 @@ shellcheck is on `PATH` (without it actionlint silently skips the `run:` blocks)
 pinned by digest, `-x` to follow a sourced file — over `install.sh` (E4.S1) and `.github/scripts/` (E4.S2). `pr-title.yml` requires
 a conventional-commit pull request title. `dependabot.yml` watches NuGet and GitHub Actions weekly,
 FluentAssertions held below 8.x.
+
+## The Windows tasks: install and remove, across the modules (WR-E3, 2026-10-18)
+
+Two opt-in per-user scheduled tasks — `\wsl-care\watch` and `\wsl-care\archive` — run a verified staged copy of the bundled Windows daemon (plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md); the module level is [module_vs_code.md](module_vs_code.md), the daemon's half [module_daemon.md](module_daemon.md)). What crosses the modules when a person presses *Install the Windows watch task* or *Remove the Windows tasks*:
+
+```mermaid
+flowchart LR
+    panel["panel: bare button id<br/>(panel/messages.ts)"] --> flow["windowsTasks/tasksFlow<br/>stage, fresh render, checks, read-only tab, modal,<br/>engine again, pending record, ONE run"]
+    flow -->|"closed tails: tasks stage / render / stage --remove"| client["client/WindowsCareClient<br/>(typed answers, provenance, own digest)"]
+    client -->|"bundled exe: stage, remove · staged copy: render"| daemon["wsl-care.exe (Windows daemon)<br/>renders the task XML, stages and removes copies"]
+    flow -->|"the reader's SID, what else is in the folder"| sched["scheduler/ (the peer)<br/>schedulerHost: ONE read of \wsl-care"]
+    flow -->|"installTaskScript / removeTasksScript"| reg["scheduler/registerScript<br/>the ONE home of Register-ScheduledTask and the deletes"]
+    flow -->|"run-now: runNowScript, after a read pre-check (no daemon call)"| run["scheduler/runScript<br/>the ONE home of a task's start: the task's own Run"]
+    flow -->|"unelevatedRequest: engine.file, -EncodedCommand, killTree"| launch["powershell/unelevatedLauncher<br/>(+ commandLine, modulePath, engineTypes: shared, not elevated)"]
+    launch --> runner["process/runner<br/>ceiling + verified tree kill by pid and creation time"]
+    runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive"]
+    flow -->|"pending record before the launch; cleared on every answer but a timeout"| state["globalState<br/>wslCare.windowsTasks.pending"]
+    sched -->|"refresh after an answer; settle past the ceiling"| flow
+    guard["windowsTime/ (the guard)<br/>same registration scripts, run ELEVATED"] --> reg
+```
+
+The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own. Since WR-E4 the same flow also STARTS a registered task now (*Run the Windows watch now*, *Archive Windows sessions now*): after a read of the task's row it asks Task Scheduler, through the same unelevated launcher and the one runner, to `Run` the registered task exactly as its next trigger would — the daemon is not called at all, and `scheduler/runScript.ts` is the one shipped source that spells a task's start (`registrationPath.test.ts`, with the tripwire's own `TASK_RUN` pattern).
 
 ## Containers — the system on one page
 

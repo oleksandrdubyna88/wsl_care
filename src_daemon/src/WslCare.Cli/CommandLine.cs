@@ -1,3 +1,4 @@
+using static WslCare.Core.Processes.Redaction.ShownText;
 using System.Collections.Immutable;
 using System.Text;
 
@@ -101,17 +102,33 @@ internal abstract record Request
     /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
     internal sealed record UnitsDropIn(string Unit) : Request;
 
-    /// <summary><c>tasks render &lt;watch|archive&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's task
+    /// <summary><c>tasks render &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D1 of PLAN_windows_runner.md §3.2): the Windows binary's task
     /// XML from its configuration, its own path and the user's SID, whether it may be registered, and the Windows dry state.</summary>
     internal sealed record TasksRender(Core.Scheduler.WindowsTask Task, bool Json) : Request;
 
-    /// <summary><c>tasks run &lt;watch|archive&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): the supervisor — the task's
+    /// <summary><c>tasks run &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): the supervisor — the task's
     /// worker from the CLOSED table (<see cref="Core.Scheduler.TaskWorkers"/>) in a kill-on-close job, bounded by its deadline.</summary>
     internal sealed record TasksRun(Core.Scheduler.WindowsTask Task, bool Json) : Request;
+
+    /// <summary><c>tasks preview cleanup [--json]</c> (WR-T2 of PLAN_windows_runner.md §3.12): what the Windows <c>%TEMP%</c> cleanup (A23) would
+    /// do now - read-only, bounded, in this process: it deletes nothing, moves no cursor, starts no week and takes no lock.</summary>
+    internal sealed record TasksPreview(Core.Scheduler.WindowsTask Task, bool Json) : Request;
 
     /// <summary><c>tasks stage [--remove] [--json]</c> (WR-D2 of PLAN_windows_runner.md §3.2): the Windows binary copies its own exe
     /// into <c>%LOCALAPPDATA%\wsl-care\bin\&lt;digest&gt;\</c> and sweeps the older copies; <c>--remove</c> removes every copy.</summary>
     internal sealed record TasksStage(bool Remove, bool Json) : Request;
+
+    /// <summary><c>worktrees roots set [--json]</c> (E19.S3, PLAN_disk_hygiene_windows.md §3.3): the Windows binary reads the folders to
+    /// scan from STDIN, one absolute path per line — never as words on the command line — judges each by the root rules, and writes
+    /// <c>worktrees.roots</c> only when EVERY one is accepted.</summary>
+    internal sealed record WorktreesRootsSet(bool Json) : Request;
+
+    /// <summary><c>worktrees roots clear [--json]</c> (E19.S3): <c>worktrees.roots</c> emptied (the user layer's key removed).</summary>
+    internal sealed record WorktreesRootsClear(bool Json) : Request;
+
+    /// <summary><c>worktrees scan [--json]</c> (E19.S3): the read-only worktree report over the configured roots, written to
+    /// <c>%LOCALAPPDATA%\wsl-care\worktrees.json</c> and printed.</summary>
+    internal sealed record WorktreesScan(bool Json) : Request;
 
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
@@ -298,10 +315,14 @@ internal static class CommandLine
         new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted; --restorable: only the verified entries removed at their source, newest first, at most archive.maxRestoreEntries (what the restore button offers)", ["archive", "list", "--json"], ArchiveArguments.ParseArchiveList),
         new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ArchiveArguments.ParseArchiveReconcile),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
-        new([["tasks", "render"]], "tasks render <task> [--json]", "the Windows binary's: the XML of one per-user scheduled task, <task> watch or archive (\\wsl-care\\watch, \\wsl-care\\archive), from the configuration, this process's own path and the current user's SID; the numbers it used, the summary lines Task Scheduler's read-back must print, whether it may be registered (only a verified staged copy under %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\ is), and the Windows dry-run state (read-only: nothing is registered, nothing is written)", ["tasks", "render", "watch", "--json"], ParseTasksRender),
-        new([["tasks", "run"]], "tasks run <task> [--json]", "the Windows binary's supervisor, what each per-user task's action runs: <task> watch (this binary's own watch --timer) or archive (this binary's own archive preview while the timer's dry-run window is open, archive run once it is not), started suspended inside a kill-on-close job, resumed only inside it, and ended with its whole tree at its deadline (mcpWatchdog.runLimitMinutes, timer.runLimitMinutes; counted on the unbiased clock, so a sleep is not run time): exit 84 then, else the worker's own exit code; the worker's answer is this process's stdout", ["tasks", "run", "watch", "--json"], ParseTasksRun),
+        new([["tasks", "render"]], "tasks render <task> [--json]", "the Windows binary's: the XML of one per-user scheduled task, <task> watch, archive or cleanup (\\wsl-care\\watch, \\wsl-care\\archive, \\wsl-care\\cleanup), from the configuration, this process's own path and the current user's SID; the numbers it used, the summary lines Task Scheduler's read-back must print, whether it may be registered (only a verified staged copy under %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\ is), and the Windows dry-run state (read-only: nothing is registered, nothing is written)", ["tasks", "render", "watch", "--json"], ParseTasksRender),
+        new([["tasks", "run"]], "tasks run <task> [--json]", "the Windows binary's supervisor, what each per-user task's action runs: <task> watch (this binary's own watch --timer) archive (this binary's own archive preview while the timer's dry-run window is open, archive run once it is not) or cleanup (this binary's own act A23 --timer --confirm: the Windows %TEMP% cleanup under A23's own dry-run week, deadline timer.runLimitMinutes), started suspended inside a kill-on-close job, resumed only inside it, and ended with its whole tree at its deadline (mcpWatchdog.runLimitMinutes, timer.runLimitMinutes; counted on the unbiased clock, so a sleep is not run time): exit 84 then, else the worker's own exit code; the worker's answer is this process's stdout", ["tasks", "run", "watch", "--json"], ParseTasksRun),
 
+        new([["tasks", "preview"]], "tasks preview cleanup [--json]", "the Windows binary's, read-only: what the Windows %TEMP% cleanup (A23) would do now - the resolved temp folder, the age cutoff and the allow-list in force, the counts (eligible, would be eligible if allowed, young, excluded by reason, unknown, deferred), the groups with their first exact paths (at most preview.maxItems groups and paths, the remainders counted), where the cursor stands and A23's own dry-run week. It deletes nothing, moves no cursor, starts no week, writes nothing and takes no lock; the one task it takes is cleanup", ["tasks", "preview", "cleanup", "--json"], ParseTasksPreview),
         new([["tasks", "stage"]], "tasks stage [--remove] [--json]", "the Windows binary's, run from the extension folder's exe: copy this exe to %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\wsl-care.exe with an exclusive create (an existing folder is reused only when its copy verifies, never written over), read it back, record stage.json, then sweep the other <digest> folders (one whose exe still runs is kept and named); --remove removes every <digest> folder and the folder itself when empty; a folder that is not a <digest> is never touched", ["tasks", "stage", "--json"], ParseTasksStage),
+        new([["worktrees", "roots", "set"]], "worktrees roots set [--json]", "the Windows binary's: choose the folders the worktree report looks at - the PARENT folders of your git worktrees - read from STDIN, one absolute path per line (never as words on the command line). Every path is judged: a drive-letter path on a local fixed drive, an existing folder that is not a drive root, no link on the way, not your profile or a folder around it, not inside or around an AI agent's folder or Claude's temporary folder, not inside or over another root, at most worktrees.maxRoots. All or nothing: if any path is refused nothing is written, and EVERY path still gets its own verdict (accepted, or refused with its rule and reason); exit 2 then, 0 when worktrees.roots was written", ["worktrees", "roots", "set"], rest => WorktreesArguments.Parse("worktrees roots set", rest, json => new Request.WorktreesRootsSet(json), WorktreesArguments.FoldersOnStdin)),
+        new([["worktrees", "roots", "clear"]], "worktrees roots clear [--json]", "the Windows binary's: empty worktrees.roots (remove it from the user layer); the worktree report then looks at nothing until folders are chosen again", ["worktrees", "roots", "clear"], rest => WorktreesArguments.Parse("worktrees roots clear", rest, json => new Request.WorktreesRootsClear(json), string.Empty)),
+        new([["worktrees", "scan"]], "worktrees scan [--json]", "the Windows binary's, read-only: for each root in worktrees.roots (judged AGAIN: a hand-edited bad root is refused with its reason) tell what every direct child folder is (a worktree, a locked one, an orphan whose git folder is gone, a worktree made inside WSL, a main clone, not git) from file reads alone, how long each worktree and orphan has been idle (newest write outside its build output, plus each build folder's own write, plus git's admin files), and how much build output (bin and obj beside a project file, node_modules beside package.json) it holds and which of that is kept whole and why; writes %LOCALAPPDATA%\\wsl-care\\worktrees.json atomically. Deletes nothing and starts only git's three read-only questions (a clean environment, never git from PATH); a walk past worktrees.scanMaxEntries or worktrees.scanMaxSeconds, or an unreadable subfolder, leaves a folder UNKNOWN, never idle. Reclaimable is only what passes every check including git's confirmation (a24, a24Orphans, the rest under retained with its reason)", ["worktrees", "scan", "--json"], rest => WorktreesArguments.Parse("worktrees scan", rest, json => new Request.WorktreesScan(json), string.Empty)),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
@@ -323,9 +344,11 @@ internal static class CommandLine
             return command.ParseRest(argv.Skip(spelling.Count).ToList());
         }
 
-        var subVerbs = SubVerbsOf(argv[0]);
+        var deeper = argv.Count > 1 ? SubVerbsOf(argv[0], argv[1]) : [];
+        var subVerbs = deeper.Count > 0 ? deeper : SubVerbsOf(argv[0]);
+        var named = deeper.Count > 0 ? $"{argv[0]} {argv[1]}" : argv[0];
         return subVerbs.Count > 0
-            ? new Request.Failed($"\"{BinaryName} {Printable(argv[0])}\" needs one of: {string.Join(", ", subVerbs)}.")
+            ? new Request.Failed($"\"{BinaryName} {Printable(named)}\" needs one of: {string.Join(", ", subVerbs)}.")
             : new Request.Failed($"unknown verb or option \"{Printable(argv[0])}\". Run \"{BinaryName} --help\" to see what exists.");
     }
 
@@ -354,6 +377,13 @@ internal static class CommandLine
 
     private static bool StartsWith(IReadOnlyList<string> argv, IReadOnlyList<string> spelling) =>
         spelling.Count <= argv.Count && spelling.Zip(argv).All(pair => string.Equals(pair.First, pair.Second, StringComparison.Ordinal));
+
+    /// <summary>The third words of every three-word spelling that begins with <paramref name="verb"/> and <paramref name="second"/>.</summary>
+    private static IReadOnlyList<string> SubVerbsOf(string verb, string second) =>
+        [.. Commands.SelectMany(c => c.Spellings)
+            .Where(s => s.Count > 2 && string.Equals(s[0], verb, StringComparison.Ordinal) && string.Equals(s[1], second, StringComparison.Ordinal))
+            .Select(s => s[2])
+            .Distinct(StringComparer.Ordinal)];
 
     /// <summary>The second words of every multi-word spelling that begins with <paramref name="verb"/>.</summary>
     private static IReadOnlyList<string> SubVerbsOf(string verb) =>
@@ -686,7 +716,7 @@ internal static class CommandLine
         _ => new Request.Failed($"\"{BinaryName} units dropin\" takes exactly one unit: {string.Join(", ", Core.Systemd.UnitDropIns.Units)}."),
     };
 
-    /// <summary><c>tasks render &lt;watch|archive&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c>.</summary>
+    /// <summary><c>tasks render &lt;watch|archive|cleanup&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c>.</summary>
     private static Request ParseTasksRender(IReadOnlyList<string> rest) => rest switch
     {
         [var name] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRender(task, false),
@@ -694,13 +724,21 @@ internal static class CommandLine
         _ => new Request.Failed($"\"{BinaryName} tasks render\" takes exactly one task ({string.Join(", ", Core.Scheduler.WindowsTask.All)}) and optionally {JsonFlag}: {BinaryName} tasks render <task> [{JsonFlag}]."),
     };
 
-    /// <summary><c>tasks run &lt;watch|archive&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c> — nothing
+    /// <summary><c>tasks run &lt;watch|archive|cleanup&gt; [--json]</c>: exactly one task of the closed set, then optionally <c>--json</c> — nothing
     /// else, so no word a person or a task types reaches the worker (§4: never free argv through the supervisor).</summary>
     private static Request ParseTasksRun(IReadOnlyList<string> rest) => rest switch
     {
         [var name] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRun(task, false),
         [var name, JsonFlag] when Core.Scheduler.WindowsTask.Find(name) is { } task => new Request.TasksRun(task, true),
         _ => new Request.Failed($"\"{BinaryName} tasks run\" takes exactly one task ({string.Join(", ", Core.Scheduler.WindowsTask.All)}) and optionally {JsonFlag}, nothing else: {BinaryName} tasks run <task> [{JsonFlag}]."),
+    };
+
+    /// <summary><c>tasks preview cleanup [--json]</c>: the closed set of previewable tasks is ONE.</summary>
+    private static Request ParseTasksPreview(IReadOnlyList<string> rest) => rest switch
+    {
+        [var name] when name == Core.Scheduler.WindowsTask.Cleanup.Name => new Request.TasksPreview(Core.Scheduler.WindowsTask.Cleanup, false),
+        [var name, JsonFlag] when name == Core.Scheduler.WindowsTask.Cleanup.Name => new Request.TasksPreview(Core.Scheduler.WindowsTask.Cleanup, true),
+        _ => new Request.Failed($"\"{BinaryName} tasks preview\" takes exactly one task ({Core.Scheduler.WindowsTask.Cleanup}) and optionally {JsonFlag}, nothing else: {BinaryName} tasks preview {Core.Scheduler.WindowsTask.Cleanup} [{JsonFlag}]."),
     };
 
     /// <summary><c>tasks stage [--remove] [--json]</c>: each switch at most once, in any order.</summary>
@@ -780,21 +818,13 @@ internal static class CommandLine
             .AppendLine("Settings are read from three layers, each overriding the last: the embedded defaults, the machine")
             .AppendLine("file, and the user file that \"config set\" writes. \"config get\" names the layer behind every value.")
             .AppendLine()
-            .Append($"This build answers only the commands above; \"act\" holds these actions: {string.Join(", ", Core.Actions.ActionRegistry.Product.Actions.Select(a => a.Id.Text))}.")
+            .AppendLine($"This build answers only the commands above; \"act\" holds these actions: {ActionsOf(inDistro: true)}.")
+            .Append($"On the Windows host, \"act\" holds: {ActionsOf(inDistro: false)}.")
             .ToString();
     }
 
-    /// <summary>
-    /// User text echoed back in an error message, with control characters replaced, so a refusal
-    /// stays ONE line on stderr whatever was typed — a newline or an escape sequence in an argument
-    /// would otherwise split or repaint the message.
-    /// </summary>
-    internal static string Printable(string text) =>
-        string.Create(text.Length, text, static (span, source) =>
-        {
-            for (var i = 0; i < source.Length; i++)
-            {
-                span[i] = char.IsControl(source[i]) ? '?' : source[i];
-            }
-        });
+    /// <summary>The ids of the actions that run inside the WSL distro, or of those that run on the Windows host (WR-T1: A23) — one line
+    /// each, so whatever reads the distro's line (the release smoke previews from it) meets only that side's actions.</summary>
+    private static string ActionsOf(bool inDistro) =>
+        string.Join(", ", Core.Actions.ActionRegistry.Product.Actions.Where(a => a.Sides.Contains(Core.Hosting.HostSide.Wsl) == inDistro).Select(a => a.Id.Text));
 }

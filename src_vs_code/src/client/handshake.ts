@@ -156,6 +156,15 @@ export function parseAnswer(verb: Verb, stdout: string): Answer | Failure {
   return verb === 'status' ? statusAnswer(checked.schemaVersion, checked.body) : { verb, schemaVersion: checked.schemaVersion, body: checked.body };
 }
 
+/** The daemon version an answer states itself: `--version`'s text, or `status.productVersion` — nothing for any other verb or an unstamped status. */
+export function ownVersion(answer: Answer): DaemonVersion | undefined {
+  if (answer.verb === 'version') {
+    return answer.version;
+  }
+
+  return answer.verb === 'status' && answer.productVersion !== undefined ? parseDaemonVersion(answer.productVersion) : undefined;
+}
+
 /**
  * `have` is at or above `need`, both released `x.y.z` versions — the same field-by-field comparison the render check uses
  * (`older`). Any other text (`unknown`, a pre-release, a `0.0.0` development build) is never "at least". The coai E6.S2 code

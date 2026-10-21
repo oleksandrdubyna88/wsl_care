@@ -1,8 +1,8 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
-> Status: **in progress, 2026-10-11 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b built on its branch `feat/wc-install-distro-name` (*E15.S2b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
-> not started; E18 waits for the owner's go.** Scope: four epics, E15–E18 — the daemon's read-only disk
+> Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b merged (#151, *E15.S1b as built* at the end); E15.S7 merged (#161, 2026-10-17; *E15.S7 as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> and E15.S6 onwards (E15.S7 aside) not started; E18 started on the owner's go (2026-10-12), its stories in [PLAN_disk_health_E18.md](PLAN_disk_health_E18.md).** Scope: four epics, E15–E18 — the daemon's read-only disk
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
@@ -945,3 +945,1173 @@ status budget at 4.6 s under load; a pid reused in the umask flow). Both passed 
 **Open — the extension's follow-up (design point 3).** `INSTALL_COMMAND` (`src_vs_code/src/install/installCommand.ts:44`)
 pins the `install.sh` of a RELEASED tag, and a released `install.sh` refuses an unknown argument. So the extension adds
 `--distro-name "$WSL_DISTRO_NAME"` only after a daemon release ships this change. Not changed here.
+
+## E15.S5 design — Windows memory pressure, one rule on both roads (2026-10-12, branch `feat/wc-e15s5-host-memory`)
+
+**Goal.** Three host verdicts, judged by ONE pure function, on whichever road has the facts:
+- `host.commit` — Windows' commit charge against its commit limit.
+- `host.compression` — the Memory Compression process's working set.
+- `host.vmmem` — the WSL VM's working set as Windows sees it.
+
+Read-only: nothing is acted on.
+
+**The two roads (mapped 2026-10-12):**
+- **The Windows binary's `status`.** `Collectors/WindowsProbe.cs` already calls `GlobalMemoryStatusEx`. `ullTotalPageFile` is the
+  commit limit, and `ullAvailPageFile` is what can still be committed, so charge = total − available. That is the same quantity as
+  the full run's `CommittedBytes` / `CommitLimit`. Neither field is read today (`Win32Counters.Memory`, `WindowsProbe.cs:64-70`).
+  `VmmemWorkingSet()` is read; Memory Compression is not.
+- **The distro's full run.** E15.S1's disk script gives `WindowsDiskFacts.CommitBytes`, `CommitLimitBytes` and
+  `CompressionBytes`. It gives no vmmem figure.
+
+**1. Facts.** `Health/HostMemoryFacts.cs` holds `HostMemoryFacts(Reading<long> CommitBytes, Reading<long> CommitLimitBytes,
+Reading<long> CompressionBytes, Reading<long> VmmemBytes, Reading<long> HostTotalBytes)`. It has two builders:
+- `FromProbe(HostSample)` (Windows);
+- `FromWindowsDisk(WindowsDiskSample)` (the full run). Here `VmmemBytes` is unknown, with the reason "vmmemWSL is read by the
+  Windows binary's status".
+
+The Windows sample gains `HostSample.Commit` (from `TotalPageFile` / `AvailablePageFile`) and `HostSample.CompressionBytes`
+(`Process.GetProcessesByName("Memory Compression")` from the kernel's snapshot, as `vmmemWSL` is read: nothing is started, and
+no handle is opened). `IWindowsCounters` gains the two readers, and its test fakes follow. Each reader fails ALONE (plan
+round): a `GlobalMemoryStatusEx` failure makes only `Commit` unknown. For Memory Compression, no process, a process that exits
+between the listing and the read, or a refused read makes only `CompressionBytes` unknown, with the exception named. The status
+goes on, and a test plants each failure.
+
+**2. The one rule** (`Thresholds/HostRules.cs`, PURE): `Verdicts(HostMemoryFacts, EffectiveConfig)`.
+- `host.commit`: warn above `thresholds.hostCommitWarnPercent` (80); critical above `thresholds.hostCommitCriticalPercent` (90);
+  the value is "charge of limit = %".
+- `host.compression`: warn above `thresholds.hostCompressionWarnGb` (8 GiB).
+- `host.vmmem`: warn above the EXISTING `wslConfig.vmmemAdviceGb` (one number for one idea). The reason is
+  `VmmemAdvice.For(...)`'s text, so the advice and the verdict cannot disagree.
+- An unread figure is `unknown` with its reason, never `ok`.
+- Load-time rule: critical > warn. A layer that inverts them is refused, by the existing coupled-limits check (`NumberRules`).
+
+**3. Where each road judges:**
+- **Full run:** `HostRules` is spread into `ThresholdRules.FromFullRun` over `FromWindowsDisk(inputs.Health.WindowsDisk)`, so the
+  distro's `status` carries these verdicts with `basis: fullRun` and their age.
+- **Windows binary:** `StatusVerdicts.From` judges `HostRules` over `FromProbe(sample.Host)` with `basis: sample`. A sampled
+  verdict REPLACES the carried full-run verdict of the same id, because the newer, direct reading wins. So a `status` never lists
+  an id twice. The distro's binary has no host sample and keeps the carried ones.
+
+**4. Keys:** `thresholds.hostCommitWarnPercent` (50–99, 80), `thresholds.hostCommitCriticalPercent` (51–100, 90),
+`thresholds.hostCompressionWarnGb` (1–256, 8). These are display keys, with a coupled rule warn < critical. The defaults are
+PROVISIONAL starting values (plan round). Measured on the owner's machine, 4.4 h after boot under heavy agent load
+([2026-10-12_host_memory.md](../research/2026-10-12_host_memory.md)):
+- commit was 68.8 %, the SAME on both roads (perf counter and `MEMORYSTATUSEX`, to 0.01 %);
+- compression was 6.0 GiB;
+- vmmem was 18.9 GiB.
+
+So the defaults stay quiet on a normal heavy day. The records of every full run calibrate them later.
+
+**5. Extension:** `src_vs_code/src/statusBar/statusBarModel.ts` `RELEVANT_VERDICT_PREFIXES` gains `host.`, per the plan's stated
+assumption ("`host.*` verdicts colour the status bar"). Tests: `statusBar.test.ts`.
+
+**6. RED first:**
+- 86 % warns.
+- 91 % is critical.
+- 79.9 % is ok.
+- A limit of 0 or an unread charge is `unknown`.
+- 8.1 GiB of compression warns.
+- vmmem above `wslConfig.vmmemAdviceGb` warns, and its reason is the advice text.
+- **The same function on both bases:** equal figures built through `FromProbe` and through `FromWindowsDisk` give the same verdicts
+  (vmmem aside).
+- The Windows status lists `host.commit` once, with `basis: sample`, even when its history carries a full-run one.
+- The distro status carries the full-run `host.*` verdicts.
+- `GlobalMemoryStatusEx`'s page-file fields map to charge and limit (a fake counter).
+- The status bar colours on `host.commit` warn.
+- **Across the boundary** (plan round): the extension's status-bar model reads the HEAD GOLDEN `status.json` that the real
+  daemon writes (the captured full run answers the disk script, so it carries `host.commit` / `host.compression` with
+  `basis: fullRun`), and colours from those verdicts. The id or the shape of a verdict cannot drift between the two halves
+  unseen. `module_tests` records the flow.
+
+Break-its on the edges and on the replacement. Docs: README (the keys), `module_daemon`, `module_vs_code`, `module_tests`, the
+as-built section.
+
+**Out of scope, recorded:** a vmmem line in the distro's disk script. That would let the full run judge `host.vmmem` too. It
+waits until E15.S1b (which changes that script) has merged.
+
+## E15.S5 as built (2026-10-12, branch `feat/wc-e15s5-host-memory`)
+
+**What shipped.** The design above, in full. `Health/HostMemoryFacts.cs` (the facts, two builders), `Thresholds/HostRules.cs`
+(the ONE pure rule: `host.commit`, `host.compression`, `host.vmmem`), `Collectors/ProcessWorkingSets.cs` (the working-set reader
+that fails alone), `HostCommit` and the two new `HostSample` members, `IWindowsCounters.Commit()` / `CompressionWorkingSet()`, the
+three `thresholds.*` keys with their coupled rule, `HostRules` spread into `ThresholdRules.FromFullRun` after `disk.hostFree`, the
+replacement rule in `StatusVerdicts.From`, and `host.` in the extension's `RELEVANT_VERDICT_PREFIXES`. Nothing is acted on.
+
+**Deviations (the smallest sound change each time):**
+- `HostMemoryFacts` carries a sixth member, the `.wslconfig` audit, and both builders take it. `host.vmmem`'s reason is
+  `VmmemAdvice.For`'s text, and that text needs the audit; with it, the verdict and the Windows status's `host.vmmemAdvice` have
+  the SAME input. `status` on Windows reads `.wslconfig` ONCE and hands that audit to both (`StatusVerdicts.From` gained an
+  overload with it; the old signature passes the "status does not read it" reason, as before).
+- `VmmemAdvice.For` was widened with an overload over the host's RAM in bytes (the facts hold a `Reading<long>`, not a
+  `HostMemory`); the old overload delegates to it, so there is one text.
+- `host.vmmem`'s level follows the advice (warn exactly when the advice speaks). They cannot disagree by construction.
+- `ProcessWorkingSets.Sum` reads `vmmemWSL` too (reuse: one reader for both process names). So `vmmemWSL` now also fails alone;
+  before, a `vmmemWSL` that exited between the listing and the read threw out of `status`.
+- `Memory()` and `Commit()` each make their own `GlobalMemoryStatusEx` call, so one failure costs one figure.
+- The replacement is unconditional: on the Windows binary a sampled `host.*` verdict replaces the carried one even when the sample
+  is `unknown` (the Windows binary's own state holds no full run that judges these; the newer, direct reading wins). A sampled id
+  the full run does not judge would be added after the carried ones (none today).
+- The `status --json` `host` block is unchanged; the new figures travel as the verdicts' values.
+- The extension's head golden now colours the bar warn: its captured full run (2026-10-10) read 9.86 GiB of Memory Compression,
+  above the provisional 8. The status-bar tests that colour one verdict at a time start from that golden with `host.compression`
+  set to ok (`calm()`), so each keeps its teeth.
+- ~~No architecture.md change~~ — wrong, corrected in the code round: #129 split most of architecture.md into the module docs,
+  but its section *The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)* stays there, and it now carries
+  the E15.S5 rule (the Windows side's sampled `host.*`, the replacement, the appended `host.vmmem`, the bar).
+- **The full run judges no `host.vmmem`** (code round and own review, below): only `host.commit` and `host.compression` come from
+  `FromWindowsDisk` (`HostRules.FullRunVerdicts`); all three come from `FromProbe` (`HostRules.Verdicts`). "The same function on
+  both bases" now reads: the same `Commit` and `Compression` functions judge both roads; vmmem is the Windows binary's alone.
+
+**Tests, RED first** (every message and break-it is in `module_tests.md`, *E15.S5*): 25 of 242 Core checks and the CLI check red
+against stubs, each for the named reason (no verdicts; `host.commit` at index -1; an empty `host.commit` list; the coupled layer
+not refused; the charge read as the available figure; the planted exceptions escaping; the processes not released); the
+extension 3 of 18 red (*actual: 'none', expected: 'warn'*). Seven break-its on product code, each restored byte for byte and
+green again: the commit and compression edges, the replacement, the reader's catch, the coupled rule, the Windows status without
+its audit, and `host.commit` excluded from the bar.
+
+**Suites** (2026-10-12, a heavily loaded machine): Windows — Core 2654 (2573 passed, 81 skipped, 0 failed), CLI 392 (390, 2
+skipped), Scenarios 609 (325 passed, 283 skipped, 1 failed: `StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget…`
+at 3.55 s against its 3 s budget; alone it passed 2 of 3 runs, 4.15 s the third; the two new process snapshots cost about 17 ms and
+43 ms on this machine, so the budget is lost to the load, not to them — CI is the authority); Linux (WSL Ubuntu, one
+folder `/tmp/wc-e15s5-linux-20261012T184227Z`) — the seven status goldens regenerated there and `GoldenContractTests` green (7);
+Core 2654 (2626 passed, 27 skipped, 1 failed: `ClockGuardTests.A_wall_clock_that_jumps_during_the_measurement_voids_it` read
++7199.9 s for +7200.0 s under load, green on a rerun, 44 of 44), CLI 392 (379 passed, 13 skipped), Scenarios 609 (602 passed, 5
+skipped, 2 failed: the two `FixturePrivacyTests`, because the run's `HOME` folder was named `home` and the test takes `$HOME`'s
+name as a user name; with another folder name both are green, 57 of 57); the extension 1250 (1247 passed,
+1 skipped, 2 failed: two `fakeWsl.test` cases that timed out at 15 s under load and pass alone, 49 of 49); lint, format and
+plan-lifecycle clean.
+
+**After the rebase onto `origin/main` (90b36369)**, everything again: Windows — Core 2749 (2668 passed, 81 skipped), CLI 410
+(408, 2 skipped), Scenarios 616 (332 passed, 284 skipped), 0 failed; Linux (the same folder) — the goldens unchanged
+(`GoldenContractTests` green without a write), Core 2749 (1 failed: the same `ClockGuardTests` case, green alone, 45 of 45), CLI
+410 (391 passed, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the extension 1250 (1249 passed, 1 skipped); lint,
+format and plan-lifecycle clean.
+
+**Code round and own review (2026-10-12).** Three fixes and two checks, each fix red first.
+- **The distro's `host.vmmem` was permanently `unknown`** (own review, confidence 80). The full run reads no vmmem, so every distro
+  `status` carried `host.vmmem: unknown`, the status bar's tooltip listed it forever, and `CollectRun` wrote it into every run's
+  history as a warning. The full-run road now judges commit and compression only (`HostRules.FullRunVerdicts`, spread into
+  `ThresholdRules.FromFullRun`). On the Windows binary the sampled `host.vmmem` replaces nothing and is appended after the carried
+  verdicts (after `npm.cache`), once. The seven Linux status goldens were regenerated.
+- **Only the Windows side samples the host** (coai finding 2). `StatusVerdicts` judges `HostRules` only when `ProbeSample.Side` is
+  `Windows`. A distro sample that ever carried a host part keeps the carried `host.*` verdicts, unchanged.
+- **architecture.md** (coai finding 0): the E5.S0 verdicts section gained the E15.S5 rule (see the corrected deviation above).
+- **Checked, no change**: (a) `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
+  daemon sets no job commit limit (WR-D3's job is `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` alone), so they are the system's — now said
+  in `HostCommit.FromPageFile`'s remarks. (b) The coupled rule makes a machine-layer contradiction an error (observe-only) and a
+  user-layer one a notice. That is how EVERY coupled rule and every invalid value behaves (`ConfigLoader.HoldRules` /
+  `ApplyEntry`); there is no softer path for display keys (a display key out of range in the machine layer is an error too), and
+  no other display warn/critical pair has a coupled rule. So the rule stays as it is.
+
+Red (8 of 40 Core checks, 1 of 19 extension checks): *Expected HostRules.FullRunVerdicts(Facts(), Config()).Select(v => v.Id) to be
+equal to {"host.commit", "host.compression"}, but {"host.commit", "host.compression", "host.vmmem"} contains 1 item(s) too many*; *Expected
+ids {…} to not contain "host.vmmem" because the full run does not read vmmem, so it judges none*; *Expected ids.IndexOf("host.vmmem") to
+be 36, but found 31*; *Expected Find(verdicts, "host.commit") to be* the carried verdict (the distro sample's host part had replaced
+it); *Expected warnings … not to contain* a `host.vmmem` record (the collect's history line); the extension: *The input was expected
+to not match the regular expression /host.vmmem: unknown/. Input: '… host.vmmem: unknown — …'*. Break-its (product code, each
+restored byte for byte): `ThresholdRules` back to `HostRules.Verdicts` → 6 red (the full-run list, the history line, the distro
+status, the Windows order and position); the `Side: HostSide.Windows` arm removed → *A_distro_sample_with_a_host_part_keeps_the_carried_host_verdicts*
+red.
+
+The Windows suite then found one more test to follow the contract: `Scenarios/CollectFlows` compared the Windows status's ids
+with the run's exactly; it now expects the sampled `host.vmmem` after the carried verdicts, before the MCP servers' own.
+
+**Suites of the code round** (rebased onto `origin/main` 47dbc1fa, 2026-10-14; the machine still heavily loaded): Windows — Core
+2753 (2672 passed, 81 skipped), CLI 410 (408, 2 skipped), Scenarios 616 (330 passed, 284 skipped, 2 failed: two
+`FetchWindowsDaemonFlows` cases whose Git-bash script did not exit within 60 s; the class alone is green, 43 of 43; an earlier
+run under heavier load lost 27 cases the same way, all time limits); Linux, a NEW folder
+`/tmp/testsToDelete-wc-e15s5-20261014T193812Z` — the goldens unchanged (`GoldenContractTests` green without a write), Core 2753
+(2714 passed, 39 skipped), CLI 410 (391, 19 skipped), Scenarios 616 (609 passed, 7 skipped), 0 failed; the goldens themselves
+were written in `/tmp/wc-e15s5-round2-linux-20261012T202048Z` (its suites: one `StatusFlows` time budget, 3.10 s for 3 s at a
+load average of 35); the extension 1251 (1250 passed, 1 skipped); lint, format, plan-lifecycle and the rules check clean.
+Rebased again onto `origin/main` 0d9be6a3 (WR-D2, the disk-hygiene plan; no status, threshold or contract file changed) and
+re-run in full, 0 failed everywhere: Windows — Core 2783 (2702 passed, 81 skipped), CLI 424 (422, 2 skipped), Scenarios 621 (335
+passed, 286 skipped); Linux, a NEW folder `/tmp/testsToDelete-wc-e15s5-20261014T205832Z` — goldens unchanged, Core 2783 (2714, 69
+skipped), CLI 424 (394, 30 skipped), Scenarios 621 (613, 8 skipped); the extension 1251 (1250, 1 skipped); lint, format,
+plan-lifecycle and the rules check clean.
+Then onto `b741a934` (WR-D4) and `28ebdeed` (a plan-only change), on a machine at 100 % CPU (Linux load average 40–60):
+Windows Core 2791 and CLI 428, 0 failed; Linux (`/tmp/testsToDelete-wc-e15s5-20261014T212844Z`) Core 2791 and CLI 428, 0 failed,
+the golden check green. The last runs (`/tmp/testsToDelete-wc-e15s5-20261015T075131Z` on Linux): Windows Scenarios 624 — 64 failed,
+all but a few `TimeoutException`s (a built CLI or Git-bash child that did not exit or made no progress in time); its 25 classes
+re-run together: 212, 2 failed; Linux Scenarios 624 — 7 failed, the four classes re-run one at a time: `DetachFlows`,
+`GoldenContractTests` (the golden that read `dead` for `live` under load is green, 7 of 7) and `ReadContractFlows` green, the
+two `StatusFlows` time budgets still over (4.1 s for 2 s, 5.6 s for 3 s); the extension 1251 — 84 failed, every one in a
+process-spawning file (`fakeWsl`, the flow scenarios, `runner`, `engineHost`, …), each of the twelve files green alone; lint,
+format, plan-lifecycle and the rules check clean. Left red under this load, all time limits: the Windows
+`StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget…` (4–10 s for 3 s; it was green on `0d9be6a3`), the
+Linux `StatusFlows` budgets, and `FetchWindowsDaemonFlows.A_download_that_hangs_is_ended_at_its_attempt_limit…` (a 2 s attempt
+limit, untouched here). CI is the authority for these.
+
+**Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
+that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.
+
+## E15.S1b design — the MSI pwsh for the root interop scripts (2026-10-11, branch `feat/wc-e15s1b-msi-pwsh`)
+
+**Decided (Q3, the coordinator, 2026-10-11).** The daemon's interop scripts use the MSI `pwsh` 7 when it is present and
+verified, otherwise Windows PowerShell 5.1. They never use the Store package or the alias. The rules are those of
+`src_vs_code/src/powershell/elevatedEngine.ts`:
+- Program Files is the known-folder path, refused when the environment's `ProgramFiles` names another folder.
+- The file is real, with no link type.
+- `Get-AuthenticodeSignature` reads Valid from `CN=Microsoft Corporation`.
+- The module path is pinned first (shipped in #112).
+
+**Measured first (2026-10-11, read-only):**
+- **No MSI `pwsh` on the owner's machine.** `[Environment]::GetFolderPath('ProgramFiles')` = `$env:ProgramFiles` =
+  `C:\Program Files`, and `C:\Program Files\PowerShell\7\pwsh.exe` is absent. The owner of `C:\Program Files` is
+  `NT SERVICE\TrustedInstaller`. So on this machine the story ships the verification, the fallback and the refusal tests;
+  pwsh's own timing is measured on the first machine that has the MSI build.
+- **The 9p system drive shows every folder below `/mnt/c` with the distro user's uid and mode 555.** That includes
+  `Windows/System32/WindowsPowerShell/v1.0` and `Program Files`. The resolver checks root ownership only ABOVE the mount point
+  (`SystemDriveFiles.MountPointRefusal`). Below it, it checks: no link, the same device, a regular file, an execute bit, the `MZ`
+  header. So `Program Files/PowerShell/7` rests on the same basis as System32 does today: Windows lets only administrators
+  (TrustedInstaller) change it.
+
+**1. The verifier is the clock probe.** It stays on Windows PowerShell 5.1, the trusted System32 path. It already runs first in
+every full run, and the latency it measures is calibrated for 5.1.
+- AFTER its two instants and the Windows Time lines (so the latency is unchanged), it prints tagged lines:
+  - `pwsh.knownFolder=` — `[Environment]::GetFolderPath('ProgramFiles')`
+  - `pwsh.envProgramFiles=` — `$env:ProgramFiles`
+  - `pwsh.msi=` — `absent`, `link`, `empty`, or `file`
+  - `pwsh.signature=` — `signed`, or `unsigned:<status>|<subject>`
+- `Get-AuthenticodeSignature` comes from the pinned module path.
+- No new process: there is no third PowerShell start per full run.
+
+**2. The judgement is PURE** (`Health/PwshEngine.cs`): `Engine Choose(clockLines)` returns `msi` with the absolute WSL path, or
+`windowsPowerShell` with a reason.
+- `msi` only when all of these hold:
+  - the known folder is EXACTLY `C:\Program Files` (the daemon maps only that folder, on the assumed system drive, to
+    `<mount>/Program Files`);
+  - the environment's `ProgramFiles` equals it (case-insensitive);
+  - the file is real (`file`);
+  - the signature is `signed`.
+- A clock probe that failed or was cut gives `windowsPowerShell`, with the reason "the clock probe did not verify pwsh".
+- The run detail's `health.windowsDisk.engine` says `{program, reason}`.
+
+**3. The resolver and the closed set.**
+- `WindowsSystemDrive.Programs` gains ONE entry: `pwsh.exe` → `Program Files/PowerShell/7`. It is checked by the same
+  `SystemDriveFiles.Problem` checks.
+- The never-list's closed set admits `pwsh.exe` ONLY with the Windows disk script's exact arguments — the same list as
+  `WindowsDiskCommands.WindowsDisk.Arguments` (`-NoProfile`, `-NonInteractive`, `-Command`, the script under the configuration
+  in force), built from that one source. It never admits pwsh with the clock probe, and never with a third script. E15.S10 adds
+  its own script when it is built; it is out of this story (plan round).
+- The disk script runs under the chosen engine. The clock probe always runs under 5.1.
+
+**Tests, RED first:**
+- Each of these gives 5.1, with a reason:
+  - a spoofed environment `ProgramFiles` (`D:\Evil`) while the known folder is `C:\Program Files`;
+  - a known folder that is not `C:\Program Files`;
+  - `absent`, `link` or `empty`;
+  - `unsigned:NotSigned`, `unsigned:HashMismatch`, and a Valid signature from another publisher;
+  - a failed clock probe.
+- Everything verified gives pwsh at `<mount>/Program Files/PowerShell/7/pwsh.exe`.
+- Never the Store path or the alias.
+- The never-list refuses pwsh with the clock script and pwsh with a one-word variant of the disk script, and admits pwsh with
+  the exact disk script.
+- The clock probe's latency lines come before the new tags.
+- The scenario's fake PowerShell answers both engines.
+
+- **The real script under the real MSI pwsh** (plan round): a Windows test runs the ACTUAL disk script with
+  `%ProgramFiles%PowerShellpwsh.exe` and parses it with `WindowsDiskParsers`. The answer must end with `end=1`, have no
+  malformed line, and read every section (a section that refers to WSL, such as the Lxss map, may say why on a machine without
+  WSL). It SKIPS when the MSI build is absent — as on the owner's machine — and it RUNS on the CI's `windows-latest`, which ships
+  PowerShell 7 at that path. This is the evidence that the selection is safe to ship.
+
+Break-its on the judgement and on the closed set. Docs: module_daemon (the engine), README, module_tests, the as-built section.
+
+### E15.S1b stories (the split, 2026-10-12 — decided by a Fable model, as the gate operator asked)
+
+Five stories, built in this order on the one branch, one commit each, no gate between them. Each is complete on its own:
+after S1 the probe prints facts nobody reads yet; after S2 the judgement exists and is tested but nothing runs under it;
+after S3 the policy admits the run that S4 then makes; S5 records it. Measured before the split (2026-10-12, the Store
+`pwsh` 7.6.6 on the owner's machine, read-only): with the module path pinned to `$PSHOME\Modules`, `pwsh` 7 finds NO
+`Get-Volume`, `Get-Partition`, `Get-PhysicalDisk` or `Get-StorageReliabilityCounter` — the Storage module is not in pwsh's
+own `Modules` folder — while `Get-WinEvent`, `Get-CimInstance` and `Get-AuthenticodeSignature` are there. After
+`Import-Module` of `[Environment]::SystemDirectory\WindowsPowerShell\v1.0\Modules\Storage` (the extension's own G6 road for
+`PnpDevice`) all four answer. So the disk script must import Storage by that absolute path, or the real-pwsh test of S3
+fails on CI. That is S3's work, not a new story.
+
+1. **S1 — The clock probe verifies the MSI pwsh; the parser reads its tags.**
+   *What:* `HealthCommands.ClockScript` prints, AFTER the two instants and the w32time lines, `pwsh.knownFolder=`,
+   `pwsh.envProgramFiles=`, `pwsh.msi=` (`absent` | `link` | `empty` | `file`) and `pwsh.signature=` (`signed` |
+   `unsigned:<status>|<subject>`), by `elevatedEngine.ts`'s rules, inside its own `try { } catch { }` so a fault there
+   leaves the tags empty and never ends the probe. `HealthParsers.WindowsClock` treats the new tags as TAGGED (never a
+   position); `ClockParsers.PwshProbe` reads them into `PwshProbe`; `WindowsClockAnswer.Pwsh` and `WindowsClockSample.Pwsh`
+   carry it (not written to the history line).
+   *Files:* `Health/HealthCommands.cs`, `Health/HealthParsers.cs`, `Health/ClockParsers.cs`, `Health/PwshProbe.cs` (new),
+   `Records/SlowParts.cs`; a live capture under 5.1, anonymised: `tests/fixtures/health/pwsh-engine-2026-10-12/`,
+   `TestSupport/PwshEngineFixture.cs`.
+   *Tests:* `Health/PwshProbeTests` (new): the capture reads `absent` with both folders `C:\Program Files`; the 2026-10-08
+   answer (before the tags) says no pwsh line; an empty value is an empty value; the tags never shift the three positional
+   lines; in the script both instants and the service query come BEFORE the pwsh look, and the look sits in `try { } catch`;
+   `ClockGuardTests`, `HealthTests`, `InteropModulePathTests` stay green; the probe run live under 5.1 (read-only).
+2. **S2 — The judgement is pure; `pwsh.exe` joins the resolver's closed list.**
+   *What:* `Health/PwshEngine.cs`: `InteropEngine(Kind, Program, Reason)`; `PwshEngine.Choose(sample, automountRoot)` answers
+   `msi` with `<automountRoot>c/Program Files/PowerShell/7/pwsh.exe` ONLY when the known folder is exactly `C:\Program Files`,
+   the environment's `ProgramFiles` equals it (case-insensitive), `pwsh.msi` is `file` and `pwsh.signature` is `signed`;
+   else `windowsPowerShell` (`powershell.exe`) with the reason; an unmeasured probe or one without the tags: "the clock probe
+   did not verify pwsh: …". `HealthCommands.Pwsh = "pwsh.exe"`; `WindowsSystemDrive.Programs` gains `pwsh.exe` →
+   `Program Files/PowerShell/7`.
+   *Files:* `Health/PwshEngine.cs` (new), `Health/HealthCommands.cs`, `Processes/WindowsSystemDrive.cs`.
+   *Tests:* `Health/PwshEngineTests` (new): the spoofed environment, another known folder, `absent` / `link` / `empty`,
+   `unsigned:NotSigned`, `unsigned:HashMismatch`, a Valid signature of another publisher, a failed probe, a probe without
+   the tags — each 5.1 with its reason; everything verified → the path, under `/mnt/` and under another automount root; never
+   a `WindowsApps` path. `SystemDriveResolverTests`: `pwsh.exe` under the service's PATH resolves in its folder on the drive and
+   is refused by the same checks.
+3. **S3 — The closed set admits pwsh with the disk script alone; the script runs under pwsh 7.**
+   *What:* `WindowsDiskCommands.WindowsDiskUnderPwsh` — `WindowsDisk` with `Executable = HealthCommands.Pwsh`, its own name
+   and summary, the SAME `Arguments` instance (one source); `HealthCommands.FixedScripts` = the clock probe, the disk script,
+   the disk script under pwsh; the read template `ReadCommandTemplates.WindowsDiskUnderPwsh`; the never-list's words; the
+   disk script's prelude imports Storage by its absolute System32 path right after the pin (measured above; the same module
+   under 5.1).
+   *Files:* `Health/WindowsDiskCommands.cs`, `Health/HealthCommands.cs`, `Processes/Policy/ReadCommandTemplates.cs`,
+   `Processes/Policy/NeverList.cs`.
+   *Tests:* `PowerShellClosedSetTests`: the set is three and names its programs; `pwsh.exe` passes with the disk script's exact
+   arguments and the policy allows it; `pwsh.exe` with the clock arguments, with a one-word variant, with another
+   configuration's script, `pwsh` without `.exe` and an absolute `pwsh.exe` are refused; `InteropModulePathTests` covers the
+   third member; `WindowsDiskTests`: the Storage import follows the pin and names `SystemDirectory`;
+   `Health/RealPwshDiskScriptTests` (new, Windows only): the ACTUAL script under `C:\Program Files\PowerShell\7\pwsh.exe` —
+   skipped without it (the owner's machine), run on CI's `windows-latest` — ends with `end=1`, 0 malformed lines, the
+   volumes with `C:`, the physical disks, the events, the identity; Lxss may say why. The script run live under the Store
+   `pwsh` 7 and under 5.1 on the owner's machine (read-only) as the local evidence.
+4. **S4 — The full run starts the disk script under the chosen engine; the detail names it.**
+   *What:* `HealthCollector.CollectAsync` chooses the engine from the clock sample and the automount root, after the clock
+   probe and its reference as before; `MeasureWindowsDiskAsync(runner, clock, engine, token)` runs
+   `WindowsDiskCommands.Under(engine)`; `WindowsDiskSample.Engine` (a `Reading`); the run detail's
+   `health.windowsDisk.engine {program, reason}` (absent on the Windows binary and on older details); the scenario harness
+   installs a fake `pwsh` too.
+   *Files:* `Health/HealthCollector.cs`, `Health/WindowsDiskSample.cs`, `Health/WindowsDiskCommands.cs`,
+   `Collect/WindowsDiskReport.cs`, `tests/WslCare.FakeTool/FakeToolProtocol.cs`, `Scenarios/CollectFlows.cs`,
+   `Scenarios/WindowsDiskFlows.cs`.
+   *Tests:* `HealthTests`: a verified probe answer starts `pwsh.exe` with the disk arguments and the sample's engine names the
+   path; the capture (`absent`) starts `powershell.exe` with the reason; a failed probe → 5.1 "did not verify"; the disk
+   script still runs after the clock probe. `WindowsDiskTests`: the report carries `engine`; no Health type on the wire.
+   `WindowsDiskFlows` (the built CLI): a probe answer derived from the capture with the four tags verified makes `collect`
+   start the fake `pwsh` once with the disk arguments, never the fake `powershell` for it, and the detail says
+   `/mnt/c/Program Files/PowerShell/7/pwsh.exe`; the captured flow keeps `powershell`; `status` starts neither. The goldens
+   re-checked on Linux.
+5. **S5 — The record.**
+   *What:* module_daemon (the engine choice, the closed set of three, the Storage import), README (which PowerShell the
+   daemon uses), module_tests (E15.S1b: the checks, the RED messages, the break-its), *E15.S1b as built* and the status line.
+   *Files:* `research/module_daemon.md`, `README.md`, `research/module_tests.md`, `todo/PLAN_disk_health.md`.
+   *Tests:* `plan-lifecycle.mjs`; every suite green; `dotnet format --verify-no-changes`.
+
+## E15.S1b as built (2026-10-12, branch `feat/wc-e15s1b-msi-pwsh`)
+
+**Models.** S1 and S2: Fable. The split into five stories: Fable. S3, S4, S5 and the fixed-folder rule: Opus.
+
+**What shipped.**
+- **S1 — the probe.** The clock probe (Windows PowerShell 5.1) looks at `<known folder>\PowerShell\7\pwsh.exe` AFTER its two
+  instants and the Windows Time lines, inside its own `try`, and prints `pwsh.knownFolder=`, `pwsh.envProgramFiles=`,
+  `pwsh.msi=` (`absent` | `link` | `directory` | `empty` | `file`) and `pwsh.signature=` (`signed` | `unsigned:<status>|<subject>`).
+  The parser reads them by tag into `PwshProbe`; `WindowsClockSample.Pwsh` carries it (not written to the history line).
+  Fixture: `tests/fixtures/health/pwsh-engine-2026-10-12` (5.1, the owner's machine, `absent`).
+- **S2 — the judgement.** `PwshEngine.Choose(sample, automountRoot)` is pure: the MSI pwsh only when the known folder is
+  exactly `C:\Program Files`, the environment agrees (case-insensitive), the item is a `file` and it is `signed`; else
+  `powershell.exe` with the reason. `WindowsSystemDrive.Programs` gains `pwsh.exe` → `Program Files/PowerShell/7`.
+- **S3 — the closed set and the script.** `WindowsDiskCommands.WindowsDiskUnderPwsh` is `WindowsDisk` with only the program
+  (the bare `pwsh.exe`), the name (`pwsh-windows-disk`) and the summary changed — one `Arguments` list.
+  `HealthCommands.FixedScripts` is three: the clock probe (5.1 only), the disk script under 5.1, the disk script under pwsh.
+  `ReadCommandTemplates.WindowsDiskUnderPwsh` is the same words and slot under `pwsh.exe`. The never-list's words name the
+  pwsh member. The script imports Storage by its absolute System32 path right after the pin.
+  `RealPwshDiskScriptTests` runs the actual script under `%ProgramFiles%\PowerShell\7\pwsh.exe` (Windows; it skips without
+  the MSI build).
+- **S4 — the run.** `HealthCollector.CollectAsync` chooses the engine after the clock probe and its reference (the MSI file
+  under the automount root of `/etc/wsl.conf`) and runs `WindowsDiskCommands.Under(engine)`. `WindowsDiskSample.Engine` (a
+  `Reading`, kept when the script fails) becomes the run detail's `health.windowsDisk.engine {program, reason}`
+  (`InteropEngineReport`) — absent on the Windows binary and on an older detail. The scenario harness installs a fake
+  `pwsh` (`pwsh.exe` on Linux).
+- **S5 — the record.** module_daemon (the engine choice, the closed set of three, the Storage import), README (which
+  PowerShell the daemon uses), module_tests (the E15.S1b row and the flow row), this section, the status line and the
+  `todo/README.md` row.
+
+**Measured (2026-10-12, the owner's machine, read-only, unelevated).**
+- The disk script WITHOUT the Storage import under the Store pwsh 7.6.6 (`pwsh.exe -NoProfile -NonInteractive -Command`):
+  `volumes.error=CommandNotFoundException`, `disks.error=CommandNotFoundException`,
+  `reliability.refused=CommandNotFoundException`, `end=1`.
+- WITH the import: 4 volumes, 2 disks, `reliability.refused=CimException` (unelevated, as under 5.1), `end=1`, 27 lines,
+  exit 0, under the Store pwsh in 9.2–15.7 s and under 5.1 in 6.2–7.4 s (two runs each; the machine was loaded). Under
+  pwsh, `Import-Module` writes two non-terminating errors to stderr — the nested modules `StorageHealth.cdxml` and
+  `StorageSubSystem.cdxml` are not found with the module path pinned. The cmdlets the script uses all answer, and the
+  daemon reads stderr only for a non-zero exit.
+- The script without the import under 5.1 answers in full (the pinned path already names Storage there).
+
+**Tests.** RED messages and break-its are in [module_tests.md](../research/module_tests.md) *E15.S1b*. Totals after S4:
+Windows Core 2670 (0 failed, 82 skipped), Cli 391 (0 failed, 2 skipped), Scenarios 598 (0 failed, 284 skipped — the Linux
+legs). Linux (WSL `Ubuntu`, the copy `/tmp/wc-e15s1b-linux-20261012T104403Z`): Core 2670 (0 failed, 27 skipped), Cli 391
+(0 failed, 12 skipped), Scenarios 598 (2 failed, 5 skipped). The two failures were `FixturePrivacyTests`: the script set
+`HOME` to a folder named `home`, and the test takes HOME's last segment as this machine's user name, which many tracked
+files contain. Rerun with a neutral `HOME`: 57 of 57 green, and `WindowsDiskFlows` 3 of 3. No golden changed: no golden
+holds the Windows disk section's engine.
+Totals after the fixed-folder rule and the rebase onto main (2026-10-12): Windows Core 2685 (0 failed, 87 skipped), Cli 391
+(0 failed, 2 skipped), Scenarios 610 (0 failed, 284 skipped). Linux (a new copy, `/tmp/wc-e15s1b-linux-20261012T184232Z`; the
+first folder was gone after WSL restarted with the session): Core 2685 (0 failed, 27 skipped), Cli 391 (0 failed, 12 skipped),
+Scenarios 610 (2 failed, 5 skipped). The two failures are `StatusFlows` time budgets on the loaded machine (3.40 s against
+3 s; 2.004 s against 2 s) — `status` starts no PowerShell and this story does not touch it; CI is the authority for them.
+`WindowsDiskFlows` 3 of 3 green there.
+
+**Deviations.**
+1. **The Storage import joins with `[IO.Path]::Combine`, not `Join-Path`.** The split named the extension's G6 road, which
+   uses `Join-Path`. An existing test of the disk script forbids `Join-Path` (it resolves the drive and throws on an
+   unmounted letter — the E15.S1 code round), so the import uses the script's own rule. The path is the same:
+   `[Environment]::SystemDirectory` + `WindowsPowerShell\v1.0\Modules\Storage`.
+2. **A failed Storage import has no line of its own.** The import sits in `try { … } catch { }`. Each Storage section then
+   fails inside its own `try` and prints its own error line (`volumes.error=CommandNotFoundException`), so the other
+   sections still answer. A new `storage.error=` tag would have changed the parser and the wire; the sections' own lines
+   already say what failed.
+3. **The real-pwsh test's ceiling is 120 s** (a cold pwsh on a CI runner), not the product's 30 s. The first build started the
+   file through `Process`; since the code round it runs through the product's runner and policy (item 4 below).
+4. **`WindowsDiskCommands.Under(engine)`** is the one place that maps an engine to a command (the split named it in S4's
+   *What*; it is a pure static function).
+5. **The fixed-folder rule (the coordinator, after S4).** The first build left "PATH still wins for `pwsh.exe`" open. It is
+   closed in this story, in the smallest sound shape: the RESOLVER never takes `pwsh.exe` from PATH, with or without a PATH
+   entry (`WindowsSystemDrive.FixedFolderOnly`, `ExecutableResolver.OnPath`); it finds it ONLY in `Program Files/PowerShell/7`
+   on the mounted system drive, through the same mount, interop, ancestor and file checks as `powershell.exe`'s fallback. On
+   the Windows binary a `pwsh.exe` lookup answers "never from PATH" too. The argv still names the BARE `pwsh.exe` (the
+   coordinator's point 2 asked for the absolute engine path in the argv): an absolute path passes the resolver unchanged,
+   WITHOUT the system drive's checks (no link, the drive's device, a regular file, `MZ`), so naming it would have traded those
+   checks away. The file started is `<the drive's mount point>/Program Files/PowerShell/7/pwsh.exe`, and since the code round the
+   detail names exactly that file (the runner's `StartedFrom`). The scenario seam:
+   `SystemDriveLookup.ForThisProcess` gives `SystemDriveLookup.Sandboxed` (`<sandbox>/mnt/c`, a regular file, no link) only to
+   a process inside `WSL_CARE_ROOT` that is NOT really privileged; a real root process always asks this machine.
+   RED first: on Linux 5 of 7 `PwshFixedFolderTests` (*Expected type to be …NotFound because the resolver answered Found {
+   Path = /tmp/…/windowsapps/pwsh.exe, OnTheSystemDrive = False }*; *Expected resolved to be …Found { Path = /mnt/c/Program
+   Files/PowerShell/7/pwsh.exe, OnTheSystemDrive = True }*; the sandbox theory *… to be True … but found False*) and the
+   scenario (*Expected Path.GetFullPath(home.Calls.Single(IsDiskScriptUnderPwsh).Location) … to be the same string because the
+   fixed-folder file answered, never the pwsh.exe on PATH, but they differ at index 82* — the PATH decoy answered); on Windows
+   2 of 3 that run there. Break-its (product code, each restored): `pwsh.exe` taken from PATH again → 5 red on Linux (and the
+   scenario red), 1 on Windows; the sandbox granted to a privileged process too → the theory's privileged case red; the
+   sandbox's link check removed → *In_the_sandbox_a_link_in_the_fixed_folder_is_not_started* red (a guard written after the
+   fix, proved by this break-it).
+
+**Closed.**
+- **"PATH still wins for `pwsh.exe`"** — the first build's open point — is closed by deviation 5: `pwsh.exe` comes from its
+  fixed folder only, never from PATH.
+
+**The code round (coai `proceed`, and the coordinator's own Opus review, 2026-10-12).** Each fix red first, each with a
+break-it on product code:
+1. **Forged pwsh tags (security).** The probe printed environment values raw: `$env:USERPROFILE` (the third positional line,
+   before every tag) and `$env:ProgramFiles`, and also the folder, the item and the signer. A value with a line feed and
+   `pwsh.msi=file` / `pwsh.signature=signed` put forged tags BEFORE the real ones, and the parser took the first: msi with no
+   verification. Fixed in both halves: the script prints every value with `-replace '[\x00-\x1f]','?'` (the profile, the
+   two Windows Time words, the four pwsh values; the probe stays ASCII), and the parser reads NO pwsh line when any pwsh tag
+   appears more than once (`ClockParsers.RepeatedPwshLine`), so 5.1 runs. RED: *Expected probe.Pwsh.ReasonOrEmpty "" to contain
+   "more than once"* (through the ProgramFiles line and through the profile line); the script test red on the missing
+   `-replace`. Live under 5.1 (read-only, a child process): a forged `USERPROFILE` printed as one line,
+   `C:\Users\x?pwsh.knownFolder=…`; a forged `ProgramFiles` never reached the child (Windows sets it per process bitness).
+   Break-its: the repeated-tag check removed → 2 red; the cleaning disabled → the script test red.
+2. **A verified MSI pwsh that cannot be started.** With the fixed-folder rule a refused or slow system-drive lookup lost the
+   whole disk section where 5.1 used to work. Now a `FailedToStart` under the MSI pwsh runs the 5.1 script ONCE and the
+   engine says why (`PwshEngine.NotStartable`, quoting the runner's reason). A timeout or an exit code under pwsh is not
+   retried (it would double the ceiling), and 5.1 has nothing to fall back to. RED: *Expected argv.Count(…WindowsDisk.Argv)
+   to be 1 because 5.1 runs once instead, but found 0*. Break-it: the fallback keyed to the wrong engine → 2 red.
+3. **One source for the program.** `InteropEngine(Kind, Reason)` derives its program from the kind, so the two cannot
+   disagree; `Choose` no longer takes the automount root. The detail's program is the file the RUNNER started
+   (`CommandOutcome.StartedFrom` → `WindowsDiskSample.StartedFrom`), as the drive's mount names it — not a path built from
+   `/etc/wsl.conf`; the bare program when nothing was started from the drive. RED: *Expected health.WindowsDisk.StartedFrom to
+   be "/mnt/x/Program Files/PowerShell/7/pwsh.exe" … but "" has a length of 0*; *Expected WindowsDiskReports.From(read).Engine
+   to be …InteropEngineReport*. Break-it: the report ignoring the started file → 1 red. The scenario now expects the sandbox's
+   fixed-folder file.
+4. **One shared process launcher.** `RealPwshDiskScriptTests` now runs through the product's `ProcessCommandRunner` and
+   `CommandPolicy.Product`; only the lookup is the test's (`WithResolverForItsOwnTests`, the existing internal seam), and
+   only the ceiling (120 s). The product is not weakened. Dev check (not committed): pointed at the Store alias it passed
+   (1 of 1) through the policy and the runner.
+5. **Cheaper fixes.** A quoted probe value is cut to `records.maxReasonChars` (`ClockParsers.Cut`, now internal; RED *found
+   5113*; break-it → red). The clock lines are written and flushed BEFORE the look, and a probe that times out during the
+   look still gives the clock from its whole flushed lines with the pwsh look unread (`HealthCollector.PwshLookTimedOut`;
+   RED *Expected sample.Measured to be True … but found False* and the flush-order test; break-its: the timed-out answer not
+   read → red; the first flush removed → red). `FixedFolderOnly` compares without case (the 9p share is case-insensitive;
+   the test was written after the fix and proved by revert on Linux). Stale doc comments fixed (`HealthCommands.Pwsh`;
+   `ModulePathPin` and `ClockScript` each have their own summary). The tautological "never the Store package" test is
+   replaced by one the code could fail: the msi program is in `FixedFolderOnly` and the 5.1 one is not.
+
+Totals after the code round: Windows Core 2766 (0 failed, 89 skipped), Cli 409 (0 failed, 2 skipped), Scenarios 614 (0
+failed, 285 skipped); Linux (`/tmp/wc-e15s1b-linux-20261012T184232Z`, refreshed) Core 2766 (0 failed, 39 skipped), Cli 409
+(0 failed, 18 skipped), Scenarios 614 (0 failed, 7 skipped). `dotnet format --verify-no-changes` and plan-lifecycle clean.
+After the rebase onto main `fce407f8` (2026-10-14): Windows Core 2812 (0 failed, 89 skipped), Cli 423 (0 failed, 2 skipped),
+Scenarios 622 (0 failed, 287 skipped); Linux (`/tmp/testsToDelete-wc-e15s1b-20261014T192847Z`) Core 2812 (0 failed, 69
+skipped), Cli 423 (0 failed, 29 skipped), Scenarios 622 (0 failed, 8 skipped).
+
+**The final code round (coai `proceed`, 2026-10-14).** Four findings accepted, each red first (or a guard where no red was
+possible), each with a break-it on product code:
+- **Finding 4, the fallback command.** `RunDiskAsync` ran `WindowsDiskCommands.WindowsDisk` on fallback while the answer was
+  read with `Under(used)`. They were equal only because `NotStartable` returns the 5.1 kind. Now the fallback command is
+  `Under(the fallback engine)`, one expression for what runs and what is read. No red was possible; a guard asserts that the
+  command run on fallback equals `Under(the engine kept)`. Break-it: the fallback run under the msi engine → 2 red.
+- **Finding 7, a fallback that fails too.** The engine said "Windows PowerShell 5.1 ran instead" even when 5.1 could not be
+  started. It now says "was tried instead", and the sample's own reason names the 5.1 failure. RED: *Did not expect
+  engine.Reason "… Windows PowerShell 5.1 ran instead" to contain "ran instead" because 5.1 did not run*. Break-it: the
+  wording restored → red.
+- **Finding 8, a live clock-probe test.** `RealClockProbeTests` (Windows only) runs the ACTUAL clock probe under the real
+  `powershell.exe` through the product's runner and policy, read-only, with a 60 s ceiling: exit 0, the clock measured,
+  each pwsh tag exactly once. It ran on the owner's machine. Its red is a break-it: a paren removed from the probe →
+  *Expected exited.ExitCode to be 0 because At line:1 char:468 Missing closing ')' in expression*.
+- **Finding 11, the known folder's case.** `FolderProblem` compares without case, as Windows compares folder names. RED:
+  *Expected PwshEngine.Choose(Sample(@"c:\program files", …)).Kind to be InteropEngineKind.Msi … but found
+  InteropEngineKind.WindowsPowerShell*. Break-it: ordinal again → red. (The S2 break-it "the known folder compared without
+  case" is reversed by this finding: a trailing separator is still another spelling and is refused.)
+
+Rejected in the round, with the reasons recorded in coai (no work): the C: assumption, the silent catch on the Storage
+import, progress output, the `WSL_CARE_ROOT` seam, `IsPrivilegedProcess`, caching Authenticode.
+
+**The security review of the tag-injection fix (Fable, 2026-10-15).** Two real defects and three extras, each red first, each
+with a break-it on product code:
+- **S1, the parser refused duplicates but not shape.** The real probe prints the pwsh block LAST, in a second write after
+  both Windows Time lines. A Windows user can end the probe (their own process) with exit 0 after the first flush; with a
+  line break smuggled into the profile, a forged block BEFORE the Windows Time lines had each tag once and gave msi. Now the
+  pwsh block is read ONLY as the trailing block — the last four non-empty lines, in the script's order, with both Windows
+  Time lines before it (`ClockParsers.NotTheTrailingPwshBlock`); the duplicate rule stays. RED, the exact forged input:
+  *Expected answer.Pwsh.IsAvailable to be False because the real probe prints the pwsh block last, after both Windows Time
+  lines, but found True*. Break-it: the "after both Windows Time lines" condition removed → at first NO test went red (the
+  order rule alone already refused every case written); two cases were added (a trailing block with no Windows Time line,
+  and with only one), and the break-it then went red.
+- **S2, best-fit console encoding defeated the sanitiser.** Measured on the owner's machine (read-only, `powershell.exe` 5.1,
+  stdout redirected to a file):
+  - inheriting this session's console: `utf-8`, code page 65001, `System.Text.EncoderReplacementFallback`; U+25D9, U+266A,
+    U+263A, U+0444 → their UTF-8 bytes (`E2 97 99`, `E2 99 AA`, `E2 98 BA`, `D1 84`);
+  - in a FRESH hidden console (what a launch without an inherited UTF-8 console gets; the machine's OEMCP is 437, ACP 1252):
+    `IBM437`, code page 437, **`System.Text.InternalEncoderBestFitFallback`**; U+25D9 → **`0A`** (a real line feed),
+    U+266A → **`0D`**, U+263A → **`01`**, U+0444 → `3F` (`?`).
+  So `-replace '[\x00-\x1f]','?'` ran on the UTF-16 string and the encoder re-created a line break after it. Fixed: the probe
+  prints by the disk script's ONE road — `HealthCommands.Utf8WriteStart` + text + `Utf8WriteEnd`
+  (`[Text.Encoding]::UTF8.GetBytes(…)` written to `[Console]::OpenStandardOutput()` and flushed), twice (the clock lines, then
+  after the look the pwsh lines), with `[char]10` line breaks and no double quote; the disk script's own print now uses the
+  same two constants. UTF-8 has no best fit, and the daemon decodes UTF-8, so a non-ASCII profile also arrives intact (it was
+  `?` before). RED: the script-shape test (*Did not expect clock … to contain "[Console]::Out"*) and, Windows only, the live
+  `RealClockProbeTests.A_hostile_profile_comes_back_as_one_line_and_forges_no_tag` — a profile `C:\Users\Фёдор◙pwsh.msi=file`
+  in a fresh hidden console came back as `C:\Users\?????` and a SECOND line `pwsh.msi=file`. That test starts the probe's own
+  arguments through `Process`, because the hostile value must reach the child through its environment and the shared runner
+  has no environment seam (adding one for a test would widen the product's launcher). Break-it: the encoding set to the ANSI
+  code page (`[Text.Encoding]::Default`, best fit) → the live test red (*C:\Users\??????pwsh.msi=file*).
+- **Extra a.** A kill in the middle of the second write left a partial line, and a timed-out answer that did not end in a line
+  feed lost the whole clock reading. The partial tail is now dropped (`HealthCollector.WholeLines`) and the clock is read; the
+  pwsh look stays unread on a timeout. RED: *Expected sample.Measured to be True … but found False*. Break-it: the old
+  "ends in a line feed" rule back → red.
+- **Extra b.** `WindowsSystemDrive.Programs` compares without case, as `FixedFolderOnly` does: `Pwsh.exe` resolves in the same
+  fixed folder on the drive and never on PATH. RED: *Expected resolved to be …Found* (2 cases). Break-it: ordinal again → 2 red.
+- **Extra c.** The Open list and module_daemon say what the code guarantees, no more (below).
+
+Totals after the security review, rebased onto main `28ebdeed` (2026-10-15): Windows Core 2828 (0 failed, 89 skipped), Cli
+427 (0 failed, 2 skipped), Scenarios 625 (1 failed, 287 skipped: a `StatusFlows` time budget, 3.5 s against 3 s, with the
+Linux leg running beside it; alone 3.1 s). Linux (`/tmp/testsToDelete-wc-e15s1b-20261015T081613Z`) Core 2828 (0 failed, 77
+skipped), Cli 427 (0 failed, 33 skipped), Scenarios 625 (6 failed, 11 skipped) — rerun alone, `ReadContractFlows`,
+`DetachFlows`, `GoldenContractTests` and `WindowsDiskFlows` were green (40 run, 2 failed): only the two `StatusFlows` time
+budgets stay red on the loaded machine (4.9 s against 2 s, 6.3 s against 3 s). They time nothing this story touches; CI is
+the authority for them. `dotnet format --verify-no-changes` and plan-lifecycle clean.
+
+**The coai security round (`proceed`, 2026-10-15)**, two findings accepted: the live test reads the pwsh tags from the ONE list
+(`HealthCommands.PwshTags`, which the parser's trailing-block rule uses too), and the MSI path relative to Program Files has ONE
+definition (`HealthCommands.PwshMsiFolder`) that the probe's look, `PwshEngine.MsiFile` and the resolver's folder
+(`PwshEngine.MsiFolderOnTheDrive` in `WindowsSystemDrive.Programs`) are built from; the probe's text is unchanged, byte for
+byte. A guard test holds the three equal (no red was possible: they were equal literals). Break-its: one site given its own
+literal again → the guard red; the definition itself changed → the three still agree (they cannot diverge) and only the pins
+of the real folder went red. After the change: Windows Core 2829 (0 failed, 89 skipped), Cli 427 (0 failed, 2 skipped).
+
+**Open.**
+- **The real-pwsh evidence is CI's.** The owner's machine has no MSI build, so `RealPwshDiskScriptTests` skipped locally;
+  the first CI run on `windows-latest` is the evidence that the selection is safe to ship.
+- **pwsh is slower than 5.1 for this script on the owner's machine** (9–16 s against 6–7 s, the Store build, loaded
+  machine). Both are under the 30 s ceiling; the MSI build's own timing is measured on the first machine that has it.
+- **Windows on a drive other than C:** always gets Windows PowerShell 5.1: the daemon maps only `C:\Program Files` (a
+  documented assumption, the same as `WindowsSystemDrive.Drive`).
+- **The probe itself is the Windows user's (security review, extra c).** `powershell.exe` (the probe) is still PATH-first, and
+  interop runs it as the Windows user. Under a root collect launched from Windows (`wsl.exe -u root`, the Windows PATH
+  appended), that user can put their own `powershell.exe` first and forge the WHOLE verification — a well-shaped trailing
+  block, `pwsh.msi=file`, `pwsh.signature=signed`. Nothing in the parser can tell that apart. What bounds it is the
+  fixed-folder rule: the daemon still starts only `Program Files/PowerShell/7/pwsh.exe` from the mounted system drive
+  (administrator-only), or 5.1 — never a file the user chose. Under the timer (systemd's PATH) the probe is System32's.
+- **Residuals of the trust boundary (code round, recorded, not changed):** the signature rule trusts the user's own root
+  store (the folder is administrator-only, so a forged signature still needs an administrator to place the file); nothing ties
+  the started file to the verified one but its path (administrator-only, and the window is seconds); `powershell.exe` (the
+  probe) is still PATH-first; pwsh 7 reads the CurrentUser `powershell.config.json` and honours `DOTNET_STARTUP_HOOKS` /
+  `CORECLR_PROFILER` — the same trust boundary as the user's own session, since interop runs every Windows program as that user.
+
+## E15.S7 design — the redaction rule widened (2026-10-15, branch `feat/wc-e15s7-redaction`)
+
+**Goal.** One pure function in `WslCare.Core` judges every command line the product shows or stores, on both binaries
+(§3.1's spine: two binaries, ONE rule set). Today's rule (`Collectors/Procfs/ProcessFiles.cs:133-151`) redacts only
+`--name=value` and `--name value` where the name holds one of eight words (`:100`). Everything else is shown as it is, cut to
+200 characters (`:126-130`) — `research/module_tests.md:4489-4491` says so in the "what it does not prove" list. The owner saw a
+creds config key in the sidebar (#87, this plan §1, the last table row). This story closes that gap on the daemon's side, and
+puts `program` + `argumentsShown` on the wire so the extension's half (E18.W1b, `:375`) can hide command lines by default.
+Read-only; nothing is acted on; no wire field is removed.
+
+### 1. The threat model, and the inventory of every road (mapped 2026-10-15 on `a432e970`)
+
+**What leaks today.** Any secret that is not the value of a flag whose NAME holds a secret word. Measured shapes:
+
+| Shape | Example (invented values) | Today |
+|---|---|---|
+| a secret in a POSITIONAL argument | `creds config cfgk_7Q…` (the creds CLI takes its config key positionally — `dew_flow_creds_for_devs/src_vs_code/src/configSnippetBodies.ts:72-74`; the key is `cfgk_` + 43 base64url characters, `configKey.ts:46-54`) | shown whole |
+| `NAME=value` with a secret word, no leading `-` | `env GITHUB_TOKEN=ghp_… gh pr list`, `docker run -e AWS_SECRET_ACCESS_KEY=…` | shown: `IsSecretAssignment` needs `-` first (`ProcessFiles.cs:144`) |
+| a secret inside a structured positional | VS Code's `/TelemetrySession:{"CollectorApiKey":"…"}` — the fixture had to be redacted BY HAND (`src_daemon/tests/fixtures/procfs/ubuntu-2026-10-02/SOURCE.txt:24-27`) | shown whole |
+| a credential inside a URL | `DATABASE_URL=postgres://app:Pa55@db/x`, `git clone https://user:ghp_…@github.com/…` | shown whole |
+| a creds-shaped token after an innocent flag | `curl -H "Authorization: Bearer eyJ…"`, `gh api -H "Authorization: token ghp_…"` | shown whole |
+| an innocent name with a secret value | `-u user:pass` (`curl`), `sshpass -p …`, `mysql -pSecret` | shown whole |
+
+**The inventory — every road by which a process command line reaches stored or displayed output.** Every road starts at ONE
+place: `ProcessCollector.Entry` builds `ProcessEntry.CommandLine` from the raw argv through `CommandLineText.Shown`
+(`Collectors/ProcessCollector.cs:152`). There is no second redaction and no second display text.
+
+| # | Road | Where it is written / shown | Rule applied |
+|---|---|---|---|
+| R1 | `status --json` → `vm.processes.top[].commandLine` and `vm.processes.mntWalkers[].commandLine` | `Status/StatusReports.cs:84-96`, `Status/StatusReport.cs:155-171`; the extension's two process tables (`src_vs_code/src/panel/rowRenderers.ts:36-43`, rows `holders.processes` / `holders.mnt`, `fieldMap.ts:132`, `:135`); the human `status` text prints name, pid and GiB only (`Cli/Commands/StatusCommand.cs:242-245`) | `Shown` |
+| R2 | `status --json` → `mcpServers.instances[].owner.commandLine` (the agent session that owns an MCP server) | `Mcp/McpInstances.cs:65-68` copies `process.CommandLine`; `Mcp/McpSample.cs:33-34`; `Status/McpServersReport.cs:74-81`; every full run's embedded sample (`McpServersReport.cs:6-8`) | `Shown` (the same string) |
+| R3 | action previews and run details: A11's items carry `"<family>, <user>, N h old: <commandLine>"` as the item's note (`Actions/Suspects/SuspectTermination.cs:142-147`, `ActionItem` `Actions/ICleanupAction.cs:98`); A3's build-server list and the idle gate's "busy builds" reasons copy `p.CommandLine` (`Actions/BuildServers/BuildServerShutdown.cs:167`, `:182`; `Actions/Engine/IdleGate.cs:80`) | `act --preview --json`, the run detail `{state}/runs/<day>/<runId>.json` (`Records/RunDetailStore.cs:30-34` — a file other accounts can read, `ProcessFiles.cs:90-91`), `runs show`, `logs --detail`, the panel's modal | `Shown` (copied) |
+| R4 | the golden `contracts/golden/head/status.json` — 52 `commandLine` strings in a PUBLIC repository, regenerated from the captured fixture (`research/module_tests.md:888-925`) | git | `Shown` + the by-hand fixture redactions + `FixtureIdentity` |
+| R5 | the Windows binary: `Win32ProcessTable.CommandLine` reads ONE process's line through a query-only handle (`Mcp/Win32ProcessTable.cs:82-100`) | read ONLY by the archive's in-use check (`Archive/InUseWindows.cs:79-87`, `:121-129`), which matches `Contains(id)` and emits the FIXED sentence `Liveness.OnItsCommandLine(pid)` (`Archive/Liveness.cs:55-57`); the Windows MCP owners carry exe names only (`Mcp/WindowsMcpOwners.cs:80-82`, `Status/WindowsMcpServersReport.cs:106-108`); a table that reads nothing answers "reads no command line" (`Mcp/WindowsMcp.cs:24-26`) | none needed TODAY: no Windows command line is on any wire. **E15.S6's `status.cpuSessions[].commandShown` (`:338`) is the first one** — the Windows binary must then hold the same rule, which is why S7 comes before S6 in §5 (`:383`) |
+| R6 | the distro archive's in-use scan joins a Claude Code line RAW in memory (`Archive/InUse.cs:148-151`) | matched (`Naming`, `:119-120`), never written | not a leak; stays |
+| R7 | raw-argv consumers that are NOT display: families (`ProcessCollector.cs:153`, `Collectors/ProcessFamilies.cs:11-17`), `Programs` / `Script` (`:158-159`), `IsUnderMnt` (`:174-176`), interop relays (`Collectors/Procfs/InteropRelays.cs:53-54`, `:66`), the never-list over the daemon's OWN argv | in memory | must NOT change — the rule is for display text only |
+| R8 | consumers of the SHOWN line as matching input: `AgentOrphans.Script` takes the word after the program when it starts with `/` (`Actions/Suspects/AgentOrphans.cs:176-177`); `IdleGate.IsBuild` and `BuildServerShutdown.IsDotnetBuild` split it on spaces (`IdleGate.cs:83-85`, `BuildServerShutdown.cs:169-173`); `BrowserAndHttpCaches.cs:248` and `EditorServerCleanup.cs:161` ask `Contains(<distro or folder text>)` | in memory | the widened rule must keep paths and program words intact, or these regress — a RED test holds each |
+
+Not roads: `/proc/[pid]/environ` is never read; `docker inspect`'s template leaves a container's environment and command inside
+the docker CLI (`Docker/DockerCommands.cs:31-35`); the daemon's logs carry its OWN argv through `CommandLine.Printable`
+(`Cli/Program.cs:173`), never another process's.
+
+**The one false positive already in the golden**: `--max-thinking-tokens <redacted>` (`contracts/golden/head/status.json:278`,
+`:305`) — "token" inside a count flag. Kept: the rule is deny by default, and a number lost is cheaper than a token shown.
+
+### 2. The rule — ONE pure function, both binaries
+
+New unit `WslCare.Core/Processes/Redaction/` (three files, each under 400 lines; no package, no I/O, no configuration read
+inside — the limits arrive as arguments, as `HostRules` takes `EffectiveConfig`):
+
+- `CommandLineRedaction.cs` — `Redact(IReadOnlyList<string> argv, RedactionLimits limits) → IReadOnlyList<string>` and
+  `Shown(argv, limits) → string` (joined, cut on a rune boundary, see §3). `CommandLineText.Redact` / `.Shown`
+  (`ProcessFiles.cs:125-134`) become one-line delegations with the limits from `Tuning.Current`, so the existing tests and every
+  caller of R1–R3 change nothing. `RedactionLimits(int SecretMinChars, int MaxJudgedArgChars, int ShownChars)` is a record.
+- `SecretShapes.cs` — the closed lists and the entropy test (§2.3, §2.4), `[GeneratedRegex]` as `ProcessFamilies.cs:65-75` does,
+  every pattern anchored and without nested quantifiers; a match runs under the `patterns.matchTimeoutMilliseconds` ceiling the
+  way `TextRule.Matching` does (`Config/KeyRules.cs:39-42`).
+- `ShownArguments.cs` — `program` and `argumentsShown` (§2.5).
+- **The Windows entry point**: `Processes/WindowsCommandLine.Split(string line) → IReadOnlyList<string>` — the inverse of
+  `WindowsCommandLine.Of` (`Processes/WindowsCommandLine.cs:11-43`) with `CommandLineToArgvW`'s rules (a bare argv[0] up to the
+  first space or its closing quote; `2n` backslashes before a quote → `n` backslashes; `2n+1` → `n` and a literal quote; a quote
+  toggles the quoted state). A property test holds `Split(Of(exe, args)) == [exe, ..args]` — parsing semantics over argument sequences that `Of` produced,
+  never a byte identity over arbitrary raw lines — over a generated set (spaces, tabs, quotes, trailing backslashes, empty
+  arguments), plus explicit vectors for `CommandLineToArgvW`'s edge cases (a backslash run before a closing quote, `""` inside a
+  quoted run, a trailing backslash, an empty argument, a quoted argv[0] with a space) (plan round, finding 0).
+  **The Windows guarantee is stated, not assumed** (plan round, finding 4): the rule judges arguments as `CommandLineToArgvW`
+  splits them. A program that parses its raw line differently (`--auth:'secret value'`) can carry a value the split does not
+  isolate, so a raw-line BACKSTOP runs after the rule (judge's review, 2026-10-16 — the exact definition):
+  1. Find every match, in the RAW line, of a secret word (§2.2) followed directly by a separator: `:`, `=`, or one run of
+     whitespace.
+  2. Its VALUE SPAN starts after the separator. When the span's first character is a quote that `CommandLineToArgvW` does NOT
+     honour (`'` or a backtick), the span runs to the matching closing quote (or the end of the line when there is none);
+     otherwise it runs to the next whitespace that is outside a double-quoted run, exactly as `Split` would end the argument.
+  3. Split the span on whitespace into words, each with any surrounding `'`, `"` or backtick removed; empty words are dropped.
+  4. The backstop FIRES when any of those words EQUALS a whole argument of the redacted result (`Redact(Split(line))`), compared
+     as whole strings, ordinal — never a substring test. Then the whole shown line becomes `<redacted>`.
+  So `prog.exe --auth:'my secret value'` fires (the span is `'my secret value'`; `secret` and `value'`→`value` survive as whole
+  arguments — `value'` compared after the same quote strip on the argument side), while `claude.exe --resume=<guid> …
+  --max-thinking-tokens 0` does NOT (the span is `0`, which is no whole argument of the result: `<redacted>` took its place, and
+  the `0` inside the GUID is a substring, not an argument). RED tests: the non-`CommandLineToArgvW` quoting line; the GUID line
+  (a redacted value whose text also occurs inside a shown argument does not fire); `tool.exe --token abc --port 5` does not fire.
+  The Windows side then calls the SAME `CommandLineRedaction.Shown(Split(line))` and applies the backstop to its result.
+  E15.S6 is its first wire consumer; E9.S5's matcher (R5) keeps matching the raw line, it shows nothing.
+
+**2.1 Order of judgement, per argument** (`Judge(argument, previous)` — a `switch`, the first arm that fires decides; nothing is
+judged twice and a value is never partly redacted):
+
+1. `previous` is a secret FLAG (today's `IsSecretFlag`, `ProcessFiles.cs:147-148`, over the widened word list) → `<redacted>`.
+2. `previous` is a program-specific value flag (§2.3, the closed table) → `<redacted>`.
+3. The argument is `name=value` (with or without leading dashes; the name is the text before the first `=`, non-empty, of
+   `[A-Za-z0-9_.-]`, so `a==b` and `=x` are not assignments) → the name holds a secret word → `name=<redacted>`; else the VALUE is
+   judged by arms 4–8 as if it were a positional, and a value that fails gives `name=<redacted>` — never `name=abc<redacted>`.
+   *Amended 2026-10-18 (security review B):* a value that fails by arm 7 (a blob) gives the WHOLE argument `<redacted>`; the NAME is
+   judged too — a name that is creds-shaped or high-entropy (`<48 base64url>=1`) makes the whole argument `<redacted>`; an assignment
+   needs a NON-empty value (`<44 base64>=` and `<hex40>=` are tokens with padding, judged by arm 8, not assignments).
+4. A URL (`^[a-z][a-z0-9+.-]{1,15}://`) — judged FIRST among the shape arms (judge's review, 2026-10-16: the tests' and the
+   design's order disagreed; a URL is the one token whose credential can be cut out cleanly). Its userinfo, when present,
+   becomes `<redacted>` whole (`scheme://<redacted>@host/…` — the user name goes too); each query parameter whose name holds a
+   secret word, or is `sig`, `signature`, `key`, `code`, `auth`, `access_token` → `name=<redacted>`. Then the creds-shape test
+   (arm 5) runs over what REMAINS of the URL (scheme, host, port, path, the query's names and kept values): a hit there makes the
+   whole token `<redacted>` (a `ghp_…` in a path segment). Otherwise the rest of the URL is shown. (A URL is judged before the
+   path arm: it holds `/`.) So `https://alice:ghp_…@host/o/r` → `https://<redacted>@host/o/r`.
+   *Amended 2026-10-18 (security review D and coai code round 0):* after the userinfo and the secret parameters are cut (`pass` joins
+   the secret names; the fragment's `&` list is read like a query, so `#access_token=…` goes), EACH path segment and each KEPT query or
+   fragment value is judged by the creds shapes and the entropy test and a segment that fails is replaced ALONE —
+   `https://host/ghp_…/a.tgz` → `https://host/<redacted>/a.tgz`, a Slack or Discord webhook's last segment, a Telegram bot URL's
+   `bot<id>:<secret>` segment (a new creds family), `?t=<random>`. A creds shape still left in the host makes the whole token
+   `<redacted>`. A detector that runs out of time answers "unknown" and the argument is `<redacted>` (fail closed).
+5. A creds shape anywhere in the text (§2.3) → `<redacted>`.
+6. *(Amended 2026-10-18, security review C: this arm now comes AFTER arm 7 — a Windows `/password:value` and a script holding a
+   secret word look like paths; and, from 2026-10-19, a path of exactly ONE segment — `/x` or `./x` — whose segment is a creds shape
+   or high-entropy is a token with a slash in front and is `<redacted>`; `pass` joined the secret words as a BOUNDED word.)* A PATH →
+   shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
+   letters and digits of ANY script (`\p{L}`, `\p{N}`) plus space and `._~+@%:/\-()[],'&` (so `C:\Program Files (x86)\…`,
+   `/mnt/c/Users/Фёдор Иванов/…` and `D:\dev\a&b` are paths; `/TelemetrySession:{"CollectorApiKey":…}` is NOT — it holds `{`
+   and `"`) (plan round, finding 2; a RED case for each of the three paths). Paths carry
+   programs, scripts and folders the view needs (R8); a secret used as a file NAME is a residual (§9).
+7. A secret WORD followed by a separator (`[:="']`) inside a positional (`CollectorApiKey":"…`, `Authorization: Bearer …`,
+   `Server=…;Password=…` reached through arm 3) → `<redacted>` whole; the extent of a value inside a blob cannot be delimited,
+   so the blob goes. *Amended 2026-10-18 (security review E, C):* the separator also covers WHITESPACE followed by a non-space
+   (`sh -c "tool --password Hunter2 …"`), `sshpass` is a secret word (`bash -lc "sshpass -p x ssh host"`), and the arm runs BEFORE
+   arm 6. The cost: a free-text prompt holding a secret word (`claude -p "explain the token flow"`) is redacted whole (§9).
+   Arm 1's "secret flag" also accepts a Windows switch `/name` (so `/password x` redacts `x`), for that arm only; arm 2 gains the
+   attached short options (`curl -uuser:pass`, `sshpass -pVALUE` → the option stays, the rest goes).
+8. The high-entropy test (§2.4) → `<redacted>`. *Amended 2026-10-18 (security review A):* the test judges the token WITHOUT its
+   leading dashes and trailing padding (`-<48 base64url>` and `--<48 base64url>` are tokens, not flags); there is no flag
+   exemption (`--sourceGeneratorExecutionPreference` stays shown because its two classes are two without the dashes).
+9. Otherwise shown — after control and format characters are replaced (§3).
+
+**2.2 Secret words** (substring match, case-insensitive, as today — `token`, `secret`, `password`, `passwd`, `apikey`, `api-key`,
+`api_key`, `credential`): widened with `passphrase`, `pwd`, `creds`, `auth` (covers `authorization`, `oauth`), `bearer`, `cookie`,
+`csrf`, `signature`, `private-key` / `private_key`, `access-key` / `access_key`, `client-secret` / `client_secret`; and `key`
+as a BOUNDED word only (`(^|[-_.])key($|[-_.=])`: `--key=`, `API_KEY=`, `-key`; not `--keyboard`, `--keep`). `public-key` is
+not exempted: a public key path redacted is harmless. `session`, `id`, `resume` are NOT secret words — session ids are what the
+archive's G1 and E15.S6 read (`InUseWindows.cs:76-78`, this plan `:261`). The list is CLOSED in code (§4 says why there is no
+key for it).
+
+**2.3 Creds-shaped tokens and program-specific flags** (closed lists in `SecretShapes`, each entry with its source in a
+comment):
+
+| Family | Pattern (anchored to a token boundary `(^|[^A-Za-z0-9])`) |
+|---|---|
+| GitHub | `gh[pousr]_[A-Za-z0-9]{20,}`, `github_pat_[A-Za-z0-9_]{20,}` |
+| OpenAI / Anthropic | `sk-[A-Za-z0-9_-]{16,}` (covers `sk-ant-…`, `sk-proj-…`) |
+| Stripe | `[sp]k_(live\|test)_[A-Za-z0-9]{16,}` |
+| Slack | `xox[abprs]-[A-Za-z0-9-]{10,}` |
+| AWS | `(AKIA\|ASIA)[0-9A-Z]{16}` |
+| Google | `AIza[0-9A-Za-z_-]{35}`, `ya29\.[0-9A-Za-z_-]+` |
+| GitLab / npm / PyPI / DigitalOcean / Hugging Face | `glpat-[A-Za-z0-9_-]{20,}`, `npm_[A-Za-z0-9]{36}`, `pypi-[A-Za-z0-9_-]{20,}`, `dop_v1_[a-f0-9]{64}`, `hf_[A-Za-z0-9]{20,}` |
+| SendGrid | `SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}` |
+| **CredsForDevs config key** | `cfgk_[A-Za-z0-9_-]{20,}` (`configKey.ts:46-54`) — the plan's RED |
+| JWT | `eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*` |
+| PEM / age | `-----BEGIN [A-Z ]*PRIVATE KEY`, `-----BEGIN `, `AGE-SECRET-KEY-1[A-Z0-9]{20,}` |
+| Basic-auth userinfo as a VALUE | `^[^:/@\s]{1,64}:[^\s@]{1,256}$` — only as the value of `-u`, `--user`, `--proxy-user`, `--credentials`, `--basic-auth` (so `systemd --user`, whose next word holds no `:`, is untouched) |
+
+Program-specific value flags (arm 2), keyed by `program` (§2.5): `sshpass` → `-p`; `mysql`, `mysqldump`, `mariadb`,
+`mariadb-dump` → `-p` and a token starting with `-p` longer than 2 characters becomes `-p<redacted>`; `curl`, `wget`, `git`,
+`gh` → `-u` / `--user` only when the next token has the userinfo shape above. Docker's `-p 8080:80` is a port map and is NOT in
+the table.
+
+**2.4 The high-entropy test** (arm 8, on a token that reached it — so no path, no URL, no assignment, no flag):
+
+- length ≥ `processes.secretMinChars` (20);
+- credential alphabet: every character in `[A-Za-z0-9+/=_-]`, a trailing run of `=` stripped first (base64 padding);
+- character classes present among {lowercase, UPPERCASE, digits, symbols `+/=_-`}: **at least three**, OR exactly one letter case
+  plus digits with the digits being **≥ 30 %** of the characters (a 32-hex Twilio / Mailchimp-shaped token has ~40 % digits; a
+  CamelCase identifier such as `sourceGeneratorExecutionPreference` has two classes and no digits);
+- Shannon entropy over the token's characters ≥ **3.5 bits per character** (random base62 of 20 characters measures 4.1–4.3;
+  `ubuntu-24.04-20260101` — three classes — measures about 3.3 and stays).
+
+The false positives, each exempted by shape and each a RED test that it is SHOWN:
+- **paths** — never reach the test (arm 6);
+- **GUIDs** `^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$` — Claude session ids (`--resume=<guid>`, `-r <guid>`); the
+  sidebar's row 11 shows one (`:261`);
+- **digests are NOT exempt** (decided 2026-10-15, deny by default): a bare 32-, 40- or 64-hex positional is redacted — a
+  pre-`ghp_` GitHub token is 40 hex, and a hex-encoded key of any length looks exactly like a digest. A digest inside a PATH
+  (`.vscode-server/bin/<40 hex>/node`, `workspaceStorage/<32 hex>`) is kept by arm 6; a bare container id or commit in a
+  shown line becomes `<redacted>`, a cost accepted;
+- **npm specs** `^@?[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?@[a-z0-9.+-]+$` — `@playwright/mcp@latest`
+  (`status.json:548`);
+- **versions and dates** — digits with `.`, `-`, `:`, `+` only;
+- **base64 blobs** are NOT exempt: `-EncodedCommand <base64>` and a pasted blob are redacted. The daemon's own interop
+  scripts are compared by the never-list over the RAW argv (R7), so nothing of the daemon changes behaviour;
+- **URLs with credentials** are arm 4's: the userinfo goes and every path segment and query / fragment value is judged on its own
+  (§2.1 as amended 2026-10-18): the entropy test runs on each SEGMENT, never on the URL as a whole, and a segment that fails is
+  replaced alone.
+
+**2.5 `program` and `argumentsShown`** (`ShownArguments.Of(argv, redacted, limits)`):
+
+- `program` = `CommandLineText.FileNameOf(argv[0])` (`ProcessFiles.cs:119-120`: the file name, `.exe` stripped) — what
+  `Programs[0]` already is (`ProcessCollector.cs:158`); empty argv → the `/proc/[pid]/status` name, as `Programs` falls back
+  to it. `program` is never redacted: it is a file name (a program named after a secret is a residual, §9).
+- `argumentsShown` = the longest SAFE PREFIX of the arguments after the program, at most `processes.shownSafeArgs` (2) of them,
+  each after the rule. An argument is SAFE when ALL hold: the rule left it unchanged (no `<redacted>` in it); it is one of — a
+  flag without a value (`-x`, `--name`), a `--name=value` whose value passed, a path (arm 6), a GUID, an npm spec, or a plain
+  word of `[A-Za-z0-9._@:+-]` shorter than `secretMinChars`; and it is at most `processes.shownCommandChars` long. The FIRST
+  unsafe argument ends the prefix (so a value that follows a flag we do not know is never shown past the point where doubt
+  starts: `claude -p <prompt>` shows `["-p"]` and stops, because a prompt is free text). Empty and whitespace-only arguments (node's
+  title padding — `status.json:548` carries the trailing spaces) never enter the shown prefix.
+- `argumentsTotal` = the number of non-EMPTY arguments after the program — a whitespace-only one counts (coai code round 3, 2026-10-18:
+  the total is what the process was given; only the prefix skips it) — so the view can say "+ N more" without the line.
+- Examples from the golden: `npm exec @playwright/mcp@latest` → `npm`, `["exec", "@playwright/mcp@latest"]`, 2;
+  `…/claude --output-format stream-json --verbose …` → `claude`, `["--output-format", "stream-json"]`, 9;
+  `…/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=…` → `agy`, `["--hub", "--hub-port=41790"]`, N;
+  `creds relay` → `creds`, `["relay"]`, 1; `creds config cfgk_…` → `creds`, `["config"]`, 2.
+
+### 3. Allow and deny decisions — deny by default
+
+| Decision | Rule |
+|---|---|
+| what is shown | the program; flags; paths; GUIDs; npm specs; versions; short plain words; a URL's scheme, host, port and path |
+| what becomes `<redacted>` | the value of a secret flag or assignment; a creds-shaped token; a blob holding a secret word with a separator; a high-entropy token; a URL's userinfo and secret query values; a program-specific password value |
+| the replacement | always the single constant `<redacted>` (`ProcessFiles.cs:98`) — **never the value's length, never a prefix, never a suffix** (`abc…`, `***`, `gh…p_`); a RED test asserts the redacted text holds no 4-character substring of the value |
+| partial values | none: a value is replaced whole; `name=` keeps its name only when the name is `[A-Za-z0-9_.-]` |
+| no truncation leak | the join is cut AFTER redaction (as today, `ProcessFiles.cs:128-129`) — a cut can only shorten `<redacted>`; `argumentsShown` elements are never cut (an element over the cap is unsafe and ends the prefix); the cut lands on a rune boundary, never inside a surrogate pair, so `status --json` never carries an unpaired surrogate |
+| an argument over `processes.maxJudgedArgChars` (4096) | `<redacted>` whole, unjudged — a 4 KiB positional is a script or a blob, and a bounded input is what keeps every regex linear (`/proc/[pid]/cmdline` may be 2 MiB) |
+| Unicode | argv is UTF-8 with invalid bytes already replaced by U+FFFD (`Encoding.UTF8.GetString`, `ProcessFiles.cs:123`); letters of any script count as letters for the class test; the entropy test counts code points, not UTF-16 units |
+| control and format characters | every character of category `Cc` (NUL, tab, LF, ESC — terminal injection into `logs`, `runs show`), `Cf` (zero-width, U+202E RTL override — which could make `<redacted>` read otherwise) and `Cs` (a lone surrogate) is replaced by `?` in every shown argument. `CommandLine.Printable` (`Cli/CommandLine.cs:792-799`, `internal`, `Cc` only) MOVES to `WslCare.Core/Processes/Redaction/ShownText.cs` widened to `Cf` / `Cs`, and the CLI calls it there — reuse-first step 2.4, so there is one definition |
+| the extension | renders the string as text with its own cap (`src_vs_code/src/panel/format.ts:29-31`); the hostile-string tests (`src/test/panelPage.test.ts:98`, `src/test/panel/viewModel.test.ts:143`) keep passing unchanged |
+
+### 4. The configuration keys
+
+| Key | Shape | Default | Trust | Why |
+|---|---|---|---|---|
+| `processes.secretMinChars` | int 12–64 | 20 | `new(SafeDirection.Lower, MachineOnly: true)` — a SMALLER number redacts more; machine layer only, as `processes.shownCommandChars` (`Config/ConfigKeys.Processes.cs:32-33`), because a user layer must not loosen what root writes into a history other accounts read | the plan's row (`:339`); the detectors' common floor |
+| `processes.shownSafeArgs` | int 0–8 | 2 | `Lower`, `MachineOnly` — fewer is safer | the plan's row |
+| `processes.maxJudgedArgChars` | int 1024–65536 | 4096 | `Lower`, `MachineOnly` — a smaller bound redacts more and bounds every match | §3's regex bound; the inventory's rule "every number a key" (`:321-323`) |
+
+All three join `ConfigKeys.Processes`, the `NumberKeys` list (`Config/ConfigKeys.Numbers.cs:150-153`), `Config/default.json:71`'s
+block, group B of `NumbersAreConfigurationTests` (`Config/NumbersAreConfigurationTests.cs:62`), and `contracts/config-keys.json`
+(regenerated by `ContractFilesTests`, `config-keys.json:2722-2734` is the neighbour). `UserLayerTrustTests` gains the three.
+
+**No open list in this story.** The secret words and the creds shapes are closed in code. A user-widenable word list would need an
+OPEN `TextListKey` with a reviewed `TextRule` record (`Config/ConfigKey.cs:37-56`, `Config/KeyRules.cs:7-25`: no free text), AND
+a safe direction "a SUPERSET is safer" that `SafeDirection` (`KeyRules.cs:118-137`) does not have — `Subset` is the opposite.
+Adding an enum member for one key is a change to the trust model, and a list that can be SHORTENED weakens redaction. Recorded as
+the open tail: `processes.extraSecretWords` with `TextRule.SecretWord` (`^[a-z][a-z0-9_-]{2,31}$`, at most 32 members) and a
+`SafeDirection.Superset`, if the owner asks for it.
+
+### 5. The wire contract
+
+- **Additive.** `ProcessReport` (`Status/StatusReport.cs:155-171`) gains `program` (string), `argumentsShown` (string[]) and
+  `argumentsTotal` (int) after `commandLine`; `McpOwnerReport` (`Status/McpServersReport.cs:74`) gains `program` and
+  `argumentsShown`. `commandLine` STAYS — the plan's own rule, "no wire removal" (`StatusReport.cs:191-192`); its VALUE changes
+  only where the widened rule bites. `schemaVersion` stays 1 (`SchemaVersion.cs:9`): a field added, none moved or renamed. The
+  extension reads fields by key (`src_vs_code/src/panel/read.ts:31-33`) and ignores what it does not know.
+- **The goldens.** `contracts/golden/head/status.json` is regenerated on Linux (`research/module_tests.md:921-924`) and the diff
+  reviewed as a contract change: 52 entries gain the three fields; `commandLine` changes for the fixture's structured
+  `/TelemetrySession:` arguments (they become `<redacted>` whole — the by-hand `REDACTED` inside them no longer reaches the
+  golden) and nowhere else, which the review proves line by line. `GoldenContractTests` holds it afterwards. `status-limits.json`
+  is unchanged: nothing here is a limit the extension mirrors.
+- **The extension's consumers, and what must not break.** The extension half of #87 item 2 is E18.W1b (`:375`): the full view
+  shows `program` + `argumentsShown`, reveals the line per row. NOT this story. This story must leave the extension green without a
+  change: the process tables keep rendering `commandLine` (`rowRenderers.ts:36-38`); the status-bar model reads verdicts only; no
+  schema check refuses an unknown field (the head golden the extension's tests read is updated in the same PR, and its tests stay
+  green — the E15.S5 cross-boundary pattern, `:1024-1027`). E18.W3's export (`:377`) writes the daemon's redacted bytes, so it
+  inherits this rule for free.
+
+### 6. RED first — the list
+
+A new `Core.Tests/Processes/Redaction/CommandLineRedactionTests.cs`, each case named for the guarantee, and a fixture
+`src_daemon/tests/fixtures/redaction/realistic-leaks.txt` — INVENTED values in every real shape (a value is never a real secret;
+`FixturePrivacyTests` scans it like every fixture; a comment on each line says which arm must fire):
+
+1. **The plan's RED:** `creds config cfgk_<43 base64url>` → `creds config <redacted>`; `argumentsShown` is `["config"]`.
+2. `GITHUB_TOKEN=ghp_…` (no dash) → `GITHUB_TOKEN=<redacted>`; `env ANTHROPIC_API_KEY=sk-ant-… claude` → the key redacted,
+   `claude` shown.
+3. `docker run -e AWS_SECRET_ACCESS_KEY=… -e PGPASSWORD image` → the first value redacted; `PGPASSWORD` (no value) shown.
+4. `/TelemetrySession:{"CollectorApiKey":"…"}` → `<redacted>` whole (arm 7, not a path).
+5. `curl -u alice:Pa55w0rd https://x/` → `curl -u <redacted> https://x/`; `systemd --user --deserialize 48` unchanged.
+6. `curl -H "Authorization: Bearer eyJ….…"` → `curl -H <redacted>`; `gh api -H "Authorization: token ghp_…"` likewise.
+7. `git clone https://user:ghp_…@github.com/o/r` → `https://<redacted>@github.com/o/r`;
+   `DATABASE_URL=postgres://app:p@db/x` → `DATABASE_URL=<redacted>` (arm 3's value fails arm 5).
+8. `--password=x`, `--password x`, `-pSecret` under `mysql`, `sshpass -p x ssh host` → each value redacted; `docker run -p 8080:80`
+   unchanged.
+9. `node -e "const token='abc'; …"` → the script redacted (arm 7); `node -e "const net = require('net'); …"` (`status.json:656`)
+   unchanged.
+10. `dotnet exec x.dll --connectionString "Server=a;Password=b"` → `--connectionString <redacted>`.
+11. `claude --resume=<guid>` unchanged; `claude -r <guid>` unchanged; `claude -p "any text"` → `argumentsShown` is `["-p"]`.
+12. A bare 48-character base64url positional → `<redacted>`; the same token one character under `secretMinChars` with the key
+    set to its length → shown (the key is read, not a constant).
+13. Shown, each: `/home/user/.vscode-server/bin/<40 hex>/node`, `--add-dir=/home/user/git/project-tokenizer` (a path value with
+    "token" inside it stays — arm 3 judges the NAME `add-dir`, then the value by arm 6), `@playwright/mcp@latest`, `ubuntu-24.04-20260101`, `sourceGeneratorExecutionPreference`, `rovodev-ide-vscode`.
+14. A 32-hex, a 40-hex and a 64-hex bare positional → each `<redacted>` (no digest exemption).
+15. **Never a prefix:** for every redacted case the output holds no 4-character substring of the value and no digit of its length.
+16. **No truncation leak:** a 300-character secret at the end of a line, cut at 200 → the line ends in `<redacted>` or a prefix of
+    that constant, never in a character of the secret; `shownCommandChars` set to 5 → `<reda`.
+17. **Rune boundary:** a cut that would split a surrogate pair ends before the pair; the JSON stays valid.
+18. **Control characters:** an argument holding ESC `[31m`, U+202E and a lone surrogate → `?` for each; the same test red when the
+    CLI's `Printable` and the Core one are two definitions (the CLI test asserts `CommandLine.Printable` IS `ShownText.Printable`).
+19. **R8 regressions:** `AgentOrphans.Script`, `IdleGate.IsBuild`, `IsDotnetBuild` over the captured fixture give what they gave
+    before the widening (a snapshot assertion on the fixture's 51 processes).
+20. **Both binaries, one rule:** `Split(Of(exe, args)) == [exe, ..args]` over a generated set; `Shown(Split(line))` of a Windows
+    `claude.exe --resume=<guid> -p "…"` equals the distro `Shown` of the same argv.
+21. **The wire:** the golden's 52 entries carry `program` / `argumentsShown` / `argumentsTotal`; the owner report carries the two;
+    `argumentsShown` never holds `<redacted>` and never more than `shownSafeArgs` elements; `shownSafeArgs` 0 → `[]`.
+22. **Keys:** a user layer that raises `secretMinChars` to 64 or `shownSafeArgs` to 8 is ignored with a notice (machine only); the
+    three are in `contracts/config-keys.json`.
+23. An argument of 5 000 characters → `<redacted>` without judging it; the test asserts the call returns within the pattern
+    ceiling against a pathological input (`a` × 4 096 followed by `!`).
+
+### 7. Break-its (product code, each restored byte for byte)
+
+| Line broken | Red test |
+|---|---|
+| arm 8 removed (no entropy test) | 1 (the key is caught by the prefix list) stays green, 12 and 14 red — so the prefix list and the entropy test are each proved alone |
+| the `cfgk_` shape removed with arm 8 kept | 1 still green by entropy, and a test with `secretMinChars` raised to 64 then red — the plan's RED does not rest on one arm |
+| arm 6's alphabet widened to accept `{` and `"` | 4 red |
+| `Redacted` replaced by `value[..4] + "…"` | 15 red |
+| the cut moved before `Redact` | 16 red |
+| `Split`'s backslash rule simplified | 20 red |
+| `Printable` not applied in `Shown` | 18 red |
+| `shownSafeArgs` ignored (3 shown) | 21 red |
+| `MachineOnly` dropped from a key | 22 red |
+
+### 8. Build order (small commits), test plan, docs, DoD
+
+Commits, each green on its own:
+1. `test(daemon): E15.S7 RED — the redaction fixture and the tests over stubs` (the 23 cases, the fixture, `Split` and
+   `ShownArguments` as stubs that throw `NotImplementedException` — each failure message names the symptom, never the stub).
+2. `feat(daemon): SecretShapes — the creds shapes, the secret words, the entropy test`.
+3. `feat(daemon): CommandLineRedaction — one rule, CommandLineText delegating; ShownText.Printable shared with the CLI`.
+4. `feat(daemon): the three processes.* keys` (+ `default.json`, `NumberKeys`, group B, `config-keys.json`, `UserLayerTrustTests`).
+5. `feat(daemon): program, argumentsShown, argumentsTotal on the wire` (`ProcessReport`, `McpOwnerReport`; goldens regenerated
+   on Linux, the diff reviewed).
+6. `feat(daemon): WindowsCommandLine.Split — the Windows binary's entry to the same rule` (round-trip property test).
+7. `docs: E15.S7 as built`.
+
+Test plan: Windows — Core, CLI, Scenarios; Linux (WSL, a NEW `/tmp/testsToDelete-wc-e15s7-<stamp>` folder, as E15.S5 did) —
+the goldens written, then `GoldenContractTests` green without a write, Core, CLI, Scenarios; the extension suite UNCHANGED and
+green (the proof the change is additive); lint, format, plan-lifecycle, the rules check. The RED messages of commit 1 and the
+break-its' messages go to `research/module_tests.md` *E15.S7*, with the suite totals.
+
+Docs to update in the same PR: `README.md:388` (the sentence "secret-looking values redacted (`--x=v`, `--x v`…)" → the widened
+rule and the two display fields); `research/module_daemon.md` (the process table's text and the `mcpServers` owner);
+`research/module_mcp_servers.md` (the owner's new fields); `research/architecture.md` (the E5.S0 contracts section: the additive
+fields, as E15.S5's correction did, `:1061-1063`); `research/module_tests.md:4489-4491` REWRITTEN — the bullet that says a secret
+in any other shape is shown as it is must say what the rule now catches and what §9 leaves; `contracts/config-keys.json`; this
+plan's *E15.S7 as built* and status line; `todo/README.md`.
+
+Definition of Done:
+- [ ] One function (`CommandLineRedaction.Shown`) behind every road R1–R4; `CommandLineText.Shown` / `.Redact` delegate to it.
+- [ ] The Windows entry (`WindowsCommandLine.Split` + the same `Shown`) exists with its round-trip test; E15.S6 names it as its
+      consumer.
+- [ ] The 23 RED cases were red for the named symptom, then green; the nine break-its were red, then green after a byte-equal restore.
+- [ ] `<redacted>` is the only replacement; no prefix, no length, no partial value; the cut is after the rule and on a rune boundary.
+- [ ] `argumentsShown` holds only safe arguments, at most `shownSafeArgs`, and never `<redacted>`.
+- [ ] The three keys are machine-only with `Lower` as the safe direction; `config-keys.json` regenerated.
+- [ ] The goldens regenerated on Linux, the `commandLine` diff reviewed line by line (only the `/TelemetrySession:` entries change).
+- [ ] The extension suite green WITHOUT a change; `schemaVersion` unchanged; `commandLine` still on the wire.
+- [ ] R8's matchers unchanged over the fixture (test 19).
+- [ ] `ShownText.Printable` is the ONE definition (the CLI's moved, not copied).
+- [ ] Docs listed above updated; `module_tests.md:4489-4491` rewritten.
+- [ ] The status line and `todo/README.md` moved from "being designed" to "built on its branch", then "merged (#N)".
+
+### 9. Residuals — what a regex cannot catch, stated plainly
+
+- **Free text.** A secret typed into a prompt (`claude -p "use key …"`, `-e <script>` without a secret word) is shown unless the
+  value alone is creds-shaped or high-entropy. `argumentsShown` stops at `-p`, so the full view hides it by default; the revealed
+  `commandLine` still has it.
+- **Short secrets.** A PIN, a short password (`-pHunter2` outside the mysql table), a 12-character token with no marker: below
+  `secretMinChars` and with no shape, they are shown. Lowering the key raises false positives; 20 is the detectors' floor.
+- **Passphrases of words** (`correct-horse-battery-staple`): two classes, low entropy — shown.
+- **Bare hex digests are lost** (a container id, a commit) — the price of redacting every bare hex token; inside a path they stay.
+- **A secret as a file name or a path component** (`/tmp/ghp_…`): arm 6 shows paths — unless the component is creds-shaped
+  (arm 5 runs before arm 6, so `/tmp/ghp_abc…` IS redacted whole; a plain-looking name is not).
+- **A secret split across two positionals**, or one whose flag is in another language's spelling (`--contraseña`), is shown.
+- **The process name and the cwd** (`ProcessReport.Name`, `.Cwd`) are not judged: a cwd names folders, not credentials; a process
+  named after a secret is a residual.
+- **Kernel ring lines** (`health.kernelLinesKept` × `health.kernelLineChars`, `Health/HealthCollector.cs:70-71`, `:180`) can echo a command line in
+  an OOM or segfault message; they do not pass through this rule. Named here; a follow-up may route them through `Shown` over a
+  split on spaces.
+- **History already written** keeps what the old rule showed: detail files under `{state}/runs/` are never rewritten (§3.2's
+  "raw files are never rewritten"); `runs.historyRetentionDays` retires them. The PR body says so.
+- **A free-text prompt that holds a secret WORD is redacted whole** (2026-10-18, security review E): `claude -p "explain the token flow"`
+  becomes `<redacted>` — the price of reading whitespace after a secret word as a separator, which is what catches
+  `sh -c "tool --password x"`. A prompt WITHOUT a secret word is still shown (and `argumentsShown` still stops at `-p`).
+- **F — base32 / TOTP seeds and letters-only mixed-case tokens** (2026-10-18): `JBSWY3DPEHPK3PXPMZXW6YTBOI4TQ3LX` (uppercase and digits,
+  digits below 30 %) and a random 24-letter mixed-case token (two classes, no digits) pass the entropy test's class rule; shown.
+- **H — Windows `--token= value`** (2026-10-18): the split of `tool.exe --token= abc` gives `--token=` and `abc`; an assignment needs a
+  non-empty value, so `--token=` is a blob (redacted) but the `abc` after a name that ends in `=` is judged on its own and shown.
+- **I — an unencoded `/` inside a userinfo password** (2026-10-18): `postgres://app:p/ss@db/x` has its authority end at the first
+  `/`, so the "userinfo" is `app:p`, the rest is read as a path and `ss@db` is shown. RFC 3986 requires `/` in a password to be
+  percent-encoded; a tool that does not encode it leaks the tail.
+- **Not read, so not leaked:** `/proc/[pid]/environ`, Docker's container environment (`DockerCommands.cs:31-35`), the Windows
+  binary's command lines (R5, until E15.S6).
+
+### 10. The designer's open questions, decided (2026-10-15, the orchestrator)
+
+1. 40/64-hex exemption → **removed** (deny by default; §2.4, RED 14).
+2. Secret words as substrings → **kept** (`--max-thinking-tokens` keeps losing its number; a lost number is cheaper than a shown
+   token).
+3. History already written → **no sweep**; `runs.historyRetentionDays` retires it; the PR body says so.
+4. A user-widenable word list → **deferred** to the open tail (`processes.extraSecretWords` + `SafeDirection.Superset`); not
+   needed for #87.
+5. Kernel ring lines → **a follow-up**, recorded in the open tail; not in this story.
+
+## E15.S7 as built (2026-10-17, branch `feat/wc-e15s7-redaction`, draft PR #161)
+
+**What shipped.** One redaction rule, `WslCare.Core/Processes/Redaction/CommandLineRedaction`, behind every road R1–R4 of the design's
+inventory, on both binaries; `program` / `argumentsShown` / `argumentsTotal` on the wire; three machine-only keys; the Windows entry
+(`WindowsCommandLine.Split` / `.Shown`) with its raw-line backstop. The judge's review of the WIP (2026-10-16) is applied: the URL arm
+before the creds shape, the exact backstop span, every provider-shaped token built from halves (`{GHP}` / `{CFGK}` / `{SKANT}` /
+`{JWT}` placeholders in the fixture), one invented case per creds family, the pattern ceiling at the key's DEFAULT,
+`AgentOrphans.Script` internal and called directly. Read: [module_daemon.md](../research/module_daemon.md) § *One redaction rule for
+every command line*, [module_tests.md](../research/module_tests.md) § *One redaction rule … (E15.S7)* (the RED messages, the guards,
+the twelve break-its), [architecture.md](../research/architecture.md) (E5.S0 contracts).
+
+**Commits** (conventional, each builds and is green for its own tests): `docs(plan)` ×4 (design, decisions, plan round, judge's
+review); `test(daemon): E15.S7 RED`; `feat(daemon): SecretShapes …`; `feat(daemon): the three processes.* keys …`;
+`feat(daemon): CommandLineRedaction …`; `feat(daemon): program, argumentsShown, argumentsTotal on the wire`;
+`feat(daemon): WindowsCommandLine.Split …`; `docs: E15.S7 as built`.
+
+### The golden diff, every `commandLine` that changed (`contracts/golden/head/status.json`, regenerated in WSL)
+
+The design (§5, §8) and the brief expected ONLY the `/TelemetrySession:` entries to change. **That row is not in the golden** (the
+captured Visual Studio server processes are not in the top 30 or the `/mnt` walkers), and **two other entries changed**. The security
+judge decides on them. Verbatim, before → after (both cut at the 200 characters `processes.shownCommandChars` allows):
+
+1. A bare **40-hex commit id** in the `wslServer.sh` launch — redacted by the DECIDED rule "no digest exemption" (§2.4, RED 14;
+   a pre-`ghp_` GitHub token is 40 hex):
+
+   ```
+   - "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-",
+   + "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh <redacted> stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=<redacted> --use-host-pr",
+   ```
+
+   (The old line was cut inside `--connection-` by the 200-character limit; the shorter `<redacted>` lets the same cut reach
+   `--connection-token=<redacted>`, which the old rule would also have redacted.)
+
+2. A **`sh -c` script** holding `--connection-token=REDACTED` (a by-hand redaction in the fixture) — the whole argument is a blob
+   with a secret word and a separator (arm 7), so it goes whole:
+
+   ```
+   - "commandLine": "sh -c \"$VSCODE_WSL_EXT_LOCATION/scripts/wslServer.sh\" 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=REDACTED --use-host-proxy ",
+   + "commandLine": "sh -c <redacted>",
+   ```
+
+Everything else in the diff is the three added fields (50 process rows and the 2 live MCP owners; 280 lines added) and the trailing
+comma that the new field after `commandLine` forces on two lines (the two `claude … --max-thinking-tokens <redacted>` rows, whose
+text is unchanged). One further change was found in the first regeneration and FIXED rather than accepted:
+`--sourceGeneratorExecutionPreference` and `--devKitDependencyPath` were redacted by the entropy test (their dashes count as a
+symbol class and their CamelCase as two letter cases); a flag name is now exempt, with a test that went red first.
+
+### Deviations from the design
+
+- **Commits 3 and 4 swapped**: the keys came before the rule's wiring, because `CommandLineText` delegates with limits READ from
+  them; each commit builds and is green.
+- **Whitespace-only arguments are skipped and not counted** (design §2.5 says empty only): the safer reading — node's title
+  padding is a run of spaces, and such an argument shows nothing a view could use. Recorded in `ShownArguments.Of`'s remarks.
+- **The pattern ceiling is a compile-time constant** (`SecretShapes.PatternCeilingMilliseconds` = 1000) — a `[GeneratedRegex]`
+  attribute takes a constant, never a configured value, so it is the range maximum of `patterns.matchTimeoutMilliseconds` (the
+  bootstrap ceiling `TextRule.Matching` uses), held equal by a test and listed in `NumbersArchitectureTests` with its reason, like
+  `CommandLine.MaxShownVolumes`. A match that times out counts as a HIT (deny by default). The linearity comes from the 4096-character
+  bound and the anchored, bounded patterns.
+- **Arm 3 and the blob**: a value that fails by arm 7 (a secret word and a separator inside it) gives the WHOLE argument, not
+  `name=<redacted>` — the design's own "reached through arm 3" example (`Server=…;Password=…`) and test 10 demand it.
+- **A "secret flag" (arm 1) is a name with no value in it** (`^--?[A-Za-z0-9][A-Za-z0-9._-]*$`), not "starts with `-` and holds no
+  `=`": `--auth:"my secret value"` is one argument judged on its own, and it must not make the `--port` after it secret (test
+  `A_windows_line_whose_secret_the_split_isolates…`).
+- **The backstop scans resume after a value span** (a name such as `secret` inside `--auth:"my secret value"` is part of that
+  value) and treats a timeout as a hit.
+- **A flag name is exempt from the entropy test** (above).
+- **Entropy calibration constants** (`MinEntropyBits` 3.5, `MinClasses` 3, `MinDigitPercent` 30) are code constants listed in
+  `NumbersArchitectureTests` as the credential alphabet's properties; the length floor IS a key.
+- **Fixture arm labels** `arm4` / `arm5` of two lines were corrected to the amended order; the arm labels are informational.
+- **Test defects found and fixed** in commit 4's tests: the surrogate test called reflection-based JSON (disabled in this
+  build; it now asks `JsonEncodedText`), and the no-prefix test used a value that shares four letters (`assw`) with the flag name it
+  follows. `McpStatusTests` compares the owner by value including its two new fields.
+- **Not done in this story**: the extension's own half (E18.W1b, the full view that shows `program` + `argumentsShown`); the
+  open tail below.
+
+### The security judge's two golden verdicts (Fable, 2026-10-18) — decisions
+
+1. **The bare 40-hex commit id STAYS redacted, with no exemption.** It cannot be told apart from a 40-, 32- or 64-hex credential
+   (a pre-`ghp_` GitHub token is 40 hex), and the commit stays readable in the kept `.vscode-server/bin/<40hex>/` paths, which arm 6
+   shows whole. The golden line stays as regenerated.
+2. **`sh -c <redacted>` is RIGHT.** The live value is a real connection token inside one shell script argument; a narrower redaction
+   (the token alone) needs a POSIX-shell tokenizer, which this rule does not have. Open tail: a quoting-aware tokenizer for the
+   argument of `sh -c` / `bash -lc`, so only the token goes.
+
+### Security review (Fable) and code round (2026-10-18) — A–E, G and coai 0–3
+
+The security judge said "do not ship as is" and the coai code round accepted four findings. Every fix has a RED test
+(`SecurityReviewTests` and the changed tests, commit `test(daemon): E15.S7 security review RED`, 28 of 248 red) and a break-it on
+product code (restored byte for byte, `git diff` empty, green again):
+
+| Finding | Red message (against the pushed build) | Break-it and its red |
+|---|---|---|
+| **A** a token with one or two leading dashes passed the flag exemption into `commandLine` AND `argumentsShown` | *Expected Shown(argv) to be the same string, but they differ at index 5* (`tool -<48>` shown) | N1 the dashes kept again: 3 red (the two flag guards and the entropy theory) |
+| **B** a trailing `=` hid a token (`<44 base64>=`, `<hex40>=`, `<48>=1`) | the same message, 3 cases | N2 the assignment name not judged: 1 red (`<48>=1`) |
+| **C** Windows `/password:value` passed as a path; `/password x` kept `x`; the raw Windows line too | *Expected Shown("cmdkey","/add:srv","/user:alice","/password:Hunter2Invented") to be the same string, but they differ at index 28*; *Expected WindowsCommandLine.Shown(…) … differ at index 32* | N4 path arm before the blob arm: 3 red; N5 a Windows switch is no secret flag: 1 red (`/password` then `x`, differ at index 15) |
+| **D** a URL's path segments, kept query and fragment values were not judged (Slack / Discord / Telegram webhooks, `?pass=`, `?t=<random>`, `#access_token=`) | *Expected Shown("curl","https://hooks.slack.example/services/T0000000/B0000000/q7Hn…") to be the same string, but they differ at index 60* and six more | N6 segments and values not judged: 5 red; N7 `pass` not a secret name: 1 red; N15 the Telegram shape removed: 3 red |
+| **E** a secret word followed by a space inside `sh -c` / `bash -lc` was shown | *Expected Shown("sh","-c","tool --password Hunter2Invented --port 5") to be the same string, but they differ at index 6* | N8 whitespace is no separator: 4 red; N9 `sshpass` is no secret word: 1 red |
+| **G** U+2028 / U+2029 passed | *Expected ShownText.Printable("a b c") to be "a?b?c"* | N10 the two categories removed: 1 red |
+| **coai 0** the URL detector's timeout handler answered false (open) | *Expected offenders to be empty because a match that ran out of time must redact … {"UrlRedaction.cs"}* (a source scan of every timeout handler of the rule; `SafeShapes` alone answers false — a shape not proved is a shape not shown) | N11 the detector fails open again: 1 red |
+| **coai 1** a Windows caller could skip the backstop (`WindowsCommandLine.Split` was public) | *Expected typeof(WindowsCommandLine).GetMethod(Split, Public \| Static) to be <null>, but found … Split*; plus a scan that no other product code splits a Windows line | N12 `Split` public again: 1 red |
+| **coai 2** curl `-uuser:pass` and sshpass `-pVALUE` attached to their option | *Expected Shown("curl","-uuser:Pa55w0rdInvented","https://x.example/") to be the same string, but they differ at index 7* | N13 no attached `-u`: 2 red |
+| **coai 3** `argumentsTotal` skipped whitespace-only arguments | *Expected Of(["node","","script.js","   ",""]) to be ShownCommandLine {…, Total = 2}* | N14 the total skips whitespace-only again: 1 red |
+
+The code (commit `fix(daemon): E15.S7 security review - A to E and G, coai code round 0 to 3`): `HighEntropy` judges the token without
+its leading dashes and trailing padding and has no flag exemption; `ArgumentJudge` judges an assignment's name, requires a non-empty
+value, runs arm 7 before arm 6, takes a Windows switch as a secret flag for arm 1, and gives an attached short option its two-character
+prefix back; `UrlRedaction` classifies Yes / No / Unknown and judges each segment and value; `SecretShapes` adds the Telegram family, the
+whitespace separator, `sshpass` and the attached `-p` / `-u`; `ShownText` replaces U+2028 / U+2029; `ShownArguments` counts every
+non-empty argument; `WindowsCommandLine.Split` is internal. Costs and residuals recorded in §9: a free-text prompt holding a secret
+word is redacted whole, and F, H and I stay residuals. The judge's probe (`Program.cs`, outside the repository) was not re-run
+against the final build; the RED tests are its cases.
+
+### Totals and checks
+
+Rebased on `origin/main` a672ae74 (2026-10-18). **Windows:** Core 3202 (3113 passed, 89 skipped, 0 failed); CLI 443 (440 passed, 3
+skipped, 0 failed); Scenarios 635 (344 passed, 288 skipped, 3 failed — `FixtureAnonymisationTests` was REAL: the identity list
+rewrote an address-shaped `Inv3nted@db.example.invalid` in `realistic-leaks.txt` to `user@example.invalid`, now committed as the list
+writes it; `EventsFlows…` and `VirtualDiskFlows…` were timeouts under load and pass alone; the fixture, privacy and redaction
+contract classes were rerun: 63 of 63). **Linux** (WSL, a NEW `/tmp/testsToDelete-wc-e15s7-20261018T091038Z`, script files only): the
+goldens regenerated, then `GoldenContractTests` green without the write variable (7 of 7, twice); Core 3202 (3101 passed, 101
+skipped, 0 failed); CLI 443 (399 passed, 44 skipped, 0 failed); Scenarios 635 (618 passed, 15 skipped, 2 failed — the two
+`StatusFlows` wall-clock budgets on a machine at 100 % CPU; two quiet reruns 9 of 9 and 9 of 9, a third had one red at 3.003 s
+against the 3 s budget: the budget is 2 s of the CPU window plus the process; the rule's own cost was not measured separately — the same test passed
+twice in three quiet reruns).
+**Break-its:** twelve, each red, restored byte for byte and green (the nine of §7 plus the URL-first order, the backstop's
+whole-argument compare and the unbounded word `key`; B3 first did not compile and was redone) — the messages are in
+[module_tests.md](../research/module_tests.md). **Format** (`dotnet format wsl_care.slnx --verify-no-changes`): one real finding
+(a missing final newline in `ProcessFiles.cs`), fixed in the commit it belongs to; **plan-lifecycle**, `adapter-check`,
+`pin-check` and `build-flags-check`: clean. **The extension** (`npm test`, `npm run lint`): NOT run — `src_vs_code` has no
+`node_modules` in this worktree and installing is refused on the machine; nothing in `src_vs_code` changed, no extension source or test
+names a value the golden diff changed, and the new fields are additive (read by key), so the claim "green without a change" rests on
+that reading until the extension suite is run by someone who may install.
+
+**The re-check (Fable, 2026-10-19): SHIP.** A–E are closed by mechanism, not by case, and the judge found no new hole; it strongly
+recommended two small fixes before the merge and the second coai round (proceed) added three findings. All are in the final round,
+each with a RED test and a break-it (restored byte for byte):
+1. **`pass` as a BOUNDED secret word** — `cmdkey /add:srv /user:alice /pass:Hunter2Invented` was shown whole on both binaries (`/pass:`
+   is cmdkey's real syntax). RED: *Expected Shown("cmdkey","/add:srv","/user:alice","/pass:Hunter2Invented") to be the same string, but
+   they differ*; the guards `--bypass`, `--passthrough`, `--passes`. Break-its: P1 (pass out of the blob arm) 2 red, P2 (out of
+   `NamesASecret`) 4 red, P3 (unbounded substring) 6 red.
+2. **A single-segment "path" that is a token** — `/<std base64>` and `./<blob>` passed into `commandLine` and `argumentsShown`. RED:
+   *Expected Shown(argv) to be the same string, but they differ at index 5* (×2). Break-it P4 (stays a path) 2 red; multi-segment paths
+   stay as decided (`.vscode-server/bin/<hex40>/node`).
+3. **coai 9** — the CLI's own invocation was logged with `Printable` only. RED: *Expected line "Help: wsl-care "status --password=Hunter2Invented
+   --json"" to contain "status --password=<redacted> --json"*. Break-it: the call put back — the same red, restored.
+4. **coai 8** — the creds-family catalogue is ONE list (`RedactionCases.CredsFamilyList`) and every top-level alternative of
+   `SecretShapes.Families` must have an invented token in it. Break-it P5 (a family added without a case) 1 red: *Expected uncovered
+   to be empty because each family of SecretShapes.Families needs an invented token …*.
+5. **coai 4** — the timeout direction is written on `SecretShapes.Hits` (true: a hit) and `SafeShapes.Match` (false: not safe).
+
+**Final totals after the security review and the code round (2026-10-20, on `origin/main` 5d7d193d, the fixes in place).** Windows:
+Core 3280 (3191 passed, 89 skipped, 0 failed), CLI 443 (440 passed, 3 skipped, 0 failed), Scenarios 635 (347 passed, 288 skipped,
+0 failed). Linux (WSL, a NEW `/tmp/testsToDelete-wc-e15s7-20261020T182754Z`, script files only): the goldens regenerated with
+`WSL_CARE_WRITE_GOLDENS=1` — NO file changed, so the `commandLine` diff is still the two known entries — and `GoldenContractTests`
+green without the write variable (7 of 7, twice); Core 3280 (3179 passed, 101 skipped, 0 failed), CLI 443 (399 passed, 44 skipped,
+0 failed), Scenarios 635 (618 passed, 15 skipped, 2 failed: the same two `StatusFlows` wall-clock budgets as before, 7.2 s against
+3 s and 4.1 s against 2 s, with the machine at 80–100 % CPU from other runs). The rule is not the cause: a timing probe over the
+captured tree's 51 processes ran 20 full `Redact` passes in well under 300 ms in total (under 15 ms a pass); five reruns of the
+`StatusFlows` class alone on the loaded machine failed 2, 2, 2, 2 and 1 of 9 and, on a quiet machine on 2026-10-18, passed 9 of 9
+twice — a budget that moves with the load. `dotnet format --verify-no-changes`, `plan-lifecycle` and the rules check: clean. The
+extension's `npm test` and `npm run lint` did NOT run (no `node_modules` in the worktree, installing is refused): CI's extension legs
+cover them, and nothing under `src_vs_code` changed.
+
+### Open tail
+
+- `processes.extraSecretWords` (an OPEN, reviewed `TextRule.SecretWord` list with a `SafeDirection.Superset`) if the owner asks.
+- Kernel ring lines (`health.kernelLinesKept`) can echo a command line; routing them through `Shown` is a follow-up.
+- History already written keeps what the old rule showed; `runs.historyRetentionDays` retires it (the PR body says so).
+- E15.S6 is the first wire consumer of `WindowsCommandLine.Shown`.
+- A quoting-aware tokenizer for the argument of `sh -c` / `bash -lc`, so only the token goes and not the whole script (the judge's
+  verdict 2 above).
+- **Program-specific flags inside a blob** — `sh -c "curl -u a:b …"`, `"mysql -pX"`, `"tool -p x"`: arm 2 judges ARGUMENTS, and a flag
+  inside one argument is not seen; only a secret WORD in the blob (or `sshpass`) redacts it. The tail: split the blob, detect the
+  program's flag, redact the blob whole.
+- **A URL segment with an extension** (`…/<token>.json`) is not judged by the entropy test (the dot is outside the credential alphabet),
+  and **`;` matrix parameters** (`/a;jsessionid=<token>`) are read as part of a path segment.
+- **`/rp` and `/P:`** — Windows tools' short switches that carry a password (`runas /savecred`, `net use /user: … /P:`) are not
+  secret names; their value is judged only by shape.
+- **Over-redaction costs, accepted (deny by default):** a long CamelCase flag name with a digit (three classes, entropy above 3.5); an
+  UPPERCASE-and-digit environment name of 20 characters or more; a path whose segment holds a space after a secret word
+  (`/opt/Auth Tool/run` — arm 7 runs before the path arm) — which also reaches the R8 matchers (`AgentOrphans.Script`,
+  `IdleGate.IsBuild`, `IsDotnetBuild` read the SHOWN line, so a redacted path is no script and no build); the captured tree has none,
+  and `MatchersOverTheShownLineTests` holds that.
+- **The final short re-check (Fable, 2026-10-21, 9615cad5): SHIP.** It found two roads the §1 inventory did not list, both over the
+  daemon's OWN child commands from the closed template catalogue (no template takes free text), so neither blocks this story:
+  - **R9 — `ActionCommandRecord.Display` / `.Detail`** (`Actions/ActionCommands.cs:157-168`) carry a child's RAW argv and its RAW
+    first stderr line into the run detail (`runs show` prints it through `ShownText.Printable` only); `git` can echo a remote URL
+    with a userinfo token in an error. The tail: `display` through `CommandLineText.Shown(argv)` and the stderr line through the rule.
+  - **`CommandPolicy.Shown`** (`Processes/Policy/CommandPolicy.cs:105-106`) builds refusal reasons with its own printable (Cc only)
+    and a 120-character PREFIX cut per argument — a prefix of a raw argument, which §3 forbids. The tail: `CommandLineText.Shown`.
+  - Nits: four private `Printable` copies (`PackageCacheClean.cs:219`, `ExtraAgent.cs:164`, `DistroIdentity.cs:95`,
+    `Worktrees/FolderKinds.cs:113` — the last reaches `status --json` with U+202E/U+2028 kept) should call `ShownText.Printable`;
+    `SafeShapes.SingleSegment` covers `/x` and `./x` only (`~/`, `../`, a drive root and a trailing `/` are not tokens' shapes).

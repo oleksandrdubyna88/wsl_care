@@ -28,7 +28,7 @@ async function within(input: ScenarioInput, body: (world: FakeWorld) => Promise<
 }
 
 function clientOn(world: FakeWorld): WindowsCareClient {
-  return new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
+  return new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
 }
 
 function exitOf(result: ProcessResult): { code: number; stdout: string; stderr: string } {
@@ -94,6 +94,7 @@ test('the stage answers can be scripted by fixture and exit: reused, refused (1)
 
 test('the fake refuses every other argv of the bundled exe — tasks run, a --timer anywhere, a missing --json, an unknown task, extra words, the reads it is not asked', async () => {
   await within(WINDOWS, async (world) => {
+    // E19.S2b: `status --json` is the bundled exe's one answered read beside `--version` (fakeWsl.test.ts); the staged exe refuses it (below).
     const refused: readonly (readonly string[])[] = [
       ['tasks', 'run', 'watch', '--json'],
       ['tasks', 'run', 'watch', '--timer', '--json'],
@@ -106,7 +107,8 @@ test('the fake refuses every other argv of the bundled exe — tasks run, a --ti
       ['tasks', 'render', 'watch', '--json'],
       ['tasks', 'render', 'both', '--json'],
       ['tasks'],
-      ['status', '--json'],
+      ['status'],
+      ['status', '--json', '--detail'],
       ['preview', '--all', '--json'],
       ['archive', 'preview', '--json'],
       ['archive', 'check-base', 'C:\\x', '--json'],

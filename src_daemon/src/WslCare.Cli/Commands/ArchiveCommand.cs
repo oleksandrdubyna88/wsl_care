@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Text;
 using System.Text.Json;
 
@@ -71,13 +72,13 @@ internal static class ArchiveCommand
 
     private static string RenderPreview(ArchivePreviewReport report)
     {
-        var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive preview ({report.Side}, {report.SideFolder}, months in {report.Zone}){BaseOf(report)}"));
+        var text = new StringBuilder().AppendLine(ShownText.Printable($"wsl-care archive preview ({report.Side}, {report.SideFolder}, months in {report.Zone}){BaseOf(report)}"));
         foreach (var agent in report.Agents)
         {
             AppendAgent(text, agent);
         }
 
-        return text.Append(CommandLine.Printable(report.InUse.Note.Length == 0 ? string.Empty : $"  note: {report.InUse.Note}")).ToString().TrimEnd('\r', '\n', ' ');
+        return text.Append(ShownText.Printable(report.InUse.Note.Length == 0 ? string.Empty : $"  note: {report.InUse.Note}")).ToString().TrimEnd('\r', '\n', ' ');
     }
 
     private static string BaseOf(ArchivePreviewReport report) => report.BaseFolder.Length == 0 ? " — no archive.baseFolder set" : $" → {report.BaseFolder}";
@@ -85,10 +86,10 @@ internal static class ArchiveCommand
     private static void AppendAgent(StringBuilder text, AgentPreviewReport agent)
     {
         var note = agent.Note.Length > 0 ? $" — {agent.Note}" : string.Empty;
-        text.AppendLine(CommandLine.Printable(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {agent.Name,-14} due {agent.DueUnits} ({agent.DueBytes / 1048576.0:0.0} MiB) from day {agent.EffectiveAgeDays}; kept {agent.Skipped.Sum(s => s.Count)}; younger {agent.Younger}{note}")));
+        text.AppendLine(ShownText.Printable(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {agent.Name,-14} due {agent.DueUnits} ({agent.DueBytes / 1048576.0:0.0} MiB) from day {agent.EffectiveAgeDays}; kept {agent.Skipped.Sum(s => s.Count)}; younger {agent.Younger}{note}")));
         foreach (var warning in agent.Warnings)
         {
-            text.AppendLine(CommandLine.Printable($"    warning: {warning}"));
+            text.AppendLine(ShownText.Printable($"    warning: {warning}"));
         }
     }
 
@@ -116,17 +117,17 @@ internal static class ArchiveCommand
     private static string Render(BaseFolderReport report)
     {
         var text = new StringBuilder();
-        text.AppendLine(CommandLine.Printable(report.Accepted
+        text.AppendLine(ShownText.Printable(report.Accepted
             ? $"accepted: {report.Folder}{Where(report.Mount)}"
             : $"refused ({report.Rule}): {report.Refusal}"));
         foreach (var warning in report.Warnings)
         {
-            text.AppendLine(CommandLine.Printable($"  warning: {warning}"));
+            text.AppendLine(ShownText.Printable($"  warning: {warning}"));
         }
 
         foreach (var note in report.Notes)
         {
-            text.AppendLine(CommandLine.Printable($"  note: {note}"));
+            text.AppendLine(ShownText.Printable($"  note: {note}"));
         }
 
         return text.ToString().TrimEnd('\r', '\n');

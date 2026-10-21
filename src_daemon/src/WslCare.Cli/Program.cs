@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Diagnostics;
 
 using Serilog;
@@ -124,7 +125,11 @@ internal static class Program
             Request.UnitsDropIn dropIn => UnitsDropIn(dropIn, loaded, stdout, stderr),
             Request.TasksRender render => TasksCommand.Render(render, host, loaded, stdout, stderr),
             Request.TasksRun run => TasksCommand.Run(run, host, loaded, stderr, cancellationToken),
+            Request.TasksPreview preview => TasksCommand.Preview(preview, host, loaded, stdout, stderr, cancellationToken),
             Request.TasksStage stage => TasksCommand.Stage(stage, host, loaded, stdout, stderr),
+            Request.WorktreesRootsSet rootsSet => WorktreesCommand.RootsSet(rootsSet, host, loaded, stdout, stderr),
+            Request.WorktreesRootsClear rootsClear => WorktreesCommand.RootsClear(rootsClear, host, stdout, stderr),
+            Request.WorktreesScan scan => WorktreesCommand.Scan(scan, host, loaded, stdout, stderr, cancellationToken),
             Request.ActStop stop => RunStops.Stop(stop, host, stdout, stderr, logger.ForContext(typeof(RunStops)), cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
@@ -156,7 +161,7 @@ internal static class Program
         _ => null,
     };
 
-    private static void LogRequest(ILogger logger, Request request, ConfigLoadResult loaded, IReadOnlyList<string> args)
+    internal static void LogRequest(ILogger logger, Request request, ConfigLoadResult loaded, IReadOnlyList<string> args)
     {
         var log = logger.ForContext(typeof(Program));
         foreach (var error in loaded.Errors)
@@ -170,6 +175,6 @@ internal static class Program
         }
 
         // At Information on purpose: a run log that holds no line is a file nobody can read anything from.
-        log.Information("{Request}: wsl-care {Argv}", request.GetType().Name, string.Join(' ', args.Select(CommandLine.Printable)));
+        log.Information("{Request}: wsl-care {Argv}", request.GetType().Name, string.Join(' ', Core.Collectors.Procfs.CommandLineText.Redact(args)));
     }
 }

@@ -35,7 +35,16 @@ public sealed class ProcessCommandRunner : ICommandRunner
     private readonly TimeProvider _clock;
 
     public ProcessCommandRunner(Policy.CommandPolicy policy)
-        : this(PolicyOf(policy).Review, static (name, token) => ExecutableResolver.Resolve(name, token), TimeProvider.System)
+        : this(policy, ProductExecutables.Resolve)
+    {
+    }
+
+    /// <summary>The product runner with its own answer to "which file is this bare program": the policy still judges the BARE name first
+    /// (a refusal never reaches <paramref name="resolve"/>), and the file the resolver names is started as found. The product passes
+    /// <see cref="ProductExecutables.Resolve(string, CancellationToken)"/> — <c>git.exe</c> only through <see cref="GitExecutable"/>, never
+    /// from <c>PATH</c>; a test passes a <see cref="GitExecutable"/> of its own through the same seam.</summary>
+    public ProcessCommandRunner(Policy.CommandPolicy policy, Func<string, CancellationToken, ResolvedExecutable> resolve)
+        : this(PolicyOf(policy).Review, ResolverOf(resolve), TimeProvider.System)
     {
     }
 
@@ -44,6 +53,12 @@ public sealed class ProcessCommandRunner : ICommandRunner
         _review = review;
         _resolve = resolve;
         _clock = clock;
+    }
+
+    private static Func<string, CancellationToken, ResolvedExecutable> ResolverOf(Func<string, CancellationToken, ResolvedExecutable> resolve)
+    {
+        ArgumentNullException.ThrowIfNull(resolve);
+        return resolve;
     }
 
     private static Policy.CommandPolicy PolicyOf(Policy.CommandPolicy policy)
@@ -246,6 +261,12 @@ public sealed class ProcessCommandRunner : ICommandRunner
             CreateNoWindow = true,
             WorkingDirectory = request.WorkingDirectory,
         };
+        if (request.Utf8Output)
+        {
+            info.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            info.StandardErrorEncoding = System.Text.Encoding.UTF8;
+        }
+
         foreach (var argument in request.Argv.Skip(1))
         {
             info.ArgumentList.Add(argument);

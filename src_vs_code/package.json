@@ -2,7 +2,7 @@
   "name": "ai-os-care",
   "displayName": "AI OS Care",
   "description": "Shows what the wsl-care daemon measures inside WSL — memory, swap, disk, containers and the cleanup candidates — and runs a cleanup only after you confirm it. Windows with WSL only; the daemon is installed separately.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "remsoftdev",
   "preview": true,
   "license": "MIT",
@@ -109,6 +109,31 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.installWindowsWatchTask",
+        "title": "Install the Windows watch task (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.installWindowsArchiveTask",
+        "title": "Install the Windows archive task (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.removeWindowsTasks",
+        "title": "Remove the Windows tasks (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.runWindowsWatchTask",
+        "title": "Run the Windows watch now (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.runWindowsArchiveTask",
+        "title": "Archive Windows sessions now (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.chooseArchiveFolder",
         "title": "Choose the AI-session archive folder…",
         "category": "AI OS Care"
@@ -185,6 +210,14 @@
           "maximum": 600,
           "scope": "application",
           "markdownDescription": "How long `status --json` may take before `wsl.exe` is stopped and the call reads \"timed out\", in seconds."
+        },
+        "wslCare.timeouts.windowsStatusSeconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 12,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long `status --json` of the bundled Windows daemon may take before it is stopped and the reading reads \"timed out\", in seconds — it waits one MCP CPU window and starts no process."
         },
         "wslCare.timeouts.versionSeconds": {
           "type": "integer",
@@ -272,7 +305,23 @@
           "minimum": 5,
           "maximum": 300,
           "scope": "application",
-          "markdownDescription": "How long the read-only Task Scheduler query behind the panel's *Windows Time guard* line may take, in seconds."
+          "markdownDescription": "How long the ONE read-only Task Scheduler read may take, in seconds. It feeds both the panel's *Windows Time guard* line and its Windows tasks lines. At the ceiling its PowerShell and everything it started are ended, and the panel says the read timed out."
+        },
+        "wslCare.timeouts.windowsTasksStageSeconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long the Windows daemon's `tasks render` (what the panel asks of the staged copy, to compare it with each registered task) and `tasks stage` may take, in seconds. A stage copies 13.7 MB and reads it back twice; a render reads one small file and the configuration."
+        },
+        "wslCare.timeouts.windowsTasksSeconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long installing, removing or starting now the Windows tasks may take, in seconds — the ONE PowerShell that runs as you (not elevated, no UAC prompt) registers, deletes or starts a scheduled task. At the ceiling it and everything it started are ended, and the panel keeps the buttons held until the deadline of twice this number."
         },
         "wslCare.timeouts.engineProbeSeconds": {
           "type": "integer",
@@ -408,6 +457,14 @@
           "scope": "application",
           "markdownDescription": "How long one run of the Windows Time guard may take before Task Scheduler stops it, in minutes. Applies when the guard is installed (again)."
         },
+        "wslCare.windowsTasks.busyRetrySeconds": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 60,
+          "scope": "application",
+          "markdownDescription": "How long a busy answer of the Windows daemon (another run holds its run lock) is waited out before the ONE retry of the stage or removal that asked, in seconds. A second busy answer is told, never looped."
+        },
         "wslCare.logs.maxRunIndex": {
           "type": "integer",
           "default": 9999,
@@ -478,7 +535,7 @@
   "scripts": {
     "clean": "node scripts/clean.mjs out dist",
     "compile": "node scripts/clean.mjs out && tsc -p ./",
-    "typecheck": "tsc -p ./ --noEmit",
+    "typecheck": "tsc -p ./ --noEmit && tsc -p tsconfig.webview.json --noEmit",
     "lint": "eslint .",
     "bundle": "node scripts/clean.mjs dist && node scripts/bundle.mjs",
     "test": "npm run compile && npm run bundle && node scripts/run-tests.mjs",
@@ -492,6 +549,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@oleksandrdubyna88/vscode-webview-kit": "0.2.0",
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
     "@vscode/test-electron": "3.1.0",

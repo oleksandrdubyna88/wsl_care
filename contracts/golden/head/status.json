@@ -141,6 +141,11 @@
             "value": "/home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist/server.bundle.js --cancellationReceive=file:3fafe6b0f7c1e",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist/server.bundle.js"
+          ],
+          "argumentsTotal": 4,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -168,6 +173,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
+          "program": "node",
+          "argumentsShown": [
+            "--dns-result-order=ipv4first",
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork"
+          ],
+          "argumentsTotal": 5,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -195,6 +206,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork",
+            "--type=fileWatcher"
+          ],
+          "argumentsTotal": 2,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -222,6 +239,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/data/User/workspaceStorage/74e55d12aa25f727550896adc29ed54d/vendor.extension-b/atlascode-rovodev-bin/202607.24.1/atlassian_cli_rovodev serve 40489 --xid rovodev-ide-vscode --",
+          "program": "atlassian_cli_rovodev",
+          "argumentsShown": [
+            "serve",
+            "40489"
+          ],
+          "argumentsTotal": 7,
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -249,6 +272,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js",
+            "--host=127.0.0.1"
+          ],
+          "argumentsTotal": 9,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -276,6 +305,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
+          "program": "claude",
+          "argumentsShown": [
+            "--output-format",
+            "stream-json"
+          ],
+          "argumentsTotal": 52,
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -303,6 +338,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
+          "program": "claude",
+          "argumentsShown": [
+            "--output-format",
+            "stream-json"
+          ],
+          "argumentsTotal": 52,
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -330,6 +371,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-e-1.0.0-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information --sourceGeneratorExecutionPreference Balanced --devKitDepen",
+          "program": "Microsoft.CodeAnalysis.LanguageServer",
+          "argumentsShown": [
+            "--logLevel",
+            "Information"
+          ],
+          "argumentsTotal": 22,
           "family": "language-servers",
           "orphaned": false,
           "hasTty": false,
@@ -357,6 +404,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.gemini/bin/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=<redacted> --add-dir=/home/user/git/project-p --add-dir=/home/user/git/project-h --add-dir=/home/user/git/proj",
+          "program": "agy",
+          "argumentsShown": [
+            "--hub",
+            "--hub-port=41790"
+          ],
+          "argumentsTotal": 22,
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -384,6 +437,11 @@
             "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/servicehub"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft.VisualS",
+          "program": "Microsoft.VisualStudio.Code.ServiceHost",
+          "argumentsShown": [
+            "--runtimeconfig"
+          ],
+          "argumentsTotal": 5,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -411,6 +469,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork",
+            "--type=agentHost"
+          ],
+          "argumentsTotal": 8,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -438,6 +502,11 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "node /home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp"
+          ],
+          "argumentsTotal": 1,
           "family": "node",
           "orphaned": false,
           "hasTty": true,
@@ -465,6 +534,11 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "node /home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp"
+          ],
+          "argumentsTotal": 1,
           "family": "node",
           "orphaned": false,
           "hasTty": true,
@@ -492,6 +566,12 @@
             "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-server.linux-x64/Microsoft.VisualStudio.Code",
+          "program": "Microsoft.VisualStudio.Code.Server",
+          "argumentsShown": [
+            "--serviceHubConfigPath",
+            "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/servicehub/servicehub.config.json"
+          ],
+          "argumentsTotal": 31,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -519,6 +599,9 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft.VisualS",
+          "program": "Microsoft.VisualStudio.Code.ServiceHost",
+          "argumentsShown": [],
+          "argumentsTotal": 3,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -546,6 +629,9 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "npm exec @playwright/mcp@latest                                           ",
+          "program": "mcp@latest",
+          "argumentsShown": [],
+          "argumentsTotal": 0,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -573,6 +659,9 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "npm exec @playwright/mcp@latest                                           ",
+          "program": "mcp@latest",
+          "argumentsShown": [],
+          "argumentsTotal": 0,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -600,6 +689,12 @@
             "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/servicehub"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-controller.linux-x64/Microsoft.VisualStudio.",
+          "program": "Microsoft.VisualStudio.Code.ServiceController",
+          "argumentsShown": [
+            "5e8784eb4d",
+            "/ControllerCooldownTimeout:30000"
+          ],
+          "argumentsTotal": 3,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -627,6 +722,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-i-1.0.0/dist/languageserver.js --node-ipc --clientProcessId=1169",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/extensions/vendor.extension-i-1.0.0/dist/languageserver.js",
+            "--node-ipc"
+          ],
+          "argumentsTotal": 3,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -654,6 +755,11 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "program": "node",
+          "argumentsShown": [
+            "-e"
+          ],
+          "argumentsTotal": 2,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -681,6 +787,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-c-1.0.0/dist/server-node.js --node-ipc --clientProcessId=1169",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/extensions/vendor.extension-c-1.0.0/dist/server-node.js",
+            "--node-ipc"
+          ],
+          "argumentsTotal": 3,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -708,6 +820,11 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "program": "node",
+          "argumentsShown": [
+            "-e"
+          ],
+          "argumentsTotal": 2,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -735,6 +852,12 @@
             "reason": "/golden-root/proc/4137/cwd is not a link"
           },
           "commandLine": "/run/docker-desktop/docker-desktop-user-distro proxy --distro-name Ubuntu --docker-desktop-root /mnt/wsl/docker-desktop C:\\Program Files\\Docker\\Docker\\resources",
+          "program": "docker-desktop-user-distro",
+          "argumentsShown": [
+            "proxy",
+            "--distro-name"
+          ],
+          "argumentsTotal": 6,
           "family": "docker-desktop-proxy",
           "orphaned": false,
           "hasTty": true,
@@ -762,6 +885,9 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/data/User/globalStorage/vendor.extension-j/coai-mcp",
+          "program": "coai-mcp",
+          "argumentsShown": [],
+          "argumentsTotal": 0,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -789,6 +915,9 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/data/User/globalStorage/vendor.extension-j/coai-mcp",
+          "program": "coai-mcp",
+          "argumentsShown": [],
+          "argumentsTotal": 0,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -816,6 +945,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/extensions/json-language-features/server/dist/node/js",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/extensions/json-language-features/server/dist/node/jsonServerMain",
+            "--node-ipc"
+          ],
+          "argumentsTotal": 3,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -843,6 +978,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/user",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork",
+            "--type=ptyHost"
+          ],
+          "argumentsTotal": 4,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -870,6 +1011,9 @@
             "reason": "/golden-root/proc/304/cwd is not a link"
           },
           "commandLine": "/snap/snapd/current/usr/lib/snapd/snapd",
+          "program": "snapd",
+          "argumentsShown": [],
+          "argumentsTotal": 0,
           "family": "other",
           "orphaned": true,
           "hasTty": false,
@@ -897,6 +1041,11 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-remote-containers/dist/vscode-remote-containers-server-0.469.0.js",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-remote-containers/dist/vscode-remote-containers-server-0.469.0.js"
+          ],
+          "argumentsTotal": 1,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -924,6 +1073,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
+          "program": "copilot-runtime",
+          "argumentsShown": [
+            "--headless",
+            "--no-auto-update"
+          ],
+          "argumentsTotal": 6,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -985,6 +1140,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
+          "program": "node",
+          "argumentsShown": [
+            "--dns-result-order=ipv4first",
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork"
+          ],
+          "argumentsTotal": 5,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1012,6 +1173,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork",
+            "--type=fileWatcher"
+          ],
+          "argumentsTotal": 2,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1039,6 +1206,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js",
+            "--host=127.0.0.1"
+          ],
+          "argumentsTotal": 9,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1066,6 +1239,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork",
+            "--type=agentHost"
+          ],
+          "argumentsTotal": 8,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1093,6 +1272,11 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "program": "node",
+          "argumentsShown": [
+            "-e"
+          ],
+          "argumentsTotal": 2,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1120,6 +1304,11 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "program": "node",
+          "argumentsShown": [
+            "-e"
+          ],
+          "argumentsTotal": 2,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1147,6 +1336,12 @@
             "reason": "/golden-root/proc/4137/cwd is not a link"
           },
           "commandLine": "/run/docker-desktop/docker-desktop-user-distro proxy --distro-name Ubuntu --docker-desktop-root /mnt/wsl/docker-desktop C:\\Program Files\\Docker\\Docker\\resources",
+          "program": "docker-desktop-user-distro",
+          "argumentsShown": [
+            "proxy",
+            "--distro-name"
+          ],
+          "argumentsTotal": 6,
           "family": "docker-desktop-proxy",
           "orphaned": false,
           "hasTty": true,
@@ -1174,6 +1369,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/user",
+          "program": "node",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork",
+            "--type=ptyHost"
+          ],
+          "argumentsTotal": 4,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1201,6 +1402,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
+          "program": "copilot-runtime",
+          "argumentsShown": [
+            "--headless",
+            "--no-auto-update"
+          ],
+          "argumentsTotal": 6,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1228,6 +1435,11 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.local/share/creds-cli/creds relay",
+          "program": "creds",
+          "argumentsShown": [
+            "relay"
+          ],
+          "argumentsTotal": 1,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1255,6 +1467,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+          "program": "init",
+          "argumentsShown": [
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe"
+          ],
+          "argumentsTotal": 2,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1282,6 +1500,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+          "program": "init",
+          "argumentsShown": [
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe"
+          ],
+          "argumentsTotal": 2,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1309,6 +1533,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+          "program": "init",
+          "argumentsShown": [
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe"
+          ],
+          "argumentsTotal": 2,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1336,6 +1566,12 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+          "program": "init",
+          "argumentsShown": [
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
+            "/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe"
+          ],
+          "argumentsTotal": 2,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1363,6 +1599,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/init /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe relay-pipe",
+          "program": "init",
+          "argumentsShown": [
+            "/mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe",
+            "/mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe"
+          ],
+          "argumentsTotal": 3,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1390,6 +1632,11 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-g-1.0.0-linux-x64/python-env-tools/bin/pet server",
+          "program": "pet",
+          "argumentsShown": [
+            "server"
+          ],
+          "argumentsTotal": 1,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1416,7 +1663,12 @@
             "available": true,
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-",
+          "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh <redacted> stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=<redacted> --use-host-pr",
+          "program": "sh",
+          "argumentsShown": [
+            "/mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh"
+          ],
+          "argumentsTotal": 13,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1444,6 +1696,12 @@
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "sh /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/code-server --host=127.0.0.1 --port=0 --connection-token=<redacted> --use-host-proxy --without-browser-env-var --disable-w",
+          "program": "sh",
+          "argumentsShown": [
+            "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/code-server",
+            "--host=127.0.0.1"
+          ],
+          "argumentsTotal": 9,
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1470,7 +1728,12 @@
             "available": true,
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "sh -c \"$VSCODE_WSL_EXT_LOCATION/scripts/wslServer.sh\" 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=REDACTED --use-host-proxy ",
+          "commandLine": "sh -c <redacted>",
+          "program": "sh",
+          "argumentsShown": [
+            "-c"
+          ],
+          "argumentsTotal": 2,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1498,6 +1761,9 @@
             "value": "/mnt/c/Users/user/AppData/Local/Docker"
           },
           "commandLine": "sh",
+          "program": "sh",
+          "argumentsShown": [],
+          "argumentsTotal": 0,
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -2282,6 +2548,45 @@
       }
     },
     {
+      "id": "disk.volumeFree",
+      "level": "warn",
+      "value": "D: 23.1 GiB free (11.8 %) — warn; C: 1010.3 GiB free (41.2 %) — ok; F: 151.6 GiB free (62.1 %) — ok",
+      "limit": "warn < 30 GiB or < 10 %, critical < 10 GiB or < 3 % (GiB floors only on volumes of 100 GiB or more; volumes under 8 GiB not judged)",
+      "reason": "E: not judged: smaller than 8 GiB (disk.volumeFreeMinSizeGib); D: judged by GiB or percent, below the warn floor; C: judged by GiB or percent; F: judged by GiB or percent",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "host.commit",
+      "level": "ok",
+      "value": "103.4 of 145.6 GiB = 71.0 %",
+      "limit": "warn > 80 %, critical > 90 % of the commit limit (thresholds.hostCommitWarnPercent, thresholds.hostCommitCriticalPercent)",
+      "reason": "Windows' commit charge against its commit limit: when the charge reaches the limit, allocations fail",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "host.compression",
+      "level": "warn",
+      "value": "9.86 GiB",
+      "limit": "warn > 8 GiB (thresholds.hostCompressionWarnGb)",
+      "reason": "memory Windows compressed instead of paging it out (the Memory Compression process's working set)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "docker.A4",
       "level": "ok",
       "value": "3 volumes, 0.64 GB",
@@ -2493,7 +2798,12 @@
           "orphaned": false,
           "pid": 7203,
           "agent": "Claude Code",
-          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>"
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
+          "program": "claude",
+          "argumentsShown": [
+            "--output-format",
+            "stream-json"
+          ]
         },
         "activity": {
           "available": false,
@@ -2524,7 +2834,12 @@
           "orphaned": false,
           "pid": 8290,
           "agent": "Claude Code",
-          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>"
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
+          "program": "claude",
+          "argumentsShown": [
+            "--output-format",
+            "stream-json"
+          ]
         },
         "activity": {
           "available": false,
@@ -2730,6 +3045,40 @@
       "runId": "20000101T000000Z-1",
       "evaluatedAt": "2000-01-01T00:00:00+00:00",
       "ageSeconds": 0
-    }
+    },
+    "lettered": [
+      {
+        "letter": "E",
+        "sizeBytes": 31170560,
+        "freeBytes": 29401088,
+        "freePercent": 94.3,
+        "level": "unknown",
+        "judgedBy": "not judged: smaller than 8 GiB (disk.volumeFreeMinSizeGib)"
+      },
+      {
+        "letter": "D",
+        "sizeBytes": 209715200000,
+        "freeBytes": 24833069056,
+        "freePercent": 11.8,
+        "level": "warn",
+        "judgedBy": "gib-or-percent"
+      },
+      {
+        "letter": "C",
+        "sizeBytes": 2632775102464,
+        "freeBytes": 1084754046976,
+        "freePercent": 41.2,
+        "level": "ok",
+        "judgedBy": "gib-or-percent"
+      },
+      {
+        "letter": "F",
+        "sizeBytes": 262127222784,
+        "freeBytes": 162823499776,
+        "freePercent": 62.1,
+        "level": "ok",
+        "judgedBy": "gib-or-percent"
+      }
+    ]
   }
 }

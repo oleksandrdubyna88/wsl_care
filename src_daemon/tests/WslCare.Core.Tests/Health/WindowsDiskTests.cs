@@ -261,6 +261,36 @@ public sealed class WindowsDiskTests
         domain.Should().BeEmpty("the saved detail must not change shape when a domain record changes for parsing (final code round)");
     }
 
+    /// <summary>E15.S1b S4: the run detail says which PowerShell the script ran under and why — <c>{program, reason}</c>, wire
+    /// types only — also when the script then failed; a sample without an engine (the Windows binary's) writes none, and a
+    /// detail written before the story reads back without one.</summary>
+    [Fact]
+    public void The_run_detail_names_the_engine_the_script_ran_under_and_a_sample_without_one_writes_none()
+    {
+        const string started = "/mnt/c/Program Files/PowerShell/7/pwsh.exe";
+        var engine = new InteropEngine(InteropEngineKind.Msi, "the clock probe verified it");
+        var read = new WindowsDiskSample(WindowsDiskFixture.CapturedAt, Reading.Of(TimeSpan.FromSeconds(3)), Reading.Of(Parse(WindowsDiskFixture.Answer))) { Engine = Reading.Of(engine), StartedFrom = started };
+        var failed = WindowsDiskSample.Unavailable(WindowsDiskFixture.CapturedAt, "pwsh.exe could not be started") with { Engine = Reading.Of(engine) };
+
+        WslCare.Core.Collect.WindowsDiskReports.From(read).Engine.Should().Be(new WslCare.Core.Collect.InteropEngineReport(started, engine.Reason), "the file the runner really started (code round: one source)");
+        WslCare.Core.Collect.WindowsDiskReports.From(failed).Engine.Should().Be(new WslCare.Core.Collect.InteropEngineReport(HealthCommands.Pwsh, engine.Reason), "nothing started: the bare program the policy judged");
+        var windows = WslCare.Core.Collect.WindowsDiskReports.From(WindowsDiskSample.Unavailable(WindowsDiskFixture.CapturedAt, "the Windows binary"));
+        windows.Engine.Should().BeNull();
+        System.Text.Json.JsonSerializer.Serialize(windows, WslCare.Core.Json.WslCareJsonContext.Default.WindowsDiskReport).Should().NotContain("\"engine\"");
+        var written = System.Text.Json.JsonSerializer.Serialize(WslCare.Core.Collect.WindowsDiskReports.From(read), WslCare.Core.Json.WslCareJsonContext.Default.WindowsDiskReport);
+        written.Should().Contain("\"engine\"").And.Contain("\"program\": \"/mnt/c/Program Files/PowerShell/7/pwsh.exe\"");
+        System.Text.Json.JsonSerializer.Deserialize(written.Replace("\"engine\"", "\"engineFromTheFuture\"", StringComparison.Ordinal), WslCare.Core.Json.WslCareJsonContext.Default.WindowsDiskReport)!.Engine.Should().BeNull("an older detail has no engine");
+    }
+
+    [Fact]
+    public void The_command_follows_the_engine_and_only_the_verified_msi_pwsh_gets_pwsh()
+    {
+        WindowsDiskCommands.Under(new InteropEngine(InteropEngineKind.Msi, "verified")).Argv
+            .Should().Equal(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv);
+        WindowsDiskCommands.Under(new InteropEngine(InteropEngineKind.WindowsPowerShell, "absent")).Argv
+            .Should().Equal(WindowsDiskCommands.WindowsDisk.Argv);
+    }
+
     private static WslCare.Core.Collect.WindowsDiskReport Report(WindowsDiskFacts facts) =>
         WslCare.Core.Collect.WindowsDiskReports.From(new WindowsDiskSample(WindowsDiskFixture.CapturedAt, Reading.Of(TimeSpan.FromSeconds(3)), Reading.Of(facts)));
 
@@ -362,9 +392,26 @@ public sealed class WindowsDiskTests
 
         script.Should().NotContain("\"", "WSL interop and PowerShell quote double quotes their own way; the script needs none");
         script.Should().Match(s => s.All(c => c >= ' ' && c <= '~'), "ASCII only, and the never-list refuses a control character");
-        script.Should().EndWith("$s.Write($u,0,$u.Length); $s.Flush()");
+        script.Should().EndWith(HealthCommands.Utf8WriteEnd, "the answer leaves by the one UTF-8 road the clock probe uses too");
         script.IndexOf("$o.Add('" + WindowsDiskCommands.EndLine + "')", StringComparison.Ordinal).Should().BeGreaterThan(script.LastIndexOf("$o.Add('adapter", StringComparison.Ordinal), "end=1 is added last");
         script.Should().Contain("$ProgressPreference='SilentlyContinue'");
+    }
+
+    /// <summary>E15.S1b, measured 2026-10-12 (the Store pwsh 7.6.6, read-only): with the module path pinned to
+    /// <c>$PSHOME\Modules</c>, pwsh 7 finds no <c>Get-Volume</c>, <c>Get-Partition</c>, <c>Get-PhysicalDisk</c> or
+    /// <c>Get-StorageReliabilityCounter</c> — Storage is not in pwsh's own folder. So the script imports Storage by its ABSOLUTE
+    /// System32 path (GetSystemDirectory, not a variable) right after the pin — the extension's G6 road for PnpDevice — and
+    /// before any Storage cmdlet. Under 5.1 it is the same module the pinned path already names.</summary>
+    [Fact]
+    public void The_storage_module_is_imported_by_its_absolute_system32_path_right_after_the_pin()
+    {
+        var script = WindowsDiskCommands.Script;
+        const string import = @"try { Import-Module -Name ([IO.Path]::Combine([Environment]::SystemDirectory,'WindowsPowerShell\v1.0\Modules\Storage')) -ErrorAction Stop } catch { }";
+
+        script.Should().StartWith(HealthCommands.ModulePathPin + "; " + import + "; ", "the pin first, the import second, before any cmdlet");
+        script.IndexOf(import, StringComparison.Ordinal).Should().BeLessThan(script.IndexOf("Get-Volume", StringComparison.Ordinal))
+            .And.BeLessThan(script.IndexOf("Get-PhysicalDisk", StringComparison.Ordinal));
+        script.Should().NotContain("$env:SystemRoot", "System32 comes from GetSystemDirectory, never from a variable the caller sets");
     }
 
     [Fact]

@@ -7,14 +7,21 @@ using WslCare.Core.Hosting;
 
 namespace WslCare.Core.Collectors;
 
-/// <summary>The two host counters the Windows probe asks the operating system for — a seam, so the probe's
-/// assembly is a unit test on any OS and the real counters are read only by <see cref="Win32Counters"/>.</summary>
+/// <summary>The host counters the Windows probe asks the operating system for — a seam, so the probe's
+/// assembly is a unit test on any OS and the real counters are read only by <see cref="Win32Counters"/>. Each reader fails
+/// ALONE (E15.S5): its own figure is unavailable with the reason, and the others are still read.</summary>
 public interface IWindowsCounters
 {
     Reading<HostMemory> Memory();
 
     /// <summary>The summed working set of the processes named <c>vmmemWSL</c>; unavailable when none runs.</summary>
     Reading<long> VmmemWorkingSet();
+
+    /// <summary>E15.S5: Windows' commit charge and commit limit (<c>GlobalMemoryStatusEx</c>'s page-file fields).</summary>
+    Reading<HostCommit> Commit();
+
+    /// <summary>E15.S5: the working set of the <c>Memory Compression</c> process; unavailable when there is none.</summary>
+    Reading<long> CompressionWorkingSet();
 }
 
 /// <summary>
@@ -36,7 +43,12 @@ public sealed class WindowsProbe(IFileSystem files, WindowsHostPaths paths, IWin
         var started = clock.GetTimestamp();
         var sampledAt = clock.GetUtcNow();
         cancellationToken.ThrowIfCancellationRequested();
-        var host = new HostSample(counters.Memory(), VolumeUsage.Measure(files, paths.SystemDrive), counters.VmmemWorkingSet());
+        var host = new HostSample(
+            counters.Memory(),
+            VolumeUsage.Measure(files, paths.SystemDrive),
+            counters.VmmemWorkingSet(),
+            counters.Commit(),
+            counters.CompressionWorkingSet());
         return new ProbeSample(Side, sampledAt, clock.GetElapsedTime(started), Reading.Missing<VmSample>(VmIsTheOtherBinary), Reading.Of(host));
     }
 }
@@ -44,37 +56,34 @@ public sealed class WindowsProbe(IFileSystem files, WindowsHostPaths paths, IWin
 /// <summary>
 /// The real counters: <c>GlobalMemoryStatusEx</c>, and the process list the kernel already keeps
 /// (<see cref="Process.GetProcessesByName(string)"/> reads a snapshot — it STARTS nothing, and the
-/// working set comes from that snapshot, so no handle to the protected <c>vmmemWSL</c> is opened).
+/// working set comes from that snapshot, so no handle to the protected <c>vmmemWSL</c> or <c>Memory Compression</c> is opened).
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed partial class Win32Counters : IWindowsCounters
 {
     private const string VmProcessName = "vmmemWSL";
 
-    public Reading<HostMemory> Memory()
+    private const string CompressionProcessName = "Memory Compression";
+
+    public Reading<HostMemory> Memory() =>
+        Status().Map(status => new HostMemory((long)status.TotalPhysical, (long)status.AvailablePhysical));
+
+    public Reading<HostCommit> Commit() =>
+        Status().Map(status => HostCommit.FromPageFile(status.TotalPageFile, status.AvailablePageFile));
+
+    public Reading<long> VmmemWorkingSet() =>
+        ProcessWorkingSets.Sum(VmProcessName, () => Process.GetProcessesByName(VmProcessName), p => p.WorkingSet64, $"no {VmProcessName} process: the WSL VM is not running");
+
+    public Reading<long> CompressionWorkingSet() =>
+        ProcessWorkingSets.Sum(CompressionProcessName, () => Process.GetProcessesByName(CompressionProcessName), p => p.WorkingSet64, $"no {CompressionProcessName} process: Windows does not compress memory now");
+
+    /// <summary>One <c>GlobalMemoryStatusEx</c> call — each reader makes its own, so a failure costs that reader's figure only.</summary>
+    private static Reading<MemoryStatusEx> Status()
     {
         var status = new MemoryStatusEx { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
         return GlobalMemoryStatusEx(ref status)
-            ? Reading.Of(new HostMemory((long)status.TotalPhysical, (long)status.AvailablePhysical))
-            : Reading.Missing<HostMemory>($"GlobalMemoryStatusEx failed with Win32 error {Marshal.GetLastPInvokeError()}");
-    }
-
-    public Reading<long> VmmemWorkingSet()
-    {
-        var processes = Process.GetProcessesByName(VmProcessName);
-        try
-        {
-            return processes.Length == 0
-                ? Reading.Missing<long>($"no {VmProcessName} process: the WSL VM is not running")
-                : Reading.Of(processes.Sum(p => p.WorkingSet64));
-        }
-        finally
-        {
-            foreach (var process in processes)
-            {
-                process.Dispose();
-            }
-        }
+            ? Reading.Of(status)
+            : Reading.Missing<MemoryStatusEx>($"GlobalMemoryStatusEx failed with Win32 error {Marshal.GetLastPInvokeError()}");
     }
 
     [LibraryImport("kernel32.dll", SetLastError = true)]

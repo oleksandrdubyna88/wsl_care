@@ -68,6 +68,29 @@ function byCode(code: number, messages: readonly string[]): Failure {
   }
 }
 
+/**
+ * What a non-zero exit of a daemon started DIRECTLY (not behind `wsl.exe`: the bundled Windows exe, E19.S2b) means — the daemon's own
+ * codes read exactly as `classifyExit` reads them, from its `wsl-care:` lines; none of the `wsl.exe` signatures can apply.
+ */
+export function classifyDirectExit(code: number, stderr: Buffer): Failure {
+  const text = decodeWslText(stderr);
+  const own = daemonMessages(text);
+
+  return byCode(code, own.length > 0 ? own : lastLines(text));
+}
+
+/** How many raw stderr lines a crash that wrote no `wsl-care:` line keeps, and how long each may be. */
+const CRASH_LINES = 5;
+const CRASH_LINE_MAX = 200;
+
+/**
+ * A directly started exe that died without a `wsl-care:` line (a native or runtime crash — nothing came from `wsl.exe` to explain it)
+ * still says why: the last few non-empty stderr lines, colour stripped, each cut. The distro's `classifyExit` keeps only the daemon's lines.
+ */
+function lastLines(text: string): string[] {
+  return textLines(stripAnsi(text)).slice(-CRASH_LINES).map((line) => line.trim().slice(0, CRASH_LINE_MAX));
+}
+
 /** What a non-zero exit of a daemon call means. */
 export function classifyExit(code: number, stdout: Buffer, stderr: Buffer, distro: string, daemonPath: string): Failure {
   if (code === WSL_EXE_FAILED) {

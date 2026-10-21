@@ -39,6 +39,12 @@ public sealed record WindowsClockSample(DateTimeOffset SampledAt, double OffsetS
     /// <summary>Whether this is a measured observation (and not the reason there is none).</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool Measured => string.IsNullOrEmpty(Unavailable);
+
+    /// <summary>What the probe said about the MSI PowerShell 7 (E15.S1b, <see cref="Health.PwshProbe"/>), or why not — judged by
+    /// <c>PwshEngine</c> in the same full run and NOT written to the history line: the run detail records the engine chosen.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Collectors.Reading<Health.PwshProbe> Pwsh { get; init; } =
+        Collectors.Reading.Missing<Health.PwshProbe>(string.IsNullOrEmpty(Unavailable) ? Health.WindowsClockAnswer.NoPwshLine : $"the Windows clock was not observed: {Unavailable}");
 }
 
 /// <summary>One folder a full run measured (plan §4.4 and the A8 / A9 rows of §4.3) — or why not.</summary>

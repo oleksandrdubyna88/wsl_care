@@ -2,11 +2,15 @@ import type { StatusAnswer, Verdict, VerbOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
 import type { GpuBarMark } from '../gpu/gpuState';
 import { at, unavailableAncestor } from '../panel/jsonPath';
+import type { VolumeBarMark } from './volumeMark';
+
+export { NO_VOLUME_MARK, volumeMarkOf, volumeMarkOfOutcome, type VolumeBarMark } from './volumeMark';
 
 /**
  * The status bar (plan §7.2; §15g B1), as a pure function of the newest `status` outcome:
  * `WSL RAM <used>% · swap <x>G · <n> containers`, coloured by the worst RELEVANT verdict — the verdicts about what the
- * bar shows (memory and swap, and the kernel's allocation-failure / OOM alerts, which are memory events). A daemon that
+ * bar shows (memory and swap, and the kernel's allocation-failure / OOM alerts, which are memory events), a busy machine, and
+ * Windows' own memory pressure. A daemon that
  * predates `verdicts` leaves the bar uncoloured and says so in the tooltip; a figure the daemon could not read is `?`,
  * never 0. Every failure is its short state (`failureText`); a stopped distribution is "WSL stopped" — the client made
  * no call that would start it.
@@ -20,8 +24,9 @@ export interface BarView {
   readonly level: BarLevel;
 }
 
-/** E14 S6: `pressure.` (cpu / io PSI, the daemon's "machine busy" rule) colours the bar too — a busy machine is what it shows. */
-export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.', 'pressure.'];
+/** E14 S6: `pressure.` (cpu / io PSI, the daemon's "machine busy" rule) colours the bar too — a busy machine is what it shows.
+ * E15.S5: `host.` (Windows memory pressure: `host.commit`, `host.compression`, `host.vmmem`) too — the memory behind the VM. */
+export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.', 'pressure.', 'host.'];
 
 /** E14 S5: `memory.committed` warns of what the kernel PROMISED, not of a state the bar shows — the panel lists it, the bar does not. */
 export const BAR_EXCLUDED_VERDICT_IDS: readonly string[] = ['memory.committed'];
@@ -101,17 +106,38 @@ function failureView(status: Exclude<VerbOutcome, { kind: 'answered' }>): BarVie
 
 const BAR_RANK: Readonly<Record<BarLevel, number>> = { none: 0, warn: 1, critical: 2 };
 
+/** What a mark laid over the bar is made of — the GPU host's and the volume mark's shapes are this one. */
+interface BarMark {
+  readonly text: string;
+  readonly level: BarLevel;
+  readonly lines: readonly string[];
+}
+
+/** Appends the mark's text, puts its lines first in the tooltip and raises the level — never LOWERS it; an empty mark changes nothing. */
+function withMark(view: BarView, mark: BarMark): BarView {
+  if (mark.text === '') {
+    return view;
+  }
+
+  return { text: view.text + mark.text, tooltip: [...mark.lines, view.tooltip].join('\n'), level: BAR_RANK[mark.level] > BAR_RANK[view.level] ? mark.level : view.level };
+}
+
 /**
  * The GPU mark (PLAN_gpu_health.md D6) on whatever the bar shows — WSL's figures, "WSL stopped", a failure: ` · GPU off` and
  * the error colour while an adapter is not working, ` · GPU ?` and the warning colour while the check could not run, the
  * adapters' lines first in the tooltip. A mark never LOWERS the bar's level. Pure.
  */
 export function withGpuMark(view: BarView, mark: GpuBarMark): BarView {
-  if (mark.text === '') {
-    return view;
-  }
+  return withMark(view, mark);
+}
 
-  return { text: view.text + mark.text, tooltip: [...mark.lines, view.tooltip].join('\n'), level: BAR_RANK[mark.level] > BAR_RANK[view.level] ? mark.level : view.level };
+/**
+ * The volume mark (E19.S1) beside the GPU's: ` · D: low space` and the error colour while `disk.volumeFree` is critical, the volume's
+ * free space and the reading's age as the tooltip's first line (`volumeMark.ts` reads them from the status answer). A mark never
+ * LOWERS the bar's level. Pure.
+ */
+export function withVolumeMark(view: BarView, mark: VolumeBarMark): BarView {
+  return withMark(view, mark);
 }
 
 export function barView(status: VerbOutcome | undefined): BarView {

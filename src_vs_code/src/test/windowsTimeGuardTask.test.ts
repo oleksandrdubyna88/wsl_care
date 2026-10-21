@@ -12,6 +12,7 @@ import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary
 import { guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING } from './support/noRealWsl';
+import { schedulerStdout } from './support/schedulerAnswers';
 import { at, parseXml, type XmlElement } from './support/xmlTree';
 
 /**
@@ -148,6 +149,12 @@ test('the expected summary carries both event triggers in definition order — t
   assert.deepEqual(guardSummary(OTHER).filter((l) => l.startsWith('trigger=event ')).map((l) => l.split(' subscription=')[0]), ['trigger=event enabled=True delay=', 'trigger=event enabled=True delay=']);
 });
 
+test('WR-E2: the summary prints a logon trigger\'s repetition interval — the field the daemon\'s `tasks render` summary carries (PLAN_windows_runner.md §14, WR-D1)', () => {
+  assert.ok(SUMMARY_FUNCTION.includes("9 { 'trigger=logon enabled=' + $t.Enabled + ' delay=' + $t.Delay + ' interval=' + $t.Repetition.Interval }"));
+  assert.ok(guardSummary(DEFAULTS).includes('trigger=logon enabled=True delay=PT60S interval='), 'the guard\'s logon trigger repeats nothing: its interval is empty');
+  assert.ok(guardSummary(OTHER).includes('trigger=logon enabled=True delay= interval='));
+});
+
 test('the expected summary names every baked-in setting, so a change to any of them reads as "install again"', () => {
   const base = guardSummary(DEFAULTS).join('\n');
   for (const changed of [{ everyHours: 5 }, { minMinutesBetweenStarts: 11 }, { delaySeconds: 61 }, { timeLimitMinutes: 6 }, { setAutomaticStart: false }] as const) {
@@ -230,7 +237,7 @@ test('PowerShell\'s parser reads the action, install, remove and query scripts w
   assert.equal(names['guard.ps1'], 'Get-Service,Set-Service,Get-ItemPropertyValue,Test-WslCareStartAllowed,Test-Path,New-Item,Out-Null,Set-ItemProperty,Start-Service,Join-Path,Start-Sleep', 'the action runs these and nothing else (w32tm by absolute path through &), and no command before the module path is pinned');
   assert.equal(names['install.ps1'], 'Import-Module,Join-Path,New-Object,Register-ScheduledTask,Out-Null', 'pwsh D4: ScheduledTasks by its absolute path first');
   assert.equal(names['remove.ps1'], 'New-Object,Test-Path,Remove-Item,Get-ChildItem,Get-Item');
-  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Test-Path,Get-WslCareSummary,ForEach-Object', 'pwsh §11 R4: Test-Path reads the stamp');
+  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Test-Path,Where-Object,Get-WslCareSummary,ForEach-Object', 'pwsh §11 R4: Test-Path reads the stamp; WR-E2: one pass over every task of the folder adds only Where-Object (the review M1 by-name fallback)');
 });
 
 test('Task Scheduler\'s own parser reads the definition IN MEMORY (nothing registered), and its read-back is exactly the expected summary', WINDOWS_ONLY, () => {
@@ -279,6 +286,11 @@ test('the status query really RUNS on the Windows leg — unelevated, read-only 
   const state = guardStateOf({ kind: 'exited', code: 0, stdout: Buffer.from(result.stdout), stderr: Buffer.alloc(0) });
   assert.notEqual(state.kind, 'unknown', result.stdout);
   assert.match(result.stdout, /^channel=(enabled|disabled|unknown)$/m);
+  // WR-E2 review B2, on the REAL output: the folder's lines come before the first task, so the channel is the folder's, never a task's.
+  const out = result.stdout;
+  assert.ok(out.indexOf('channel=') >= 0 && out.indexOf('channel=') < out.indexOf('folder='), 'channel= is printed before folder=');
+  assert.ok(!/\ntask=[\s\S]*\nchannel=/.test(out), 'no channel= after a task section opened');
+  assert.match(out, /^user=S-1-5-21-[\d-]+$/m);
 });
 
 // ---- PLAN_pwsh_engine_windows_time.md D2, D4: PowerShell 7 elevated, the facts from this query ----
@@ -304,7 +316,7 @@ test('pwsh §11 R4: the status query reports the rate-limit stamp under HKLM —
 });
 
 test('pwsh §11 R4: a task that is gone with its stamp still there reads as such — a removal the Store engine virtualised is visible', () => {
-  const answer = (stamp: string): string => ['guard=absent', 'channel=enabled', `stamp=${stamp}`].join('\r\n');
+  const answer = (stamp: string): string => schedulerStdout({ stamp });
   const exitedWith = (text: string) => ({ kind: 'exited', code: 0, stdout: Buffer.from(text), stderr: Buffer.alloc(0) }) as const;
   assert.deepEqual(guardStateOf(exitedWith(answer('present'))), { kind: 'absent', channel: 'enabled', stampLeft: true });
   assert.deepEqual(guardStateOf(exitedWith(answer('absent'))), { kind: 'absent', channel: 'enabled' });

@@ -58,6 +58,13 @@ export function worstCasesOf(limits: DaemonLimits) {
      * CPU sampled across the published window and their run logs listed within the published budget.
      */
     status: (limits.mcpCpuWindowMs + limits.mcpLogListMs) / 1000,
+    /**
+     * The BUNDLED Windows exe's `status --json` (E19.S2b): it starts no process either, reads the Windows process table and samples
+     * each MCP server across ONE `mcpServers.cpuWindowMilliseconds` (`WindowsMcpCollector`; the distro's table is not read on Windows),
+     * and lists no run logs. The bound kept is the distro status's own — window plus listing — so it holds should the Windows side
+     * ever list logs as well; `ceilings.test.ts` holds the two equal.
+     */
+    windowsStatus: (limits.mcpCpuWindowMs + limits.mcpLogListMs) / 1000,
     /** Answers before the machine is read. Also the root check. */
     version: 0,
     /** Four `systemctl show`, `systemctl --version`, `docker version` (`DoctorRun`). */
@@ -94,7 +101,7 @@ const TODAY = worstCasesOf(FALLBACK_LIMITS);
 export const DOCKER_SNAPSHOT_S = TODAY.snapshot;
 
 /** The fixed-shape calls' worst cases under today's limits. */
-export const WORST_CASE_S = { status: TODAY.status, version: TODAY.version, doctor: TODAY.doctor, preview: TODAY.preview, runRead: TODAY.runRead, archivePreview: TODAY.archivePreview, detach: TODAY.detach, stop: TODAY.stop } as const;
+export const WORST_CASE_S = { status: TODAY.status, windowsStatus: TODAY.windowsStatus, version: TODAY.version, doctor: TODAY.doctor, preview: TODAY.preview, runRead: TODAY.runRead, archivePreview: TODAY.archivePreview, detach: TODAY.detach, stop: TODAY.stop } as const;
 
 /**
  * What ONE row costs in `act <ids> --preview` (plan §15q N-2): each Docker action takes its OWN Docker snapshot

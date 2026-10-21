@@ -36,6 +36,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(RunDetailHead))]
 [JsonSerializable(typeof(RunDetailVerdicts))]
 [JsonSerializable(typeof(Collect.DiskReport))]
+[JsonSerializable(typeof(Collect.LetteredVolumeReport))]
 [JsonSerializable(typeof(Events.CoverageLineJson))]
 [JsonSerializable(typeof(Events.StartsSummary))]
 [JsonSerializable(typeof(Doctor.DoctorReport))]
@@ -44,6 +45,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Actions.Engine.ActReport))]
 [JsonSerializable(typeof(Actions.Engine.RunningFile))]
 [JsonSerializable(typeof(Actions.Engine.FirstTimerRun))]
+[JsonSerializable(typeof(Actions.WindowsTemp.TempCursor))]
 [JsonSerializable(typeof(Health.DistroNameFile))]
 [JsonSerializable(typeof(Actions.Clock.ClockFixRecord))]
 [JsonSerializable(typeof(History.RunsReport))]
@@ -76,8 +78,11 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Watch.WatchTriesFile))]
 [JsonSerializable(typeof(Watch.WatchReport))]
 [JsonSerializable(typeof(Scheduler.TasksRenderReport))]
+[JsonSerializable(typeof(Actions.WindowsTemp.TempPreviewReport))]
 [JsonSerializable(typeof(Scheduler.StageRecord))]
 [JsonSerializable(typeof(Scheduler.StageReport))]
+[JsonSerializable(typeof(Worktrees.WorktreeReport))]
+[JsonSerializable(typeof(Worktrees.RootVerdictsReport))]
 [JsonSerializable(typeof(Scheduler.StageRemoveReport))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {

@@ -26,5 +26,6 @@
     "skipLibCheck": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "out", "dist"]
+  // The page half has its own configuration, WITH the DOM (tsconfig.webview.json); the host never sees it, and it never sees the host.
+  "exclude": ["node_modules", "out", "dist", "src/webview", "src/test/webview"]
 }
