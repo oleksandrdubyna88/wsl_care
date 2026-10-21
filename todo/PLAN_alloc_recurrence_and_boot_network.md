@@ -1,6 +1,8 @@
 # PLAN — allocation failures that come back between full runs, and Windows network services that fail at boot
 
-> Status: **plan only, nothing implemented yet, 2026-10-22.** Scope: the daemon's memory actions A1/A2 and the watch run
+> Status: **plan only, nothing implemented yet, 2026-10-22.** coai plan round (session 95db59ad): good_enough, 2 of 2
+> reviewers, all 8 findings accepted and written in (the journal cursor, the ledger's budget, a share-of-MemTotal threshold,
+> the boot boundary by record id, the persisted cooldown, display-only panel rows). Scope: the daemon's memory actions A1/A2 and the watch run
 > (`src_daemon/src/WslCare.Core/Actions/Memory/`, `Watch/`), the Windows-side health reading (`Health/`), the thresholds
 > (`Thresholds/`), the extension's panel lines for the two new verdicts. Found by the owner-requested review of the Windows and
 > Linux logs on 2026-10-21. Related docs: [module_daemon.md](../research/module_daemon.md),
@@ -72,21 +74,38 @@ disk's verdict, with a test, and fixes it if they do.
   watch's own ledger, and exposes it in `status` as the sample-sourced half of `kernel.allocationFailures` (basis `watch`).
 - The full run's verdict stays "since the last FULL run"; the watch never moves its cursor (two cursors, named).
 - Bounded: the same `health.kernelLinesKept` / `health.kernelLineChars` keys; one search per watch run.
+- **The cursor (plan round, findings 0 and 7).** The watch's cursor is the journal's own position: the boot id plus the
+  realtime timestamp of the last entry it read (journald keeps the kernel log on disk, so a wrapped ring buffer does not
+  lose what journald already stored). A cursor of an OLDER boot id is reset to this boot's first entry; a cursor older
+  than the journal's earliest kept entry (vacuumed) makes that sample **unknown** ("the journal no longer holds the range
+  since the last watch"), never 0. Tests for both.
+- **The ledger's budget (plan round, findings 1 and 5).** One record per watch run that found a failure or ran an action
+  (a run that found none writes nothing); at the default period that is at most 288 records a day in a storm, about 200
+  bytes each. Retention: records older than 24 h are removed by the next watch run (a rolling window — the recurrence
+  rule of AH-3 needs only 24 h), so the file stays under ~60 KiB. A record is written whole with the existing atomic
+  write; an interrupted run leaves either the old file or the new one, never a half record, so there is no in-flight
+  state to sweep.
 - Tests RED first: a watch over a fake kernel log with two failures records 2 and leaves the full-run cursor unchanged; a
   watch with none records 0; an unreadable log is "unknown", never 0.
 
 ### AH-2 — the watch's response: A1 then A2 on an allocation failure (daemon)
 
 - On an allocation failure found by the watch, the watch lets the memory actions act, in order: A1 when the page cache is
-  above `memory.allocFailureCacheGib` (new key, default 8 GiB) whatever the available share, then A2 — each still behind its
-  own `auto.*` switch, `dryRun`, and the engine's gates. A1's existing trigger (`CacheDrop.cs:15-16`) is unchanged on the
-  full run; this is a second trigger, named in A1's preview reason.
+  above `memory.allocFailureCachePercent` of MemTotal (new key, default 25 %, with a floor of 2 GiB) whatever the
+  available share, then A2 — each still behind its own `auto.*` switch, `dryRun`, and the engine's gates. A1's existing
+  trigger (`CacheDrop.cs:15-16`) is unchanged on the full run; this is a second trigger, named in A1's preview reason.
+- **Why a share and not 8 GiB (plan round, finding 2).** The only measurement is one machine (46 GiB, 25 GiB cache = 54 %);
+  an absolute 8 GiB would be unreachable on an 8 GiB WSL and trivial on a 128 GiB one. A share of MemTotal scales; 25 % is
+  below the measured 54 % with a margin, and the floor keeps a tiny VM from dropping a few hundred MiB. Tests at 8, 46 and
+  128 GiB MemTotal pin the boundary; POST_DEPLOY records the real figure at the next failure, and the default is revisited
+  with that measurement.
 - A cooldown: at most one A1+A2 pair per `memory.allocFailureCooldownMinutes` (new key, default 30) so a storm of failures
-  is not a storm of cache drops.
+  is not a storm of cache drops. **The cooldown is persisted (plan round, finding 4):** the time of the last pair and the
+  recurrence count live in the watch ledger on disk (AH-1), read at the start of every watch run — each watch run is its
+  own process, so an in-memory timestamp would be lost. A test: two watch PROCESSES five minutes apart over the same
+  ledger → the second does not drop the cache again.
 - A2's measured effect (order-7 blocks before/after, already measured) is kept, and the NEXT watch run records whether
   failures recurred within the cooldown — the recurrence count is a fact in the ledger, the input for the advice in AH-3.
-- Open question for the plan round: is 8 GiB the right default, or should it be a share of MemTotal? (Today: 25 GiB cache
-  of 46 GiB.)
 - Tests RED first: failure + 25 GiB cache + 55 % available → A1 then A2 recorded (dry: "would"); failure + 2 GiB cache → A2
   only; a second failure inside the cooldown → no second pair, the recurrence counted; `auto.A1` off → A2 only, the reason
   says so; `dryRun` → nothing runs, both "would" lines recorded.
@@ -113,8 +132,14 @@ disk's verdict, with a test, and fixes it if they do.
   log or the service state could not be read. VmSwitch 15 is a supporting figure in the reason, not its own trigger.
 - No action: the product does not restart a Windows service. The advice says how (an elevated `Restart-Service hns`, or a
   restart), and that a later on-demand start already happened when it did.
-- Bounded: `Get-WinEvent -MaxEvents` from a new key `health.bootServiceEventsMax` (default 50); the boot time from
-  `Win32_OperatingSystem.LastBootUpTime`.
+- Bounded: `Get-WinEvent -MaxEvents` from a new key `health.bootServiceEventsMax` (default 50).
+- **The boot boundary (plan round, finding 3, blocking).** Not a bare `StartTime = LastBootUpTime`: SCM events of early
+  boot can carry a time at or before the recorded boot time, and the CIM time and the event filter can differ in zone. The
+  boundary is the newest Kernel-General id 12 event ("The operating system started", System log) — its `RecordId`; the
+  service events kept are those with a higher `RecordId` in the same log. The query itself still uses a `StartTime` of
+  that event's time minus 5 minutes, so it stays bounded, and the record id decides. No Kernel-General 12 readable →
+  unknown. Tests: a 7038 a few seconds BEFORE the boot event's time but with a higher record id counts; a 7038 of the
+  previous boot (lower record id) does not.
 - Tests RED first (parser and rule, fixtures sanitised — no host or user name): 7038+7000 for hns at this boot → warn naming
   hns and "Running now"; the same events at an EARLIER boot → ok; none → ok; `Get-WinEvent` failing → unknown, never ok; a
   7000 for an unrelated service → ok.
@@ -124,6 +149,12 @@ disk's verdict, with a test, and fixes it if they do.
 - A test over the E15.S1 reader: disk id 11 events on `Harddisk1` where disk 1 is a USB removable with no system volume →
   the system disk's verdict is unchanged; the removable's events are reported under its own disk, or as "a removable
   device", never as the system disk's. Fix the reader only if the test is red.
+
+### The panel (plan round, finding 6)
+
+AH-3 and AH-4 add DISPLAY-ONLY rows to the panel (the verdict line, its reason, the advice text). They register no new VS
+Code command, so `src_vs_code/src/panel/commandButtons.ts` and its test do not change; if a later story adds a command
+(say, a "show me the `.wslconfig` lines" copy button), that story declares its button there, as the project requires.
 
 ## 4. Build order
 
