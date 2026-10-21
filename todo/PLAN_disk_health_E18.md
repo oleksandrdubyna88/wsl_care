@@ -3,7 +3,7 @@
 > Status: **in progress (2026-10-20)** — the stories document of epic E18 of [PLAN_disk_health.md](PLAN_disk_health.md)
 > (§3.4–§3.6 and its E18 table). E18.K1 is done in `dew_flow_vscode_kit` (kit #9 → `655df4de`; **0.2.0 released to
 > GitHub Packages**, release PR #16, run 39481672054 green). This document holds **W0** now; W1a, W1b, W2, W4, W3 and W5
-> are added here, each before its own plan round. Nothing of W0 is built yet.
+> are added here, each before its own plan round. **W0 is built (2026-10-21), awaiting its code round and merge** — § 9 records what shipped differently.
 >
 > Related: [module_vs_code.md](../research/module_vs_code.md), [architecture.md](../research/architecture.md), the kit's
 > `research/PLAN_kit_components_storybook.md` (kit `main` @ `1d2681cc`) §4.3 (the DOM port), §4.6 / §4.6a (the DataTable, its reveal contract and the
@@ -148,3 +148,27 @@ That a real webview loads `full.css` under the nonce (W1b's panel, and a real VS
 - [ ] CI green on both legs with the package fetched from GitHub Packages; the `.vsix` check green.
 - [ ] The daemon tests that read `src_vs_code/` green; the family checks clean.
 - [ ] Docs updated; the gate's plan and code rounds resolved; merged.
+
+### 9. As built (2026-10-21) — what shipped differently
+
+- **`npm ci --offline` does not work for the lock entry of § 3, step (e).** An entry with `version` and `integrity` and no `resolved` makes
+  npm ask the registry for the packument BEFORE it looks at the cache, so after `npm cache add <tarball>` the answer is still
+  `ENOTCACHED` (`request to https://npm.pkg.github.com/@oleksandrdubyna88%2fvscode-webview-kit failed: cache mode is 'only-if-cached'`).
+  What was proved instead, against a throwaway registry on `127.0.0.1` serving the attested tarball: `npm ci --ignore-scripts` with the
+  committed entry installs the kit (packument, then tarball, both requested), and the same entry against a registry serving one extra
+  byte stops with `EINTEGRITY` (`wanted sha512-ydzXTgD0EuhVW… but got …`). The same entry WITH a `resolved` URL installs offline from
+  the cache. The entry stays as § 3 specifies; whether to add `resolved` (then `npm ci --offline` works) is the owner's and the gate's
+  call — CI's first run proves the registry road with a real token.
+- **The workflow rule lives in the daemon's workflow tests, not in the extension's.** Item 3 is `ReleaseExtensionWorkflowTests` (two new
+  tests; the job-permission table gained `packages: read` for `build` and `publish-marketplace`) because the repository's one YAML reader
+  is there; the extension's tests have none.
+- **The Marketplace job also installs the kit.** `publish-marketplace` runs `npm ci --ignore-scripts` for `vsce`, which installs every
+  devDependency, so it too has `packages: read` and the token on that one step (and still no `npm rebuild`).
+- **The page's mount point is `view`, not `root`** — `structure.test.ts` lets the word `root` appear in a shipped source only in the
+  root-call module, and was not weakened.
+- **`src/webview/stylesheets.d.ts`** declares the kit's stylesheet specifier: TypeScript 6 refuses a side-effect import it cannot resolve.
+- **`src/test/webview/`** (the kit page test's entry) is excluded from the host's `tsconfig.json` and checked by `tsconfig.webview.json`
+  with the page's own files; ESLint's type-aware rules read that program for both folders (`eslint.config.mjs`).
+- **`resolveRelative`** was extracted from `structure.test.ts` into `support/sourceScan.ts` (one resolver for the two structural tests).
+- **Not in W0:** the Dependabot secret (an owner item); the first CI run's fetch from GitHub Packages (needs the package to grant this
+  repository read access — a 403 there is an owner setting).

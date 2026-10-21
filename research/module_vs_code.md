@@ -196,9 +196,66 @@ flowchart LR
 | Task Scheduler (`Schedule.Service`, `Register-ScheduledTask` from the ScheduledTasks module imported by its System32 path), the Time-Service's Operational channel and the System log | the Windows Time guard only: registered and deleted elevated, read unelevated; its stop-event trigger needs the Operational channel enabled (measured enabled; the panel says when it is not), its start-type trigger reads the System log, which is always on — [2026-10-08_windows_time_guard_trigger.md](2026-10-08_windows_time_guard_trigger.md) §2, §6 |
 | the `wsl-care` daemon ≥ `minDaemonForRender` of `src_vs_code/min-daemon.json` (*Install daemon* installs its `installDaemon`) | `status --json`, `preview --all --json`, `doctor --json`, `--version`, the run reads, and the root calls of `ROOT_OPS`; their shapes are the golden contracts in `contracts/golden/` and `contracts/*.json` (actions, exit codes, status limits). Acting needs `minDaemonForActions` and, as the authority, the capabilities `status` advertises |
 | esbuild (`scripts/bundle.mjs`), `@vscode/vsce`, `@vscode/test-electron`, TypeScript, typescript-eslint | build, package, extension-host tests, lint — dev only; the `.vsix` ships no runtime dependency |
+| `@oleksandrdubyna88/vscode-webview-kit` `0.2.0` (exact), from **GitHub Packages** through `src_vs_code/.npmrc` | the full view's components (E18.W0) — bundled by esbuild into `dist/webview/full.js` and `full.css`, so a development dependency only; `NODE_AUTH_TOKEN` reaches the install step alone (see *The full view's webview bundle and the kit*) |
 | `release-extension.yml` + `.github/scripts/release-extension-guard.sh` | the release pipeline: guard → build → attest → github-draft → publish-marketplace → github-public; the guard and `check-vsix --root-allowed` keep a root-capable bundle out of `extension-v0.1.0` and earlier (plan §15j B3, §15k #7); publish-marketplace decides "served" with `marketplace-served.cjs` and waits with `wait-marketplace-served.sh` (up to 45 minutes, every attempt logged, 2026-10-09) |
 
+## The full view's webview bundle and the kit (E18.W0, 2026-10-21)
+
+[PLAN_disk_health_E18.md](../todo/PLAN_disk_health_E18.md) § W0. The full view (W1b) is built from the components of
+`@oleksandrdubyna88/vscode-webview-kit` `0.2.0`, compiled into the extension's own webview bundle. W0 laid the road and nothing
+visible: **no panel opens the page yet**, so the extension's behaviour did not change.
+
+```mermaid
+flowchart LR
+    kit["@oleksandrdubyna88/vscode-webview-kit 0.2.0<br/>GitHub Packages (devDependency, exact pin)"]
+    npmrc[".npmrc<br/>scope registry + ${NODE_AUTH_TOKEN}"]
+    entry["src/webview/fullView.ts<br/>(tsconfig.webview.json: DOM, no Node, no vscode)"]
+    bundle["scripts/bundle.mjs<br/>2nd buildSync: iife · browser · chrome114"]
+    js["dist/webview/full.js"]
+    css["dist/webview/full.css<br/>(no url(), @import, @font-face)"]
+    vsix[".vsix<br/>(vsix-files.txt, .vscodeignore)"]
+    harness["pageHarness.ts<br/>(strict DOM = the kit's port)"]
+    kit --> entry
+    npmrc -. "resolves" .-> kit
+    entry --> bundle --> js --> vsix
+    bundle --> css --> vsix
+    js -. "run by kitPage.test.ts" .-> harness
+```
+
+- **The dependency.** Exactly `0.2.0` (no range). `src_vs_code/.npmrc` holds two lines and no secret: the scope's registry
+  `https://npm.pkg.github.com` and `//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}`. It is not in `vsix-files.txt`. The lock
+  entry carries `version`, `integrity` and no `resolved`: npm asks the scope's registry for the tarball and refuses any byte
+  that is not the published one. A contributor needs a classic PAT with `read:packages` in `NODE_AUTH_TOKEN` (README). On a
+  machine without one, the entry was written from the release run's attested artifact (see [the plan](../todo/PLAN_disk_health_E18.md) § 3 and
+  *Known limits* below).
+- **CI.** Every job that installs the extension's dependencies (`ci-extension.yml`'s matrix job; `release-extension.yml`'s
+  `build` and `publish-marketplace`) has `packages: read`, and the install step alone carries
+  `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`; it runs `npm ci --ignore-scripts`, so no dependency's lifecycle script runs
+  while the token is in its environment. In the two jobs that build, the very next step runs `npm rebuild` without the token. The
+  Marketplace job runs no script at all, as before. `ReleaseExtensionWorkflowTests` holds both halves.
+- **The bundle.** `scripts/bundle.mjs` has a second `buildSync`: `src/webview/fullView.ts` → `dist/webview/full.js`
+  (`iife`, `browser`, `chrome114` — the Chromium of VS Code 1.85 —, no source map, not minified); the kit's stylesheet,
+  imported by the entry, is emitted by esbuild as `dist/webview/full.css`. Both are in `.vscodeignore`'s allowlist and
+  `vsix-files.txt`; the `.vsix` check holds them like every other file. The webview's CSP is `default-src 'none'`, so the
+  stylesheet may not fetch anything.
+- **Two programs, one boundary.** `tsconfig.json` (the host: no DOM) excludes `src/webview` and `src/test/webview`;
+  `tsconfig.webview.json` (DOM, no `@types/node`, no `@types/vscode`, `moduleResolution: Bundler` so the kit's `exports` are
+  read) checks them; `npm run typecheck` runs both. `webviewBoundary.test.ts` holds the boundary both ways: nothing under
+  `src/webview/` imports `vscode`, a Node module or host code (only its folder and the kit's `…/components` and
+  `…/components.css`), and no host module imports `src/webview/`. `src/webview/stylesheets.d.ts` declares the one stylesheet
+  specifier, because TypeScript 6 refuses a side-effect import it cannot resolve.
+- **The harness is the kit's port, and nothing more.** `pageHarness.ts` gained `id` and `tabindex` attributes, `keydown`
+  and `input` listeners, `focus()` (the document's `activeElement`, `Page.activeElement`) and an event with its `key` and a
+  recorded `preventDefault()` (`Page.key`, `Page.type`). `style`, `on*`, `href`, `change`, `focus` listeners stay refused.
+- **The mount point is `view`.** `structure.test.ts` allows the word `root` in the shipped sources only in the root-call module.
+
 ## Known limits (owner decisions and live-gate observations)
+
+- **The kit's lock entry cannot be installed offline from a cache** (E18.W0, 2026-10-21). With no `resolved`, npm asks the registry
+  for the packument before it looks at the cache, so `npm ci --offline` answers `ENOTCACHED` even after `npm cache add <tarball>`;
+  the same entry installs from a registry (proved against a throwaway local one: the tarball is taken, and a tampered tarball
+  stops with `EINTEGRITY`). The same lock WITH a `resolved` URL installs offline. Dependabot cannot bump the pin until the owner adds
+  a Dependabot secret (a separate store from Actions secrets); recorded in the plan as an owner item.
 
 - The polling cadence's run-log churn is the owner's open decision M1
   ([2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md)); the daemon prunes its run logs after

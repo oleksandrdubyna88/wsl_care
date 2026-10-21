@@ -1033,11 +1033,18 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   them): `wslCare.distro` — empty means WSL's default distribution (the one `wsl.exe -l -v` marks with `*`); a name
   `wsl.exe --list` does not report is refused — and `wslCare.refreshSeconds` (default 120, at least 30).
 
+The extension's one dependency from outside the public registry is the webview kit, `@oleksandrdubyna88/vscode-webview-kit`
+(pinned to `0.2.0`; bundled into `dist/webview/full.js`, so it is a development dependency only), published to **GitHub
+Packages**. `src_vs_code/.npmrc` points the scope there and reads the token from the environment — it holds no secret — so
+`npm ci` needs a **classic personal access token with the `read:packages` scope in `NODE_AUTH_TOKEN`** (a `gh` login without that
+scope is refused with a 403). CI hands its own read-only token to the install step alone. Dependabot cannot bump the kit's pin
+until the owner adds a Dependabot secret for it (a separate store from Actions secrets).
+
 ```bash
 cd src_vs_code
-npm ci
-npm run typecheck && npm run lint
-npm test        # compile, bundle (dist/extension.js), then every test — no test can start the real wsl.exe
+npm ci          # with NODE_AUTH_TOKEN set (above)
+npm run typecheck && npm run lint   # typecheck runs the host's tsconfig and the page's (tsconfig.webview.json)
+npm test        # compile, bundle (dist/extension.js, dist/webview/full.js + full.css), then every test — no test can start the real wsl.exe
 npm run test:host   # the extension in a real VS Code 1.85.0 and stable (downloads into .vscode-test/; xvfb-run on Linux)
 npm run fieldmap:doc   # rewrite the panel's field-map table in research/architecture.md from src/panel/fieldMap.ts
 npm run fetch:windows-daemon   # bin/wsl-care.exe: the attested daemon-v<bundledDaemon> member (gh signed in)
