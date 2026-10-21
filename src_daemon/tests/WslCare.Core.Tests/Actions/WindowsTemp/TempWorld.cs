@@ -197,13 +197,21 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
     public override RealPathResult ResolvePath(string path) =>
         new RealPathResult.Resolved(Redirected.TryGetValue(Rules.Normalize(path), out var elsewhere) ? elsewhere : Rules.Normalize(path));
 
-    public override void CreateDirectory(string path) => Add(path, EntryKind.Directory, Now, Sid);
+    public override void CreateDirectory(string path)
+    {
+        Writes.Add(Rules.Normalize(path));
+        Add(path, EntryKind.Directory, Now, Sid);
+    }
 
     public override FileReadResult ReadFile(string path) =>
         _files.TryGetValue(Rules.Normalize(path), out var bytes) ? new FileReadResult.Content(bytes) : new FileReadResult.Missing();
 
+    /// <summary>Every file written through the seam, in order - a read-only verb writes none.</summary>
+    public List<string> Writes { get; } = [];
+
     public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope)
     {
+        Writes.Add(Rules.Normalize(path));
         _files[Rules.Normalize(path)] = content.ToArray();
         return DeletionVerdict.Allowed;
     }
