@@ -106,12 +106,23 @@ function entryFindings(entries: VsixEntries, expected: readonly string[]): strin
   ];
 }
 
+/**
+ * An e-mail address. A systemd unit name (`getty@tty1.service`, `serial-getty@ttyS0.service`) has the same shape — a template
+ * unit is `<name>@<instance>.<type>` — and a changelog line quotes one, so a match whose LAST label is a systemd unit type is no
+ * address. Only the last label counts: `user@service.example.com` still ends in `com`, and is still found.
+ */
+// Sibling lists of the same systemd unit types: `UnitTypes` in src_daemon/tests/WslCare.Scenarios/FixturePrivacy.cs and in
+// src_daemon/tests/WslCare.TestSupport/FixtureIdentity.cs (C#; they add `journal` and fold case) — change them together.
+export const UNIT_TYPES = ['service', 'socket', 'timer', 'mount', 'target', 'path', 'slice', 'scope', 'device', 'swap', 'automount', 'busname', 'snapshot'] as const;
+const UNIT_TYPE_ALTERNATIVES = UNIT_TYPES.join('|');
+const EMAIL_ADDRESS = new RegExp(String.raw`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?!(?:${UNIT_TYPE_ALTERNATIVES})(?![A-Za-z0-9_-]))[A-Za-z]{2,}`);
+
 const PATH_LEAKS: readonly { readonly what: string; readonly pattern: RegExp }[] = [
   { what: 'a drive path', pattern: /(?<![A-Za-z0-9])[A-Za-z]:[\\/]/ },
   { what: 'a /home/ path', pattern: /\/home\// },
   { what: 'a /mnt/ path', pattern: /\/mnt\// },
   { what: 'a \\\\wsl share', pattern: /\\\\wsl/i },
-  { what: 'an e-mail address', pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/ },
+  { what: 'an e-mail address', pattern: EMAIL_ADDRESS },
   { what: 'a source map reference', pattern: /sourceMappingURL=|sourcesContent/ },
 ];
 

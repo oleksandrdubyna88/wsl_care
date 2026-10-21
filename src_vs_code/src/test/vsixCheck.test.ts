@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { BUNDLED_EXE_FILE, onCi, shippedAllowlist } from './support/bundledExe';
 import { iconPng } from './support/iconPng';
 import { BUNDLE, EXTENSION_ROOT } from './support/paths';
-import { listLines, machineUserNames, machineUserNameSplit, minDaemonFindings, PUBLISHER_PLACEHOLDER, SERVICE_ACCOUNTS, VSIX_OWN_FILES, vsixEntryName, vsixFindings, type VsixCheckOptions } from './support/vsixCheck';
+import { listLines, machineUserNames, machineUserNameSplit, minDaemonFindings, PUBLISHER_PLACEHOLDER, SERVICE_ACCOUNTS, UNIT_TYPES, VSIX_OWN_FILES, vsixEntryName, vsixFindings, type VsixCheckOptions } from './support/vsixCheck';
 import { readZip, writeZip } from './support/zipFile';
 
 /**
@@ -168,6 +168,11 @@ test('a missing entry is a finding — the allowlist names a file the archive la
   assert.deepEqual(vsixFindings(entries, OPTIONS), ['the .vsix lacks extension/media/icon.png, which the allowlist names']);
 });
 
+/** An address built at run time: this repository's own privacy scan (FixturePrivacy) reads every tracked file, and a literal address at a real-looking domain is what it exists to find. */
+function address(local: string, domain: string): string {
+  return `${local}@${domain}`;
+}
+
 const PATH_PLANTS: readonly { readonly what: string; readonly literal: string }[] = [
   { what: 'a drive path', literal: `D:${BACKSLASH}work${BACKSLASH}wsl_care` },
   { what: 'a drive path', literal: 'C:/Users/x/project' },
@@ -175,6 +180,9 @@ const PATH_PLANTS: readonly { readonly what: string; readonly literal: string }[
   { what: 'a /mnt/ path', literal: '/mnt/c/tools' },
   { what: `a ${BACKSLASH}${BACKSLASH}wsl share`, literal: `${BACKSLASH}${BACKSLASH}wsl.localhost${BACKSLASH}Ubuntu` },
   { what: 'an e-mail address', literal: 'contact x.y@example.org' },
+  { what: 'an e-mail address', literal: address('name', 'company.co.uk') },
+  { what: 'an e-mail address', literal: address('a', 'b.io') },
+  { what: 'an e-mail address', literal: 'user@service.example.com' },
   { what: 'a source map reference', literal: '//# sourceMappingURL=extension.js.map' },
   { what: 'a source map reference', literal: '"sourcesContent": []' },
 ];
@@ -196,6 +204,60 @@ test('the near misses are not findings: a URL scheme, one escaped backslash befo
   for (const literal of ['https://github.com/oleksandrdubyna88/wsl_care', `System32${BACKSLASH}wsl.exe`, '@vscode/vsce@4.0.0', 'x@1.85.0', 'a: b']) {
     assert.deepEqual(vsixFindings(inBundle(literal), OPTIONS), [], literal);
   }
+});
+
+test('a systemd unit name (getty@tty1.service) is not an e-mail address: the word after the last dot names a unit type, so a changelog line that quotes one stays clean', () => {
+  for (const literal of ['getty@tty1.service', 'serial-getty@ttyS0.service', 'default getty@tty1.service', 'sshd@2.socket', 'fstrim@x.timer']) {
+    assert.deepEqual(vsixFindings(inBundle(literal), OPTIONS), [], literal);
+    assert.deepEqual(vsixFindings(planted('extension/changelog.md', `the verdict ignores a list, ${literal}`), OPTIONS), [], literal);
+  }
+});
+
+for (const type of UNIT_TYPES) {
+  test(`a systemd unit name ending in .${type} is not an e-mail address`, () => {
+    const unit = `getty@tty1.${type}`;
+    assert.deepEqual(vsixFindings(inBundle(unit), OPTIONS), [], unit);
+    assert.deepEqual(vsixFindings(planted('extension/changelog.md', `the verdict ignores a list, ${unit}`), OPTIONS), [], unit);
+  });
+}
+
+test('the unit type is read as the WHOLE last label up to a boundary: the engine cannot backtrack to a shorter, non-unit label', () => {
+  for (const literal of ['getty@tty1.service.', 'getty@tty1.service,', '(getty@tty1.service)', 'getty@tty1.service;', 'getty@tty1.service and more', 'ignores getty@tty1.service']) {
+    assert.deepEqual(vsixFindings(inBundle(literal), OPTIONS), [], literal);
+  }
+  assert.deepEqual(vsixFindings(planted('extension/changelog.md', 'default getty@tty1.service'), OPTIONS), [], 'the unit name is the last text of its line');
+  for (const literal of ['servicex', 'servic', 'timers', 'service2'].map((label) => address('getty', `tty1.${label}`))) {
+    const findings = vsixFindings(inBundle(literal), OPTIONS);
+    assert.equal(findings.length, 1, `${literal} is address-shaped and its last label is not a unit type: ${findings.join(' | ')}`);
+  }
+});
+
+test('an underscore continues the label: doe@mail.service_ext is a longer, non-exempt label and is found', () => {
+  const findings = vsixFindings(inBundle(address('doe', 'mail.service_ext')), OPTIONS);
+  assert.equal(findings.length, 1, `doe@mail.service_ext: ${findings.join(' | ')}`);
+});
+
+test('the unit-type list is not empty and is the list the exemption reads: a pinned literal still passes, and the list names service', () => {
+  assert.ok(UNIT_TYPES.includes('service'));
+  assert.deepEqual(vsixFindings(inBundle('getty@tty1.service'), OPTIONS), []);
+});
+
+test('a drop-in path (user@1000.service.d) is not an e-mail address', () => {
+  assert.deepEqual(vsixFindings(inBundle('/etc/systemd/system/user@1000.service.d/override.conf'), OPTIONS), []);
+  assert.deepEqual(vsixFindings(planted('extension/changelog.md', 'see user@1000.service.d'), OPTIONS), []);
+});
+
+test('a line with a real address and a unit name gives EXACTLY one finding, the address — in either order', () => {
+  for (const line of ['Contact admin@example.com, default getty@tty1.service', 'default getty@tty1.service, contact admin@example.com']) {
+    const findings = vsixFindings(planted('extension/changelog.md', line), OPTIONS);
+    assert.equal(findings.length, 1, `${line}: ${findings.join(' | ')}`);
+    assert.match(findings[0] ?? '', /^extension\/changelog\.md:\d+ holds an e-mail address$/);
+  }
+});
+
+test('the scan reports the FIRST match of a rule per entry, not every match — a gate needs one, and the second address in the same file is not listed', () => {
+  const findings = vsixFindings(planted('extension/changelog.md', [address('a', 'b.io'), address('c', 'd.io'), address('e', 'f.io')].join('\n')), OPTIONS);
+  assert.equal(findings.filter((f) => f.endsWith('holds an e-mail address')).length, 1, findings.join(' | '));
 });
 
 test('a user name of the build machine or a denylist word is found as a whole word, and never printed', () => {

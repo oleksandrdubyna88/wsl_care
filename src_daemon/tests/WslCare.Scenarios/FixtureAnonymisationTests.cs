@@ -138,6 +138,14 @@ public sealed class FixtureIdentityTests
     }
 
     [Fact]
+    public void The_busname_and_snapshot_unit_types_are_template_instances_too_not_addresses()
+    {
+        var text = "mail a.person@example.org; getty@tty1.busname; getty@tty1.snapshot";
+
+        FixtureIdentity.Learn([text]).Apply(text).Should().Be("mail user@example.invalid; getty@tty1.busname; getty@tty1.snapshot");
+    }
+
+    [Fact]
     public void An_e_mail_address_is_replaced_and_a_systemd_template_instance_is_not()
     {
         Anonymised()[3].Should().Contain("mail user@example.invalid; getty@tty1.service failed; user@1000.service");

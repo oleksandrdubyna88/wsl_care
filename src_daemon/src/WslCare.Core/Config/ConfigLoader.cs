@@ -134,12 +134,15 @@ public static class ConfigLoader
     private static void TakeBack(ConfigLayerFile file, NumberRules.Rule rule, EffectiveConfig config, IReadOnlyDictionary<string, ConfigEntry> before, LoadState state)
     {
         var set = rule.Keys.Where(k => state.Merged[k.Name].Layer == file.Layer && before.ContainsKey(k.Name)).Distinct().ToList();
+        // The sentence is said BEFORE the keys go back: `config` reads state.Merged live, so said afterwards it would name the values that
+        // stayed in force (a configured 40 reported as the default 10), not the ones the operator set (E19.S1 coai code round).
+        var says = rule.Says(config);
         foreach (var key in set)
         {
             state.Merged[key.Name] = before[key.Name];
         }
 
-        var message = set.Count == 0 ? rule.Says(config) : $"{rule.Says(config)} — not taken from this layer: {string.Join(", ", set.Select(k => k.Name))}";
+        var message = set.Count == 0 ? says : $"{says} — not taken from this layer: {string.Join(", ", set.Select(k => k.Name))}";
         if (file.Layer == ConfigLayer.User)
         {
             state.Notices.Add(new ConfigNotice(file, 0, (set.FirstOrDefault() ?? rule.Keys[0]).Name, message));
@@ -252,7 +255,7 @@ public static class ConfigLoader
 
     /// <summary>E9.S0 review round decision (d): keys only the USER's own process acts on — the archive's base folder (plan §15r
     /// D1) — whose invalid user value is a notice: the value is not taken, and root is never put observe-only by it.</summary>
-    private static readonly ConfigKey[] UserOwned = [ConfigKeys.Archive.BaseFolder];
+    private static readonly ConfigKey[] UserOwned = [ConfigKeys.Archive.BaseFolder, ConfigKeys.Worktrees.Roots];
 
     /// <summary>A valid value enters the merge — unless it is a user value the trust does not take (plan §15q R1.2, R1.3, R1.6),
     /// which is a notice instead.</summary>

@@ -47,6 +47,7 @@ public sealed class ActionRegistry
         new Clock.ClockFix(),
         new Archive.ArchiveAction(),
         new Archive.RestoreAction(),
+        new WindowsTemp.WindowsTempAction(),
     ]);
 
     public IReadOnlyList<ICleanupAction> Actions { get; }

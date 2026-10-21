@@ -1,0 +1,52 @@
+# E15.S7 road R8: pid, AgentOrphans.Script, IdleGate.IsBuild, BuildServerShutdown.IsDotnetBuild over the captured 2026-10-02 tree, taken with the OLD rule (a432e970).
+1		False	False
+59		False	False
+285		False	False
+304		False	False
+318		False	False
+399	/usr/share/unattended-upgrades/unattended-upgrade-shutdown	False	False
+404		False	False
+560		False	False
+561	/mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh	False	False
+567	/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/code-server	False	False
+571	/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js	False	False
+792		False	False
+860		False	False
+972	/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork	False	False
+1169		False	False
+1175	/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork	False	False
+1252		False	False
+1555		False	False
+1568		False	False
+2369	/home/user/.vscode-remote-containers/dist/vscode-remote-containers-server-0.469.0.js	False	False
+4137		False	False
+4965	/home/user/.vscode-server/extensions/vendor.extension-i-1.0.0/dist/languageserver.js	False	False
+4999	/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork	False	False
+5171		False	False
+5252	/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe	False	False
+5814		False	False
+5949	/home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist/server.bundle.js	False	False
+6592	/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/extensions/json-language-features/server/dist/node/js	False	False
+6612		False	False
+6825		False	False
+7203		False	False
+7327		False	False
+7329		False	False
+7334	/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe	False	False
+7377		False	False
+7472	/home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp	False	False
+7741	/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe	False	False
+8124		False	False
+8176		False	False
+8290		False	False
+8378		False	False
+8380		False	False
+8389	/mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe	False	False
+8415		False	False
+8477	/home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp	False	False
+8486		False	False
+8592		False	False
+8648	/home/user/.vscode-server/extensions/vendor.extension-c-1.0.0/dist/server-node.js	False	False
+9276		False	False
+9344	/mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe	False	False
+11049	/tmp/x/capture.sh	False	False

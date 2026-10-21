@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -68,6 +69,7 @@ internal static class ActCommand
         {
             Signals = host.Signals,
             InterruptCause = host.InterruptCause,
+            UserSid = host.Paths.Side == Core.Hosting.HostSide.Windows ? host.UserSid() : string.Empty,
         });
         var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = lists.Volumes, ShownProcesses = ShownProcesses(request), ShownEntries = lists.Entries };
         LogStart(log, request);
@@ -100,7 +102,25 @@ internal static class ActCommand
     /// <summary>A refusal of the whole request and its code; <c>null</c> when it may go on. Root FIRST: nothing else is
     /// asked of an unprivileged process (plan §15c #0).</summary>
     private static (ExitCode Code, string Message)? Refusal(Request.Act request, CliHost host, ConfigLoadResult loaded) =>
-        NotRoot(host) ?? Unbuilt(request, host) ?? OtherSide(request, host) ?? ObserveOnly(request, loaded);
+        AsksForAWindowsAction(request, host)
+            ? Unbuilt(request, host) ?? OtherSide(request, host) ?? WindowsDetach(request) ?? Elevated(host) ?? ObserveOnly(request, loaded)
+            : NotRoot(host) ?? Unbuilt(request, host) ?? OtherSide(request, host) ?? ObserveOnly(request, loaded);
+
+    /// <summary>The Windows binary is asked for at least one action of the Windows side: then the Windows order applies — the side refusal
+    /// BEFORE the privilege one, so <c>act A23,A4</c> from an unelevated process is told "A4 runs inside the WSL distro", not "needs root"
+    /// (the Fable own review m8). A request of distro actions alone keeps the distro's order (root first), exactly as before WR-T1.</summary>
+    private static bool AsksForAWindowsAction(Request.Act request, CliHost host) =>
+        host.Paths.Side == Core.Hosting.HostSide.Windows && request.Ids.Any(id => host.Actions.Find(id)?.Sides.Contains(Core.Hosting.HostSide.Windows) == true);
+
+    /// <summary>WR-T1: the Windows side's actions (A23) run in the person's OWN, unelevated process — the one rule is inverted from the
+    /// distro's, where every act is root's. An elevated token is refused: it would delete as another account's authority and its
+    /// files are owned by the Administrators group, which the owner check would not recognise as the person's.</summary>
+    internal static (ExitCode Code, string Message)? Elevated(CliHost host) =>
+        host.Privilege.IsRoot ? (ExitCode.NotAsRoot, $"act on the Windows side runs in this user's own, NOT elevated process - an elevated (administrator) one is refused ({host.Privilege.Basis}); run it from a terminal that is not elevated. Nothing was done") : null;
+
+    /// <summary><c>--detach</c> hands a run to a systemd unit of the distro; the Windows side has none (its task runs <c>tasks run</c>).</summary>
+    private static (ExitCode Code, string Message)? WindowsDetach(Request.Act request) =>
+        request.Detach ? (ExitCode.Usage, "act --detach hands the run to a systemd unit inside the WSL distro; the Windows side has none. Nothing was done") : null;
 
     internal static (ExitCode Code, string Message)? NotRoot(CliHost host) =>
         host.Privilege.IsRoot ? null : (ExitCode.NeedsRoot, $"needs root: every act runs as root (plan 15c #0) and {host.Privilege.Basis}; nothing was done");
@@ -117,9 +137,15 @@ internal static class ActCommand
     {
         var otherSide = request.Ids.Select(id => host.Actions.Find(id)!).Where(a => !a.Sides.Contains(host.Paths.Side)).ToList();
         return otherSide.Count > 0
-            ? (ExitCode.Usage, $"{string.Join(", ", otherSide.Select(a => a.Id))} {(otherSide.Count == 1 ? "runs" : "run")} inside the WSL distro, not on this side (the {SideName(host)} binary)")
+            ? (ExitCode.Usage, string.Join("; ", new[] { Elsewhere(otherSide, Core.Hosting.HostSide.Wsl, "inside the WSL distro", host), Elsewhere(otherSide, Core.Hosting.HostSide.Windows, "on the Windows host", host) }.Where(m => m.Length > 0)))
             : null;
     }
+
+    /// <summary>The refusal sentence for the actions among <paramref name="otherSide"/> that run on <paramref name="side"/>; empty when none does.</summary>
+    private static string Elsewhere(IReadOnlyList<ICleanupAction> otherSide, Core.Hosting.HostSide side, string place, CliHost host) =>
+        otherSide.Where(a => a.Sides.Contains(side)).Select(a => a.Id).ToList() is { Count: > 0 } ids
+            ? $"{string.Join(", ", ids)} {(ids.Count == 1 ? "runs" : "run")} {place}, not on this side (the {SideName(host)} binary)"
+            : string.Empty;
 
     private static string SideName(CliHost host) => host.Paths.Side == Core.Hosting.HostSide.Wsl ? "WSL" : "Windows";
 
@@ -174,7 +200,7 @@ internal static class ActCommand
 
         var read = StdinList.Read(host.StandardInput(), StdinList.MaxBytes, host.StdinCeiling);
         var (ids, failure) = read is FileReadResult.Content content ? ArchiveArguments.StdinEntries(Encoding.UTF8.GetString(content.Bytes)) : ([], $"the entry list on stdin {Unusable(read)}");
-        return failure.Length > 0 ? (ShownList.None, $"act: {CommandLine.Printable(failure)}; nothing was done") : (ShownList.Of(ids), string.Empty);
+        return failure.Length > 0 ? (ShownList.None, $"act: {ShownText.Printable(failure)}; nothing was done") : (ShownList.Of(ids), string.Empty);
     }
 
     /// <summary>The volumes A4's preview showed, from <c>--volume</c> and the <c>--only</c> file together — or why the file
@@ -198,7 +224,7 @@ internal static class ActCommand
         var read = request.ShownOnStdin ? StdinList.Read(host.StandardInput(), MaxOnlyFileBytes, host.StdinCeiling) : host.Files.ReadRegularFile(request.OnlyFile, MaxOnlyFileBytes);
         if (read is not FileReadResult.Content content)
         {
-            return (ShownList.None, $"act: {(request.ShownOnStdin ? "the shown list on stdin" : $"the --only file {CommandLine.Printable(request.OnlyFile)}")} {CommandLine.Printable(Unusable(read))}; nothing was done");
+            return (ShownList.None, $"act: {(request.ShownOnStdin ? "the shown list on stdin" : $"the --only file {ShownText.Printable(request.OnlyFile)}")} {ShownText.Printable(Unusable(read))}; nothing was done");
         }
 
         var (names, failure) = CommandLine.ShownVolumesFile(Encoding.UTF8.GetString(content.Bytes));

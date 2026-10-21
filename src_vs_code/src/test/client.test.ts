@@ -140,7 +140,7 @@ test('wsl.exe refusing one of its own questions is a WSL failure carrying its UT
 });
 
 test('wsl.exe not answering one of its own questions within its ceiling is a WSL failure naming the ceiling', async () => {
-  const { c } = client({ [LIST_QUIET]: { kind: 'timedOut', timeoutMs: LIST_TIMEOUT_MS, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
+  const { c } = client({ [LIST_QUIET]: { kind: 'timedOut', timeoutMs: LIST_TIMEOUT_MS, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
   assert.deepEqual(await c.run('status'), { kind: 'wslFailed', verb: 'status', message: `wsl.exe did not answer within ${LIST_TIMEOUT_MS} ms` });
 });
 
@@ -151,7 +151,7 @@ test('a --version that could not be read is not remembered: the next verb asks a
     [daemonArgv('Ubuntu', VERBS.doctor)]: exited(0, JSON.stringify(golden('head', 'doctor'))),
     [daemonArgv('Ubuntu', VERBS.version)]: (): ProcessResult => {
       versionCalls += 1;
-      return versionCalls === 1 ? { kind: 'timedOut', timeoutMs: 1, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } : exited(0, '0.1.0\n');
+      return versionCalls === 1 ? { kind: 'timedOut', timeoutMs: 1, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } : exited(0, '0.1.0\n');
     },
   };
   const { c } = client(script);
@@ -165,7 +165,7 @@ test('a --version that could not be read is not remembered: the next verb asks a
 });
 
 test('a timed-out daemon call reports the verb\'s ceiling', async () => {
-  const timedOut: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.doctor, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  const timedOut: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.doctor, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   const { c } = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.doctor)]: timedOut });
   assert.deepEqual(await c.run('doctor'), { kind: 'timedOut', verb: 'doctor', timeoutMs: VERB_TIMEOUT_MS.doctor });
 });
@@ -350,7 +350,7 @@ function crowdedStatus(count: number): string {
   return JSON.stringify({ ...body, productVersion: '0.1.0', vm: { ...body.vm, containers: { ...body.vm.containers, count } } });
 }
 
-const PREVIEW_TIMEOUT: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.preview, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+const PREVIEW_TIMEOUT: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.preview, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
 
 test('a preview timeout with more running containers than the ceiling assumes reads "too many containers" with the count', async () => {
   const count = PREVIEW_CONTAINER_ASSUMPTION + 40;
@@ -368,7 +368,7 @@ test('at or below the assumption, or with no status read yet, a preview timeout 
 });
 
 test('a doctor timeout is never re-read as a crowded preview, whatever the container count', async () => {
-  const doctorTimeout: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.doctor, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  const doctorTimeout: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.doctor, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   const { c } = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.status)]: exited(0, crowdedStatus(500)), [daemonArgv('Ubuntu', VERBS.doctor)]: doctorTimeout });
   await c.run('status');
   assert.equal((await c.run('doctor')).kind, 'timedOut');
@@ -383,7 +383,7 @@ test('L1: a daemon call ended by a signal reads as the root paths read it — an
 });
 
 test('L1: a WSL question that timed out is WSL failing; a daemon call that timed out is its own timeout — the one reader\'s parameter', async () => {
-  const timedOut: ProcessResult = { kind: 'timedOut', timeoutMs: 15_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  const timedOut: ProcessResult = { kind: 'timedOut', timeoutMs: 15_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   const { c } = client({ [LIST_QUIET]: timedOut });
   assert.deepEqual(await c.run('status'), { kind: 'wslFailed', message: 'wsl.exe did not answer within 15000 ms', verb: 'status' });
 });

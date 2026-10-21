@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.6.0...extension-v0.7.0) (2026-10-17)
+
+
+### Features
+
+* **daemon:** A23 windowsTemp — the Windows %TEMP% cleanup, the engine's first Windows action (WR-T1) ([#155](https://github.com/oleksandrdubyna88/wsl_care/issues/155)) ([c74af46](https://github.com/oleksandrdubyna88/wsl_care/commit/c74af4641df177d0f3595af8abf02cbd0b4d0932))
+* **daemon:** tasks run, the Job Object supervisor and exit 84 TaskEnded (WR-D3) ([#133](https://github.com/oleksandrdubyna88/wsl_care/issues/133)) ([281dd59](https://github.com/oleksandrdubyna88/wsl_care/commit/281dd59b816a64027e9e097d79ab00eea4aca31c))
+* **daemon:** the failed-units verdict ignores a configured list, default getty@tty1.service ([#128](https://github.com/oleksandrdubyna88/wsl_care/issues/128)) ([6ec9623](https://github.com/oleksandrdubyna88/wsl_care/commit/6ec96235e3cb418e0a14e6caa3f4a496ddbfa8d0))
+* **daemon:** Windows memory pressure — host.commit, host.compression, host.vmmem, one rule on both roads (E15.S5) ([#150](https://github.com/oleksandrdubyna88/wsl_care/issues/150)) ([6d68f00](https://github.com/oleksandrdubyna88/wsl_care/commit/6d68f00990f33a7e4120b9317429ec7b2d2e7a69))
+* **extension:** read the bundled Windows daemon's status (E19.S2b) ([#157](https://github.com/oleksandrdubyna88/wsl_care/issues/157)) ([c922751](https://github.com/oleksandrdubyna88/wsl_care/commit/c92275150d84d56d076bac15e2930526c097e1ab))
+* **vscode:** WindowsCareClient names the staged exe and types tasks render/stage/remove (WR-E1) ([#149](https://github.com/oleksandrdubyna88/wsl_care/issues/149)) ([80adc7f](https://github.com/oleksandrdubyna88/wsl_care/commit/80adc7ffc2ee33f0f033e64b4a0d5809ae545717))
+
+
+### Bug Fixes
+
+* **extension:** the vsix e-mail scan does not flag a systemd unit name (getty@tty1.service) ([#164](https://github.com/oleksandrdubyna88/wsl_care/issues/164)) ([11553fe](https://github.com/oleksandrdubyna88/wsl_care/commit/11553feb79d1d5d227a67d59b3de09b6cb7c3fbe))
+
 ## [0.6.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.5.0...extension-v0.6.0) (2026-10-12)
 
 

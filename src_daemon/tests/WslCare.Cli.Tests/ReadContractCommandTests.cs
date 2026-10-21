@@ -46,7 +46,7 @@ public sealed class ReadContractCommandTests : IDisposable
         exit.Should().Be((int)ExitCode.Ok, stderr);
         var report = Status(stdout);
         report.SchemaVersion.Should().Be(1, "every E6.S0 addition is additive (plan §15j m1)");
-        report.Actions.Should().Equal(ActionId.ExecutionOrder.Where(id => ActionRegistry.Product.Find(id) is not null).Select(id => id.Text), "the distro's binary holds every built action, A13 not yet");
+        report.Actions.Should().Equal(ActionId.ExecutionOrder.Where(id => ActionRegistry.Product.Find(id)?.Sides.Contains(WslCare.Core.Hosting.HostSide.Wsl) == true).Select(id => id.Text), "the distro's binary holds every built action that runs in the distro (A23 is the Windows side's)");
         report.Capabilities.Should().Equal(Capabilities.All);
         report.Running.Should().Be(new RunningReport(RunningStateName.None, null));
         report.LastCleanup!.Available.Should().BeFalse();

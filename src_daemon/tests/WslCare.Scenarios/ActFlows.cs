@@ -153,19 +153,26 @@ public sealed class ActFlows
     public async Task A_preview_of_every_action_this_build_holds_answers_each_from_live_state_and_starts_only_read_commands()
     {
         using var home = Docker("act-preview-all");
-        var ids = string.Join(',', ActionRegistry.Product.Actions.Select(a => a.Id.Text));
-
-        var result = await home.RunAsync("act", ids, "--preview", "--json");
-
         if (home.Paths.Side == HostSide.Windows)
         {
-            result.Exit.Should().Be((int)ExitCode.Usage, "the distro's actions on the Windows binary name the side");
+            var all = string.Join(',', ActionRegistry.Product.Actions.Select(a => a.Id.Text));
+            var mixed = await home.RunAsync("act", all, "--preview", "--json");
+            mixed.Exit.Should().Be((int)ExitCode.Usage, "the distro's actions on the Windows binary name the side");
             return;
         }
 
+        // Every action of THIS side (WR-T1: A23 is the Windows host's — a request that names it here is refused naming the side, below).
+        var mine = ActionRegistry.Product.Actions.Where(a => a.Sides.Contains(home.Paths.Side)).Select(a => a.Id.Text).ToList();
+        var result = await home.RunAsync("act", string.Join(',', mine), "--preview", "--json");
+
         result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
         var report = Report(result);
-        report.Actions.Select(a => a.Id).Should().BeEquivalentTo(ActionRegistry.Product.Actions.Select(a => a.Id.Text));
+        report.Actions.Select(a => a.Id).Should().BeEquivalentTo(mine);
+        var other = ActionRegistry.Product.Actions.Where(a => !a.Sides.Contains(home.Paths.Side)).Select(a => a.Id.Text).ToList();
+        other.Should().NotBeEmpty("this build holds the Windows host's A23");
+        var refused = await home.RunAsync("act", string.Join(',', other), "--preview", "--json");
+        refused.Exit.Should().Be((int)ExitCode.Usage, "an action of the other side is refused naming the side");
+        refused.Stderr.Should().Contain("runs on the Windows host, not on this side");
         report.Actions.Single(a => a.Id == "A4").Preview!.Count.Should().Be(3, "the captured Docker's three unattached anonymous volumes");
         report.Actions.Single(a => a.Id == "A8").Reason.Should().Contain("npm is not installed for me", "a tool that is not installed is a skip with the reason");
         home.Calls.Where(c => c.Tool == DockerCommands.Executable).Should().OnlyContain(c => DockerCommands.IsReadVerb(c.Argv), "a preview removes nothing");

@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { buildVersion } from './buildStamp';
 import { WslCareClient, type RunOptions } from './client/WslCareClient';
 import { WindowsCareClient } from './client/WindowsCareClient';
+import { ceilingMs } from './client/ceilings';
 import { BUNDLED_DAEMON } from './client/handshake';
 import { BundledHost } from './bundled/bundledHost';
 import { installDaemon } from './install/installDaemon';
@@ -31,10 +32,15 @@ import { clientRunner, type WslCareTestApi } from './testApi';
 import { fileInfoOf } from './powershell/elevatedEngine';
 import { EngineHost } from './powershell/engineHost';
 import { engineQueryFor, newEngineRecorder, type EngineRecorder } from './powershell/engineRecorder';
-import { WindowsTimeGuardHost } from './windowsTime/guardHost';
+import { SchedulerHost } from './scheduler/schedulerHost';
+import { TasksHost } from './windowsTasks/tasksHost';
+import { sweepPending as sweepTasksPending } from './windowsTasks/tasksPending';
+import { newTasksRecorder, tasksUiFor, type TasksRecorder } from './windowsTasks/tasksUi';
+import { WindowsTimeGuardHost, type GuardUi } from './windowsTime/guardHost';
 import { sweepPending } from './windowsTime/guardPending';
 import type { GuardOptions } from './windowsTime/guardTask';
-import { guardUiFor, newGuardRecorder, type GuardRecorder } from './windowsTime/guardUi';
+import { QUERY_SCRIPT } from './windowsTime/guardScripts';
+import { guardUiFor, newGuardRecorder, recordingQuery, type GuardRecorder } from './windowsTime/guardUi';
 import { startWindowsTime } from './windowsTime/windowsTimeFix';
 import { newWindowsTimeRecorder, windowsTimeUiFor, type WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import { distroSettingText } from './wsl/distros';
@@ -71,6 +77,7 @@ const REAL_TIMERS: Timers = {
     const handle = setInterval(run, ms);
     return () => clearInterval(handle);
   },
+  nowMs: () => performance.now(),
 };
 
 const ONE_SHOT = {
@@ -111,6 +118,12 @@ interface Parts {
   readonly windowsTime: WindowsTimeRecorder;
   readonly guardRecorder: GuardRecorder;
   readonly guard: WindowsTimeGuardHost;
+  /** The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2) — the guard's and the Windows tasks' part alike. */
+  readonly scheduler: SchedulerHost;
+  /** WR-E2: the Windows tasks' part of the panel — the shared Task Scheduler read plus the staged copy's probe (read only). */
+  readonly tasks: TasksHost;
+  /** WR-E3: the Windows tasks' recorded document, prompts, requests and reports in Test mode — and the answers they give. */
+  readonly tasksRecorder: TasksRecorder;
   /** Which PowerShell runs the Windows Time runs elevated (PLAN_pwsh_engine_windows_time.md §11 R3). */
   readonly engine: EngineHost;
   readonly engineRecorder: EngineRecorder;
@@ -146,14 +159,8 @@ function build(context: vscode.ExtensionContext): Parts {
   const cleanup = new CleanupController({ client, runner, now: () => performance.now(), sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }), numbers });
   const store = new OutcomeStore();
   const focus: { override: boolean | undefined } = { override: undefined };
-  const poller = new Poller({
-    run: (verb, options) => client.run(verb, options),
-    store,
-    focused: () => focus.override ?? vscode.window.state.focused,
-    refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
-    timers: REAL_TIMERS,
-    target: () => distroSettingText(distroSetting()),
-  });
+  const windowsClient = windowsClientOf(context, runner);
+  const poller = pollerOf(client, windowsClient, store, focus);
 
   const cleanRecorder = newCleanRecorder();
   // The extension's log (review C11): a fault at a button's detached edge is written here as well as told.
@@ -168,13 +175,17 @@ function build(context: vscode.ExtensionContext): Parts {
   const guardRecorder = newGuardRecorder();
   const engineRecorder = newEngineRecorder();
   const engine = engineHostOf(testMode, engineRecorder);
-  const guard = windowsTimeGuard(context, testMode, guardRecorder, engine);
+  const guardUi = guardUiFor(testMode, guardRecorder, runnerFor({ kind: 'real' }), context.subscriptions);
+  const scheduler = schedulerOf(testMode, guardRecorder);
+  const guard = windowsTimeGuard(context, guardUi, scheduler, engine);
+  const tasksRecorder = newTasksRecorder();
   const archiveRecorder = newArchiveRecorder();
   const archive = archiveHostOf(testMode, client, runner, store, host, archiveRecorder, log);
 
   return {
-    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, engine, engineRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
-    bundled: bundledHostOf(context, runner),
+    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, scheduler, engine, engineRecorder, tasksRecorder, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
+    bundled: new BundledHost({ version: () => windowsClient.version(), pin: BUNDLED_DAEMON }),
+    tasks: tasksHostOf(context, { testMode, recorder: tasksRecorder, scheduler, windowsClient, engine, log: (line) => log.error(line) }),
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
 }
@@ -184,15 +195,87 @@ function build(context: vscode.ExtensionContext): Parts {
  * Test-mode fake or the closed runner, never the Windows-Time real runner — so `test:host` never starts the real exe. It starts
  * `<extension>/bin/wsl-care.exe --version` only when the panel asks (its refresh), never at activation.
  */
-/** The panel's two members of the Windows row: the view and its change. */
-function bundledPanelActions(bundled: BundledHost): Pick<PanelActions, 'windowsDaemon' | 'onWindowsDaemonChange'> {
-  return { windowsDaemon: () => bundled.view(), onWindowsDaemonChange: (listener) => bundled.onChange(listener) };
+/**
+ * The panel's members of the Windows parts: the bundled daemon's row (E7.S5a) and — WR-E2 — the Windows tasks' lines, each its view
+ * and its change.
+ */
+function windowsPanelActions(bundled: BundledHost, windowsTasks: TasksHost): Pick<PanelActions, 'windowsDaemon' | 'onWindowsDaemonChange' | 'windowsTasks' | 'onWindowsTasksChange'> {
+  return {
+    windowsDaemon: () => bundled.view(),
+    onWindowsDaemonChange: (listener) => bundled.onChange(listener),
+    windowsTasks: () => windowsTasks.view(),
+    onWindowsTasksChange: (listener) => windowsTasks.onChange(listener),
+  };
 }
 
-function bundledHostOf(context: vscode.ExtensionContext, runner: ReturnType<typeof clientRunner>): BundledHost {
-  const client = new WindowsCareClient({ runner, platform: process.platform, extension: { scheme: context.extensionUri.scheme, fsPath: context.extensionUri.fsPath }, timeoutMs: () => numbers().versionSeconds * 1000 });
+/** The poller: the distribution's client, and — E19.S2b — the bundled Windows daemon's `status` on the same tick, only where its client can start the exe. */
+function pollerOf(client: WslCareClient, windowsClient: WindowsCareClient, store: OutcomeStore, focus: { readonly override: boolean | undefined }): Poller {
+  return new Poller({
+    run: (verb, options) => client.run(verb, options),
+    store,
+    focused: () => focus.override ?? vscode.window.state.focused,
+    refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
+    timers: REAL_TIMERS,
+    target: () => distroSettingText(distroSetting()),
+    windows: { usable: () => typeof windowsClient.exe() === 'string', status: () => windowsClient.status() },
+  });
+}
 
-  return new BundledHost({ version: () => client.version(), pin: BUNDLED_DAEMON });
+/**
+ * ONE client of the bundled exe, shared by the panel's Windows row (`--version`), the poller (`status`, E19.S2b) and the Windows
+ * tasks' part (WR-E2: the bundled exe's digest and `tasks render` on the staged copy); the `status` ceiling is the `windowsStatus` call
+ * of `client/ceilings.ts`, `tasks render`'s is `wslCare.timeouts.windowsTasksStageSeconds` — each read from the settings at every call.
+ * The staged copy lives under the profile's `%LOCALAPPDATA%`, which the client takes as an option and derives the folder from.
+ */
+function windowsClientOf(context: vscode.ExtensionContext, runner: ReturnType<typeof clientRunner>): WindowsCareClient {
+  const localAppData = process.env.LOCALAPPDATA;
+
+  return new WindowsCareClient({
+    runner,
+    platform: process.platform,
+    extension: { scheme: context.extensionUri.scheme, fsPath: context.extensionUri.fsPath },
+    timeoutMs: () => numbers().versionSeconds * 1000,
+    statusTimeoutMs: () => ceilingMs(numbers(), { call: 'windowsStatus' }),
+    tasksTimeoutMs: () => numbers().windowsTasksStageSeconds * 1000,
+    ...(localAppData === undefined ? {} : { localAppData }),
+  });
+}
+
+/** What the Windows tasks' host is built from: the shared Task Scheduler read, the one client of the bundled exe, the shared engine read and the Test-mode recorder. */
+interface TasksParts {
+  readonly testMode: boolean;
+  readonly recorder: TasksRecorder;
+  readonly scheduler: SchedulerHost;
+  readonly windowsClient: WindowsCareClient;
+  readonly engine: EngineHost;
+  readonly log: (line: string) => void;
+}
+
+/**
+ * The Windows tasks' part: it consumes the ONE Task Scheduler read and probes the staged copy through the shared client (WR-E2); since WR-E3 its
+ * install and remove run ONE UNELEVATED PowerShell each — the engine `engine` chose, through the REAL runner (a recorder in Test mode, where the
+ * tripwire would refuse the real thing besides). A pending run past its deadline is swept at activation, so nothing stays "waiting" after a crash.
+ */
+function tasksHostOf(context: vscode.ExtensionContext, parts: TasksParts): TasksHost {
+  // A store that refuses leaves the record to its deadline: logged, never an unhandled rejection. (The guard's own sweep line is unchanged.)
+  void sweepTasksPending(context.globalState, Date.now()).catch((e: unknown) => { parts.log(`Windows tasks: the sweep of a stale pending record failed: ${String(e)}`); });
+
+  return new TasksHost({
+    scheduler: parts.scheduler,
+    client: parts.windowsClient,
+    pin: BUNDLED_DAEMON,
+    formatInstant: (iso) => new Date(iso).toLocaleString(),
+    ui: tasksUiFor(parts.testMode, parts.recorder, runnerFor({ kind: 'real' }), context.subscriptions),
+    engine: parts.engine,
+    durable: context.globalState,
+    nowUtcMs: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
+    opTimeoutMs: () => numbers().windowsTasksSeconds * 1000,
+    stageTimeoutMs: () => numbers().windowsTasksStageSeconds * 1000,
+    busyRetryMs: () => numbers().windowsTasksBusyRetrySeconds * 1000,
+    extensionFolder: context.extensionUri.fsPath,
+    log: parts.log,
+  });
 }
 
 /**
@@ -234,20 +317,32 @@ function engineHostOf(testMode: boolean, recorder: EngineRecorder): EngineHost {
  * wsl.exe; a recorder in Test mode), and its install / remove run ONE elevated PowerShell each — the engine `engine` chose.
  * A pending run past its deadline is swept at activation, so nothing stays "waiting" after a crash.
  */
-function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, recorder: GuardRecorder, engine: EngineHost): WindowsTimeGuardHost {
+function windowsTimeGuard(context: vscode.ExtensionContext, ui: GuardUi, scheduler: SchedulerHost, engine: EngineHost): WindowsTimeGuardHost {
   void sweepPending(context.globalState, Date.now());
 
   return new WindowsTimeGuardHost({
     env: process.env,
     options: guardOptions,
     opTimeoutMs: () => numbers().windowsTimeGuardSeconds * 1000,
-    queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000,
-    ui: guardUiFor(testMode, recorder, runnerFor({ kind: 'real' }), context.subscriptions),
+    ui,
+    scheduler,
     durable: context.globalState,
     nowUtcMs: () => Date.now(),
     formatInstant: (iso) => new Date(iso).toLocaleString(),
     engine,
   });
+}
+
+/**
+ * The ONE Task Scheduler read of every task under `\wsl-care` (WR-E2), in `src/scheduler/`: its script is the guard's facts plus the
+ * folder's tasks (`windowsTime/guardScripts.ts`), its capability to run it comes from the process layer — the real UNELEVATED
+ * runner, or the recorder in Test mode — and is not one of the guard's surfaces; bounded by
+ * `wslCare.timeouts.windowsTimeGuardQuerySeconds`. The guard and the Windows tasks' part both consume it.
+ */
+function schedulerOf(testMode: boolean, recorder: GuardRecorder): SchedulerHost {
+  const query = testMode ? recordingQuery(recorder) : runnerFor({ kind: 'real' });
+
+  return new SchedulerHost({ env: process.env, queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000, script: QUERY_SCRIPT, query });
 }
 
 /** Two subscriptions as one: the guard's part re-renders on Task Scheduler's answers AND on the engine read's (D6). */
@@ -258,6 +353,22 @@ function bothChanges(first: () => void, second: () => void): () => void {
 /** A guard flow from a button or the palette — its faults logged at the detached edge, never thrown into VS Code. */
 function guardFlow(parts: Parts, op: 'install' | 'remove'): () => void {
   return () => { void parts.guard.run(op).catch((e: unknown) => { parts.log.error(`Windows Time guard ${op} failed: ${String(e)}`); }); };
+}
+
+/** The three flows of the Windows tasks, as the panel's buttons and the palette commands run them. */
+type TasksFlows = Pick<PanelActions, 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks'>;
+
+/** A Windows tasks flow from a button or the palette — its faults logged at the detached edge, never thrown into VS Code. */
+function tasksFlow(parts: Parts, op: Parameters<TasksHost['run']>[0]): () => void {
+  return () => { void parts.tasks.run(op).catch((e: unknown) => { parts.log.error(`Windows tasks ${op.kind} failed: ${String(e)}`); }); };
+}
+
+function tasksFlowsOf(parts: Parts): TasksFlows {
+  return {
+    installWindowsWatchTask: tasksFlow(parts, { kind: 'install', task: 'watch' }),
+    installWindowsArchiveTask: tasksFlow(parts, { kind: 'install', task: 'archive' }),
+    removeWindowsTasks: tasksFlow(parts, { kind: 'remove' }),
+  };
 }
 
 /** *Install daemon*: the client resolves the distribution, the modal and the terminal are real — or recorded in Test mode. */
@@ -302,12 +413,16 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
 }
 
 /**
- * The panel's refresh: the guard's Task Scheduler query, the panel round (`status`, `preview`, `doctor`) and, once that round's
- * `status` is in the store (its capabilities decide what is asked), the archive's two reads (E10.S1) — never more often.
+ * The panel's refresh: the ONE shared Task Scheduler read — the guard host and the Windows tasks' host both FOLLOW its change, neither
+ * asks it itself (WR-E2, the coai code round finding 0) — and the tasks' probe of the staged copy, the panel round (`status`,
+ * `preview`, `doctor`) and, once that round's `status` is in the store (its capabilities decide what is asked), the archive's two
+ * reads (E10.S1) — never more often. These are the ONE call sites of the shared read and of the probe: they run when the panel
+ * opens, becomes visible or is refreshed, and nowhere else (an elevated guard run answering reads once more, through the guard).
  */
 function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
   return (options) => {
-    void parts.guard.refresh();
+    void parts.scheduler.refresh();
+    void parts.tasks.refresh();
     void parts.engine.refresh();
     void parts.bundled.refresh();
     void parts.gpu.host.refresh();
@@ -340,14 +455,20 @@ function relayActions(parts: Parts): Pick<PanelActions, 'relays' | 'stopRelays'>
   };
 }
 
-/** The panel's parts beyond the cleanup and the guard: the archive's (E10.S1) and the relays' (S7b.2b). */
-function panelExtras(parts: Parts, page: ArchivePanel): ReturnType<typeof archiveActions> & ReturnType<typeof relayActions> {
-  return { ...archiveActions(parts, page), ...relayActions(parts) };
+/** The panel's parts beyond the cleanup and the guard: the archive's (E10.S1), the relays' (S7b.2b) and the Windows tasks' three flows (WR-E3). */
+function panelExtras(parts: Parts, page: ArchivePanel): ReturnType<typeof archiveActions> & ReturnType<typeof relayActions> & TasksFlows {
+  return { ...archiveActions(parts, page), ...relayActions(parts), ...tasksFlowsOf(parts) };
 }
 
 /** Their palette commands — each duplicates a panel button. */
 function extraCommands(extras: ReturnType<typeof panelExtras>): vscode.Disposable[] {
-  return [...archiveCommands(extras), vscode.commands.registerCommand('wslCare.stopRelays', extras.stopRelays)];
+  return [
+    ...archiveCommands(extras),
+    vscode.commands.registerCommand('wslCare.stopRelays', extras.stopRelays),
+    vscode.commands.registerCommand('wslCare.installWindowsWatchTask', extras.installWindowsWatchTask),
+    vscode.commands.registerCommand('wslCare.installWindowsArchiveTask', extras.installWindowsArchiveTask),
+    vscode.commands.registerCommand('wslCare.removeWindowsTasks', extras.removeWindowsTasks),
+  ];
 }
 
 function archiveCommands(archive: Pick<PanelActions, 'chooseArchiveFolder' | 'stopArchiving' | 'archiveNow'>): vscode.Disposable[] {
@@ -414,7 +535,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     removeWindowsTimeGuard: removeGuard,
     ...extras,
     ...gpuPanelActions(parts.gpu),
-    ...bundledPanelActions(parts.bundled),
+    ...windowsPanelActions(parts.bundled, parts.tasks),
   });
   context.subscriptions.push(
     bar,
@@ -474,6 +595,8 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     install: () => parts.install,
     windowsTime: () => parts.windowsTime,
     windowsTimeGuard: () => parts.guard,
+    windowsTasks: () => parts.tasks,
+    tasksRecorder: () => parts.tasksRecorder,
     guardRecorder: () => parts.guardRecorder,
     gpu: () => parts.gpu.host,
     gpuRecorder: () => parts.gpu.recorder,

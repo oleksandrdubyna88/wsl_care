@@ -12,6 +12,11 @@ export interface Snapshot {
   readonly status: VerbOutcome | undefined;
   readonly preview: VerbOutcome | undefined;
   readonly doctor: VerbOutcome | undefined;
+  /**
+   * The BUNDLED Windows daemon's `status` (E19.S2b) — its own reading, never mixed with the distribution's `status` above: a failure of
+   * one never touches the other. Absent when the host cannot run the exe or nothing was read yet.
+   */
+  readonly windowsStatus?: VerbOutcome | undefined;
   /** A panel refresh is in flight. */
   readonly checking: boolean;
 }
@@ -30,13 +35,22 @@ export class OutcomeStore {
     this.replace({ ...this.current, [verb]: outcome });
   }
 
+  /** The newest Windows `status` reading — its own slot, so a distribution's outcome is never replaced by it nor it by that. */
+  setWindowsStatus(outcome: VerbOutcome): void {
+    this.replace({ ...this.current, windowsStatus: outcome });
+  }
+
   setChecking(checking: boolean): void {
     this.replace({ ...this.current, checking });
   }
 
-  /** Forget every outcome — the distribution they were about is no longer the one asked about (`Poller.begin`). */
+  /**
+   * Forget every outcome of the distribution — it is no longer the one asked about (`Poller.begin`). The Windows reading is about
+   * the Windows side, not a distribution, so a changed target keeps it.
+   */
   clear(): void {
-    this.replace(EMPTY);
+    const windowsStatus = this.current.windowsStatus;
+    this.replace(windowsStatus === undefined ? EMPTY : { ...EMPTY, windowsStatus });
   }
 
   /** Called with every new snapshot; the returned function unsubscribes. */

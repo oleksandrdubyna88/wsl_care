@@ -99,7 +99,7 @@ test('an answer cut before its count, an adapter without a code, an exit, a time
   assert.deepEqual(cut, { kind: 'unknown', reason: 'the display-adapter query printed no complete answer' });
   assert.equal(parseGpuAnswer(MEASURED.replace('code.1=22', 'code.1=x'), AT).kind, 'unknown');
   assert.match((gpuStateOf(exited(1), AT) as { reason: string }).reason, /exited 1/);
-  assert.match((gpuStateOf({ kind: 'timedOut', timeoutMs: 20_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, AT) as { reason: string }).reason, /20 s \(wslCare\.timeouts\.gpuQuerySeconds\)/);
+  assert.match((gpuStateOf({ kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, AT) as { reason: string }).reason, /20 s \(wslCare\.timeouts\.gpuQuerySeconds\)/);
   assert.deepEqual(parseGpuAnswer('adapters=0', AT), { kind: 'read', adapters: [], atUtcMs: AT }, 'a machine with no display adapter is a READ, not unknown');
 });
 
@@ -294,7 +294,7 @@ test('every exit and every re-read code is its own sentence: enabled → code 0;
   assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.notDisabled)), measured(0), seven).sentence, /^Nothing was done: that device is no longer disabled\. .*code 0/);
   assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.enableFailed)), measured(), seven).sentence, /Enable-PnpDevice failed/);
   assert.match(enableSentence(adapter, enableExitOf(exited(EXIT.launchFailed)), measured(), seven).sentence, /could not be started/);
-  assert.match(enableSentence(adapter, enableExitOf({ kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), measured(), seven).sentence, /120 s \(wslCare\.timeouts\.gpuEnableSeconds\)/);
+  assert.match(enableSentence(adapter, enableExitOf({ kind: 'timedOut', timeoutMs: 120_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), measured(), seven).sentence, /120 s \(wslCare\.timeouts\.gpuEnableSeconds\)/);
   assert.match(enableSentence(adapter, ran, { kind: 'unknown', reason: 'the display-adapter query exited 1' }, seven).sentence, /could not be read/);
   assert.equal(enableSentence(adapter, ran, measured(0), { file: '', label: '', kind: 'windows' }).sentence.includes('Elevated program'), false, 'no PowerShell at all: no engine named');
   // Own review 2, F5: a standard user whose UAC asks for ANOTHER account's credentials may hold a Store package that account does not have.
@@ -340,7 +340,7 @@ test('a decline starts nothing and writes nothing; an adapter not at 22 is not o
 });
 
 test('after a TIMEOUT the pending record stands until its deadline (the UAC prompt may still be open), then it is swept', async () => {
-  const deps = enableDeps({ answers: { kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, after: measured(22) });
+  const deps = enableDeps({ answers: { kind: 'timedOut', timeoutMs: 120_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, after: measured(22) });
   await enableGpu(r9700(), deps);
   const pending = readGpuPending(deps.store, AT + 1);
   assert.equal(pending?.id, R9700_ID);
@@ -653,7 +653,7 @@ test('own review M2: after a timed-out enable the host schedules ONE re-render a
   const host = new GpuHost(deps);
   await host.refresh();
   deps.recorder.answer = true;
-  deps.recorder.result = { kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  deps.recorder.result = { kind: 'timedOut', timeoutMs: 120_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   await host.enable(1, AT);
   assert.equal(deps.deadlines.at(-1), 120_000 + 60_000 + 1, 'the re-render is armed at the deadline of the record');
   assert.equal(deps.deadlines.length - deps.cancelled.length, 1, 'exactly ONE stands — every re-arm cancels the one before');

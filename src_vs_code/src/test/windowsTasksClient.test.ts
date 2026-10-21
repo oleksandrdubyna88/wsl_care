@@ -94,7 +94,7 @@ test('tasks render <task> runs on the STAGED exe with the render tail and the ta
 
 test('the tasks ceiling is the one the caller sets', async () => {
   const r = recording(exited(0, renderAnswer('archive from the staged copy')));
-  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, tasksTimeoutMs: () => 90_000 });
+  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, tasksTimeoutMs: () => 90_000 });
   assert.equal((await c.tasksRender('archive', STAGED_DIGEST)).kind, 'registrable');
   assert.deepEqual(r.requests, [{ file: STAGED_EXE, args: ['tasks', 'render', 'archive', '--json'], timeoutMs: 90_000 }]);
 });
@@ -134,7 +134,7 @@ test('a render that cannot be read is a failure with its reason: bad JSON, the w
     ['a newer schema', exited(0, { ...answer, schemaVersion: 99 }), /newer/],
     ['exit 1', exited(1, '', 'boom\nmore'), /exited 1: boom/],
     ['exit 70', exited(70, '', 'internal'), /exited 70/],
-    ['timed out', { kind: 'timedOut', timeoutMs: 60_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, /did not answer within 60 s/],
+    ['timed out', { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }, /did not answer within 60 s/],
     ['could not start', { kind: 'failedToStart', reason: 'spawn UNKNOWN: An Application Control policy has blocked this file.' }, /Application Control policy/],
   ];
   for (const [what, result, reason] of cases) {
@@ -194,7 +194,7 @@ test('the exit code and the JSON must agree: staged with exit 1, refused or busy
 
 test('stage exit 2 is the wrong side; a timeout and a failed start are failures that say so', async () => {
   assert.equal((await client(recording(exited(2, '', 'not the Windows binary')).runner).tasksStage()).kind, 'wrongSide');
-  assert.match(JSON.stringify(await client(recording({ kind: 'timedOut', timeoutMs: 60_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).tasksStage()), /did not answer within 60 s/);
+  assert.match(JSON.stringify(await client(recording({ kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }).runner).tasksStage()), /did not answer within 60 s/);
   assert.match(JSON.stringify(await client(recording({ kind: 'failedToStart', reason: 'spawn EPERM' }).runner).tasksStage()), /spawn EPERM/);
 });
 
@@ -298,8 +298,14 @@ test('a run read answers after exit 4 (history unreadable) and, for archive list
 test('a run read uses the read ceiling the caller sets, else the default of that read', async () => {
   const r = recording(exited(0, { schemaVersion: 1 }));
   await client(r.runner).read({ read: 'archiveStatus' });
-  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, readTimeoutMs: () => 12_345 });
+  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, readTimeoutMs: () => 12_345 });
   await c.read({ read: 'archiveStatus' });
   assert.equal(r.requests[1]?.timeoutMs, 12_345);
   assert.ok((r.requests[0]?.timeoutMs ?? 0) > 0);
+});
+
+test('WR-E3: a timeout of tasks stage --remove is TYPED (a caller that persists a pending run must be able to keep it); the other calls stay failed', async () => {
+  const ended: ProcessResult = { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  assert.deepEqual(await client(recording(ended).runner).tasksStageRemove(), { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false });
+  assert.equal((await client(recording(ended).runner).tasksStage()).kind, 'failed');
 });

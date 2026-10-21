@@ -16,7 +16,7 @@ export { MAX_RESTORE_ENTRIES };
  * list knows it, and the test says so on the day the contract changes.
  */
 export const ACTION_IDS = [
-  'A1', 'A2', 'A3', 'A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A20', 'A21',
+  'A1', 'A2', 'A3', 'A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A20', 'A21', 'A23',
 ] as const;
 
 export type ActionId = (typeof ACTION_IDS)[number];
@@ -28,9 +28,11 @@ export type ActionId = (typeof ACTION_IDS)[number];
  * arguments no E6 op carries. The gate leaves them out of what the cleanup ops allow, so a status reporting them changes nothing
  * there. A20 is acted on ONLY through the two restore ops of `rootCall.ts` (E10.S2b), which take `EntryIds`, and only when the
  * daemon reports it (`GateOpen.reported`). A21 (daemon E14 S7b.2, the client-gone relays) left this list with its button
- * (S7b.2b): its confirm carries the held `--process` list, and as no row id it can never join *Clean selected*.
+ * (S7b.2b): its confirm carries the held `--process` list, and as no row id it can never join *Clean selected*. A23 (daemon WR-T1, the
+ * Windows `%TEMP%` cleanup) runs on the Windows side only and is acted on by the Windows runner's own panel (WR-T3), never by a WSL
+ * cleanup op - so the gate leaves it out of what those allow.
  */
-export const BUTTON_ONLY_IDS: readonly ActionId[] = ['A18', 'A19', 'A20'];
+export const BUTTON_ONLY_IDS: readonly ActionId[] = ['A18', 'A19', 'A20', 'A23'];
 
 /** One or more registry ids — never an empty `act`. */
 export type ActionIds = readonly [ActionId, ...ActionId[]];

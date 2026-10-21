@@ -59,6 +59,10 @@ public sealed record ActionContext(
     /// judged again); <see cref="ShownList.None"/> otherwise — A20 then refuses.</summary>
     public ShownList ShownEntries { get; init; } = ShownList.None;
 
+    /// <summary>The account this process runs as — a Windows SID (WR-T1: A23 deletes only entries this account owns). Empty when not
+    /// known, which makes an owner check fail closed: nothing is "owned by this account".</summary>
+    public string UserSid { get; init; } = string.Empty;
+
     /// <summary>The run this action is part of — what the archive's child carries as its own run id (plan §15r D8); empty for a
     /// preview, which starts no run.</summary>
     public string RunId { get; init; } = string.Empty;
@@ -141,6 +145,11 @@ public sealed record ActionPreview(
     /// <summary>An EVENT that will not wait for an idle machine (plan §5: the event-driven A2 for an order-7 shortage runs at
     /// once) — when set, the engine's idle gate is not asked; every other gate still is (E3.S3). Empty for an ordinary preview.</summary>
     public string Urgent { get; init; } = string.Empty;
+
+    /// <summary>What the preview hands its own run besides the targets (WR-T1: where the cursor moves to) — text by name, held in
+    /// memory within ONE engine call, never serialised.</summary>
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, string> Carry { get; init; } = new Dictionary<string, string>();
 
     public static ActionPreview Unavailable(string what, string reason) =>
         new(what, false, reason, 0, null, string.Empty, new Dictionary<string, long>(), string.Empty, []);
@@ -242,6 +251,15 @@ public interface ICleanupAction
     /// <c>null</c> — every action but A13 — waits for idle however long. Only the load is overridden: an unknown figure or a running
     /// build still defers (<see cref="Engine.IdleDeferrals"/>).</summary>
     ConfigKey.IntKey? MaxDeferHours => null;
+
+    /// <summary>Whether a full check's timer pass (<c>collect</c>) includes this action. A23 does not: the Windows cleanup runs from its own
+    /// task (<c>act A23</c> with the timer trigger, WR-T2), and a full check must not list the whole temp folder for it.</summary>
+    bool InFullCheck => true;
+
+    /// <summary>The name of this action's OWN dry-run week stamp (<c>first-timer-run-&lt;name&gt;.json</c>), or empty — every action but A23 —
+    /// for the common one. An action that deletes on a schedule of its own must not be opened by a week another run's timer started
+    /// (the Windows watch and the archive body start the common one): "the first week is dry" has to be true FOR it.</summary>
+    string DryWindowStamp => string.Empty;
 
     Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken);
 

@@ -10,6 +10,7 @@ import { NO_ARCHIVE, type ArchiveControls } from '../archive/archiveView';
 import { NO_WINDOWS_DAEMON, type WindowsDaemonView } from '../bundled/bundledView';
 import type { GpuView } from '../gpu/gpuState';
 import { NO_RELAYS, type RelaysControls } from '../relays/relaysView';
+import { NO_WINDOWS_TASKS, type WindowsTasksView } from '../windowsTasks/tasksView';
 import type { GuardView } from '../windowsTime/guardState';
 import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
 
@@ -137,8 +138,8 @@ function sideParts(archive: ArchiveControls = NO_ARCHIVE, gpu: GpuView = NO_GPU)
 /** `cleanup` is the host's derivation (`cleanup/cleanupView.ts`) — this module reads nothing of the root paths; `guard` is the
  * Windows Time guard host's (`windowsTime/guardHost.ts`); `archive` the archive host's (`archive/archiveHost.ts`, E10.S1); `gpu` the
  * GPU host's (`gpu/gpuHost.ts`, PLAN_gpu_health.md); `relays` the cleanup host's relays part (S7b.2b). Each absent one is its "not yet" value. */
-export function buildPanelView(snapshot: Snapshot, cleanup?: CleanupControls, guard?: GuardView, archive?: ArchiveControls, gpu?: GpuView, relays?: RelaysControls, windowsDaemon?: WindowsDaemonView): PanelView {
-  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), ...hostParts(cleanup, guard), ...sideParts(archive, gpu), relays: relaysOr(relays), windowsDaemon: windowsDaemon ?? NO_WINDOWS_DAEMON };
+export function buildPanelView(snapshot: Snapshot, cleanup?: CleanupControls, guard?: GuardView, archive?: ArchiveControls, gpu?: GpuView, relays?: RelaysControls, windowsDaemon?: WindowsDaemonView, windowsTasks?: WindowsTasksView): PanelView {
+  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), ...hostParts(cleanup, guard), ...sideParts(archive, gpu), relays: relaysOr(relays), windowsDaemon: windowsDaemon ?? NO_WINDOWS_DAEMON, windowsTasks: windowsTasks ?? NO_WINDOWS_TASKS };
 }
 
 /** S7b.2b: the relays' part, or none (a caller that derives no relays — the tests of other parts). */

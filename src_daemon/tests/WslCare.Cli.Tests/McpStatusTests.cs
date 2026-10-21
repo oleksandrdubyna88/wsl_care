@@ -48,7 +48,7 @@ public sealed class McpStatusTests
         mcp.Instances!.Select(i => (i.Pid, i.Owner.Pid)).Should().BeEquivalentTo([(7329, (int?)7203), (8380, (int?)8290)], "each server is owned by the claude session that started it");
         var instance = mcp.Instances!.Single(i => i.Pid == 7329);
         instance.Server.Should().Be("coai-mcp");
-        instance.Owner.Should().Be(new McpOwnerReport(false, 7203, "Claude Code", instance.Owner.CommandLine));
+        instance.Owner.Should().BeEquivalentTo(new McpOwnerReport(false, 7203, "Claude Code", instance.Owner.CommandLine, "claude", ["--output-format", "stream-json"]), "E15.S7 added the program and its safe arguments to the owner");
         instance.Owner.CommandLine.Should().Contain("native-binary/claude");
         instance.CpuPercent.Value.Should().Be(0, "the fixture's ticks do not move across the window");
         instance.Kind.Should().Be("starting", "no CPU, and the capture was taken about 95 s after boot — younger than the 10-minute idle minimum");
