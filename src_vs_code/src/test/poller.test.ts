@@ -7,8 +7,9 @@ import type { Verb } from '../client/verbs';
 import type { RunOptions } from '../client/WslCareClient';
 import { DEFAULT_REFRESH_SECONDS, effectiveSeconds, MIN_REFRESH_SECONDS, Poller } from '../poll/poller';
 import { OutcomeStore } from '../state/outcomeStore';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 import { ManualClock } from './support/manualClock';
-import { answered, failed, headBody } from './support/outcomes';
+import { answered, failed, headBody, NO_DISTRO_LIST } from './support/outcomes';
 
 /**
  * The polling policy (plan §15f #8, §15g M1, m3), driven by a MANUAL clock: only the focused window polls, once on
@@ -32,6 +33,7 @@ function world(answer: (verb: Verb) => VerbOutcome = okAnswer): World {
   const calls: { verb: Verb; options: RunOptions }[] = [];
   const w: { focused: boolean; seconds: unknown } = { focused: true, seconds: undefined };
   const poller = new Poller({
+    listDistros: NO_DISTRO_LIST,
     run: (verb, _target, options = {}) => { calls.push({ verb, options }); return Promise.resolve(answer(verb)); },
     store,
     focused: () => w.focused,
@@ -172,7 +174,7 @@ test('a status refused for its schema does not blank preview and doctor (refusal
 
 test('a run that throws is recorded as an unknown failure and polling goes on', async () => {
   const w = world();
-  const throwing = new Poller({ run: () => Promise.reject(new Error('boom')), store: w.store, focused: () => true, refreshSeconds: () => 30, timers: w.clock, target: () => '' });
+  const throwing = new Poller({ listDistros: NO_DISTRO_LIST, run: () => Promise.reject(new Error('boom')), store: w.store, focused: () => true, refreshSeconds: () => 30, timers: w.clock, target: () => '' });
   throwing.start();
   await throwing.settled();
   assert.equal(w.store.snapshot().status?.kind, 'unknownFailure');
@@ -232,6 +234,7 @@ function windowsWorld(distro: (verb: Verb) => VerbOutcome = okAnswer, windows: (
   const order: string[] = [];
   const w: { focused: boolean; seconds: unknown; usable: boolean } = { focused: true, seconds: undefined, usable: true };
   const poller = new Poller({
+    listDistros: NO_DISTRO_LIST,
     run: (verb, _target, options = {}) => { calls.push({ verb, options }); order.push(verb); return Promise.resolve(distro(verb)); },
     store,
     focused: () => w.focused,
@@ -306,7 +309,7 @@ test('a panel refresh reads the windows status beside the distro\'s; the cleanup
   assert.deepEqual(w.order.filter((a) => a !== 'preview' && a !== 'doctor'), ['status', 'windowsStatus']);
   assert.equal(w.store.snapshot().windowsStatus?.kind, 'answered');
   const follower = windowsWorld();
-  await follower.poller.askStatus();
+  await follower.poller.askStatus(DEFAULT_TARGET);
   assert.deepEqual(follower.order, ['status'], 'a follower asks every few seconds; the Windows read is the poll\'s');
 });
 
@@ -441,6 +444,7 @@ test('a panel refresh stays "checking" until the windows read ends, yet asks pre
 test('a windows.usable() that throws is caught: the tick and the refresh resolve, nothing is asked, an unknownFailure is stored', async () => {
   const w = windowsWorld();
   const throwing = new Poller({
+    listDistros: NO_DISTRO_LIST,
     run: (verb) => Promise.resolve(okAnswer(verb)), store: w.store, focused: () => true, refreshSeconds: () => undefined, timers: w.clock, target: () => '',
     windows: { usable: () => { throw new Error('the probe broke'); }, status: () => { w.order.push('windowsStatus'); return Promise.resolve(windowsAnswer()); } },
   });
@@ -464,6 +468,7 @@ function jitterWorld(seconds: number): { start: () => Promise<void>; tick: (at: 
   let fire: () => void = () => undefined;
   let reads = 0;
   const poller = new Poller({
+    listDistros: NO_DISTRO_LIST,
     run: (verb) => Promise.resolve(okAnswer(verb)),
     store: new OutcomeStore(),
     focused: () => true,

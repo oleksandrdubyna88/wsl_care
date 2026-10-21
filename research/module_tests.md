@@ -3769,6 +3769,32 @@ Break-it, each restored byte for byte (SHA-256 compared): the in-flight key with
 `knownVersion` / `knownContainers` → the two pruning tests red; a cast into `DistroName` in the client → the structure test red; `wsl1`
 out of the poller's `TARGET_FAILURES` → the poller test red.
 
+### What the picked-distro store and poller rest on (E18.W1a-2, 2026-10-21)
+
+Second slice of [PLAN_disk_health_E18.md](../todo/PLAN_disk_health_E18.md) W1a: the store holds one snapshot per PICKED distribution beside the
+default's, and the poller reads a picked one only when asked. Nothing calls `readPicked` but tests and the test API (`readPicked(name)`,
+`listDistros()`; `readPickedBy` asks the list FIRST and mints the name from it), so the bar and the panel cannot tell. New tests:
+`outcomeStore.test.ts`, `pollerPicked.test.ts`, the `readPickedBy` cases of `testApi.test.ts`; `support/manualClock.ts` (the clock `poller.test.ts`
+had inline, now shared) and `support/distroNames.ts` (`listed` / `pick`: the only road a test has to a `DistroName`). The existing poller and
+store constructions changed only by gaining `listDistros` (a required option; `NO_DISTRO_LIST` in `support/outcomes.ts`) and the widened `run`.
+
+| Guarantee | Test | Red observed |
+|---|---|---|
+| `setPicked` leaves the default's snapshot untouched (the very same object); `snapshotOf` reads it; a distro never written is `EMPTY`; writes replace verb by verb | `outcomeStore.test.ts` | stubs: `Expected values to be strictly equal` (`snapshotOf` answered `EMPTY` for a written name) |
+| `clear()` empties the default's outcomes and `checking`, keeps `windowsStatus` AND every picked snapshot; `dropUnlisted` removes the others' and keeps the default's; `onChange` fires on a picked write with the default's snapshot | `outcomeStore.test.ts` | `0 !== 2` (no change fired); `a setting change is about the default; a pick is not about the setting` |
+| a write for a name the last `dropUnlisted` did not hold is ignored — a fresh store holds no picked snapshot; a late read re-inserts nothing; once listed again a write is taken, from `EMPTY` (the gate's finding 4) | `outcomeStore.test.ts`, `pollerPicked.test.ts` | green against the stubs by construction; the break-it below is its tooth |
+| `readPicked(Debian)` = status, preview, doctor under Debian, nothing in the default's slot; a tick between legs stores Ubuntu's status in the default's slot only; Ubuntu's late preview lands in Ubuntu's slot (deferred-promise pattern) | `pollerPicked.test.ts` | `Expected values to be strictly deep-equal` (nothing asked); `the picked status is its own, not the tick's` |
+| over a simulated day (manual clock) one `readPicked` is one status + preview + doctor for Debian and every tick is the DEFAULT target (more than a thousand default calls, all `status`) | `pollerPicked.test.ts` | `no timer ever asked a picked distro` (the stub asked nothing) |
+| a setting change clears the default's and not Debian's; a `readPicked` in flight across the change still stores under Debian | `pollerPicked.test.ts` | `a pick is not about the setting` |
+| a picked `stopped` / `wsl1` is stored for all three verbs and asks no preview / doctor; `startIfStopped` is never passed unless given, and then to `status` only; a throwing run is an `unknownFailure` under the picked name | `pollerPicked.test.ts` | `Expected values to be strictly deep-equal` |
+| the poller's `listDistros()` drops the store's unlisted names, a failed list drops nothing; a `readPicked` whose `preview` resolves after a list without Debian leaves no Debian snapshot | `pollerPicked.test.ts` | `a failed list is not evidence that Debian is gone` |
+| `askStatus(DEFAULT_TARGET)` is today's; `askStatus(picked)` is the status leg only; two concurrent `readPicked` of one distro through the REAL client are one `-d status` | `pollerPicked.test.ts` | `'Ubuntu' !== 'Debian'`; `0 !== 1` |
+| `readPickedBy` lists first, mints through `listedNameOf`, throws for an unlisted name or a failed list | `testApi.test.ts` | stub: `Missing expected rejection` |
+
+Break-it, each restored byte for byte (SHA-256 compared): `readPicked` writing through `set` → nine `pollerPicked` tests red; `clear()` emptying the
+picked map → the store test and both setting-change poller tests red; the poller's `listDistros()` not calling `dropUnlisted` → every picked write is
+then ignored, ten red; the store accepting a name the last list did not hold → the three finding-4 tests red.
+
 ### What the manual Marketplace route and the clean changelog rest on (owner decision, 2026-10-06)
 
 The owner publishes the extension by uploading the attested `.vsix` by hand — no `VSCE_PAT`, no Entra identity

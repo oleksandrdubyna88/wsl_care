@@ -28,7 +28,7 @@ import { readNumbers, type Numbers } from './settings/numbers';
 import { OutcomeStore } from './state/outcomeStore';
 import { daemonLimitsOf, type DaemonLimits } from './shared/daemonLimits';
 import { StatusBar } from './statusBar/statusBar';
-import { clientRunner, type WslCareTestApi } from './testApi';
+import { clientRunner, readPickedBy, type WslCareTestApi } from './testApi';
 import { fileInfoOf } from './powershell/elevatedEngine';
 import { EngineHost } from './powershell/engineHost';
 import { engineQueryFor, newEngineRecorder, type EngineRecorder } from './powershell/engineRecorder';
@@ -169,7 +169,7 @@ function build(context: vscode.ExtensionContext): Parts {
   context.subscriptions.push(log);
   const host = new CleanupHost({
     durable: context.globalState, controller: cleanup, read: (request) => client.read(request, DEFAULT_TARGET), outcomes: store,
-    askStatus: () => poller.askStatus(), refreshPanel: () => poller.refreshPanel(), focused: () => focus.override ?? vscode.window.state.focused,
+    askStatus: () => poller.askStatus(DEFAULT_TARGET), refreshPanel: () => poller.refreshPanel(), focused: () => focus.override ?? vscode.window.state.focused,
     ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(), log: (line) => log.error(line), numbers,
   });
 
@@ -213,6 +213,7 @@ function windowsPanelActions(bundled: BundledHost, windowsTasks: TasksHost): Pic
 function pollerOf(client: WslCareClient, windowsClient: WindowsCareClient, store: OutcomeStore, focus: { readonly override: boolean | undefined }): Poller {
   return new Poller({
     run: (verb, target, options) => client.run(verb, target, options),
+    listDistros: () => client.listDistros(),
     store,
     focused: () => focus.override ?? vscode.window.state.focused,
     refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
@@ -596,6 +597,8 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     refreshPanel: () => poller.refreshPanel(),
     startWsl: () => poller.refreshPanel({ startIfStopped: true }),
     settled: () => poller.settled(),
+    listDistros: () => poller.listDistros(),
+    readPicked: (name, options) => readPickedBy(poller, name, options),
     lastRendered: () => panel.lastRendered(),
     install: () => parts.install,
     windowsTime: () => parts.windowsTime,

@@ -8,7 +8,7 @@ import { Poller, type Timers } from '../poll/poller';
 import type { ProcessResult } from '../process/runner';
 import { OutcomeStore, type PanelVerb } from '../state/outcomeStore';
 import { TEST_ENV } from './support/fakeWorld';
-import { answered, headBody } from './support/outcomes';
+import { answered, headBody, NO_DISTRO_LIST } from './support/outcomes';
 import { golden } from './support/paths';
 import { daemonArgv, exited, exitedUtf16, LIST_QUIET, LIST_RUNNING, recordingRunner, type Scripted } from './support/recordingRunner';
 import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
@@ -96,6 +96,7 @@ test('the panel never shows the previous distribution\'s preview under the new o
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
   const store = new OutcomeStore();
   const options = {
+    listDistros: NO_DISTRO_LIST,
     run: (verb: Verb, target: DistroTarget, runOptions?: RunOptions) => client.run(verb, target, runOptions),
     store,
     focused: () => true,
@@ -135,7 +136,7 @@ function pollerWorld(): { poller: Poller; store: OutcomeStore; held: Deferred<Ve
 
     return Promise.resolve(answered(panelVerb, headBody(panelVerb), distro));
   };
-  const options = { run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro };
+  const options = { listDistros: NO_DISTRO_LIST, run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro };
 
   return { poller: new Poller(options), store, held, asked: asked.promise, setDistro: (d) => { distro = d; } };
 }
@@ -197,7 +198,7 @@ test('a round made obsolete while its status is pending asks no preview or docto
 
     return Promise.resolve(answered(asPanelVerb(verb), headBody(asPanelVerb(verb)), distro));
   };
-  const poller = new Poller({ run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro });
+  const poller = new Poller({ listDistros: NO_DISTRO_LIST, run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro });
 
   void poller.refreshPanel();
   await statusAsked.promise;
@@ -231,7 +232,7 @@ function recordedWorld(heldUbuntuStatus: boolean): {
 
     return Promise.resolve(answered(asPanelVerb(verb), headBody(asPanelVerb(verb)), state.distro));
   };
-  const poller = new Poller({ run, store, focused: () => state.focused, refreshSeconds: () => undefined, timers: NEVER, target: () => state.distro });
+  const poller = new Poller({ listDistros: NO_DISTRO_LIST, run, store, focused: () => state.focused, refreshSeconds: () => undefined, timers: NEVER, target: () => state.distro });
 
   return { poller, store, calls, held, statusAsked: statusAsked.promise, setDistro: (d) => { state.distro = d; }, setFocused: (f) => { state.focused = f; } };
 }

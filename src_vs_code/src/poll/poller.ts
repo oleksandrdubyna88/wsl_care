@@ -2,7 +2,7 @@ import type { Failure, VerbOutcome } from '../client/outcome';
 import type { Verb } from '../client/verbs';
 import type { RunOptions } from '../client/WslCareClient';
 import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
-import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
+import { DEFAULT_TARGET, pickedTarget, type DistroList, type DistroName, type DistroTarget } from '../wsl/distroTarget';
 
 /**
  * WHEN the daemon is asked (plan §15f #8, §15g M1, m3) — the one place that decides it:
@@ -35,6 +35,12 @@ import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
  * stores nothing, asks nothing more, and leaves the "checking" state to the current one — so a `preview` still running
  * for the previous distribution can never land under the new one (retro review of PR #9, `distroSwitch.test.ts`). A round
  * for the SAME target never makes another obsolete, so a status poll never drops a `preview` in flight.
+ *
+ * E18.W1a: a PICKED distribution is read ONLY when asked (`readPicked`: W1b's pick, *Refresh*, becoming visible) — no timer ever fires
+ * for it, the "focused window only" rule does not apply (a user's act on a visible view asked), and no generation applies: a setting
+ * change is about the default, so it neither obsoletes a picked read nor clears a picked snapshot. Every outcome is stored under the name
+ * the read was started FOR (`OutcomeStore.setPicked`), which ignores a name the last `listDistros()` did not hold. A read never starts a
+ * distribution: `startIfStopped` is the one way, and only an explicit *Start <distro> and check* passes it.
  */
 
 export const DEFAULT_REFRESH_SECONDS = 120;
@@ -57,6 +63,8 @@ export interface Timers {
 
 export interface PollerOptions {
   readonly run: (verb: Verb, target: DistroTarget, options?: RunOptions) => Promise<VerbOutcome>;
+  /** Every distribution WSL reports (`WslCareClient.listDistros`). */
+  readonly listDistros: () => Promise<DistroList | Failure>;
   readonly store: OutcomeStore;
   readonly focused: () => boolean;
   readonly refreshSeconds: () => unknown;
@@ -160,13 +168,27 @@ export class Poller {
    * plan §15j M6: only while something is in flight). Recorded in the store, so the bar and the panel see the answer —
    * stamped with the current target's round like a tick (#23), so an answer for a previous distribution is never stored.
    */
-  askStatus(): Promise<VerbOutcome> {
-    return this.track(this.ask(this.begin(), 'status'));
+  askStatus(target: DistroTarget): Promise<VerbOutcome> {
+    return this.track(target.kind === 'picked' ? this.askPicked(target.distro, 'status') : this.ask(this.begin(), 'status'));
   }
 
   /** Panel open / Refresh / "Start WSL and check": `status` first, then `preview` and `doctor` unless it stopped. */
   refreshPanel(options: RunOptions = {}): Promise<void> {
     return this.track(this.panelRound(options));
+  }
+
+  /**
+   * A PICKED distribution, on demand (E18.W1a): `status`, then — unless it met a stop (`stopped`, `wsl1`, …) — `preview` and
+   * `doctor`, each stored under `distro` and never in the default's slot; the stop is mirrored into `preview` / `doctor` as the panel's
+   * round does. A read started while the same distribution's read is in flight joins it (the client's in-flight sharing).
+   */
+  readPicked(distro: DistroName, options: RunOptions = {}): Promise<void> {
+    return this.track(this.pickedRound(distro, options));
+  }
+
+  /** Every distribution WSL reports; on an answer the store forgets the picked snapshots of the names it no longer holds. A failure drops nothing. */
+  listDistros(): Promise<DistroList | Failure> {
+    return this.track(this.listed());
   }
 
   /** Resolves once everything started so far has finished — for tests and the extension-host scenarios. */
@@ -211,8 +233,51 @@ export class Poller {
   }
 
   private async ask(round: number, verb: PanelVerb, options: RunOptions = {}): Promise<VerbOutcome> {
-    const outcome = await this.options.run(verb, DEFAULT_TARGET, options).catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb }));
+    const outcome = await this.runSafely(verb, DEFAULT_TARGET, options);
     this.settle(round, () => this.options.store.set(verb, outcome));
+
+    return outcome;
+  }
+
+  /** The client's answer; a run that throws is an unknown failure of that verb, so a read never rejects. */
+  private runSafely(verb: PanelVerb, target: DistroTarget, options: RunOptions): Promise<VerbOutcome> {
+    return this.options.run(verb, target, options).catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb }));
+  }
+
+  private async listed(): Promise<DistroList | Failure> {
+    const list = await this.options.listDistros();
+    if ('distros' in list) {
+      this.options.store.dropUnlisted(list.distros.map((info) => info.name));
+    }
+
+    return list;
+  }
+
+  /** A picked read: "checking" around `status` and, unless it stopped, `preview` and `doctor`. No generation, no focus rule. */
+  private async pickedRound(distro: DistroName, options: RunOptions): Promise<void> {
+    this.options.store.setPickedChecking(distro, true);
+    try {
+      const status = await this.askPicked(distro, 'status', options);
+      await this.afterPickedStatus(distro, status);
+    } finally {
+      this.options.store.setPickedChecking(distro, false);
+    }
+  }
+
+  private async afterPickedStatus(distro: DistroName, status: VerbOutcome): Promise<void> {
+    if (!stopsTheOthers(status)) {
+      await Promise.all([this.askPicked(distro, 'preview'), this.askPicked(distro, 'doctor')]);
+      return;
+    }
+    for (const verb of ['preview', 'doctor'] as const) {
+      this.options.store.setPicked(distro, verb, { ...status, verb });
+    }
+  }
+
+  /** One verb for a picked distribution, stored under the name it was asked FOR. */
+  private async askPicked(distro: DistroName, verb: PanelVerb, options: RunOptions = {}): Promise<VerbOutcome> {
+    const outcome = await this.runSafely(verb, pickedTarget(distro), options);
+    this.options.store.setPicked(distro, verb, outcome);
 
     return outcome;
   }
