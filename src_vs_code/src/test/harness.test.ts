@@ -198,3 +198,77 @@ test('E6.S4: an input\'s value takes a string only, and a form, a select or a te
   }
   assert.throws(() => withRoot("document.createElement('input').setAttribute('formaction', 'x');"), /setAttribute\(".*"\) is not modelled/);
 });
+
+// ---- W0 (todo/PLAN_disk_health_E18.md §4 item 7): the widening the kit's DOM port needs — and nothing more ----
+//
+// The kit's components touch `id` and `tabindex` attributes, `keydown` and `input` events, `focus()` and an event's `key` and
+// `preventDefault()` (the kit's research/PLAN_kit_components_storybook.md §4.3). Each is modelled here and every neighbour
+// stays refused, so a component that reached one step further fails in this harness, by name.
+
+test('W0 item 7: setAttribute takes id and tabindex — what the kit\'s tabs set — and still refuses style, onclick and href', () => {
+  const { root } = withRoot(`
+    const el = document.getElementById('root');
+    el.setAttribute('id', 'full-tab-wsl');
+    el.setAttribute('tabindex', '-1');`);
+  assert.deepEqual(root.attributes, { id: 'full-tab-wsl', tabindex: '-1' });
+  for (const name of ['style', 'onclick', 'href']) {
+    assert.throws(() => withRoot(`document.getElementById('root').setAttribute('${name}', 'x');`), /setAttribute\(".*"\) is not modelled/, name);
+  }
+});
+
+test('W0 item 7: an element takes keydown and input listeners, and still refuses change and focus', () => {
+  const { root } = withRoot(`
+    const el = document.getElementById('root');
+    el.addEventListener('keydown', () => 1);
+    el.addEventListener('input', () => 1);`);
+  assert.deepEqual(root.handlers.map((h) => h.kind), ['keydown', 'input']);
+  for (const kind of ['change', 'focus']) {
+    assert.throws(() => withRoot(`document.getElementById('root').addEventListener('${kind}', () => 1);`), new RegExp(`listening for ${kind} on an element is not modelled`), kind);
+  }
+});
+
+test('W0 item 7: focus() makes the element the document\'s active element — read by the page, recorded for the test', () => {
+  const { page, root } = withRoot(`
+    const vscode = acquireVsCodeApi();
+    const el = document.getElementById('root');
+    const b = document.createElement('button'); el.appendChild(b);
+    vscode.postMessage({ before: document.activeElement === null });
+    b.focus();
+    vscode.postMessage({ after: document.activeElement === b });`);
+  assert.deepEqual(page.posted, [{ before: true }, { after: true }]);
+  assert.equal(page.activeElement, root.children[0]);
+});
+
+test('W0 item 7: a dispatched keydown carries its key, and a preventDefault() the page calls is recorded', () => {
+  const { page, root } = withRoot(`
+    const vscode = acquireVsCodeApi();
+    const el = document.getElementById('root');
+    const b = document.createElement('button'); b.setAttribute('data-key', 'x'); el.appendChild(b);
+    el.addEventListener('keydown', (e) => { vscode.postMessage(e.key); if (e.key.startsWith('Arrow')) e.preventDefault(); });`);
+  const button = root.one('[data-key="x"]');
+  const arrow = page.key(button, 'ArrowRight');
+  const letter = page.key(button, 'a');
+  assert.deepEqual(page.posted, ['ArrowRight', 'a']);
+  assert.deepEqual([arrow.type, arrow.key, arrow.defaultPrevented], ['keydown', 'ArrowRight', true]);
+  assert.deepEqual([letter.type, letter.key, letter.defaultPrevented], ['keydown', 'a', false]);
+});
+
+test('W0 item 7: typing into an input sets its value and dispatches input, which the page reads; only an input can be typed into', () => {
+  const { page, root } = withRoot(`
+    const vscode = acquireVsCodeApi();
+    const el = document.getElementById('root');
+    const box = document.createElement('input'); box.setAttribute('data-box', 'q'); el.appendChild(box);
+    const other = document.createElement('div'); other.setAttribute('data-other', 'd'); el.appendChild(other);
+    box.addEventListener('input', () => vscode.postMessage(box.value));`);
+  const event = page.type(root.one('[data-box="q"]'), 'ollama');
+  assert.deepEqual(page.posted, ['ollama']);
+  assert.equal(event.type, 'input');
+  assert.equal(root.one('[data-box="q"]').value, 'ollama');
+  assert.throws(() => page.type(root.one('[data-other="d"]'), 'x'), /only an input can be typed into/);
+});
+
+test('W0 item 7: a key or typing aimed at an element that is not in the running page fails instead of doing nothing', () => {
+  const { page } = withRoot('');
+  assert.throws(() => page.key(new Element('BUTTON'), 'a'), /not in the running page/);
+  assert.throws(() => page.type(new Element('INPUT'), 'a'), /not in the running page/);
+});
