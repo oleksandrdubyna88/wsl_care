@@ -120,6 +120,10 @@ public sealed class ContractFilesTests
                 ("launchers", new JsonArray([.. Core.Mcp.McpUserPrograms.Launchers.Select(v => (JsonNode)v)])), ("launcherVersionSuffix", Core.Mcp.McpUserPrograms.LauncherVersionSuffix)],
         ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.TempGlobName } glob =>
             [("shape", "textList"), ("memberPattern", WslCare.Core.Actions.WindowsTemp.TempGlob.Pattern), ("maxMembers", glob.MaxMembers), ("neverMatches", new JsonArray(WslCare.Core.Actions.WindowsTemp.TempGlob.ClaudeName, WslCare.Core.Actions.WindowsTemp.TempGlob.TestLeftoverPrefix + "*"))],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.WindowsLocalPath } open =>
+            [("shape", "textList"), ("memberShape", "windowsLocalPath"), ("memberMaxLength", TextRule.AbsolutePathOrEmpty.MaxLength), ("maxMembers", open.MaxMembers)],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.Matching matching } open when open.Name.StartsWith("worktrees.", StringComparison.Ordinal) =>
+            [("shape", "textList"), ("memberPattern", matching.Expression), ("maxMembers", open.MaxMembers)],
         ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
         ConfigKey.AgentListKey => [("shape", "agentList"), ("maxEntries", ExtraAgentShape.MaxEntries), ("maxFolders", ExtraAgentShape.MaxFolders), ("maxPathLength", ExtraAgentShape.MaxPathLength), ("maxGlobLength", ExtraAgentShape.MaxGlobLength), ("maxNameLength", ExtraAgentShape.MaxNameLength), ("sides", new JsonArray(ExtraAgentShape.Wsl, ExtraAgentShape.Windows))],
         _ => throw new InvalidOperationException($"{key.Name}: a key shape the contract does not describe"),

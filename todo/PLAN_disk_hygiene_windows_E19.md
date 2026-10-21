@@ -208,7 +208,7 @@ coai code round per story; the full test executables and `npm test` before the P
   Windows `status` carries `worktrees` (`basis {source: scan, scannedAt, ageSeconds}`) and `worktrees.reclaimable`, which
   in THIS story is always `unknown — "git has not confirmed the candidates yet (E19.S4)"` with the structural counts in
   the value — never `ok`, never a byte figure called reclaimable. The distro's binary refuses all three verbs naming the
-  Windows side; `ActCommand.OtherSide`'s hard-coded "runs inside the WSL distro" is widened to name the right side.
+  Windows side (the verbs carry their own not-on-this-side text; see *As built*).
 - **Scenarios (RED first)** — the parent's DH-3 list minus the git ones, plus:
   `An_unreadable_subfolder_makes_the_worktree_unknown_not_idle`; `A_wsl_made_worktree_with_a_mnt_pointer_is_a_worktree_not_an_orphan`;
   `An_unmappable_posix_pointer_is_foreign_and_never_a_candidate`; `A_bin_holding_a_nested_repository_is_retained_whole`;
@@ -217,17 +217,43 @@ coai code round per story; the full test executables and `npm test` before the P
   `A_root_set_by_hand_that_breaks_a_rule_is_refused_at_scan_start`; `Reclaimable_is_unknown_until_git_confirms`;
   `The_classifier_and_the_scan_start_no_process`; `The_distro_binary_refuses_the_worktrees_verbs_naming_the_windows_side`;
   `Existing_walks_keep_ignoring_inaccessible_folders`. Windows legs build their trees under a `testsToDelete-` sandbox.
+  Added by the Fable security review (2026-10-18) and the story's plan round: `A_short_name_spelling_of_the_profile_is_refused`;
+  `Two_spellings_of_one_folder_are_one_root`; `A_trailing_dot_says_it_is_spelt_differently_not_that_it_is_a_link`;
+  `A_tree_of_many_empty_folders_still_stops_at_the_budget`; `A_tree_of_many_empty_folders_asks_the_token`;
+  `An_admin_folder_pointing_at_this_folder_under_another_spelling_is_not_an_orphan`;
+  `A_report_missing_what_the_status_reads_is_unreadable_not_a_crash`; `A_corrupt_report_makes_status_say_it_could_not_be_read_never_fail`;
+  `A_report_with_huge_figures_still_gives_a_status`; `A_system_folder_or_the_temporary_folder_is_refused_and_so_is_one_inside_it`;
+  `A_folder_holding_the_temporary_folder_or_a_system_folder_is_refused`; `A_report_that_is_too_large_even_trimmed_is_refused_and_no_unreadable_file_is_left`.
 - **Break-it:** `IgnoreInaccessible` back on in the scan; the `/mnt/` translation removed; the nested-`.git` retain removed;
-  the content check removed; the root re-validation at scan start removed.
+  the content check removed; the root re-validation at scan start removed. For the review's conditions: the final-path
+  equality removed; folders not counted toward the walk's budget; the exists-under-another-spelling check removed; the
+  report's post-parse check removed; one protected place (the temporary folder) removed; the write's size bound removed.
 - **Files:** `Core/Worktrees/*` (new), `Files/TreeWalk.cs`, `Files/IFileSystem.cs` (`Measured.Denied`), `Config/ConfigKeys.Worktrees.cs`
   (new), `Config/KeyRules.cs` (the Windows path rule), `Config/ConfigLoader.cs` (`UserOwned` += roots), `default.json`,
-  `Cli/CommandLine.cs`, `Cli/Program.cs`, `Cli/Commands/WorktreesCommand.cs` (new), `Cli/Commands/ActCommand.cs` (side text),
+  `Cli/CommandLine.cs`, `Cli/Program.cs`, `Cli/Commands/WorktreesCommand.cs` (new),
   `Cli/Commands/StatusCommand.cs`, `Json/WslCareJsonContext.cs`, `contracts/config-keys.json`,
   `contracts/requests/worktrees-roots-set-stdin.json` (new, the shared fixture), tests (`Core.Tests/Worktrees/*` new,
   `Cli.Tests/WorktreesCommandTests.cs` new, `Cli.Tests/CommandLineTests.cs`, `Scenarios/WorktreesFlows.cs` new,
   `VerbRegisterTests` via the catalogue row), docs (README *Worktrees* section, `module_daemon.md` new section,
   `module_tests.md` flow-catalogue rows, `architecture.md` verbs).
 - **Fable own review** (the parent's §5: it writes a key that admits deletion) — outside the quota.
+- **As built (2026-10-19, PR #158).** As briefed, with these deviations and additions:
+  - **`ActCommand.OtherSide` was NOT widened.** The three `worktrees` verbs carry their own not-on-this-side text
+    (`WorktreesCommand`); `act`'s wording stays as it was. Recorded on the coai plan round.
+  - **The Fable security review (approve with conditions) is built.** A root is held and its FINAL path
+    (`GetFinalPathNameByHandle`, without the device prefix) must equal its spelling — rule `spelt-differently` — so an 8.3
+    name, a `subst` drive or a trailing dot never admits the profile or a second spelling of one root; the profile,
+    overlap and protected-place rules run on the real name. Protected places add `<SystemDrive>\Windows`, both
+    `Program Files`, `ProgramData` and the whole user temporary folder. The counting walk counts every folder toward
+    its budget, deadline and token. An admin back-pointer naming an EXISTING `.git` under another spelling is
+    unreadable, never `orphan`. A `worktrees.json` that lacks what `status` reads is unreadable with its reason, and the
+    status sums its byte figures without overflow. The report is written under the cap it is read with (trimmed to its
+    counts, else refused with the previous report kept).
+  - **The gap between the scan's judgement and its listing** (a junction swapped in between) is harmless here: this
+    story only reads and reports, and E20 acts only on handles whose final path it verified at delete time
+    (`PLAN_disk_hygiene_windows_E20.md` §4 A.5, §4a item 1, §4b item 4).
+  - **`TestSupport/ToDeleteRoot`** names its folder `testsToDelete-wsl-care-<purpose>-<guid>` under the temp root; it
+    duplicates `TempRoot` with the shared prefix until E21.S2 (DH-8) moves `TempRoot` onto the prefix and the two merge.
 
 ### E19.S4 — git's three read-only questions, and "reclaimable" made real (DH-3, part 2)
 
