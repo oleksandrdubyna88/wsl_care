@@ -20,9 +20,10 @@ public sealed record NeverRule(string Id, string Description, Func<IReadOnlyList
 /// judged here too.</para>
 /// <para>PowerShell is the one interpreter the product starts, and only as a CLOSED set
 /// (<see cref="Health.HealthCommands.FixedScripts"/>): the Windows clock probe (E2.S3) and the Windows disk script (E15.S1,
-/// PLAN_disk_health.md §3.1), each a fixed script with no slot. An argv naming PowerShell (<c>powershell</c> or <c>pwsh</c>,
+/// PLAN_disk_health.md §3.1), each a fixed script with no slot — and since E15.S1b the same disk script under the bare
+/// <c>pwsh.exe</c> (the MSI PowerShell 7), never the clock probe under it. An argv naming PowerShell (<c>powershell</c> or <c>pwsh</c>,
 /// any path or extension) is refused unless it is EXACTLY one of them — the program as the product spells it AND every
-/// argument, under the configuration in force — so a third script, a variant of one of the two, <c>-File</c>,
+/// argument, under the configuration in force — so a third script, a variant of one of them, <c>-File</c>,
 /// <c>-EncodedCommand</c>, a trailing argument, or the right arguments under another PowerShell program never run.</para>
 /// </remarks>
 public static class NeverList
@@ -39,7 +40,7 @@ public static class NeverList
     [
         new("control-characters", "an argument holding a control character (a newline, a NUL, an escape)", argv => argv.Any(a => a.Any(char.IsControl))),
         new("shell", "a shell in any form - sh -c, bash -c, bash -ic, cmd /c, or a script (plan §15c #3: no shell anywhere)", IsShellCommandString),
-        new("powershell", "PowerShell with anything but an exact member of its closed set of fixed scripts - the Windows clock probe and the Windows disk script (no -File, no other script, no variant)", IsForeignPowerShell),
+        new("powershell", "PowerShell with anything but an exact member of its closed set of fixed scripts - the Windows clock probe, and the Windows disk script under powershell.exe or the bare pwsh.exe (the MSI PowerShell 7) - never the clock probe under pwsh.exe (no -File, no other script, no variant)", IsForeignPowerShell),
         new("inline-code", "an interpreter given inline code: python -c, perl -e, node -e, ruby -e, php -r, awk", IsInlineCode),
         new("git-worktree-prune", "git worktree prune - it unregisters every worktree created from Windows (plan §3, §5)", IsGitWorktreePrune),
         new("docker-system-prune", "docker system prune, in any form (plan §5: never -a; no action needs any form)", argv => IsDocker(argv, "system", "prune")),

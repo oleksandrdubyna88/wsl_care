@@ -1,0 +1,18 @@
+The Windows clock probe's answer with its pwsh tags (E15.S1b) - CAPTURED, not synthetic.
+
+Source:   The Windows host's own Windows PowerShell 5.1 (unelevated, 64-bit, the System32 one) on the owner's machine,
+          on 2026-10-12 at 07:58:47Z. Read-only: the probe's script (HealthCommands.ClockScript as E15.S1b builds it) was
+          started from a PowerShell 7 helper exactly as the product starts it - powershell.exe -NoProfile -NonInteractive
+          -Command <the script>, the argv as a list - with its stdout saved as written (UTF-8, LF).
+          This machine has NO MSI PowerShell 7: C:\Program Files\PowerShell\7\pwsh.exe is absent (the Store package is
+          installed, which the probe never looks at), so the capture is the ABSENT shape - the known folder and the
+          environment both name C:\Program Files, pwsh.msi=absent, pwsh.signature empty. The verified shape (file, signed)
+          was observed on the same day by pointing the same look at the Store package's pwsh.exe (file, signed) and is
+          DERIVED in the tests from this capture, said so there (PwshEngineFixture.Verified).
+
+Files:
+  powershell-clock.out   powershell.exe -NoProfile -NonInteractive -Command <ClockScript>  (Running, Automatic; absent)
+  captured-at.txt        the instant of the capture (the Windows clock, UTC)
+
+Redacted, by hand, and nothing else changed:
+  - powershell-clock.out: the Windows user name in the profile path -> C:\Users\user

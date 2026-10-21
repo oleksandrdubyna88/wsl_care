@@ -66,9 +66,13 @@ public sealed class GitQuestionsRealGitTests
         repo.Write("xdg/bin/y.txt", "x");
         var leakyParent = new Dictionary<string, string>
         {
-            ["HOME"] = home.Path, ["USERPROFILE"] = home.Path, ["XDG_CONFIG_HOME"] = home.Under(".config"),
-            ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty, ["WINDIR"] = Environment.GetEnvironmentVariable("WINDIR") ?? string.Empty,
-            ["TEMP"] = Environment.GetEnvironmentVariable("TEMP") ?? string.Empty, ["TMP"] = Environment.GetEnvironmentVariable("TMP") ?? string.Empty,
+            ["HOME"] = home.Path,
+            ["USERPROFILE"] = home.Path,
+            ["XDG_CONFIG_HOME"] = home.Under(".config"),
+            ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? string.Empty,
+            ["WINDIR"] = Environment.GetEnvironmentVariable("WINDIR") ?? string.Empty,
+            ["TEMP"] = Environment.GetEnvironmentVariable("TEMP") ?? string.Empty,
+            ["TMP"] = Environment.GetEnvironmentVariable("TMP") ?? string.Empty,
         };
 
         // The control: with that home in its environment, git DOES answer with the user's rules as if they were the repository's.

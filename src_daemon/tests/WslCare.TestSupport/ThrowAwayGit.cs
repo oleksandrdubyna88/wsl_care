@@ -4,18 +4,17 @@ using System.Text;
 namespace WslCare.TestSupport;
 
 /// <summary>
-/// A folder of this test's own — a <see cref="TempRoot"/> whose purpose starts with <c>testsToDelete-</c>, so it reads as a test leftover and
-/// brings the owner marker and the leftover sweep — removed on dispose (E19.S4, decision 6: a real <c>git.exe</c> runs in tests ONLY against a
+/// A folder of this test's own — a <see cref="ToDeleteRoot"/> (named <c>testsToDelete-…</c>, so the family's sweep finds a leftover) — removed on dispose (E19.S4, decision 6: a real <c>git.exe</c> runs in tests ONLY against a
 /// throw-away repository the test creates and removes). The removal clears read-only attributes first — git writes its object files
 /// read-only, and a plain recursive delete refuses them on Windows.
 /// </summary>
 public class ThrowAwayFolder : IDisposable
 {
-    private readonly TempRoot _root;
+    private readonly ToDeleteRoot _root;
 
     public ThrowAwayFolder(string purpose)
     {
-        _root = new TempRoot($"testsToDelete-{purpose}");
+        _root = new ToDeleteRoot(purpose);
     }
 
     public string Path => _root.Path;

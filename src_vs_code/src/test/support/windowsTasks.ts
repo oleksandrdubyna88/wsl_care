@@ -2,9 +2,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { WindowsCareClient } from '../../client/WindowsCareClient';
+import type { TaskName } from '../../client/verbs';
+import type { RenderAnswer } from '../../client/windowsTasks';
 import type { ProcessRequest, ProcessResult } from '../../process/runner';
 import type { FakeTasks } from '../fake/fakeWsl';
-import { bodyOf, type Body } from './body';
+import { bodyAt, bodyOf, stringsAt, type Body } from './body';
 import { GOLDEN_ROOT, SOURCE_ROOT } from './paths';
 
 /**
@@ -78,5 +80,61 @@ export function windowsClient(runner: (r: ProcessRequest) => Promise<ProcessResu
   const localAppData = options.localAppData === undefined ? LOCAL_APP_DATA : options.localAppData;
   const digest = options.digest ?? STAGED_DIGEST;
 
-  return new WindowsCareClient({ runner, platform: options.platform ?? 'win32', extension: EXTENSION, timeoutMs: () => 20_000, digestOf: () => Promise.resolve(digest), ...(localAppData === null ? {} : { localAppData }) });
+  return new WindowsCareClient({ runner, platform: options.platform ?? 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, digestOf: () => Promise.resolve(digest), ...(localAppData === null ? {} : { localAppData }) });
+}
+
+function textAt(body: Body, key: string): string {
+  const value = body[key];
+  if (typeof value !== 'string') {
+    throw new Error(`${key} is not text: ${JSON.stringify(value)}`);
+  }
+
+  return value;
+}
+
+function flagAt(body: Body, key: string): boolean {
+  const value = body[key];
+  if (typeof value !== 'boolean') {
+    throw new Error(`${key} is not true or false: ${JSON.stringify(value)}`);
+  }
+
+  return value;
+}
+
+function wholeAt(body: Body, key: string): number {
+  const value = body[key];
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new Error(`${key} is not a whole number: ${JSON.stringify(value)}`);
+  }
+
+  return value;
+}
+
+/**
+ * One golden `tasks render` answer as the TYPED `RenderAnswer` the client hands on — every field read and CHECKED from the golden's body,
+ * none cast (TypeScript doctrine §3): a golden that lost a field fails here, naming it. `task` is the task the answer is for.
+ */
+export function renderAnswerOf(name: string, task: TaskName): RenderAnswer {
+  const body = renderAnswer(name);
+  const dry = bodyAt(body, 'dry');
+  const numbers = body.numbers;
+  if (!Array.isArray(numbers)) {
+    throw new Error('numbers is not a list');
+  }
+
+  return {
+    task,
+    taskPath: textAt(body, 'taskPath'),
+    registrable: flagAt(body, 'registrable'),
+    reason: textAt(body, 'reason'),
+    userSid: textAt(body, 'userSid'),
+    command: textAt(body, 'command'),
+    digest: textAt(body, 'digest'),
+    version: textAt(body, 'version'),
+    numbers: numbers.map((entry) => ({ key: textAt(bodyOf(entry, 'a number'), 'key'), value: wholeAt(bodyOf(entry, 'a number'), 'value') })),
+    executionTimeLimitMinutes: wholeAt(body, 'executionTimeLimitMinutes'),
+    summary: stringsAt(body, 'summary'),
+    xml: textAt(body, 'xml'),
+    dry: { dryRun: flagAt(dry, 'dryRun'), setting: flagAt(dry, 'setting'), week: textAt(dry, 'week'), reason: textAt(dry, 'reason') },
+  };
 }

@@ -46,6 +46,10 @@ public enum VerdictSource
     /// the newest full run recorded it — or <c>unknown</c> with the reason there is none.</summary>
     [JsonStringEnumMemberName("fullRun")]
     FullRun,
+
+    /// <summary>E19.S3: read from the last worktree scan (<c>worktrees.json</c>) with its age — the <c>worktrees.reclaimable</c> verdict of the Windows binary.</summary>
+    [JsonStringEnumMemberName("scan")]
+    Scan,
 }
 
 /// <summary>The basis of a verdict <c>status</c> shows.</summary>

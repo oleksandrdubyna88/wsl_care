@@ -68,5 +68,18 @@ public static partial class ConfigKeys
 
         /// <summary>The VM using this much of its ceiling is critical. Default 90.</summary>
         public static readonly ConfigKey.IntKey WslMemoryCriticalPercent = new("thresholds.wslMemoryCriticalPercent", 0, 100) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S5: Windows' commit charge above this share of its commit limit (%) warns — <c>host.commit</c>. Default 80, a
+        /// PROVISIONAL starting value: a heavy afternoon read 68.8 % (research/2026-10-12_host_memory.md); the full runs' records
+        /// calibrate it.</summary>
+        public static readonly ConfigKey.IntKey HostCommitWarnPercent = new("thresholds.hostCommitWarnPercent", 50, 99) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S5: Windows' commit charge above this share of its commit limit (%) is critical — <c>host.commit</c>; it must
+        /// be above <see cref="HostCommitWarnPercent"/> (a coupled rule). Default 90, PROVISIONAL.</summary>
+        public static readonly ConfigKey.IntKey HostCommitCriticalPercent = new("thresholds.hostCommitCriticalPercent", 51, 100) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S5: the Memory Compression process's working set above this many GiB warns — <c>host.compression</c>.
+        /// Default 8, PROVISIONAL: a heavy afternoon read 6.0 GiB (research/2026-10-12_host_memory.md).</summary>
+        public static readonly ConfigKey.IntKey HostCompressionWarnGb = new("thresholds.hostCompressionWarnGb", 1, 256) { Trust = KeyTrust.Display };
     }
 }

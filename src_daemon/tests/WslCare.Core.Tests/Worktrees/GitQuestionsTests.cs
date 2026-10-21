@@ -349,8 +349,15 @@ public sealed class GitQuestionsTests
     {
         var parent = new Dictionary<string, string>
         {
-            ["SystemRoot"] = @"C:\Windows", ["WINDIR"] = @"C:\Windows", ["TEMP"] = @"C:\Temp", ["TMP"] = @"C:\Temp",
-            ["HOME"] = @"C:\Users\me", ["USERPROFILE"] = @"C:\Users\me", ["XDG_CONFIG_HOME"] = @"C:\Users\me\.config", ["PATH"] = @"C:\evil", ["GIT_DIR"] = @"C:\evil\.git",
+            ["SystemRoot"] = @"C:\Windows",
+            ["WINDIR"] = @"C:\Windows",
+            ["TEMP"] = @"C:\Temp",
+            ["TMP"] = @"C:\Temp",
+            ["HOME"] = @"C:\Users\me",
+            ["USERPROFILE"] = @"C:\Users\me",
+            ["XDG_CONFIG_HOME"] = @"C:\Users\me\.config",
+            ["PATH"] = @"C:\evil",
+            ["GIT_DIR"] = @"C:\evil\.git",
         };
         var runner = new FakeRepository { Ignored = { "bin" } }.Runner();
 
@@ -362,8 +369,15 @@ public sealed class GitQuestionsTests
             var environment = request.Environment.Should().BeOfType<CommandEnvironment.Clean>().Subject.Variables;
             environment.Should().BeEquivalentTo(new Dictionary<string, string>
             {
-                ["SystemRoot"] = @"C:\Windows", ["WINDIR"] = @"C:\Windows", ["TEMP"] = @"C:\Temp", ["TMP"] = @"C:\Temp",
-                ["GIT_OPTIONAL_LOCKS"] = "0", ["GIT_TERMINAL_PROMPT"] = "0", ["GIT_CONFIG_NOSYSTEM"] = "1", ["GIT_CONFIG_GLOBAL"] = "NUL", ["GIT_CEILING_DIRECTORIES"] = Root,
+                ["SystemRoot"] = @"C:\Windows",
+                ["WINDIR"] = @"C:\Windows",
+                ["TEMP"] = @"C:\Temp",
+                ["TMP"] = @"C:\Temp",
+                ["GIT_OPTIONAL_LOCKS"] = "0",
+                ["GIT_TERMINAL_PROMPT"] = "0",
+                ["GIT_CONFIG_NOSYSTEM"] = "1",
+                ["GIT_CONFIG_GLOBAL"] = "NUL",
+                ["GIT_CEILING_DIRECTORIES"] = Root,
             });
             request.WorkingDirectory.Should().Be(Folder, "the repository is the working directory, never a path on argv");
             request.Timeout.Should().Be(TimeSpan.FromSeconds(30));
@@ -524,7 +538,7 @@ public sealed class GitSupportTests
     {
         var lines = GitReplies.IgnoreLines(string.Join('\n',
             ".gitignore:1:bin/\tbin",
-            "C:/Users/x/.gitignore:12:obj/:weird\tobj",
+            "C:/Users/me/.gitignore:12:obj/:weird\tobj",
             "::\tbuild",
             ".gitignore:3:!keep\tkeep",
             "no tab here",

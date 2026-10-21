@@ -399,6 +399,7 @@ figure (E2.S3).
   the user's programs) through `Win32ProcessTable` — a Toolhelp snapshot plus `PROCESS_QUERY_LIMITED_INFORMATION` handles,
   read-only, real even under `WSL_CARE_ROOT` — into `windowsMcpServers`, and adds `host.vmmemAdvice` (text, never acted on)
   when `vmmemWSL` holds more than `wslConfig.vmmemAdviceGb`. Details: [module_mcp_servers.md](module_mcp_servers.md) § *The Windows side*.
+- **E19.S3:** the Windows binary has three more verbs — `worktrees roots set` (folders on stdin, all-or-nothing, a verdict per path), `worktrees roots clear` and `worktrees scan` (read-only, no process) — and its `status` carries `worktrees` (basis `scan`) and the verdict `worktrees.reclaimable`, always `unknown` until git confirms (E19.S4). The distro's binary refuses all three naming the Windows side. Details: [module_daemon.md](module_daemon.md) § *The worktree report*.
 - `status` without `--json` prints a short ASCII summary; the JSON is what the extension reads.
 
 ## The Docker collectors and `preview` (E2.S2)
@@ -1427,6 +1428,12 @@ E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `da
     that names its detail; `act` lines and the reconcile's `interrupted` lines are not full runs) and reads ONE file, its
     detail, through a narrow DTO (`RunDetailVerdicts`: the head and `thresholds`), normalising null strings (C# doctrine
     §4a). `status` reads `history.jsonl` once for the slow parts and the verdicts (`LastFullRun.From`).
+  - **E15.S5, Windows memory pressure** ([module_daemon.md](module_daemon.md) § *Windows memory pressure*): the full run judges
+    `host.commit` and `host.compression` from the Windows disk script (no `host.vmmem`: the script reads no vmmem), so the
+    distro's `status` carries those two from the full run. On the Windows binary ONLY, `StatusVerdicts.From` judges the `host.*`
+    rule (`HostRules`) over its OWN sample; a sampled verdict REPLACES the carried full-run verdict of the same id in its place,
+    and one nothing carried (`host.vmmem`) is appended after the carried ones, so no id is listed twice. The extension's status
+    bar colours on `host.*` ([module_vs_code.md](module_vs_code.md)).
 - **`productVersion`** — the assembly's informational version, `Program.VersionText`, the ONE expression `--version` prints
   too (`0.0.0+<sha>` before the first release). The default JSON encoder writes the `+` as `\u002B`; a reader parses.
 - The text form adds one line, `verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown`.
@@ -1538,7 +1545,7 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
 | Swap | Swap total | `vm.memory.swapTotal` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Swap | Swap trend today | — | — | — | arrives in E6 — needs the logs / runs verbs |
 | Disk | The distribution's / file system | `vm.disk` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
-| Disk | C: free | — | — | — | arrives in E7 — read by wsl-care.exe on the Windows side (E7.S3) |
+| Disk | Windows volumes: worst free | `verdicts[id=disk.volumeFree]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Disk | Virtual disks: file − guest = gap (E15.S2) | `verdicts[id=disk.vhdxGap]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Folders | Big folders (the daily walk) | `folders` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Containers | Running now | `vm.containers` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
@@ -2141,6 +2148,27 @@ shellcheck is on `PATH` (without it actionlint silently skips the `run:` blocks)
 pinned by digest, `-x` to follow a sourced file — over `install.sh` (E4.S1) and `.github/scripts/` (E4.S2). `pr-title.yml` requires
 a conventional-commit pull request title. `dependabot.yml` watches NuGet and GitHub Actions weekly,
 FluentAssertions held below 8.x.
+
+## The Windows tasks: install and remove, across the modules (WR-E3, 2026-10-18)
+
+Two opt-in per-user scheduled tasks — `\wsl-care\watch` and `\wsl-care\archive` — run a verified staged copy of the bundled Windows daemon (plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md); the module level is [module_vs_code.md](module_vs_code.md), the daemon's half [module_daemon.md](module_daemon.md)). What crosses the modules when a person presses *Install the Windows watch task* or *Remove the Windows tasks*:
+
+```mermaid
+flowchart LR
+    panel["panel: bare button id<br/>(panel/messages.ts)"] --> flow["windowsTasks/tasksFlow<br/>stage, fresh render, checks, read-only tab, modal,<br/>engine again, pending record, ONE run"]
+    flow -->|"closed tails: tasks stage / render / stage --remove"| client["client/WindowsCareClient<br/>(typed answers, provenance, own digest)"]
+    client -->|"bundled exe: stage, remove · staged copy: render"| daemon["wsl-care.exe (Windows daemon)<br/>renders the task XML, stages and removes copies"]
+    flow -->|"the reader's SID, what else is in the folder"| sched["scheduler/ (the peer)<br/>schedulerHost: ONE read of \wsl-care"]
+    flow -->|"installTaskScript / removeTasksScript"| reg["scheduler/registerScript<br/>the ONE home of Register-ScheduledTask and the deletes"]
+    flow -->|"unelevatedRequest: engine.file, -EncodedCommand, killTree"| launch["powershell/unelevatedLauncher<br/>(+ commandLine, modulePath, engineTypes: shared, not elevated)"]
+    launch --> runner["process/runner<br/>ceiling + verified tree kill by pid and creation time"]
+    runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive"]
+    flow -->|"pending record before the launch; cleared on every answer but a timeout"| state["globalState<br/>wslCare.windowsTasks.pending"]
+    sched -->|"refresh after an answer; settle past the ceiling"| flow
+    guard["windowsTime/ (the guard)<br/>same registration scripts, run ELEVATED"] --> reg
+```
+
+The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own.
 
 ## Containers — the system on one page
 

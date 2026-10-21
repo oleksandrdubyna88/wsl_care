@@ -69,6 +69,15 @@ const MACHINE_TOOLS: ReadonlySet<string> = new Set(['schtasks', 'schtasks.exe', 
  */
 export const MUTATING = /\b(?:(?:Enable|Disable)-PnpDevice|Register-ScheduledTask|Unregister-ScheduledTask|(?:Start|Stop|Enable|Disable|Set)-ScheduledTask|RegisterTask(?:Definition)?|DeleteTask|DeleteFolder|CreateFolder|(?:Start|Stop|Restart|Set|Suspend|Resume)-Service|(?:Set|New|Remove|Rename|Clear)-ItemProperty|New-Item|Remove-Item|w32tm|schtasks|sc(?:\.exe)?\s+(?:start|stop|config|delete|create|failure|sdset)|net(?:\.exe)?\s+(?:start|stop))\b/i;
 
+/**
+ * Starting a registered task: `Run(` / `RunEx(` on a task object (`$task.Run($null)`, `GetTask('x').RunEx(…)`). `MUTATING` is a word-boundary
+ * pattern and cannot express a method call on an object, so it is its own — a test that reached a real task's `Run` would START the
+ * daemon's supervisor on the machine running the tests (WR-E3, PLAN_windows_runner.md §4). Reading a task (`LastRunTime`, `State`,
+ * `Get-ScheduledTask`) stays allowed. Matched over the SAME revealed text, so an encoded payload carrying it is refused too.
+ */
+/** (Case-insensitive: PowerShell method names are — `.run(` and `.RUNEX(` start a task as surely as `.Run(`.) */
+export const TASK_RUN = /\.Run(?:Ex)?\s*\(/i;
+
 /** `-EncodedCommand`, and every prefix PowerShell accepts for it (`-e`, `-ec`, `-enc`, …). */
 const ENCODED_SWITCH = /^-(?:ec|e(?:n(?:c(?:o(?:d(?:e(?:d(?:c(?:o(?:m(?:m(?:a(?:n(?:d)?)?)?)?)?)?)?)?)?)?)?)?)?)$/i;
 
@@ -98,11 +107,16 @@ function wordsOf(rest: unknown): string[] {
   return Array.isArray(rest) ? rest.map(String) : String(rest ?? '').split(/\s+/);
 }
 
+/** Whether a PowerShell's (revealed) text changes the machine: a mutating word, or the start of a task. */
+function changes(text: string): boolean {
+  return MUTATING.test(text) || TASK_RUN.test(text);
+}
+
 /** Whether a start would change this machine's tasks, services or registry the way the guard does (D7, D8 o4). */
 export function isMachineChange(file: unknown, rest: unknown): boolean {
   const name = baseName(file);
 
-  return MACHINE_TOOLS.has(name) || (POWERSHELLS.has(name) && MUTATING.test(revealed(wordsOf(rest))));
+  return MACHINE_TOOLS.has(name) || (POWERSHELLS.has(name) && changes(revealed(wordsOf(rest))));
 }
 
 type Launcher = (...args: unknown[]) => unknown;

@@ -79,8 +79,10 @@ flowchart TB
 | `IWorkerSupervisor`, `JobSupervisor`, `IJobControl` / `Win32JobControl`, `WorkerLaunch`, `WorkerOutcome`, `TaskWorkers` | `Core/Processes`, `Core/Scheduler` | the Windows runner's supervisor (WR-D3): one kill-on-close job per `tasks run`, the worker from a closed table, its deadline on the unbiased clock (section below) |
 | `StageRecord` / `StageRead`, `StagedCheck` | `Core/Scheduler` | `stage.json` beside a staged copy and its strict reader; whether this process is a verified staged copy (`registrable`) |
 | `Staging`, `StagingPlace`, `StagingAccess`, `StageInput`, `StageReport` / `StageRemoveReport`, `StagingFolder`, `StagingSweep` | `Core/Scheduler` | `tasks stage` and `--remove` (WR-D2; section below): the copy made, read back and recorded, the sweep of the other digest folders (also the `tasks run` start's), every copy removed |
+| `WindowsTempAction`, `TempSettings`, `TempFacts`, `TempGlob`, `TempGuards`, `TempRoots` / `TempRootResult`, `TempCursor` / `TempCheckpoint` / `TempCursors`, `TempPlanner`, `TempJudge`, `TempScanner`, `TempDeletion`, `TempRun` | `Core/Actions/WindowsTemp` | A23, the Windows `%TEMP%` cleanup (WR-T1; section below): the engine's first Windows-side action — the allow-list, the newest-descendant age, the owner, reparse points, the `claude` guard, a wrapping cursor with a checkpoint, the re-validated link-free delete walk |
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 | `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
+| `PwshProbe`, `PwshEngine` / `InteropEngine` | `Core/Health` | E15.S1b (section below): what the clock probe saw of the MSI PowerShell 7, and the PURE choice of the engine the disk script runs under |
 
 ## Entry points
 
@@ -132,8 +134,10 @@ has none.
 | the Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) §3.1, the measurement [2026-10-10_disk.md](2026-10-10_disk.md) |
 | the Windows runner's render: `tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek` (WR-D1, 2026-10-11) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2–§3.7 |
 | the Windows runner's supervisor: `tasks run`, the Job Object, exit 84 (WR-D3, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.3 |
+| Windows memory pressure: `host.commit` / `host.compression` / `host.vmmem`, `Thresholds/HostRules`, `Health/HostMemoryFacts` (E15.S5, 2026-10-12) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) *E15.S5 design*, the measurement [2026-10-12_host_memory.md](2026-10-12_host_memory.md) |
 
 | the Windows runner's staged copy: `tasks stage`, `tasks stage --remove`, the sweep (WR-D2, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2, §3.7, §3.10 |
+| the Windows `%TEMP%` cleanup: A23, `act` on the Windows side, the `temp.*` keys (WR-T1, 2026-10-15) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.12 |
 
 ## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
 
@@ -272,7 +276,7 @@ The first LIVE full run (2026-10-12 10:01Z, `dryRun` false) warned `systemd.fail
   user (display) key: it quiets a warning and changes no action. `ConfigKeyShapeTests` holds the list shape, and the cap is an
   allow-listed schema limit.
 
-## The Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10)
+## The Windows disk script and PowerShell's closed set (E15.S1, 2026-10-10; the engine, E15.S1b, 2026-10-12)
 
 The first story of [PLAN_disk_health.md](../todo/PLAN_disk_health.md) (§3.1, Road 1): the full run reads the SLOW Windows facts
 through a second fixed interop script, as it reads the Windows clock. It only collects and records; no verdict judges these
@@ -281,14 +285,15 @@ facts yet (E15.S2, S4, S5, S8 do).
 ```mermaid
 flowchart LR
     collect["collect (full run only)<br/>HealthCollector.CollectAsync"]
-    clock["powershell.exe clock probe<br/>+ the clock reference"]
-    disk["powershell.exe -NoProfile -NonInteractive -Command<br/>WindowsDiskCommands.Script<br/>(two clamped integers, no slot)"]
-    policy["CommandPolicy: never-list closed set<br/>HealthCommands.FixedScripts<br/>+ template ReadCommandTemplates.WindowsDisk"]
+    clock["powershell.exe clock probe (always 5.1)<br/>+ pwsh.* tags (PwshProbe)<br/>+ the clock reference"]
+    engine["PwshEngine.Choose (PURE)<br/>msi or windowsPowerShell + reason"]
+    disk["powershell.exe OR pwsh.exe<br/>-NoProfile -NonInteractive -Command<br/>WindowsDiskCommands.Script<br/>(pin, Storage import, two clamped integers)"]
+    policy["CommandPolicy: never-list closed set of THREE<br/>HealthCommands.FixedScripts<br/>+ templates WindowsDisk / WindowsDiskUnderPwsh"]
     parse["WindowsDiskParsers.Parse<br/>by tag · end=1 last · malformed counted"]
-    sample["HealthSample.WindowsDisk<br/>WindowsDiskSample(SampledAt, Elapsed, Facts)"]
-    detail["run detail<br/>health.windowsDisk (WindowsDiskReport)"]
+    sample["HealthSample.WindowsDisk<br/>WindowsDiskSample(SampledAt, Elapsed, Facts) + Engine"]
+    detail["run detail<br/>health.windowsDisk (WindowsDiskReport)<br/>+ engine {program, reason}"]
 
-    collect --> clock --> disk
+    collect --> clock --> engine --> disk
     disk --> policy
     disk --> parse --> sample --> detail
 ```
@@ -335,17 +340,74 @@ flowchart LR
   5.1, unelevated, 2.4–3.3 s warm, 10.7 s cold; 26 lines on the owner's machine. After the code round (2026-10-11): 6.1–6.2 s
   warm, 21.9 s cold under load (73 % of the ceiling), 29 lines. The captured answer, anonymised, is the
   fixture `tests/fixtures/health/windows-disk-2026-10-10`.
-- **The closed set.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell (`powershell` or `pwsh`, any path)
-  that is not EXACTLY one of `HealthCommands.FixedScripts` — the clock probe and the disk script, program AND arguments,
-  under the configuration in force. A third script, a one-word variant of either, `-File`, `-EncodedCommand`, a trailing
-  argument and the right arguments under `pwsh` are all refused (`PowerShellClosedSetTests`). The read template is not
-  `CommandTemplate.Fixed` (it freezes an argv at first use): its one slot, `SlotKind.WindowsDiskScript`, accepts exactly the
-  script the configuration in force builds.
-- **Which PowerShell: 5.1, for now.** The owner's preference (2026-10-10) is `pwsh` 7, falling back to 5.1. The Store `pwsh`
-  is an app-execution alias under the USER's profile — a file the Windows user can replace — while the system drive's
-  fallback starts only programs in administrator-only folders, from a closed list. Admitting the alias would let the root
-  daemon start a user-writable program; that is a policy decision, not a setting, and it is left as a follow-up
-  (PLAN_disk_health.md, *E15.S1 as built*). The clock probe's program is unchanged.
+- **The closed set — three members since E15.S1b.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell
+  (`powershell` or `pwsh`, any path) that is not EXACTLY one of `HealthCommands.FixedScripts`, program AND arguments, under
+  the configuration in force: the clock probe under `powershell.exe`; the disk script under `powershell.exe`; and the SAME
+  disk script under the bare `pwsh.exe` (`WindowsDiskCommands.WindowsDiskUnderPwsh` — `WindowsDisk` with only the program,
+  the name `pwsh-windows-disk` and the summary changed, so both carry one `Arguments` list). A third script, a one-word variant,
+  `-File`, `-EncodedCommand`, a trailing argument, the clock probe under `pwsh.exe`, and the disk script under `pwsh`,
+  `PWSH.EXE` or any path to a pwsh (`/mnt/c/Program Files/…`, `C:\Program Files\…`, a user's `WindowsApps`) are all refused
+  (`PowerShellClosedSetTests`). The read templates are not `CommandTemplate.Fixed` (it freezes an argv at first use): their
+  one slot, `SlotKind.WindowsDiskScript`, accepts exactly the script the configuration in force builds;
+  `ReadCommandTemplates.WindowsDisk` and `WindowsDiskUnderPwsh` are one helper under two programs.
+- **Which PowerShell (E15.S1b, 2026-10-12): the MSI pwsh 7 when the clock probe verified it, else Windows PowerShell 5.1.**
+  The clock probe stays on 5.1 (the trusted System32 path, and its latency is calibrated for 5.1). AFTER its two instants
+  and the Windows Time lines it looks at `<known folder>\PowerShell\7\pwsh.exe` and prints four tagged lines —
+  `pwsh.knownFolder=`, `pwsh.envProgramFiles=`, `pwsh.msi=` (`absent` / `link` / `directory` / `empty` / `file`) and
+  `pwsh.signature=` (`signed` only for Authenticode Valid from `CN=Microsoft Corporation`, through the pinned module path) —
+  inside its own `try`, so no third PowerShell starts per run. Code round: every value the probe prints (the profile, the two
+  Windows Time words, the four pwsh values) has its control characters replaced by `?`, and (security review, 2026-10-15)
+  the probe prints by the disk script's ONE road — UTF-8 bytes on the raw stdout stream (`HealthCommands.Utf8WriteStart` /
+  `Utf8WriteEnd`), never `[Console]::Out`, whose OEM best-fit encoding was measured to turn U+25D9 into a real line feed
+  after the sanitiser ran. What the code guarantees is narrower than "no forged line ever": a value the PROBE prints cannot
+  break its line, and the parser believes a pwsh block ONLY as the probe's own trailing block — the last four non-empty
+  lines, in the script's order, after both Windows Time lines (`ClockParsers.NotTheTrailingPwshBlock`) — and none at all
+  when a pwsh tag appears more than once (`ClockParsers.RepeatedPwshLine`); either way 5.1 runs. A Windows user who ends or
+  replaces the probe can still print a well-shaped block (see the as-built *Open* list); the fixed-folder rule is what
+  bounds that to starting the real MSI file or 5.1. The clock lines are written and FLUSHED before the look, so a look that
+  hangs past the ceiling costs the engine choice, never the clock reading (`HealthCollector` reads a timed-out probe's whole
+  flushed lines). `PwshEngine.Choose(sample)` is PURE: the MSI
+  pwsh only when the known folder is `C:\Program Files` (without case, as Windows compares folder names — the final code round; a trailing separator is still another
+  spelling), the environment's `ProgramFiles` agrees (case-insensitive),
+  the item is a `file` and it is `signed`; anything else, a failed probe and a probe from before the tags give 5.1 with the
+  reason; a quoted value is cut to `records.maxReasonChars`. `InteropEngine(Kind, Reason)` DERIVES its program from the
+  kind, so the two can never disagree. `HealthCollector.CollectAsync` chooses after the clock probe and its reference and
+  runs `WindowsDiskCommands.Under(engine)`; when the MSI pwsh then FAILS TO START (the fixed-folder lookup refused it or did
+  not answer: virtiofs, several C: mounts, a non-root ancestor, interop off, a slow 9p), the 5.1 script runs once instead and
+  the engine says why (`PwshEngine.NotStartable`: "Windows PowerShell 5.1 was tried instead" — never "ran"; when 5.1 fails
+  too, the sample's own reason names that failure). The command run on fallback is `Under(the fallback engine)`, the same
+  expression whose answer is read. A timeout or an exit code under pwsh is not retried. The argv names the BARE `pwsh.exe` (what
+  the policy judges); the resolver maps it ONLY to its one fixed folder on the mounted system drive
+  (`WindowsSystemDrive.Programs`: `pwsh.exe` → `Program Files/PowerShell/7`, through the same mount, interop, ancestor and
+  file checks as `powershell.exe`) and NEVER to PATH, with or without a PATH entry (`WindowsSystemDrive.FixedFolderOnly`,
+  `ExecutableResolver.OnPath`). The reason: a root collect through `wsl.exe -u root` inherits the Windows PATH, whose user
+  part holds the Store package's alias — a file the Windows user can replace — so the daemon never starts the Store package
+  or its alias, only the verified MSI file. On the Windows binary a `pwsh.exe` lookup answers "never from PATH" too. The rule
+  and the drive list (`WindowsSystemDrive.Programs`) compare without case (the 9p share is case-insensitive). `powershell.exe` keeps PATH first.
+- **The scenario seam (E15.S1b).** The scenario harness reaches its fakes through PATH, which `pwsh.exe` never uses. So the
+  product's runner asks `SystemDriveLookup.ForThisProcess`: `ThisMachine`, except for a process that is inside a sandbox
+  (`WSL_CARE_ROOT`) AND not really privileged, which gets `SystemDriveLookup.Sandboxed` — `<sandbox>/mnt/c`, interop taken as
+  enabled, a program startable when it is a regular file (no link) this account may start. A real root process (the timer,
+  or a root collect whose environment the Windows user reaches through `WSLENV`) never trusts a folder an environment
+  variable names. `WindowsDiskFlows` plants the fake pwsh in the sandbox's fixed folder and a decoy on PATH, and asserts the
+  fixed-folder file answered.
+- **The Storage import (E15.S1b, measured 2026-10-12).** With the module path pinned to `$PSHOME\Modules`, pwsh 7 has no
+  `Get-Volume`, `Get-Partition`, `Get-PhysicalDisk` or `Get-StorageReliabilityCounter`: under the Store pwsh 7.6.6 the script
+  answered `volumes.error`, `disks.error` and `reliability.refused` = `CommandNotFoundException`. So right after the pin the
+  script imports Storage by its ABSOLUTE path, `[IO.Path]::Combine([Environment]::SystemDirectory,
+  'WindowsPowerShell\v1.0\Modules\Storage')` (GetSystemDirectory, not a variable; `[IO.Path]::Combine`, not `Join-Path`, as
+  the rest of the script joins paths), in its own `try` — a failed import leaves each Storage section to print its own
+  error line. Under 5.1 it is the same module the pinned path already names. Live after the change (read-only, the owner's
+  machine): 4 volumes, 2 disks, `end=1` under the Store pwsh (9–15 s, two harmless nested-module errors on stderr, exit 0)
+  and under 5.1 (6–8 s). `RealClockProbeTests` (Windows, the owner's machine and CI) runs the ACTUAL clock probe under the real `powershell.exe`
+  through the product's runner and policy: exit 0, measured, each pwsh tag exactly once. `RealPwshDiskScriptTests` runs the actual script under `%ProgramFiles%\PowerShell\7\pwsh.exe` on
+  CI's `windows-latest`; it skips where the MSI build is absent.
+- **The run detail names the engine and the file really started.** `WindowsDiskSample.Engine` (a `Reading`, chosen before
+  the run, so it is kept also when the script fails) and `WindowsDiskSample.StartedFrom` (the runner's
+  `CommandOutcome.StartedFrom`: the file it started from the system drive, as the drive's mount names it) become
+  `health.windowsDisk.engine {program, reason}` (`InteropEngineReport`, a wire record). Its program is the started file, ONE
+  source (code round), else the bare program the policy judged. Absent on the Windows binary and on a detail written before
+  E15.S1b.
 - **What the detail holds** is the machine's own facts (profile paths, the machine id). The detail stays on this machine;
   the redacted statistics export is E17.S3's.
 
@@ -363,6 +425,7 @@ flowchart LR
     prev["LastFullRun.VirtualDiskHistory<br/>(newest first, lazy)"] --> vd
     vd --> facts["DiskFacts<br/>(judged once)"]
     facts --> rules["DiskRules<br/>disk.vhdxGap · disk.vhdxGrowth · disk.hostFree"]
+    sample -.-> vfree["VolumeFreeRules (E19.S1)<br/>disk.volumeFree · disk.lettered"]
     facts --> report["RunDetail.disk<br/>(DiskReport)"]
     facts --> slow["SlowParts.VirtualDisks<br/>(sizes, ~600 B)"]
     report --> status["status --json: disk<br/>(basis fullRun, run, age)"]
@@ -409,7 +472,7 @@ flowchart LR
   another distro, `none` by design, is outside it), `disk.vhdxGrowth` (warn above `disk.vhdxGrowthWarnGibPerDay`, 10; a known
   breach warns, otherwise `unknown` while any file has no growth yet), `disk.hostFree` (warn below `disk.hostFreeWarnGib`, 100, or
   below the KNOWN possible growth; `unknown` — never `ok` — while any file's possible growth is unknown, the free space still in
-  the value; one verdict over every volume, the worst level). The defaults are STARTING VALUES (README, key descriptions).
+  the value; one verdict over every volume, the worst level), and — E19.S1, below — `disk.volumeFree` over EVERY lettered volume. The defaults are STARTING VALUES (README, key descriptions).
 - **The wire** (`Collect/DiskReport.cs`, its own records): the run detail's `disk` and `status.disk` = `{available, reason,
   sampledAt, distroName, vhdx[{name, path, size, sparse, volume, mappedBy, note, guestUsed, gap, growthBytesPerDay,
   possibleGrowth}], volumes[{letter, size, free, disks, growthBytesPerDay, knownPossibleGrowthBytes, unknownGrowth}]}`; in
@@ -423,6 +486,54 @@ flowchart LR
 - **Known limit**: a distro cloned with `wsl --export` / `wsl --import` carries the old `{state}/distro-name.json`; until a root
   collect through `wsl.exe` records the new name, the clone's timer runs map the ORIGINAL distro's disk by mount (own review,
   2026-10-11 — not fixed: no unelevated fact ties a VHDX to the running filesystem).
+
+## `disk.volumeFree` — every lettered Windows volume (E19.S1, 2026-10-15) — a report
+
+`disk.hostFree` asks "can the VHDX files grow here" and sees only the volumes that HOST a virtual disk; D: filled to 0 bytes with no
+VHDX on it and nothing judged it. `Thresholds/VolumeFreeRules.cs` (PURE) judges `HealthSample.WindowsDisk.Facts.Volumes` — the
+`Get-Volume` figures already read — so it needs neither the Distros map nor Docker. `Evaluate(Reading<IReadOnlyList<WindowsVolume>>,
+VolumeFreeLimits)` returns a `VolumeFreeAssessment`: the verdict and the judgement of every volume beside it. `ThresholdRules.FromFullRun`
+spreads the verdict in right after `DiskRules`; `CollectRun` records the judgements as the detail's `disk.lettered`.
+
+```mermaid
+flowchart LR
+    sample["HealthSample.WindowsDisk.Facts.Volumes<br/>(Get-Volume, E15.S1)"] --> rule["VolumeFreeRules.Evaluate<br/>(PURE)"]
+    keys["disk.volumeFree* (7 keys)<br/>VolumeFreeLimits.From"] --> rule
+    rule --> verdict["Verdict disk.volumeFree<br/>(ThresholdRules.FromFullRun)"]
+    rule --> judged["VolumeJudgement[]<br/>letter · size · free · level · judgedBy"]
+    verdict --> detail["RunDetail.thresholds"]
+    judged --> lettered["RunDetail.disk.lettered<br/>(DiskReports.From)"]
+    detail --> status["status --json verdicts[]<br/>(basis fullRun, age)"]
+    lettered --> statusDisk["status --json disk.lettered"]
+    status --> bar["extension: critical only marks the bar"]
+    statusDisk --> bar
+```
+
+- **Levels, per volume — an OR, critical first**: `critical` when free < `disk.volumeFreeCriticalGib` (10) OR free % < `disk.volumeFreeCriticalPercent`
+  (3); `warn` under `disk.volumeFreeWarnGib` (30) OR `disk.volumeFreeWarnPercent` (10); a floor is a strict limit. AND would let the 195 GiB D:
+  run to about 19.5 GiB before warning; OR warns at 30 GiB. The GiB floors apply only to a volume of at least
+  `disk.volumeFreeAbsoluteMinSizeGib` (100); below that a volume is judged by percent alone (`judgedBy: percent`), so a 16 GiB volume with
+  12 GiB free is `ok` and never warns for ever. A volume under `disk.volumeFreeMinSizeGib` (8) or in `disk.volumeFreeIgnoreLetters` is listed with
+  `judgedBy: "not judged: <why>"` and takes no part in the level (the measured 29.7 MiB USB volume E: never warns).
+- **Across volumes — a rank of its own**: critical > warn > unknown > ok (`VolumeFreeRules.Rank`; `DiskRules.Rank` has only three ranks and would read
+  critical as warn). An unread size or free space is `unknown` with the reading's reason, never `ok`, and never hides a critical volume. When no volume
+  is judged, or the sample is unavailable, the verdict is `unknown` with a reason — a figure not read renders as nothing, never 0.
+- **The words**: the value names the WORST volume first (`D: 4.1 GiB free (2.1 %) — critical; C: 988.8 GiB free (41.2 %) — ok`; ordered by rank, then
+  free share); the limit is built from the keys (`warn < 30 GiB or < 10 %, critical < 10 GiB or < 3 % (GiB floors only on volumes of 100 GiB or more;
+  volumes under 8 GiB not judged)`); the reason says which rule judged each volume and which floor a breaching one is under.
+- **The keys** (`Config/ConfigKeys.Disk.cs`, all Display, STARTING VALUES): `disk.volumeFreeWarnGib` 30 [1..10240], `…CriticalGib` 10 [1..10240],
+  `…WarnPercent` 10 [1..90], `…CriticalPercent` 3 [1..90], `…MinSizeGib` 8 [1..1024], `…AbsoluteMinSizeGib` 100 [8..10240] and the list
+  `disk.volumeFreeIgnoreLetters` ([], members `^[A-Z]$`, at most 26). `NumberRules`: critical < warn for GiB and for percent, and
+  warn < absoluteMinSize (a volume judged by the GiB floors would otherwise sit in warn for ever; critical < warn < absoluteMinSize follows) and
+  minSize ≤ absoluteMinSize (the machine layer breaking one is an error, the user layer a notice). The notice or error NAMES THE VALUES THE
+  OPERATOR SET (`disk.volumeFreeCriticalGib (40) must be below disk.volumeFreeWarnGib (30)`): `ConfigLoader.TakeBack` now says a coupled rule
+  BEFORE it puts the layer's keys back, because `EffectiveConfig` reads the merged map live and said afterwards it named the values that stayed
+  in force (the default 10) — this holds for every coupled rule, not only these (no other rule's test pinned a number).
+- **The wire**: `disk.lettered[{letter, sizeBytes, freeBytes, freePercent, level, judgedBy}]` in the run detail and in `status --json`'s `disk` (same
+  `basis`), present even when the virtual disks could not be read; a figure not read is OMITTED (never 0) and its reason rides in `judgedBy`; absent in a
+  detail written before E19.S1. The extension reads it for the bar's mark and never parses the verdict's value text.
+- **Not built here**: the 5-minute Windows reading (E19.S2) and its read by the extension (E19.S2b/S5) — until then the figure is as old as the
+  distro's 4-hourly full run.
 
 ## The Windows runner's render (WR-D1 of PLAN_windows_runner.md, 2026-10-11)
 
@@ -683,6 +794,116 @@ flowchart TD
   lease refuses a live holder by name (`another archive run holds the side (host …, pid …, run …, since …)`, exit 1). Either answer is
   the worker's own code, which the supervisor passes through.
 - **The window is said once** before the worker starts: `a dry run (<why>)` or `a real run (<why>)` (`ArchiveBody.Note`).
+
+## Windows memory pressure, one rule on both roads (E15.S5, 2026-10-12) — a report
+
+Three host verdicts, judged by ONE pure function over one set of facts, on whichever road has the facts. Read-only: nothing is
+acted on, no new command runs, and the never-list is untouched.
+
+```mermaid
+flowchart LR
+    subgraph windows["the Windows binary's status"]
+        gmse["GlobalMemoryStatusEx<br/>(one call per reader)"] --> mem["HostSample.Memory"]
+        gmse --> commit["HostSample.Commit<br/>limit = ullTotalPageFile<br/>charge = limit − ullAvailPageFile"]
+        procs["Process.GetProcessesByName<br/>(a snapshot; nothing started)"] --> ws["ProcessWorkingSets.Sum<br/>vmmemWSL · Memory Compression"]
+    end
+    subgraph distro["the distro's full run"]
+        script["Windows disk script (E15.S1)<br/>commit= · compression="] --> wdf["WindowsDiskFacts"]
+    end
+    mem --> probe["HostMemoryFacts.FromProbe"]
+    commit --> probe
+    ws --> probe
+    wdf --> disk["HostMemoryFacts.FromWindowsDisk<br/>(vmmem unknown)"]
+    probe --> rules["Thresholds/HostRules.Verdicts<br/>commit · compression · vmmem<br/>(PURE)"]
+    disk --> fr["Thresholds/HostRules.FullRunVerdicts<br/>commit · compression<br/>(the same functions)"]
+    rules -- "Windows side only<br/>basis: sample" --> sv["StatusVerdicts.From<br/>a sampled verdict REPLACES<br/>the carried one of the same id;<br/>host.vmmem is appended"]
+    fr -- "ThresholdRules.FromFullRun<br/>(after disk.hostFree)" --> detail["run detail verdicts"]
+    detail -- "carried, basis: fullRun + age" --> sv
+```
+
+- **The facts** (`Health/HostMemoryFacts.cs`): `CommitBytes`, `CommitLimitBytes`, `CompressionBytes`, `VmmemBytes`,
+  `HostTotalBytes` and the `.wslconfig` audit, each a `Reading`. `FromProbe(HostSample, audit)` is the Windows binary's road;
+  `FromWindowsDisk(WindowsDiskSample, audit)` is the full run's, where vmmem and the host RAM are unknown ("vmmemWSL is read by the
+  Windows binary's status"). `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
+  daemon sets no job commit limit (WR-D3's job is kill-on-close only), so they are the system's. The two roads read the same commit quantity: on 2026-10-12 the perf counter and `MEMORYSTATUSEX`
+  agreed to 0.01 %.
+- **The readers fail ALONE** (`Collectors/WindowsProbe.cs`, `Collectors/ProcessWorkingSets.cs`). `Memory()` and `Commit()` each
+  make their own `GlobalMemoryStatusEx` call, so a failure costs only that figure. `ProcessWorkingSets.Sum` reads vmmemWSL and
+  Memory Compression from the process snapshot: no process, a process that exits between the listing and the read
+  (`InvalidOperationException`), a refused read (`Win32Exception`, `UnauthorizedAccessException`) or a failed listing makes only
+  that figure unavailable, with the exception named, and every listed process is released. (Before E15.S5 a vmmemWSL that exited
+  between the two steps threw out of `status`.)
+- **The rule** (`Thresholds/HostRules.cs`, PURE): `host.commit` ("charge of limit = %", warn above
+  `thresholds.hostCommitWarnPercent`, 80; critical above `thresholds.hostCommitCriticalPercent`, 90; a limit of 0 is `unknown`);
+  `host.compression` (warn above `thresholds.hostCompressionWarnGb`, 8 GiB); `host.vmmem` (warn above the existing
+  `wslConfig.vmmemAdviceGb`, and its reason IS `VmmemAdvice.For`'s text — the level follows the advice, so they cannot disagree).
+  An unread figure is `unknown` with its reason, never `ok`. `VmmemAdvice.For` gained an overload over the host's RAM in bytes;
+  the old one delegates to it.
+- **Where each road judges.** The full run: `HostRules.FullRunVerdicts` — `host.commit` and `host.compression` only, by the same
+  functions — is spread into `ThresholdRules.FromFullRun` after the disk verdicts, so the distro's `status` carries those two with
+  `basis: fullRun` and their age. It judges no `host.vmmem` (code round and own review, 2026-10-12): its script reads no vmmem,
+  and a verdict that could only be `unknown` sat in every distro status, the status bar's tooltip and every run's history line.
+  The Windows binary, and ONLY the Windows side (`ProbeSample.Side`; a distro sample that ever carried a host part keeps the
+  carried verdicts): `StatusVerdicts.From` judges `HostRules.Verdicts` (all three) over its own sample with `basis: sample`. A
+  sampled verdict REPLACES the carried full-run verdict of the same id, in that verdict's place — the newer, direct reading wins
+  — and one nothing carried (`host.vmmem`) is appended after the carried ones (after `npm.cache`); a `status` never lists an id
+  twice. `status` reads `.wslconfig` once on Windows and hands the same audit to
+  the advice and to the verdict.
+- **The keys** (`Config/ConfigKeys.Thresholds.cs`, display trust): `thresholds.hostCommitWarnPercent` (50–99, 80),
+  `thresholds.hostCommitCriticalPercent` (51–100, 90), `thresholds.hostCompressionWarnGb` (1–256, 8). A coupled rule in
+  `NumberRules` refuses a layer whose critical value is not above its warn value: as with every coupled rule and every invalid
+  value, a machine-layer contradiction is an error (observe-only) and a user-layer one a notice (the value not taken). No softer
+  path exists for display keys — a display key out of range in the machine layer is an error too — so this rule follows the
+  existing ones (checked in the code round, 2026-10-12). The defaults are PROVISIONAL starting values
+  (a heavy afternoon: commit 68.8 %, compression 6.0 GiB, vmmem 18.9 GiB); the full runs' records calibrate them.
+- **Not built here**: a vmmem line in the distro's disk script. With it the full run can judge `host.vmmem` again
+  (`FullRunVerdicts` gains it); it waits for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
+
+## The worktree report (E19.S3 of PLAN_disk_hygiene_windows_E19.md, 2026-10-15) — read-only, no git
+
+The Windows binary's `worktrees roots set | roots clear | scan`: where the space of a developer's git worktrees went, without starting git and without deleting
+anything (DH-3 part 1 of [PLAN_disk_hygiene_windows.md](../todo/PLAN_disk_hygiene_windows.md) §3.3; git's three read-only questions and a real "reclaimable" are E19.S4).
+
+```mermaid
+flowchart TD
+    set["worktrees roots set (stdin)"] --> judge["WorktreeRoots.Judge<br/>shape, fixed drive, folder, no link,<br/>profile, protected places, overlap, max"]
+    judge -- "any refused" --> none["exit 2, nothing written<br/>a verdict per path"]
+    judge -- "all accepted" --> write["UserConfigWriter: worktrees.roots"]
+    scan["worktrees scan"] --> again["Judge again, every root"]
+    again --> kinds["FolderKinds.Classify per child<br/>pointer files only"]
+    kinds --> walk["FolderWalk: outside build output<br/>CountDenied + newest write<br/>then each build folder alone"]
+    walk --> rule["BuildOutputRule.Retention<br/>extension list, never-artifacts, skew"]
+    rule --> report["WorktreeReports.From -> worktrees.json<br/>atomic, DeletionScope(state, worktrees)"]
+    report --> status["status: worktrees + worktrees.reclaimable = unknown"]
+```
+
+**Roots.** `worktrees.roots` is a USER key like `archive.baseFolder` (E19 stories §3 decision 3): an invalid hand-edited value is a notice, and a root that breaks a rule
+is refused where it is used — at `roots set` AND at the start of every scan, with its reason in the report. `maxRoots` and the lists that widen what a cleanup may delete
+(`buildArtifactPatterns`, `wslAutomountRoots`) are machine-only. The folders arrive on stdin through `StdinList` (never on argv); the shared request is
+`contracts/requests/worktrees-roots-set-stdin.json`.
+
+**Classifier** (`Worktrees/FolderKinds.cs`, file reads only through `ReadUserFile`: capped, no link on the way). A `.git` FILE names an admin folder (`gitdir:`); the admin
+folder's own `gitdir` must point back (case and slash blind) → `worktree` (a `locked` file → the locked flag with its capped text); a missing admin folder or one pointing
+elsewhere → `orphan`; a pointer that cannot be read → `unreadable`, never an orphan. `/mnt/<letter>/…` pointers (a worktree made in WSL) translate through
+`worktrees.wslAutomountRoots` (`DistroPaths`, the inverse of `HealthCollector.InDistro`); any other POSIX or share path is `foreignPointer`, a live worktree that is never a
+candidate. A `.git` folder is a `mainClone`, no `.git` is `notGit`; the name prefix `testsToDelete-` is a flag.
+
+**Walk.** `TreeRules` gained `CountDenied` (a `FileSystemEnumerator<T>` subclass whose `ContinueOnError` counts and continues; `TreeMeasure.Measured.Denied`), `SkipDirectory`,
+`ReportNames` and `TrackNewest`; every other caller keeps the delegate enumerable that ignores what it cannot open. A worktree is walked OUTSIDE its build-output folders (a
+`bin`/`obj` beside a file whose extension is in `projectFileExtensions`, a top-most `node_modules` beside a `package.json`), then each build folder alone under what is left
+of the budget. **Idle** = now minus the newest of the outside writes (files and folders), each build folder's OWN write time, the folder's own, and for a worktree its admin
+`HEAD`, `index`, `logs/HEAD`; a future write, a budget that ran out (`scanMaxEntries`, `scanMaxSeconds`, shared fairly per root) or any denied entry makes it `unknown`, never idle.
+
+**Build output** (`BuildOutputRule`, the M6 census of 321 real worktrees): a candidate is retained whole when it holds a nested `.git`, its walk did not finish or met a denied
+entry, or — for `bin`/`obj` — a file that is not a build artifact: by EXTENSION (`worktrees.buildArtifactPatterns`: extensions, `none` for extensionless runtime files,
+`obj:.cs` for generated sources), never a glob (`*.sqlite*` matched `Microsoft.Data.Sqlite.dll`); `.db .sqlite .sqlite3 .db-wal .db-shm .mdf .ldf .pfx .key .pem` and
+`.env`/`.env.*` are never artifacts; a file written more than `artifactSkewMinutes` after its folder's newest `.dll/.exe/.pdb` is the application's. The first offender is
+named. `node_modules` is exempt.
+
+**Report and status.** `worktrees.json` (`schemaVersion`, `scannedAt`, per root counts, idle, build output by bucket with the retained groups, named retentions, top folders
+by name) is written atomically under a `DeletionScope(StateDirectory, "worktrees")` as `VolumeSeen` is; a killed scan's own stale temp file is removed at the next start.
+`reclaimable` is `{available: false, reason}` — absent is not zero. The Windows `status` reads the file into `worktrees` (basis `{source: scan, scannedAt, ageSeconds}`,
+`stale` past `reportMaxAgeDays`) and the verdict `worktrees.reclaimable`, always `unknown`. `act`'s other-side refusal now names the side the action runs on.
 
 ## Story history (moved from architecture.md, 2026-10-12)
 
@@ -1068,6 +1289,116 @@ flowchart TB
   render's no-link open then refuses it — not registrable, so nothing is registered); the extension's own digest compare and its
   `BUNDLED_DAEMON` check (§3.7) are WR-E3's.
 
+## The Windows `%TEMP%` cleanup: A23 (WR-T1 of PLAN_windows_runner.md, 2026-10-15)
+
+The engine's FIRST Windows-side action (`ICleanupAction.Sides = [Windows]`): it deletes the current user's own top-level entries of
+`%TEMP%` that match an allow-list and whose NEWEST descendant is older than `temp.olderThanDays`. Built in `Core/Actions/WindowsTemp/`;
+the task that runs it on a schedule, the `tasks preview cleanup` verb and the panel are WR-T2 / WR-T3.
+
+```mermaid
+flowchart TD
+    A[act A23 / the engine] --> R{TempRoots.Resolve}
+    R -- "LocalAppData Temp differs from GetTempPath, or outside the profile" --> X[Refusal: nothing deleted]
+    R -- same folder --> L[top-level listing, bounded by temp.maxTopLevelEntries]
+    L --> O["order: the interrupted candidate, names after the cursor, then the wrap up to the cursor's own name"]
+    O --> J[TempJudge per candidate, within temp.scanMaxNodes / scanMaxSeconds / maxItemsPerRun]
+    J -->|claude, link, testsToDelete-, other owner, .git| N[Excluded / Unknown: retained]
+    J -->|not on the allow-list| W[NotAllowed / WouldBeEligible]
+    J -->|scan: newest descendant, reparse inside| Y[Young / Unknown / Eligible]
+    Y --> P[ActionPreview: facts, groups, targets, Carry]
+    P --> U[TempRun]
+    U --> V[re-validate each target by stat + rescan]
+    V --> K[checkpoint BEFORE the first delete]
+    K --> D["delete walk: no link followed, every delete through IFileSystem and the policy"]
+    D --> C[cursor moves past the candidate; marker cleared]
+```
+
+**Entry points.** `act A23 --preview` / `--confirm [--timer|--manual]` on the Windows binary; the registry holds it
+(`ActionRegistry.Product`), `ActionId` knows it (`auto.A23`, default ON like the other timer actions — installing the cleanup task is
+the opt-in, and `dryRun` plus A23's own first week, `first-timer-run-A23.json`, govern the timer). The distro's binary refuses it ("A23 runs on the Windows host,
+not on this side (the WSL binary)"); `status` lists it only on the Windows side.
+
+**`act` on the Windows side (a deviation from the distro's rule).** On Linux every `act` is root's. On Windows A23 runs in the
+person's OWN, unelevated process: when the request holds at least one Windows action, `ActCommand.Refusal` asks the side refusal first and `Elevated` instead of `NotRoot` (so `act A23,A4` is told "A4 runs inside the WSL distro"; a request of distro actions alone keeps the distro's order, root first) — an elevated process is refused (exit
+81, "NOT elevated") — and `--detach` (a systemd unit) is refused. `EngineContext.UserSid` / `ActionContext.UserSid` carry the
+account's SID (`CliHost.UserSid`); empty owns nothing.
+
+**The root** (`TempRoots`). There is no shell known folder for TEMP, so it is the shell folder `LocalApplicationData` + `\Temp`,
+cross-checked with the process' temp path (`GetTempPath`): both must name the same folder (case, separators and a trailing
+separator normalised by `PathRules.Windows`) and it must lie strictly inside the user's profile; otherwise the preview REFUSES with
+the reason and nothing is deleted. A `TEMP` / `TMP` naming ANOTHER folder, or a short 8.3 spelling of the profile, differs in spelling
+and is such a refusal (fail closed); a junction AT `%LOCALAPPDATA%\Temp` leading to another drive is not (the spellings agree; the
+deletion policy and the delete walk judge the real path).
+
+**Selection** (`TempJudge`, in this order): the `claude` guard (`TempGuards.IsClaude`: the name ordinal-ignore-case AND the
+canonical full path against `<root>\claude`, trailing separators/dots/spaces stripped — before any traversal; the deletion policy's
+`ClaudeTemp` root is the second line); a candidate whose own listing attributes say reparse point is `Unknown`, never entered; a
+`testsToDelete-` name is `Excluded` ("the test-leftover sweep's"); an owner other than the current SID (or an unknown one) is
+`Excluded`; the allow-list (`temp.allowGlobs`, `TempGlob`: `*` / `?`, no separator, may not match `claude` or the sweep's prefix);
+then the scan (`TempScanner`): newest write time over files AND folders, a reparse entry anywhere retains the tree, a `.git` file
+or folder at the top makes it "a git working folder - never deleted", a listing cut by the budget makes it `Unknown`. Outcomes:
+`Eligible`, `WouldBeEligible` (old and clean but not allowed — shown so the list can be widened from evidence), `NotAllowed`,
+`Young`, `Excluded`, `Unknown`, `Changed`, `Deferred`. A TIMER trigger does not scan names the allow-list does not cover (it spends
+its budget on what it may delete); every other trigger does, for the "would be eligible" groups. The AGE is the later of a write time and a
+creation time (files and folders, the candidate included): a copy keeps its write time but takes a new creation time. A `.git` at ANY
+depth, in any case, retains the tree.
+
+**Budgets and the cursor** (`temp-cursor.json` in the state directory, `TempCursor`). Candidates are the top-level names in ordinal
+order. A run takes the interrupted candidate first, then the names after `Last`, then — when it reaches the end — the names up to
+`Last` itself (the wrap). EVERY candidate it reaches is decided (deleted, retained, excluded, unknown) and `Last` moves to the last
+one, so a run that finds nothing to delete still moves on. A run that decides its first name after the wrap completes a pass
+(`PassesCompleted`, `PassStarted`, `PassDecided`; the preview's `What` says "pass started <t>, N of M names decided"). Limits: a
+node budget and a time budget shared by the run's top-level listing and scans (the listing's time counts too), and a plan that reaches `temp.maxItemsPerRun` or an exhausted budget counts the rest of the names `Deferred` without visiting them, `temp.maxItemsPerRun` eligible entries (the rest `Deferred`), and
+`temp.maxTopLevelEntries` (a cut top-level listing has no stable order, so it refuses whole).
+
+**Recovery after a kill** (`TempCheckpoint`). Before the first delete inside a folder candidate the run writes (atomically)
+`{name, newest FILE write time, checkpoint time, owner}`. The next run takes that candidate first and judges it NOT by folder times
+(deleting children rewrites them) but by its remaining FILES' write times and the CREATION times of everything inside: a file newer
+than the recorded one, or a file or folder created after the checkpoint, retains it as "changed while interrupted"; otherwise it is
+finished. The marker is cleared once the candidate is decided; finishing it never moves the cursor's `Last` (it belongs to an
+earlier pass). A cancelled run returns `ActionRun.Interrupted` and keeps the marker; the engine
+records the action and the run `interrupted`.
+
+**The delete** (`TempRun`, `TempDeletion`). Each target is RE-VALIDATED just before its delete from a stat of its own path (a link
+now, or gone, is not deleted) and a fresh scan under the same rules (owner, allow-list, age, reparse, git) — a candidate that is no
+longer eligible is `NotRemoved` "changed since the preview"; a stat that cannot be read is "unreadable" (not "already gone"). The
+re-validation scans of one run share ONE allowance of `temp.scanMaxNodes` / `temp.scanMaxSeconds`; the delete walk itself has no time
+cap (the supervisor's deadline and the cancellation end it; the checkpoint makes that safe). The walk lists each folder without
+following reparse points (`AttributesToSkip = 0`, so they are SEEN), asks `ReadLink` of each sub-folder just before entering it, and
+before EVERY delete requires `ResolvePath(path)` to equal the real temp root plus the relative path (a link anywhere on the way stops
+the candidate, "a link appeared"; the CANDIDATE folder itself is asked the same two questions before it is listed). An entry (file or folder) whose later of write and creation time is newer than the cutoff (`now - temp.olderThanDays`) stops the candidate, "changed while deleting": what appeared after the scan is never deleted unjudged. A folder is removed only when EMPTY (`IFileSystem.DeleteEmptyDirectory`, never recursive): what
+appeared after the listing stays, and the folder is "kept in use". Every delete goes through `IFileSystem` and so through the
+deletion policy. A sharing violation or any I/O failure is kept and counted (`kept in use N`), never retried in the same run.
+**Residual:** the real-path check and the delete are two calls (the seam has no handle-relative delete), so a swap inside that window
+is not excluded; the policy still judges the path and a swap reaches only what this account may delete anyway.
+
+**Its own dry week.** `ICleanupAction.DryWindowStamp` is `A23` for A23: its first week is `first-timer-run-A23.json`, started by the first
+timer run that reaches A23's deletion gate, so the common stamp the Windows watch and the archive body start never opens it (`dryRun`
+still holds too). **With UAC off** an administrator is always elevated, so A23 always answers 81 for that account (fail closed).
+**For WR-T2:** the supervisor spawns exactly `act A23 --timer`.
+
+**The run detail.** `ActionRun`: `Count` = candidates deleted, `FreedBytes` = the logical bytes of the files deleted (the basis says
+"not disk space freed"), `Removed` / `NotRemoved` (the first `preview.maxItems`), `Notes`: `deleted N, kept in use N, changed N,
+refused N, already gone N; logical bytes N`, `by group: coai-* 2 (… bytes), …` and the preview's retained counts. The preview's
+`Facts` carry `eligible`, `wouldBeEligible`, `notAllowed`, `young`, `excluded`, `unknown`, `changed`, `deferred`, `decided`, `total` and
+`group:<pattern>:eligible|wouldBeEligible`.
+
+**Not in a full check.** `ICleanupAction.InFullCheck` (default true) is false for A23: `collect`'s timer pass on either side does not list it (the cleanup has its own task, WR-T2), so the Linux records are unchanged and a Windows full check never lists the temp folder.
+
+**Seams added.** `IFileSystem.OwnerSidOf(path)` (default empty; `PhysicalFileSystem` reads the owner on Windows),
+`FileEntry.CreatedUtc` (default far future: an unknown creation time keeps), `ActionPreview.Carry`, `ActionContext.UserSid`.
+
+**Keys.** `temp.olderThanDays` (7, 1–365, Higher), `temp.allowGlobs` (the owner's 2026-10-12 list: `coai-*`, `wsl-care-test-*`,
+`stage-*`, `mindex-*`, `git-commit-*`, `docrag-*`, `bge-seed-*`; an open list under `TextRule.TempGlobName`, at most 32),
+`temp.scanMaxNodes` (200000, 1000–10000000, Lower), `temp.scanMaxSeconds` (120, 10–3600, Lower), `temp.maxItemsPerRun` (5000,
+1–1000000, Lower), `temp.maxTopLevelEntries` (500000, 10000–10000000, Lower), `auto.A23`. None is machine-only. Regenerated:
+`contracts/config-keys.json` (the allow-list is a `textList` with `memberPattern`, `maxMembers`, `neverMatches`),
+`contracts/actions.json`. The extension's `ACTION_IDS` (equal to `actions.json` by `rootIds.test.ts`) gained `A23`, and
+`BUTTON_ONLY_IDS` too, so no WSL cleanup op ever acts on it.
+
+**Not here.** The scheduled task, `tasks preview cleanup`, the panel (WR-T2 / WR-T3); the `testsToDelete-` rename of the harness
+(DH-8 — `wsl-care-test-*` stays on the allow-list for the existing backlog); a lease shared with the future A26 sweep.
+
 ## Worktrees: git's three read-only questions (E19.S4 of PLAN_disk_hygiene_windows_E19.md, 2026-10-15)
 
 Measured behaviour is in [2026-10-15_disk_hygiene_git_probe.md](2026-10-15_disk_hygiene_git_probe.md); it overrides the command shapes
@@ -1075,7 +1406,7 @@ the plan was written with (`check-ignore` runs without `-z` and without `--liter
 
 ```mermaid
 flowchart LR
-  scan["worktree scan (E19.S3)"] -->|GitQuestion| gq["GitQuestions.AskAsync"]
+  scan["WorktreeScanner.WithGit"] -->|GitQuestion| gq["GitQuestions.Ask"]
   gq --> gate{"folder beneath root?"}
   gate -- no --> ret["Retained: outside the root"]
   gate -- yes --> rp["rev-parse --show-toplevel"]
@@ -1090,8 +1421,14 @@ flowchart LR
   `GitQuestion` is the working directory (the candidates' parent), the relative names, the configured root and the kind: `GitFolder.Repository`
   (working tree or submodule, with the top level it must be) or `GitFolder.Orphan` (the admin folder the classifier read from the `.git` file).
   `GitVerdict.Confirmed(TrackedFilesChecked)` or `GitVerdict.Retained(reason)`; the reasons are `GitReasons` (one place, so the report can
-  group by them). The scan (E19.S3) is to call this for every candidate that passed the structural checks. **That wiring, and making
-  `worktrees.reclaimable` real, is NOT built yet** (reconciliation after S3 merges).
+  group by them). **The scan calls it** (`WorktreeScanner.WithGit`, handed a `GitQuestions`, never a runner): for the candidates that passed every
+  structural check in a folder that is idle and unlocked, within the scan's time — one batch of questions per folder. `CandidateGit` (NotAsked / Confirmed /
+  Retained) rides on each `BuildCandidate`; an orphan's repository is the `.git` folder two levels above its admin folder, derived by the scanner from the
+  classifier's value (`WorktreeScanner.OrphanRepository`).
+- **Reclaimable** (`WorktreeReports.ReclaimableOf`, §3.3): every walked candidate lands in exactly ONE place — `a24` (worktrees), `a24Orphans` (ignore-confirmed, tracked
+  files not checked), or one retained reason, the FIRST that applies: structural (`BuildOutputRule.GroupOf`), the folder unknown, recent, locked, then git's word
+  (`GitReasons.GroupOf`: a closed set). Absent figures, not zeros, when the scan had no git. `WorktreesStatus`: warn above `worktrees.reclaimableWarnGib`; `unknown` for
+  a stale scan, an unfinished scan or candidates git could not be asked about while below the limit; else `ok`.
 - **Safety order**: the folder must be at or beneath the root by segments (`FolderBeneath`; the policy never judges a working directory);
   no path on argv except an orphan's admin folder (the repository is the working directory, names are relative); `GIT_CEILING_DIRECTORIES`
   is the root; `rev-parse` must name the expected top level or every candidate of the folder is retained; names are judged per line of
@@ -1115,4 +1452,4 @@ flowchart LR
   (`AdminOnlyJudge`, pure). **Never `PATH`.** `ProcessCommandRunner` has a product constructor taking a resolver
   (`ProductExecutables.Resolve`: `git.exe` through `GitExecutable`, everything else as before); the policy still judges the bare name first.
 - **Keys**: `worktrees.gitPath` (machine only), `worktrees.gitTimeoutSeconds` (30, 5..600), `worktrees.gitNamesPerCall` (64, 1..256),
-  `worktrees.gitCommandLineMaxChars` (7000, 1000..30000) in `Config/ConfigKeys.WorktreeGit.cs`.
+  `worktrees.gitCommandLineMaxChars` (7000, 1000..30000) in `Config/ConfigKeys.Worktrees.cs` beside the scan's.

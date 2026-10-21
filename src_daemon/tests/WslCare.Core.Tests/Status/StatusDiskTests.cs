@@ -101,6 +101,27 @@ public sealed class StatusDiskTests : IDisposable
         disk.DistroName!.Value.Should().Be("Ubuntu");
     }
 
+    /// <summary>E19.S1: <c>status --json</c>'s <c>disk.lettered</c> is the newest full run's per-volume judgements, read from the same
+    /// detail as the verdict they come from — and it survives a section whose virtual disks could not be read, because the Windows
+    /// volumes do not depend on the Distros map.</summary>
+    [Fact]
+    public void Status_carries_the_lettered_judgements()
+    {
+        FullRun(Now.AddHours(-3), """
+            ,"disk":{"available":false,"reason":"no virtual disk is mapped","lettered":[
+              {"letter":"D","sizeBytes":209379655680,"freeBytes":4402341478,"freePercent":2.1,"level":"critical","judgedBy":"gib-or-percent"},
+              {"letter":"E","sizeBytes":31170560,"level":"unknown","judgedBy":"not judged: smaller than 8 GiB (disk.volumeFreeMinSizeGib)"}]}
+            """);
+
+        var disk = StatusDisk.From(Read(), Now);
+
+        disk.Available.Should().BeFalse("the virtual disks were not read");
+        disk.Basis!.Source.Should().Be(VerdictSource.FullRun);
+        disk.Lettered.Should().HaveCount(2);
+        disk.Lettered![0].Should().Be(new LetteredVolumeReport("D", 209379655680, 4402341478, 2.1, Level.Critical, "gib-or-percent"));
+        disk.Lettered[1].FreeBytes.Should().BeNull("an unread figure is absent, never 0");
+    }
+
     [Fact]
     public void A_detail_written_before_the_disk_section_existed_says_so_and_names_the_run()
     {

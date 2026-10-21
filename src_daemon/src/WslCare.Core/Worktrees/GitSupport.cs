@@ -10,9 +10,9 @@ namespace WslCare.Core.Worktrees;
 public sealed record GitLimits(TimeSpan Timeout, int NamesPerCall, int CommandLineMaxChars)
 {
     public static GitLimits From(EffectiveConfig config) => new(
-        TimeSpan.FromSeconds(config.Int(ConfigKeys.WorktreeGit.TimeoutSeconds)),
-        config.Int(ConfigKeys.WorktreeGit.NamesPerCall),
-        config.Int(ConfigKeys.WorktreeGit.CommandLineMaxChars));
+        TimeSpan.FromSeconds(config.Int(ConfigKeys.Worktrees.GitTimeoutSeconds)),
+        config.Int(ConfigKeys.Worktrees.GitNamesPerCall),
+        config.Int(ConfigKeys.Worktrees.GitCommandLineMaxChars));
 }
 
 /// <summary>

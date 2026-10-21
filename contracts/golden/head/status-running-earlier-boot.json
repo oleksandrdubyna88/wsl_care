@@ -382,6 +382,36 @@
       }
     },
     {
+      "id": "disk.volumeFree",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn < 30 GiB or < 10 %, critical < 10 GiB or < 3 % (GiB floors only on volumes of 100 GiB or more; volumes under 8 GiB not judged)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "host.commit",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 80 %, critical > 90 % of the commit limit (thresholds.hostCommitWarnPercent, thresholds.hostCommitCriticalPercent)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "host.compression",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 8 GiB (thresholds.hostCompressionWarnGb)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
       "id": "docker.A4",
       "level": "unknown",
       "value": "",

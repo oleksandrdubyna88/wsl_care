@@ -2282,6 +2282,45 @@
       }
     },
     {
+      "id": "disk.volumeFree",
+      "level": "warn",
+      "value": "D: 23.1 GiB free (11.8 %) — warn; C: 1010.3 GiB free (41.2 %) — ok; F: 151.6 GiB free (62.1 %) — ok",
+      "limit": "warn < 30 GiB or < 10 %, critical < 10 GiB or < 3 % (GiB floors only on volumes of 100 GiB or more; volumes under 8 GiB not judged)",
+      "reason": "E: not judged: smaller than 8 GiB (disk.volumeFreeMinSizeGib); D: judged by GiB or percent, below the warn floor; C: judged by GiB or percent; F: judged by GiB or percent",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "host.commit",
+      "level": "ok",
+      "value": "103.4 of 145.6 GiB = 71.0 %",
+      "limit": "warn > 80 %, critical > 90 % of the commit limit (thresholds.hostCommitWarnPercent, thresholds.hostCommitCriticalPercent)",
+      "reason": "Windows' commit charge against its commit limit: when the charge reaches the limit, allocations fail",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "host.compression",
+      "level": "warn",
+      "value": "9.86 GiB",
+      "limit": "warn > 8 GiB (thresholds.hostCompressionWarnGb)",
+      "reason": "memory Windows compressed instead of paging it out (the Memory Compression process's working set)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "docker.A4",
       "level": "ok",
       "value": "3 volumes, 0.64 GB",
@@ -2730,6 +2769,40 @@
       "runId": "20000101T000000Z-1",
       "evaluatedAt": "2000-01-01T00:00:00+00:00",
       "ageSeconds": 0
-    }
+    },
+    "lettered": [
+      {
+        "letter": "E",
+        "sizeBytes": 31170560,
+        "freeBytes": 29401088,
+        "freePercent": 94.3,
+        "level": "unknown",
+        "judgedBy": "not judged: smaller than 8 GiB (disk.volumeFreeMinSizeGib)"
+      },
+      {
+        "letter": "D",
+        "sizeBytes": 209715200000,
+        "freeBytes": 24833069056,
+        "freePercent": 11.8,
+        "level": "warn",
+        "judgedBy": "gib-or-percent"
+      },
+      {
+        "letter": "C",
+        "sizeBytes": 2632775102464,
+        "freeBytes": 1084754046976,
+        "freePercent": 41.2,
+        "level": "ok",
+        "judgedBy": "gib-or-percent"
+      },
+      {
+        "letter": "F",
+        "sizeBytes": 262127222784,
+        "freeBytes": 162823499776,
+        "freePercent": 62.1,
+        "level": "ok",
+        "judgedBy": "gib-or-percent"
+      }
+    ]
   }
 }

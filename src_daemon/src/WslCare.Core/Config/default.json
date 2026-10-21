@@ -23,7 +23,8 @@
     "A16": true,
     "A17": false,
     "A19": true,
-    "A21": true
+    "A21": true,
+    "A23": true
   },
   "volumes": {
     "anonymousMaxCount": 100,
@@ -92,7 +93,10 @@
     "clockJumpsStepperFloorPer4h": 600,
     "timeJumpsBackWarnPer4h": 10,
     "collectorFreshMinutes": 30,
-    "wslMemoryCriticalPercent": 90
+    "wslMemoryCriticalPercent": 90,
+    "hostCommitWarnPercent": 80,
+    "hostCommitCriticalPercent": 90,
+    "hostCompressionWarnGb": 8
   },
   "aiAgents": {
     "warnGb": 5,
@@ -290,7 +294,14 @@
     "vhdxGapWarnGib": 20,
     "vhdxGrowthWarnGibPerDay": 10,
     "hostFreeWarnGib": 100,
-    "growthMinHours": 1
+    "growthMinHours": 1,
+    "volumeFreeWarnGib": 30,
+    "volumeFreeCriticalGib": 10,
+    "volumeFreeWarnPercent": 10,
+    "volumeFreeCriticalPercent": 3,
+    "volumeFreeMinSizeGib": 8,
+    "volumeFreeAbsoluteMinSizeGib": 100,
+    "volumeFreeIgnoreLetters": []
   },
   "commands": {
     "outputCapBytes": 1048576,
@@ -369,7 +380,39 @@
     "archiveLogonDelayMinutes": 20,
     "archiveEveryHours": 4
   },
+  "temp": {
+    "olderThanDays": 7,
+    "allowGlobs": [
+      "coai-*",
+      "wsl-care-test-*",
+      "stage-*",
+      "mindex-*",
+      "git-commit-*",
+      "docrag-*",
+      "bge-seed-*"
+    ],
+    "scanMaxNodes": 200000,
+    "scanMaxSeconds": 120,
+    "maxItemsPerRun": 5000,
+    "maxTopLevelEntries": 500000
+  },
   "worktrees": {
+    "roots": [],
+    "maxRoots": 8,
+    "idleDays": 3,
+    "projectFileExtensions": [".csproj", ".fsproj", ".vbproj", ".esproj", ".sqlproj", ".vcxproj"],
+    "buildArtifactPatterns": [
+      ".dll", ".exe", ".pdb", ".json", ".cache", ".so", ".dylib", ".a", ".lib", ".obj", ".wasm", ".gz", ".br", "obj:.cs", ".props",
+      ".targets", ".editorconfig", ".txt", ".map", ".js", ".mjs", ".up2date", ".sn", ".rsp", ".def", ".sourcelink", ".resources",
+      ".xml", ".nupkg", ".snupkg", ".baml", ".ilk", ".exp", ".res", ".tlog", ".lastbuildstate", ".stamp", "none"
+    ],
+    "artifactSkewMinutes": 10,
+    "wslAutomountRoots": ["/mnt/"],
+    "scanMaxEntries": 5000000,
+    "scanMaxSeconds": 900,
+    "reportTop": 20,
+    "reportMaxAgeDays": 7,
+    "reclaimableWarnGib": 20,
     "gitPath": "",
     "gitTimeoutSeconds": 30,
     "gitNamesPerCall": 64,

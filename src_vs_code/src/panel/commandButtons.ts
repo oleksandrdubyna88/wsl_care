@@ -1,6 +1,7 @@
 import type { ArchiveAction } from '../archive/archiveView';
 import type { GpuAction } from '../gpu/gpuState';
 import type { RelaysControls } from '../relays/relaysView';
+import type { TasksAction } from '../windowsTasks/tasksView';
 import type { GuardAction } from '../windowsTime/guardState';
 import type { PageAction } from './view';
 
@@ -15,7 +16,7 @@ import type { PageAction } from './view';
  * `commandButtons.test.ts` holds this table to `package.json`'s commands and to the button sets the page really has.
  */
 export type CommandButton =
-  | { readonly where: 'page'; readonly action: PageAction | GuardAction | ArchiveAction | GpuAction | NonNullable<RelaysControls['button']>['id'] }
+  | { readonly where: 'page'; readonly action: PageAction | GuardAction | TasksAction | ArchiveAction | GpuAction | NonNullable<RelaysControls['button']>['id'] }
   | { readonly where: 'title' }
   | { readonly where: 'opener' };
 
@@ -27,6 +28,9 @@ export const COMMAND_BUTTONS: Readonly<Record<string, CommandButton>> = {
   'wslCare.startWindowsTime': { where: 'page', action: 'startWindowsTime' },
   'wslCare.installWindowsTimeGuard': { where: 'page', action: 'installWindowsTimeGuard' },
   'wslCare.removeWindowsTimeGuard': { where: 'page', action: 'removeWindowsTimeGuard' },
+  'wslCare.installWindowsWatchTask': { where: 'page', action: 'installWindowsWatchTask' },
+  'wslCare.installWindowsArchiveTask': { where: 'page', action: 'installWindowsArchiveTask' },
+  'wslCare.removeWindowsTasks': { where: 'page', action: 'removeWindowsTasks' },
   'wslCare.chooseArchiveFolder': { where: 'page', action: 'chooseArchiveFolder' },
   'wslCare.stopArchiving': { where: 'page', action: 'stopArchiving' },
   'wslCare.archiveNow': { where: 'page', action: 'archiveNow' },

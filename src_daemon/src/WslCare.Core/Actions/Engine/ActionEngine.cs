@@ -43,6 +43,10 @@ public sealed record EngineContext(
     /// <summary>How an unreadable <c>running.json</c> is read again before any verdict (gate finding #7).</summary>
     public RunningReadRetry RunningRetry { get; init; } = RunningReadRetry.Default;
 
+    /// <summary>The account this process runs as, a Windows SID — what A23's owner check compares with (WR-T1). Empty unless the CLI
+    /// wires the real one on Windows; then no entry counts as the person's own.</summary>
+    public string UserSid { get; init; } = string.Empty;
+
     /// <summary>What cancelled the run, in words, asked only once it was cancelled — the CLI names the signal (SIGHUP when
     /// the terminal or the <c>wsl.exe</c> that started it went away, §15j B2), so the <c>interrupted</c> record says which.</summary>
     public Func<string> InterruptCause { get; init; } = static () => "a signal";
@@ -153,7 +157,7 @@ public sealed class ActionEngine(EngineContext c)
         RecordAgentCpu(notes);
 
         // A button-only action is never even selected by the timer (plan §15q E7.S2b); the auto gate refuses it as well.
-        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id).Where(id => !id.ButtonOnly)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
+        var request = new ActRequest([.. c.Registry.Actions.Where(a => a.InFullCheck).Select(a => a.Id).Where(id => !id.ButtonOnly)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         return new TimerPass(true, string.Empty, pass.Dry.DryRun, pass.Dry.Reason, TargetUserReport.From(pass.Target), pass.Outcomes, notes, pass.Outcome)
         {
@@ -197,7 +201,8 @@ public sealed class ActionEngine(EngineContext c)
     private async Task<Pass> PassAsync(RunId runId, ActRequest request, DateTimeOffset started, List<string> notes, CancellationToken cancellationToken)
     {
         var target = DiscoverTarget();
-        var dry = DryRunWindow.Decide(request.Trigger, c.Loaded.Config, c.Paths, c.Files, started);
+        var runStamp = RunStamp(request);
+        var dry = DryRunWindow.Decide(request.Trigger, c.Loaded.Config, c.Paths, c.Files, started, runStamp);
         var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, request.Trigger, [.. request.Ids.Select(i => i.Text)], string.Empty, c.ProcessId, OwnStart(), started, started, request.Kind), c.Processes);
         if (StartRunning(running) is { Length: > 0 } cannot)
         {
@@ -207,10 +212,15 @@ public sealed class ActionEngine(EngineContext c)
 
         request.OnRunningWritten();
         var outcomes = new List<ActionOutcome>();
-        var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes) with { RunId = runId.Text, RunStarted = started }) { IdleSource = SampleIdle, HistorySource = ReadHistory };
+        var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes) with { RunId = runId.Text, RunStarted = started }) { IdleSource = SampleIdle, HistorySource = ReadHistory, RunStamp = runStamp, DrySource = stamp => DryRunWindow.Decide(request.Trigger, c.Loaded.Config, c.Paths, c.Files, started, stamp) };
         var outcome = await ActAllAsync(request, run, running, notes, outcomes, cancellationToken).ConfigureAwait(false);
         return new Pass(target, dry, outcomes, outcome, RunningWritten: true);
     }
+
+    /// <summary>The dry-run week the run as a whole is judged by: the common one, unless every action asked for keeps ITS OWN week (an
+    /// action that deletes on a schedule of its own, A23) and they share one — then that week, so the record says what the action saw.</summary>
+    private string RunStamp(ActRequest request) =>
+        c.Registry.InExecutionOrder(request.Ids).Select(a => a.DryWindowStamp).Distinct(StringComparer.Ordinal).ToList() is [{ Length: > 0 } own] ? own : string.Empty;
 
     /// <summary>The history's lines for <see cref="IdleDeferrals"/> — read once per run, only when an action that declares
     /// <see cref="ICleanupAction.MaxDeferHours"/> is deferred for the load; an unreadable history is no evidence of a wait (and says so).</summary>
@@ -374,7 +384,7 @@ public sealed class ActionEngine(EngineContext c)
                 () => TargetUserStop(action, run),
                 () => RefusalStop(preview),
                 () => IdleStop(action, preview, run),
-                () => DryRunStop(run),
+                () => DryRunStop(action, run),
             ],
             preview);
 
@@ -449,7 +459,10 @@ public sealed class ActionEngine(EngineContext c)
     /// <summary>The streak's start in a run detail: UTC to the second.</summary>
     internal const string StreakFormat = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'";
 
-    private static Stop? DryRunStop(RunState run) => run.Dry.DryRun ? new Stop(ActionStatus.DryRun, $"dry run: {run.Dry.Reason}") : null;
+    /// <summary>The dry-run gate: the run's week, or — for an action that keeps its own (<see cref="ICleanupAction.DryWindowStamp"/>) — that
+    /// action's, so a week another action's timer run started never opens it (WR-T1, the Fable own review M3).</summary>
+    private static Stop? DryRunStop(ICleanupAction action, RunState run) =>
+        run.DryFor(action.DryWindowStamp) is { DryRun: true } dry ? new Stop(ActionStatus.DryRun, $"dry run: {dry.Reason}") : null;
 
     /// <summary>The timer runs an action only when its trigger fired; a button runs it regardless (plan §5).</summary>
     private Stop? TriggerStop(ICleanupAction action, ActionPreview preview, RunState run)
@@ -635,6 +648,7 @@ public sealed class ActionEngine(EngineContext c)
             ShownProcesses = request.ShownProcesses,
             ShownEntries = request.ShownEntries,
             Wait = c.Wait,
+            UserSid = c.UserSid,
             RanEarlier = id => soFar.Any(o => o.Id == id.Text && o.Status == ActionStatus.Ran),
         };
 
@@ -659,6 +673,30 @@ public sealed class ActionEngine(EngineContext c)
         public TargetUserResult Target => target;
 
         public DryRunDecision Dry => dry;
+
+        /// <summary>The stamp <see cref="Dry"/> was decided on.</summary>
+        public string RunStamp { get; init; } = string.Empty;
+
+        public Func<string, DryRunDecision> DrySource { get; init; } = static _ => new DryRunDecision(true, "no dry-run source");
+
+        private readonly Dictionary<string, DryRunDecision> _dryFor = new(StringComparer.Ordinal);
+
+        /// <summary>The dry decision for an action's week: the run's own when it is the same one, else decided once per run.</summary>
+        public DryRunDecision DryFor(string stamp)
+        {
+            if (stamp == RunStamp)
+            {
+                return dry;
+            }
+
+            if (!_dryFor.TryGetValue(stamp, out var decision))
+            {
+                decision = DrySource(stamp);
+                _dryFor[stamp] = decision;
+            }
+
+            return decision;
+        }
 
         public ActionContext Context => context;
 

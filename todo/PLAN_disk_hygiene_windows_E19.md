@@ -1,6 +1,6 @@
 # PLAN — E19 "See it": the stories of the first disk-hygiene epic (volume verdicts, the 5-minute Windows reading, the worktree report)
 
-> Status: **plan only, nothing implemented yet, 2026-10-15.** Scope: the stories of epic E19 of
+> Status: **in progress, 2026-10-15 — E19.S2b built (PR pending); the other stories not started.** Scope: the stories of epic E19 of
 > [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (DH-1, DH-1b, DH-3) — read-only, nothing in this epic
 > deletes. Written by the Opus judge per `.agents/conventions/common/subagent-models.md` (epic → stories); no story of E19
 > is a cornerstone (the parent's ledger: `Cornerstones: 2 of 2 — DH-4, DH-6`, both outside this epic).
@@ -24,7 +24,7 @@ below names which part it proves.
 | The recorded fixture's volumes: E: FAT 29.7 MiB; D: ReFS 195.3 GiB, 23.1 GiB free (11.8 %) → `warn` under the defaults; C: 41 % free; F: 62 % free | `tests/fixtures/health/windows-disk-2026-10-10/powershell-windows-disk.out`; M5 re-measured live 2026-10-15: E: removable FAT 0.03 GiB |
 | The status-bar mark pattern: `withGpuMark(view, mark)`, a mark never lowers the level; composed in `StatusBar.compose()` | `src_vs_code/src/statusBar/statusBarModel.ts:102,109-115`, `statusBar/statusBar.ts:52-54`, test `test/gpu.test.ts:187-196` |
 | The extension's typed `Verdict` drops `basis`; the raw body keeps it (`verdicts[id=…]` path syntax) | `src_vs_code/src/client/outcome.ts:7-13`, `client/handshake.ts:107-113`, `panel/jsonPath.ts` |
-| The extension reads NOTHING from the Windows binary but `--version`; WR-E1 (not built) widens the client, and even its read table has no `status`; the store has one `status` slot | `src_vs_code/src/client/WindowsCareClient.ts:96-103`, `PLAN_windows_runner.md` §3.8/§5 WR-E1, `src/state/outcomeStore.ts:11` |
+| **Until E19.S2b:** the extension reads NOTHING from the Windows binary but `--version`; WR-E1 (not built) widens the client, and even its read table has no `status`; the store has one `status` slot | `src_vs_code/src/client/WindowsCareClient.ts:96-103`, `PLAN_windows_runner.md` §3.8/§5 WR-E1, `src/state/outcomeStore.ts:11` |
 | The extension's poller reads only while the window is focused, every `wslCare.refreshSeconds` (120 s default, up to 86 400) | `src_vs_code/src/poll/poller.ts:8`, `package.json:173` |
 | The Windows watch (WR-D4) samples the Windows MCP servers and sweeps run retention under the run lock (busy → no sample), writes no run record, has no volume field | `Watch/WatchRun.Windows.cs:36-65`, `Watch/WatchRun.cs:66` |
 | The Windows `status` stamps sample verdicts `basis {sample, age 0}` (`StatusVerdicts.Sampled`); no sample verdict carries a real age yet | `Status/StatusVerdicts.cs:36-47`, `Cli/Commands/StatusCommand.cs:44,63-80` |
@@ -208,7 +208,7 @@ coai code round per story; the full test executables and `npm test` before the P
   Windows `status` carries `worktrees` (`basis {source: scan, scannedAt, ageSeconds}`) and `worktrees.reclaimable`, which
   in THIS story is always `unknown — "git has not confirmed the candidates yet (E19.S4)"` with the structural counts in
   the value — never `ok`, never a byte figure called reclaimable. The distro's binary refuses all three verbs naming the
-  Windows side; `ActCommand.OtherSide`'s hard-coded "runs inside the WSL distro" is widened to name the right side.
+  Windows side (the verbs carry their own not-on-this-side text; see *As built*).
 - **Scenarios (RED first)** — the parent's DH-3 list minus the git ones, plus:
   `An_unreadable_subfolder_makes_the_worktree_unknown_not_idle`; `A_wsl_made_worktree_with_a_mnt_pointer_is_a_worktree_not_an_orphan`;
   `An_unmappable_posix_pointer_is_foreign_and_never_a_candidate`; `A_bin_holding_a_nested_repository_is_retained_whole`;
@@ -217,17 +217,43 @@ coai code round per story; the full test executables and `npm test` before the P
   `A_root_set_by_hand_that_breaks_a_rule_is_refused_at_scan_start`; `Reclaimable_is_unknown_until_git_confirms`;
   `The_classifier_and_the_scan_start_no_process`; `The_distro_binary_refuses_the_worktrees_verbs_naming_the_windows_side`;
   `Existing_walks_keep_ignoring_inaccessible_folders`. Windows legs build their trees under a `testsToDelete-` sandbox.
+  Added by the Fable security review (2026-10-18) and the story's plan round: `A_short_name_spelling_of_the_profile_is_refused`;
+  `Two_spellings_of_one_folder_are_one_root`; `A_trailing_dot_says_it_is_spelt_differently_not_that_it_is_a_link`;
+  `A_tree_of_many_empty_folders_still_stops_at_the_budget`; `A_tree_of_many_empty_folders_asks_the_token`;
+  `An_admin_folder_pointing_at_this_folder_under_another_spelling_is_not_an_orphan`;
+  `A_report_missing_what_the_status_reads_is_unreadable_not_a_crash`; `A_corrupt_report_makes_status_say_it_could_not_be_read_never_fail`;
+  `A_report_with_huge_figures_still_gives_a_status`; `A_system_folder_or_the_temporary_folder_is_refused_and_so_is_one_inside_it`;
+  `A_folder_holding_the_temporary_folder_or_a_system_folder_is_refused`; `A_report_that_is_too_large_even_trimmed_is_refused_and_no_unreadable_file_is_left`.
 - **Break-it:** `IgnoreInaccessible` back on in the scan; the `/mnt/` translation removed; the nested-`.git` retain removed;
-  the content check removed; the root re-validation at scan start removed.
+  the content check removed; the root re-validation at scan start removed. For the review's conditions: the final-path
+  equality removed; folders not counted toward the walk's budget; the exists-under-another-spelling check removed; the
+  report's post-parse check removed; one protected place (the temporary folder) removed; the write's size bound removed.
 - **Files:** `Core/Worktrees/*` (new), `Files/TreeWalk.cs`, `Files/IFileSystem.cs` (`Measured.Denied`), `Config/ConfigKeys.Worktrees.cs`
   (new), `Config/KeyRules.cs` (the Windows path rule), `Config/ConfigLoader.cs` (`UserOwned` += roots), `default.json`,
-  `Cli/CommandLine.cs`, `Cli/Program.cs`, `Cli/Commands/WorktreesCommand.cs` (new), `Cli/Commands/ActCommand.cs` (side text),
+  `Cli/CommandLine.cs`, `Cli/Program.cs`, `Cli/Commands/WorktreesCommand.cs` (new),
   `Cli/Commands/StatusCommand.cs`, `Json/WslCareJsonContext.cs`, `contracts/config-keys.json`,
   `contracts/requests/worktrees-roots-set-stdin.json` (new, the shared fixture), tests (`Core.Tests/Worktrees/*` new,
   `Cli.Tests/WorktreesCommandTests.cs` new, `Cli.Tests/CommandLineTests.cs`, `Scenarios/WorktreesFlows.cs` new,
   `VerbRegisterTests` via the catalogue row), docs (README *Worktrees* section, `module_daemon.md` new section,
   `module_tests.md` flow-catalogue rows, `architecture.md` verbs).
 - **Fable own review** (the parent's §5: it writes a key that admits deletion) — outside the quota.
+- **As built (2026-10-19, PR #158).** As briefed, with these deviations and additions:
+  - **`ActCommand.OtherSide` was NOT widened.** The three `worktrees` verbs carry their own not-on-this-side text
+    (`WorktreesCommand`); `act`'s wording stays as it was. Recorded on the coai plan round.
+  - **The Fable security review (approve with conditions) is built.** A root is held and its FINAL path
+    (`GetFinalPathNameByHandle`, without the device prefix) must equal its spelling — rule `spelt-differently` — so an 8.3
+    name, a `subst` drive or a trailing dot never admits the profile or a second spelling of one root; the profile,
+    overlap and protected-place rules run on the real name. Protected places add `<SystemDrive>\Windows`, both
+    `Program Files`, `ProgramData` and the whole user temporary folder. The counting walk counts every folder toward
+    its budget, deadline and token. An admin back-pointer naming an EXISTING `.git` under another spelling is
+    unreadable, never `orphan`. A `worktrees.json` that lacks what `status` reads is unreadable with its reason, and the
+    status sums its byte figures without overflow. The report is written under the cap it is read with (trimmed to its
+    counts, else refused with the previous report kept).
+  - **The gap between the scan's judgement and its listing** (a junction swapped in between) is harmless here: this
+    story only reads and reports, and E20 acts only on handles whose final path it verified at delete time
+    (`PLAN_disk_hygiene_windows_E20.md` §4 A.5, §4a item 1, §4b item 4).
+  - **`TestSupport/ToDeleteRoot`** names its folder `testsToDelete-wsl-care-<purpose>-<guid>` under the temp root; it
+    duplicates `TempRoot` with the shared prefix until E21.S2 (DH-8) moves `TempRoot` onto the prefix and the two merge.
 
 ### E19.S4 — git's three read-only questions, and "reclaimable" made real (DH-3, part 2)
 
@@ -268,6 +294,35 @@ coai code round per story; the full test executables and `npm test` before the P
   `CommandPolicyTests.cs`, `Core.Tests/Worktrees/GitQuestionsTests.cs` new, `Core.Tests/Processes/GitExecutableTests.cs`
   new), docs.
 - **Fable own review** (adds git) — outside the quota.
+- **As built (2026-10-21, PR #159).** As briefed, with these deviations and additions (the measurements are in
+  [research/2026-10-15_disk_hygiene_git_probe.md](../research/2026-10-15_disk_hygiene_git_probe.md)):
+  - **`check-ignore` runs in argv form WITHOUT `-z` and WITHOUT `--literal-pathspecs`** (git 2.55.0 refuses both: exit 128). Its output is read
+    per line by the FIRST tab (`<source>:<line>:<pattern>\t<path>`, or `::\t<path>` for a non-match AND for a path whose deciding rule is a
+    negation — both read "not ignored by git"); the exit code (0 / 1 an answer, 128 a refusal) is never what judges a name. What makes a name a
+    literal is the `RelativeName` slot, which refuses `* ? [`, `:`, a backslash, a leading `-` or `/`, `..`/`.`/empty segments, control characters,
+    `" < > |`, over 260 characters, and — found by the template property — the whole names `clean`, `prune` and `worktree`, so no combination of
+    names can spell a never-command. `ls-files` keeps `--literal-pathspecs -z`.
+  - **Every git command carries `-c core.fsmonitor=false -c core.excludesFile= -c core.quotePath=false --no-optional-locks`**, runs in a clean
+    environment with NO `HOME`/`USERPROFILE`/`XDG_CONFIG_HOME` (a user excludes file and the XDG ignore file both leaked otherwise, measured), and its
+    output is decoded as UTF-8 (`CommandRequest.Utf8Output`, a small additive option: .NET otherwise decodes with the console's OEM code page and a
+    non-ASCII folder name no longer matched). `The_scan_never_changes_the_index_time` holds the index's bytes and mtime, with a `git status` control.
+  - **The orphan form's `--git-dir` is the git folder the classifier's own admin value lies in** (`<repository>\.git` from `<repository>\.git\worktrees\<name>`),
+    derived in the scanner and checked to exist by `GitQuestions`; an admin folder not shaped so, or whose repository is gone, is "not confirmed by git" and no
+    process starts. A path under `<home>\git` on that argv is refused by the never-list's protected-path rule — left intact, so such an orphan stays unconfirmed.
+  - **Git is asked only where nothing else already keeps the candidate**: a candidate that passed every structural check, in a folder that is idle and (for a
+    worktree) unlocked, within the scan's time. The first reason a candidate stays is the one reported (structural, unknown, recent, locked, then git's), so asking git
+    about a recent or locked folder would only spend processes. One `rev-parse` per folder, then `ls-files` and `check-ignore` per batch of names (64 names AND 7 000
+    characters of encoded command line; a name that cannot fit alone is retained, "too long for one git call").
+  - **`worktrees.reclaimable` is real** (`ReclaimableReport`: `a24`, `a24Orphans`, `retained[{reason, count, bytes}]`, `notAsked`; the figures are ABSENT, not zero,
+    when the scan had no git). The verdict warns above `worktrees.reclaimableWarnGib` once git confirmed; a figure below it is `unknown`, never `ok`, when the scan
+    did not finish or a candidate could not be ASKED of git (a refusal, a timeout, no `git.exe`); a stale scan is `unknown`; a complete scan that confirmed nothing is `ok`.
+  - **`git.exe`** comes from `%ProgramFiles%\Git\cmd` (and `%ProgramW6432%`'s) or the machine layer's `worktrees.gitPath`, admitted by the ACL rule of decision 9 over the
+    real security descriptors (`AdminOnlyJudge`, pure; `WindowsAdminOnlyPath`, the managed `GetAccessControl`, AOT-safe); never `PATH`. The four keys are in
+    `ConfigKeys.Worktrees` beside S3's.
+  - **The scan's tripwire moved, it was not weakened**: `The_classifier_and_the_scan_start_no_process` now allows exactly `GitQuestions.cs`, `GitReplies.cs` and `GitSupport.cs` to name the
+    runner (with companions proving they do, and that `WorktreeScanner` is handed `GitQuestions` and never a runner).
+  - **Not done**: a scan end-to-end against a REAL linked worktree (`git worktree add` needs a commit and so an identity, which tests never set); the real-git legs cover the three
+    questions, the ceiling, the orphan form and the index-time guarantee over `git init` repositories, and the scripted-git scan tests cover the scan.
 
 ### E19.S2b — the Windows `status` read in the extension (the narrow slice of WR-E1, decision 12)
 
@@ -285,6 +340,16 @@ coai code round per story; the full test executables and `npm test` before the P
   reads the windows status`; `the client names no other verb than status and --version`.
 - **Files:** `src_vs_code/src/client/WindowsCareClient.ts`, `client/verbs.ts`, `state/outcomeStore.ts`, `poll/*`,
   `settings/numbers.ts`, `package.json`, `test/*`, `research/module_vs_code.md`, the runner plan's WR-E1 row.
+- **As built (2026-10-15, PR pending).** `WindowsCareClient.status()` beside `version()`; the typing of the result in
+  `client/windowsStatus.ts` (the same `parseAnswer` / `versionRefusal` / failure kinds as the distro's, `distro: 'Windows'`);
+  `OutcomeStore.windowsStatus` (optional; `clear()` keeps it); the poller's `windows` source, read on the same tick and on a
+  panel Refresh, **one read at a time** (a tick or Refresh that finds it running joins it: one start, one store write). Added by the
+  review: the hung-exe test (`windowsStatusTimeout.test.ts` — the ceiling ends it as the client's `timedOut`, the runner kills the
+  fake child, the distro slot is untouched), `focus regained reads the windows status at once`, the wiring scan
+  (`extensionWiring.test.ts`) and the host scenario, and the churn count (the Windows binary doubles the run logs per window-day:
+  [2026-10-04_extension_poll_churn.md](../research/2026-10-04_extension_poll_churn.md)). **OPEN:** the fake's Windows answer is the
+  distro `status.json` golden with `side: "windows"` — no Windows golden exists; E19.S5 needs a real Windows `status` golden from
+  the daemon's scenario harness before it renders `disk.volumeFree` from it.
 
 ### E19.S5 — the extension halves: the Windows reading in the bar and panel, the worktree row
 
@@ -305,7 +370,7 @@ this epic — not in this document.
 
 ## 6. Gates
 
-The coai plan round runs ONCE for this document (epic `19/21` of the parent). A code round runs per story on its
+The coai plan round runs ONCE for this document (the gate's epic `1/3` — the gate numbers the parent's three epics 1-based). A code round runs per story on its
 branch, with this document's story section as `planText` plus what the previous round changed; every finding is
 resolved, rejections with reasons, in round one.
 

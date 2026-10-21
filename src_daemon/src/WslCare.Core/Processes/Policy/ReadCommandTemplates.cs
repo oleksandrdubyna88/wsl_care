@@ -74,13 +74,12 @@ public static class ReadCommandTemplates
     /// integers are configuration. Its ceiling is <c>health.windowsDiskTimeoutSeconds</c>, its cap the health probes'. The
     /// never-list's closed set says the same thing first (<see cref="HealthCommands.FixedScripts"/>). Declared BEFORE <see cref="All"/>.
     /// </summary>
-    public static CommandTemplate WindowsDisk { get; } = new(
-        WindowsDiskCommands.Name,
-        CommandScope.Machine,
-        HealthCommands.PowerShell,
-        [L("-NoProfile"), L("-NonInteractive"), L("-Command"), S("script", new SlotKind.WindowsDiskScript())],
-        ConfigKeys.Health.WindowsDiskTimeoutSeconds,
-        ConfigKeys.Health.OutputCapBytes);
+    public static CommandTemplate WindowsDisk { get; } = DiskScript(WindowsDiskCommands.Name, HealthCommands.PowerShell);
+
+    /// <summary>The SAME script under the bare <c>pwsh.exe</c>, the MSI PowerShell 7 (E15.S1b,
+    /// <see cref="WindowsDiskCommands.WindowsDiskUnderPwsh"/>) — the same words, the same one-value slot, the same ceiling and
+    /// cap. The clock probe has no pwsh template. Declared BEFORE <see cref="All"/>.</summary>
+    public static CommandTemplate WindowsDiskUnderPwsh { get; } = DiskScript(WindowsDiskCommands.PwshName, HealthCommands.Pwsh);
 
     /// <summary><c>git.exe rev-parse --show-toplevel</c> (E19.S4): which working tree git believes a folder is in. The bare
     /// <c>git.exe</c> is judged; the file started is <see cref="Processes.GitExecutable"/>'s, never one found on <c>PATH</c>.
@@ -89,7 +88,7 @@ public static class ReadCommandTemplates
         "git-toplevel",
         GitCommands.Executable,
         [.. GitOptions, L("rev-parse"), L("--show-toplevel")],
-        ConfigKeys.WorktreeGit.TimeoutSeconds);
+        ConfigKeys.Worktrees.GitTimeoutSeconds);
 
     /// <summary><c>git.exe --literal-pathspecs ls-files -z --cached -- &lt;names&gt;</c>: the tracked files under 1 to
     /// <c>worktrees.gitNamesPerCall</c> relative names.</summary>
@@ -97,14 +96,14 @@ public static class ReadCommandTemplates
         "git-ls-files",
         GitCommands.Executable,
         [.. GitOptions, L("--literal-pathspecs"), L("ls-files"), L("-z"), L("--cached"), L("--"), GitNames],
-        ConfigKeys.WorktreeGit.TimeoutSeconds);
+        ConfigKeys.Worktrees.GitTimeoutSeconds);
 
     /// <summary><c>git.exe check-ignore -v -n -- &lt;names&gt;</c>: the rule that decides each name (one line per name).</summary>
     public static CommandTemplate GitCheckIgnore { get; } = Machine(
         "git-check-ignore",
         GitCommands.Executable,
         [.. GitOptions, L("check-ignore"), L("-v"), L("-n"), L("--"), GitNames],
-        ConfigKeys.WorktreeGit.TimeoutSeconds);
+        ConfigKeys.Worktrees.GitTimeoutSeconds);
 
     /// <summary>The orphan form: <c>--git-dir=&lt;admin folder&gt; --work-tree=. check-ignore --no-index -v -n -- &lt;names&gt;</c> from the
     /// orphan's own folder. The admin folder is a path the classifier read from a <c>.git</c> file under a configured root (the caller
@@ -113,11 +112,11 @@ public static class ReadCommandTemplates
         "git-check-ignore-orphan",
         GitCommands.Executable,
         [.. GitOptions, S("adminFolder", new SlotKind.Prefixed(GitCommands.GitDirPrefix, new SlotKind.AdminFolder())), L("--work-tree=."), L("check-ignore"), L("--no-index"), L("-v"), L("-n"), L("--"), GitNames],
-        ConfigKeys.WorktreeGit.TimeoutSeconds);
+        ConfigKeys.Worktrees.GitTimeoutSeconds);
 
     private static IEnumerable<ArgPart> GitOptions => GitCommands.Options.Select(L);
 
-    private static ArgPart GitNames => new ArgPart.Repeat("name", new SlotKind.RelativeName(), 1, ConfigKeys.WorktreeGit.NamesPerCall.Max);
+    private static ArgPart GitNames => new ArgPart.Repeat("name", new SlotKind.RelativeName(), 1, ConfigKeys.Worktrees.GitNamesPerCall.Max);
 
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
@@ -132,6 +131,7 @@ public static class ReadCommandTemplates
         TimesyncStatus,
         TimeJumpsBack,
         WindowsDisk,
+        WindowsDiskUnderPwsh,
         ContainerInspect,
         Machine(
             "events",
@@ -153,6 +153,15 @@ public static class ReadCommandTemplates
 
     private static CommandTemplate Machine(string name, string executable, IReadOnlyList<ArgPart> parts, ConfigKey.IntKey timeoutSeconds) =>
         new(name, CommandScope.Machine, executable, parts, timeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
+
+    /// <summary>The disk script's template under <paramref name="executable"/>: three fixed words and the one-value script slot.</summary>
+    private static CommandTemplate DiskScript(string name, string executable) => new(
+        name,
+        CommandScope.Machine,
+        executable,
+        [L("-NoProfile"), L("-NonInteractive"), L("-Command"), S("script", new SlotKind.WindowsDiskScript())],
+        ConfigKeys.Health.WindowsDiskTimeoutSeconds,
+        ConfigKeys.Health.OutputCapBytes);
 
     private static ArgPart.Literal L(string text) => new(text);
 

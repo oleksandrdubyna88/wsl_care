@@ -2,13 +2,14 @@ import * as vscode from 'vscode';
 
 import type { OutcomeStore } from '../state/outcomeStore';
 import type { GpuBarMark } from '../gpu/gpuState';
-import { barView, withGpuMark, type BarLevel, type BarView } from './statusBarModel';
+import { barView, volumeMarkOfOutcome, withGpuMark, withVolumeMark, type BarLevel, type BarView } from './statusBarModel';
 
 /**
  * The status-bar item: thin wiring of `barView` (the pure model, `statusBarModel.ts`) to VS Code. Colours come from the
  * theme — `statusBarItem.warningBackground` / `statusBarItem.errorBackground`, the two backgrounds VS Code lets an
  * item set — so they follow the user's theme. A click opens the panel. Since PLAN_gpu_health.md the GPU host's mark is laid
- * over it (`withGpuMark`), so a GPU that dropped out shows with the panel closed.
+ * over it (`withGpuMark`), so a GPU that dropped out shows with the panel closed; since E19.S1 a critical `disk.volumeFree` is laid
+ * over it too (`withVolumeMark`), so a nearly full Windows volume does.
  */
 
 /** Where the bar reads the GPU mark from (the GPU host), and how it hears that it changed. */
@@ -50,7 +51,9 @@ export class StatusBar implements vscode.Disposable {
   }
 
   private compose(): BarView {
-    return withGpuMark(barView(this.store.snapshot().status), this.gpu.mark());
+    const status = this.store.snapshot().status;
+
+    return withVolumeMark(withGpuMark(barView(status), this.gpu.mark()), volumeMarkOfOutcome(status));
   }
 
   private apply(view: BarView): void {

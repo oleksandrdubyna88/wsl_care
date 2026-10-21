@@ -80,6 +80,10 @@ public static class NumberRules
         new([ConfigKeys.Events.SegmentMinutes, ConfigKeys.Events.SegmentSlackSeconds, ConfigKeys.Commands.MaxTimeoutHours],
             c => (I(c, ConfigKeys.Events.SegmentMinutes) * SecondsPerMinute) + I(c, ConfigKeys.Events.SegmentSlackSeconds) + CeilingMarginSeconds <= I(c, ConfigKeys.Commands.MaxTimeoutHours) * SecondsPerHour,
             c => $"{ConfigKeys.Events.SegmentMinutes.Name} ({I(c, ConfigKeys.Events.SegmentMinutes)}) with {ConfigKeys.Events.SegmentSlackSeconds.Name} ({I(c, ConfigKeys.Events.SegmentSlackSeconds)}) and {CeilingMarginSeconds} s must fit under {ConfigKeys.Commands.MaxTimeoutHours.Name} ({I(c, ConfigKeys.Commands.MaxTimeoutHours)}): the event stream's ceiling is a command's"),
+        // E15.S5: host.commit's critical edge is above its warn edge, or the critical arm can never be reached.
+        new([ConfigKeys.Thresholds.HostCommitCriticalPercent, ConfigKeys.Thresholds.HostCommitWarnPercent],
+            c => I(c, ConfigKeys.Thresholds.HostCommitCriticalPercent) > I(c, ConfigKeys.Thresholds.HostCommitWarnPercent),
+            c => $"{ConfigKeys.Thresholds.HostCommitCriticalPercent.Name} ({I(c, ConfigKeys.Thresholds.HostCommitCriticalPercent)}) must be above {ConfigKeys.Thresholds.HostCommitWarnPercent.Name} ({I(c, ConfigKeys.Thresholds.HostCommitWarnPercent)}): a critical commit share at or below the warning one is never reached"),
         new([ConfigKeys.Events.RetryMaxSeconds, ConfigKeys.Events.RetryFirstSeconds],
             c => I(c, ConfigKeys.Events.RetryMaxSeconds) >= I(c, ConfigKeys.Events.RetryFirstSeconds),
             c => $"{ConfigKeys.Events.RetryMaxSeconds.Name} must be at least {ConfigKeys.Events.RetryFirstSeconds.Name}"),
@@ -97,6 +101,27 @@ public static class NumberRules
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Running.NoProgressMinutes)) >= RunBudget.LongestStep(c),
             c => $"{ConfigKeys.Running.NoProgressMinutes.Name} ({I(c, ConfigKeys.Running.NoProgressMinutes)}) must be at least the longest single command ({Math.Ceiling(RunBudget.LongestStep(c).TotalMinutes)} min with its drains and {CeilingMarginSeconds} s more): a command still inside its ceiling is progress"),
         .. ArchiveRules,
+        .. DiskVolumeRules,
+    ];
+
+    /// <summary>E19.S1 (disk.volumeFree): a critical floor lies BELOW its warn floor — equal would leave no warn level to see — for the GiB
+    /// floors and for the percent floors; the warn floor (and with it the critical floor, which is below it) is below the size from which the GiB
+    /// floors apply — else a volume judged by them is in warn for ever; and the size below which a volume is not judged is at most the size from
+    /// which the GiB floors apply (a volume judged by percent alone must exist between the two).</summary>
+    private static IReadOnlyList<Rule> DiskVolumeRules =>
+    [
+        new([ConfigKeys.Disk.VolumeFreeCriticalGib, ConfigKeys.Disk.VolumeFreeWarnGib],
+            c => I(c, ConfigKeys.Disk.VolumeFreeCriticalGib) < I(c, ConfigKeys.Disk.VolumeFreeWarnGib),
+            c => $"{ConfigKeys.Disk.VolumeFreeCriticalGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeCriticalGib)}) must be below {ConfigKeys.Disk.VolumeFreeWarnGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeWarnGib)}): a critical floor at or above the warn floor would leave no warn level to see"),
+        new([ConfigKeys.Disk.VolumeFreeCriticalPercent, ConfigKeys.Disk.VolumeFreeWarnPercent],
+            c => I(c, ConfigKeys.Disk.VolumeFreeCriticalPercent) < I(c, ConfigKeys.Disk.VolumeFreeWarnPercent),
+            c => $"{ConfigKeys.Disk.VolumeFreeCriticalPercent.Name} ({I(c, ConfigKeys.Disk.VolumeFreeCriticalPercent)}) must be below {ConfigKeys.Disk.VolumeFreeWarnPercent.Name} ({I(c, ConfigKeys.Disk.VolumeFreeWarnPercent)}): a critical share at or above the warn share would leave no warn level to see"),
+        new([ConfigKeys.Disk.VolumeFreeWarnGib, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib],
+            c => I(c, ConfigKeys.Disk.VolumeFreeWarnGib) < I(c, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib),
+            c => $"{ConfigKeys.Disk.VolumeFreeWarnGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeWarnGib)}) must be below {ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib)}): a volume judged by the GiB floors would sit in warn for ever, whatever it holds, because it cannot have that much free"),
+        new([ConfigKeys.Disk.VolumeFreeMinSizeGib, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib],
+            c => I(c, ConfigKeys.Disk.VolumeFreeMinSizeGib) <= I(c, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib),
+            c => $"{ConfigKeys.Disk.VolumeFreeMinSizeGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeMinSizeGib)}) must be at most {ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib.Name} ({I(c, ConfigKeys.Disk.VolumeFreeAbsoluteMinSizeGib)}): a volume is not judged below the first size, and the GiB floors apply from the second"),
     ];
 
     /// <summary>An ESTIMATE of the bytes one session takes in the archive's in-flight file: its entry id, agent, folder, key, month,

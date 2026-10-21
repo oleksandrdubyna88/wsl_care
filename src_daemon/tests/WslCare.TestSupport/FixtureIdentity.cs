@@ -48,9 +48,10 @@ public sealed partial class FixtureIdentity
 
     private static readonly HashSet<string> WindowsOwnProfiles = new(StringComparer.OrdinalIgnoreCase) { User, "Public", "Default" };
 
+    // Sibling lists of the same unit types: `UnitTypes` in WslCare.Scenarios/FixturePrivacy.cs (it adds `journal`) and `UNIT_TYPES` in src_vs_code/src/test/support/vsixCheck.ts — change them together.
     private static readonly HashSet<string> UnitTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "service", "socket", "timer", "scope", "slice", "mount", "target", "path", "device", "swap", "automount",
+        "service", "socket", "timer", "scope", "slice", "mount", "target", "path", "device", "swap", "automount", "busname", "snapshot",
     };
 
     private readonly IReadOnlySet<string> _accounts;

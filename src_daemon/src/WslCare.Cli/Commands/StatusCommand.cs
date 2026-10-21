@@ -13,6 +13,7 @@ using WslCare.Core.Mcp;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
 using WslCare.Core.Thresholds;
+using WslCare.Core.Worktrees;
 
 namespace WslCare.Cli.Commands;
 
@@ -36,12 +37,14 @@ internal static class StatusCommand
         var last = LastFullRun.From(history, now);
         // One detail file read: the newest full run's verdicts AND its disk section (E15.S2).
         var fullRun = FullRunVerdicts.Read(host.Paths, host.Files, history);
+        // E15.S5: the Windows binary reads .wslconfig for its vmmem advice AND its host.vmmem verdict — one read, one input.
+        var hostWslConfig = HostWslConfig(host);
         var report = StatusReports.From(sample, last, loaded) with
         {
             // The follower's summary, never the raw day files: status's cost must not grow with the starts recorded (gate finding #8).
             ContainerStarts = new ContainerStartsStore(host.Paths, host.Files).ReadSummary(now),
             Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
-            Verdicts = [.. StatusVerdicts.From(sample, fullRun, loaded.Config, now), .. StatusVerdicts.Sampled(McpVerdicts.From(mcp, loaded.Config), sample.SampledAt)],
+            Verdicts = [.. StatusVerdicts.From(sample, fullRun, loaded.Config, now, hostWslConfig), .. StatusVerdicts.Sampled(McpVerdicts.From(mcp, loaded.Config), sample.SampledAt)],
             ProductVersion = Program.VersionText,
             Actions = ThisSidesActions(host),
             Capabilities = Capabilities.All,
@@ -53,14 +56,14 @@ internal static class StatusCommand
             InteropRelays = host.Paths is LinuxHostPaths ? InteropRelaysReport.From(sample.Vm.Bind(vm => vm.Processes), host.Paths, host.Files, loaded.Config) : null,
             Disk = host.Paths is LinuxHostPaths ? StatusDisk.From(fullRun, now) : StatusDisk.OnWindows,
         };
-        report = WithWindowsSide(report, host, sample, loaded.Config, cancellationToken);
+        report = WithWindowsSide(report, host, sample, hostWslConfig, loaded.Config, cancellationToken);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
     }
 
     /// <summary>E14 S7a, the Windows binary only: its own side's MCP servers (read-only — a Toolhelp snapshot and query-only handles,
     /// across the same CPU window) and, when vmmemWSL holds more than <c>wslConfig.vmmemAdviceGb</c>, the reclaim advice (text, never
     /// acted on). The distro's binary carries neither.</summary>
-    private static StatusReport WithWindowsSide(StatusReport report, CliHost host, ProbeSample sample, EffectiveConfig config, CancellationToken cancellationToken)
+    private static StatusReport WithWindowsSide(StatusReport report, CliHost host, ProbeSample sample, Reading<WslConfigAudit> wslConfig, EffectiveConfig config, CancellationToken cancellationToken)
     {
         if (host.Paths is not WindowsHostPaths windows)
         {
@@ -70,14 +73,21 @@ internal static class StatusCommand
         // E14 S7b.1: S1's ledger on the Windows side — this user's own file; an elevated status reads it and writes nothing.
         var ledger = new WindowsCpuLedger.Kept(host.Files, McpCpuLedgerPlace.ForWindowsStatus(windows, host.Privilege.IsRoot), host.WindowsBoot);
         var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait, ledger).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
-        var wslConfig = Reading.Of(HealthCollector.AuditWslConfig(host.Files, windows.WslConfigFile));
         var advice = VmmemAdvice.For(sample.Host.Bind(h => h.VmmemWorkingSetBytes), sample.Host.Bind(h => h.Memory), wslConfig, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb));
+        var (worktrees, worktreesVerdict) = WorktreesStatus.From(config.TextList(ConfigKeys.Worktrees.Roots), new WorktreeReportStore(windows, host.Files).Read(), WorktreeSettings.From(config), host.Clock.GetUtcNow());
         return report with
         {
             WindowsMcpServers = WindowsMcpServersReport.From(mcp),
             Host = advice.Length == 0 ? report.Host : report.Host with { VmmemAdvice = advice },
+            Worktrees = worktrees,
+            Verdicts = [.. report.Verdicts ?? [], worktreesVerdict],
         };
     }
+
+    /// <summary>The Windows binary's <c>.wslconfig</c> audit (a file read, no process); the distro's binary says the full run reads it.</summary>
+    private static Reading<WslConfigAudit> HostWslConfig(CliHost host) => host.Paths is WindowsHostPaths windows
+        ? Reading.Of(HealthCollector.AuditWslConfig(host.Files, windows.WslConfigFile))
+        : Reading.Missing<WslConfigAudit>(StatusVerdicts.WslConfigReadByFullRun);
 
     /// <summary>The ids this binary's registry holds for its own side, in the order a run takes them (plan §15f #3).</summary>
     private static IReadOnlyList<string> ThisSidesActions(CliHost host) =>
@@ -109,6 +119,11 @@ internal static class StatusText
             text.AppendLine(WindowsMcpServers(windows));
         }
 
+        if (report.Worktrees is { } worktrees)
+        {
+            text.AppendLine(Worktrees(worktrees));
+        }
+
         if (report.InteropRelays is { } relays)
         {
             text.AppendLine(InteropRelays(relays));
@@ -137,6 +152,14 @@ internal static class StatusText
         { Available: true } => Invariant($"windows mcp servers: {mcp.Count} ({mcp.IdleCount} idle, {mcp.OrphanedCount} orphaned), {Number(mcp.CpuCores!)} cores{CpuBases((mcp.Instances ?? []).Select(i => i.CpuBasis), mcp.WindowMilliseconds)}, {Gib(mcp.Held!)} private ({mcp.MemoryRead} read)")
             + string.Concat((mcp.Owners ?? []).Take(TopShown).Select((o, i) => Invariant($"{(i == 0 ? "; " : ", ")}{o.Count} under {o.Parent}"))),
         _ => $"windows mcp servers: unavailable ({mcp.Reason})",
+    };
+
+    /// <summary>One line (E19.S3, the Windows binary): <c>worktrees: 5 worktrees (1 locked), 1 orphan, 4 build-output folders (3.0 GiB present), scanned 2 h ago</c>
+    /// — or why there is no scan to read.</summary>
+    private static string Worktrees(WorktreesSection section) => section switch
+    {
+        { Available: true } => Invariant($"worktrees: scanned {section.Basis.ScannedAt:yyyy-MM-dd HH:mm}Z, {TimeSpan.FromSeconds(section.Basis.AgeSeconds ?? 0).TotalHours:0.0} h ago{(section.Stale ? ", STALE" : string.Empty)}; {section.Report!.Roots.Sum(r => r.Worktrees)} worktrees, {section.Report.Roots.Sum(r => r.Orphans)} orphans"),
+        _ => CommandLine.Printable($"worktrees: {section.Reason}").Replace("—", "-"),
     };
 
     /// <summary>One line (E14 S7b.2, the distro): <c>windows mcp relays: 3 (1 re-parented); the timer stops client-gone relays: on (wsl-care

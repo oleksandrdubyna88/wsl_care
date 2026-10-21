@@ -36,7 +36,10 @@ public sealed class NumbersAreConfigurationTests
         "thresholds.wslMemoryCriticalPercent", "processes.topCount",
         "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.maxDeferHours", "archive.minFreeGb",
         "archive.copyBufferKib", "disk.eventsSinceDays", "disk.vhdxGapWarnGib", "disk.vhdxGrowthWarnGibPerDay", "disk.hostFreeWarnGib",
-        "disk.growthMinHours", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
+        "disk.growthMinHours", "thresholds.hostCommitWarnPercent", "thresholds.hostCommitCriticalPercent", "thresholds.hostCompressionWarnGb",
+        "disk.volumeFreeWarnGib", "disk.volumeFreeCriticalGib", "disk.volumeFreeWarnPercent", "disk.volumeFreeCriticalPercent",
+        "disk.volumeFreeMinSizeGib", "disk.volumeFreeAbsoluteMinSizeGib", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
+        "worktrees.idleDays", "worktrees.artifactSkewMinutes", "worktrees.scanMaxEntries", "worktrees.scanMaxSeconds", "worktrees.reportTop", "worktrees.reportMaxAgeDays", "worktrees.reclaimableWarnGib",
         "worktrees.gitTimeoutSeconds", "worktrees.gitNamesPerCall", "worktrees.gitCommandLineMaxChars",
     ];
 
@@ -67,7 +70,7 @@ public sealed class NumbersAreConfigurationTests
         "archive.runBudgetMinutes", "archive.finishGraceMinutes", "archive.minRunMinutes", "archive.previewTimeoutSeconds",
         "archive.reachabilitySeconds", "archive.progressSilenceSeconds", "archive.restoreLimitMinutes", "archive.maxSessionsPerRun", "archive.maxRestoreEntries",
         "archive.maxIndexBytes", "archive.maxStateFileBytes", "archive.childOutputCapBytes", "archive.progressLineMaxBytes",
-        "archive.inUseScanSeconds",
+        "archive.inUseScanSeconds", "worktrees.maxRoots",
     ];
 
     [Theory]
@@ -115,6 +118,12 @@ public sealed class NumbersAreConfigurationTests
     [InlineData("""{ "timer": { "lateSlackMinutes": 10, "randomizedDelayMinutes": 9, "accuracyMinutes": 1 } }""", "timer.lateSlackMinutes")]
     [InlineData("""{ "agentCpu": { "maxBytes": 16384 } }""", "agentCpu.maxBytes")]
     [InlineData("""{ "requests": { "maxBytes": 65536 } }""", "requests.maxBytes")]
+    [InlineData("""{ "thresholds": { "hostCommitWarnPercent": 90, "hostCommitCriticalPercent": 90 } }""", "thresholds.hostCommitCriticalPercent")]
+    [InlineData("""{ "disk": { "volumeFreeCriticalGib": 40 } }""", "disk.volumeFreeCriticalGib (40) must be below disk.volumeFreeWarnGib (30)")]
+    [InlineData("""{ "disk": { "volumeFreeCriticalPercent": 15 } }""", "disk.volumeFreeCriticalPercent (15) must be below disk.volumeFreeWarnPercent (10)")]
+    [InlineData("""{ "disk": { "volumeFreeMinSizeGib": 200 } }""", "disk.volumeFreeMinSizeGib (200) must be at most disk.volumeFreeAbsoluteMinSizeGib (100)")]
+    [InlineData("""{ "disk": { "volumeFreeWarnGib": 200 } }""", "disk.volumeFreeWarnGib (200) must be below disk.volumeFreeAbsoluteMinSizeGib (100)")]
+    [InlineData("""{ "disk": { "volumeFreeAbsoluteMinSizeGib": 20 } }""", "disk.volumeFreeWarnGib (30) must be below disk.volumeFreeAbsoluteMinSizeGib (20)")]
     public void Coupled_limits_that_contradict_each_other_refuse_the_layer_naming_the_rule(string machine, string named)
     {
         var result = Load(machine);
@@ -122,6 +131,68 @@ public sealed class NumbersAreConfigurationTests
         result.IsObserveOnly.Should().BeTrue("a contradiction between two limits is a configuration error");
         result.Errors.Should().Contain(e => e.Message.Contains(named, StringComparison.Ordinal));
     }
+
+    /// <summary>E19.S1 (disk.volumeFree): a critical floor must lie BELOW its warn floor — equal is a contradiction too, because the
+    /// warn level could then never be seen — and a user value that breaks it is a notice, the value below staying in force.</summary>
+    [Fact]
+    public void Critical_below_warn_is_held_by_the_number_rules()
+    {
+        Load("""{ "disk": { "volumeFreeCriticalGib": 30 } }""").Errors.Should().Contain(e => e.Message.Contains("disk.volumeFreeCriticalGib", StringComparison.Ordinal) && e.Message.Contains("must be below disk.volumeFreeWarnGib", StringComparison.Ordinal));
+        Load("""{ "disk": { "volumeFreeCriticalPercent": 10 } }""").Errors.Should().Contain(e => e.Message.Contains("disk.volumeFreeCriticalPercent", StringComparison.Ordinal) && e.Message.Contains("must be below disk.volumeFreeWarnPercent", StringComparison.Ordinal));
+        Load("""{ "disk": { "volumeFreeMinSizeGib": 100 } }""").IsObserveOnly.Should().BeFalse("a size floor equal to the absolute-size floor is allowed (minSize <= absoluteMinSize)");
+
+        var fromUser = Load("{}", """{ "disk": { "volumeFreeCriticalGib": 50 } }""");
+
+        fromUser.IsObserveOnly.Should().BeFalse();
+        fromUser.Notices.Should().Contain(n => n.Key == "disk.volumeFreeCriticalGib" && n.File.Layer == ConfigLayer.User && n.Message.Contains("must be below", StringComparison.Ordinal));
+        fromUser.Config.Int((ConfigKey.IntKey)ConfigKeys.Find("disk.volumeFreeCriticalGib")!).Should().Be(10, "the user's 50 is not taken: the default stays");
+        fromUser.Notices.Single(n => n.Key == "disk.volumeFreeCriticalGib").Message.Should().Contain("disk.volumeFreeCriticalGib (50) must be below disk.volumeFreeWarnGib (30)", "the notice names the value the user SET, not the one that stayed in force");
+    }
+
+    /// <summary>E19.S1 (coai code round): the message of a coupled rule names the values the operator SET, for EVERY rule — not only the disk ones.
+    /// `ConfigLoader.TakeBack` once said the sentence after it had put the layer's keys back, and `EffectiveConfig` reads the merged map live, so a
+    /// configured 60 was reported as the default 90. Checked on a rule outside disk: <c>thresholds.hostCommitCriticalPercent</c> above
+    /// <c>…WarnPercent</c> (defaults 90 and 80), from the machine layer (an error) and from the user layer (a notice, the value below in force).</summary>
+    [Fact]
+    public void A_coupled_rule_message_names_the_values_the_operator_set()
+    {
+        const string set = """{ "thresholds": { "hostCommitWarnPercent": 95, "hostCommitCriticalPercent": 60 } }""";
+
+        var machine = Load(set);
+
+        machine.IsObserveOnly.Should().BeTrue();
+        machine.Errors.Should().ContainSingle(e => e.Message.Contains("thresholds.hostCommitCriticalPercent (60) must be above thresholds.hostCommitWarnPercent (95)", StringComparison.Ordinal),
+            "the operator set 60 and 95, not the defaults 90 and 80 that stayed in force");
+        machine.Config.Int((ConfigKey.IntKey)ConfigKeys.Find("thresholds.hostCommitCriticalPercent")!).Should().Be(90);
+
+        var fromUser = Load("{}", set);
+
+        fromUser.IsObserveOnly.Should().BeFalse();
+        fromUser.Notices.Should().Contain(n => n.File.Layer == ConfigLayer.User && n.Message.Contains("thresholds.hostCommitCriticalPercent (60) must be above thresholds.hostCommitWarnPercent (95)", StringComparison.Ordinal));
+        fromUser.Config.Int((ConfigKey.IntKey)ConfigKeys.Find("thresholds.hostCommitWarnPercent")!).Should().Be(80, "the user's values are not taken: the defaults stay");
+    }
+
+    /// <summary>E19.S1 (coai plan round): the GiB floors apply from <c>disk.volumeFreeAbsoluteMinSizeGib</c> upward, so a warn floor at or above
+    /// that size would leave a volume judged by the GiB floors in warn for ever, whatever it holds — a 100 GiB volume can never have 200 GiB
+    /// free. The critical floor is below the warn floor, so it follows. A machine layer that breaks it is refused; a user
+    /// layer's value is a notice and the default stays.</summary>
+    [Fact]
+    public void The_warn_floor_stays_below_the_size_from_which_the_gib_floors_apply()
+    {
+        var machine = Load("""{ "disk": { "volumeFreeWarnGib": 200 } }""");
+
+        machine.IsObserveOnly.Should().BeTrue();
+        machine.Errors.Should().Contain(e => e.Message.Contains("disk.volumeFreeWarnGib (200) must be below disk.volumeFreeAbsoluteMinSizeGib (100)", StringComparison.Ordinal));
+        machine.Config.Int((ConfigKey.IntKey)ConfigKeys.Find("disk.volumeFreeWarnGib")!).Should().Be(30, "the contradiction is never in force");
+
+        var fromUser = Load("{}", """{ "disk": { "volumeFreeWarnGib": 100 } }""");
+
+        fromUser.IsObserveOnly.Should().BeFalse("a user value never puts root observe-only");
+        fromUser.Notices.Should().ContainSingle(n => n.Key == "disk.volumeFreeWarnGib" && n.File.Layer == ConfigLayer.User)
+            .Which.Message.Should().Contain("disk.volumeFreeWarnGib (100) must be below disk.volumeFreeAbsoluteMinSizeGib (100)");
+        fromUser.Config.Int((ConfigKey.IntKey)ConfigKeys.Find("disk.volumeFreeWarnGib")!).Should().Be(30);
+    }
+
 
     /// <summary>The point of the rule: a machine value REACHES the code it bounds — a command's ceiling, its template's (read when
     /// a request is built, never frozen when the template is declared), a wait, a walk's limits.</summary>

@@ -85,6 +85,17 @@ public sealed record WindowsDiskFacts(
 /// </summary>
 public sealed record WindowsDiskSample(DateTimeOffset SampledAt, Reading<TimeSpan> Elapsed, Reading<WindowsDiskFacts> Facts)
 {
+    /// <summary>Why a sample has no engine: the Windows binary never runs the disk script (E15.S1b).</summary>
+    public const string NoEngine = "no PowerShell was chosen for the Windows disk script: only the full run inside the distro runs it";
+
+    /// <summary>The PowerShell the script ran under and why it was chosen (E15.S1b, <see cref="PwshEngine"/>) — chosen on every full
+    /// run in the distro, also when the script then failed; missing on the Windows binary.</summary>
+    public Reading<InteropEngine> Engine { get; init; } = Reading.Missing<InteropEngine>(NoEngine);
+
+    /// <summary>The file the runner really started when it came from the Windows system drive (<see cref="Processes.CommandOutcome.StartedFrom"/>,
+    /// code round): the MSI pwsh's path as the drive's mount names it; empty when the program came from PATH or did not start.</summary>
+    public string StartedFrom { get; init; } = string.Empty;
+
     /// <summary>The whole sample unavailable for one reason.</summary>
     public static WindowsDiskSample Unavailable(DateTimeOffset at, string reason) =>
         new(at, Reading.Missing<TimeSpan>(reason), Reading.Missing<WindowsDiskFacts>(reason));

@@ -23,6 +23,12 @@ public sealed record WindowsClockAnswer(DateTimeOffset PrintedAt, DateTimeOffset
 {
     /// <summary>The Windows Time service from the probe's tagged lines (PLAN_windows_time_guard.md D1), or why not.</summary>
     public Reading<WindowsTimeService> TimeService { get; init; } = Reading.Missing<WindowsTimeService>("the Windows clock probe printed no w32time line");
+
+    /// <summary>What the probe said about the MSI PowerShell 7 (E15.S1b), or why not.</summary>
+    public Reading<PwshProbe> Pwsh { get; init; } = Reading.Missing<PwshProbe>(NoPwshLine);
+
+    /// <summary>The reason of a probe answer without the pwsh tags.</summary>
+    public const string NoPwshLine = "the Windows clock probe printed no pwsh line";
 }
 
 /// <summary>A snap revision <c>snap list --all</c> marks <c>disabled</c>: superseded, kept by snapd, what A9 removes.</summary>
@@ -110,12 +116,12 @@ public static class HealthParsers
         var all = ProcText.Lines(stdout).Select(l => l.Trim()).ToList();
         var lines = all.Where(l => !IsTagged(l)).ToList();
         return lines.Count >= 3 && Instant(lines[0]) is { } printed && Instant(lines[1]) is { } started
-            ? Reading.Of(new WindowsClockAnswer(printed, started, lines[2]) { TimeService = ClockParsers.TimeService(all) })
+            ? Reading.Of(new WindowsClockAnswer(printed, started, lines[2]) { TimeService = ClockParsers.TimeService(all), Pwsh = ClockParsers.PwshProbe(all) })
             : Reading.Missing<WindowsClockAnswer>($"the Windows clock probe did not print two instants and a profile: \"{stdout.Trim()}\"");
     }
 
-    private static bool IsTagged(string line) =>
-        line.StartsWith(HealthCommands.TimeServiceStatusTag, StringComparison.Ordinal) || line.StartsWith(HealthCommands.TimeServiceStartTypeTag, StringComparison.Ordinal);
+    /// <summary>A line carrying one of the probe's tags (<see cref="HealthCommands.ClockTags"/>) — read by tag, never by position.</summary>
+    private static bool IsTagged(string line) => HealthCommands.ClockTags.Any(tag => line.StartsWith(tag, StringComparison.Ordinal));
 
     /// <summary><c>snap list --all</c>: the rows whose Notes column holds <c>disabled</c> (Name Version Rev Tracking Publisher Notes).</summary>
     public static IReadOnlyList<SnapRevision> DisabledSnapRevisions(string stdout) =>

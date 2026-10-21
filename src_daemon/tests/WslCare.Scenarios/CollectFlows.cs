@@ -124,7 +124,14 @@ public sealed class CollectFlows
 
         status.Exit.Should().Be((int)ExitCode.Ok, status.Stderr);
         var verdicts = JsonSerializer.Deserialize(status.Stdout, WslCareJsonContext.Default.StatusReport)!.Verdicts ?? [];
-        verdicts.Select(v => v.Id).Should().Equal(report.Detail.Thresholds.Select(t => t.Id), "status answers every threshold id the run recorded, in its order (plan §15g B1)");
+        // E15.S5 code round: the Windows binary also judges host.vmmem over its own sample — an id no full run judges (its disk script
+        // reads no vmmem) — and adds it after the carried verdicts, before the MCP servers' own; the distro's status answers exactly
+        // the run's ids.
+        string[] sampledOnly = home.Paths.Side == Core.Hosting.HostSide.Windows ? ["host.vmmem"] : [];
+        var runIds = report.Detail.Thresholds.Select(t => t.Id).ToList();
+        string[] expected = [.. runIds.TakeWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal)), .. sampledOnly, .. runIds.SkipWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal))];
+        // E19.S3: the Windows binary also answers worktrees.reclaimable, its own scan's verdict, which no full run records.
+        verdicts.Select(v => v.Id).Where(id => id != Core.Worktrees.WorktreesStatus.VerdictId).Should().Equal(expected, "status answers every threshold id the run recorded, in its order (plan §15g B1)");
         var carried = verdicts.Where(v => v.Basis?.Source == Core.Thresholds.VerdictSource.FullRun).ToList();
         carried.Should().NotBeEmpty();
         carried.Select(v => v with { Basis = null }).Should().Equal(
@@ -192,7 +199,7 @@ public sealed class CollectFlows
     {
         DockerCommands.Executable => DockerCommands.IsReadVerb(call.Argv),
         SystemdCommands.Systemctl or SystemdCommands.Journalctl or SystemdCommands.Timedatectl => SystemdCommands.IsReadVerb(call.Argv),
-        "powershell" => HealthCommands.FixedScripts.Any(script => call.Argv.SequenceEqual(script.Arguments)),
+        "powershell" or "pwsh" => HealthCommands.FixedScripts.Any(script => Tool(script.Executable) == call.Tool && call.Argv.SequenceEqual(script.Arguments)),
         HealthCommands.Snap => call.Argv.SequenceEqual(HealthCommands.SnapList.Arguments),
         HealthCommands.Curl => Core.Processes.Policy.ReadCommandTemplates.ClockReference.Matches(call.Argv),
         _ => false,

@@ -27,6 +27,10 @@ public sealed class GitQuestions(ICommandRunner runner, GitLimits limits, Func<s
     private static readonly int[] OkExits = [0];
     private static readonly int[] IgnoreExits = [0, 1];
 
+    /// <summary>The same, for a caller that is not asynchronous (the scan is a synchronous walk). The runner is never given a synchronization
+    /// context to come back to, so this cannot deadlock; the question is bounded by <c>worktrees.gitTimeoutSeconds</c> per call.</summary>
+    public IReadOnlyList<GitAnswer> Ask(GitQuestion question, CancellationToken cancellationToken) => AskAsync(question, cancellationToken).GetAwaiter().GetResult();
+
     /// <summary>One answer per name of <paramref name="question"/>, in its order.</summary>
     public async Task<IReadOnlyList<GitAnswer>> AskAsync(GitQuestion question, CancellationToken cancellationToken)
     {

@@ -37,9 +37,9 @@ public sealed class WorktreeGitKeysTests
     [Fact]
     public void The_git_path_is_a_machine_only_absolute_path_that_defaults_to_the_supported_install_only()
     {
-        ConfigKeys.WorktreeGit.GitPath.Trust.MachineOnly.Should().BeTrue("an administrator names a program to run");
-        ConfigKeys.WorktreeGit.GitPath.Rule.Should().BeOfType<TextRule.AbsolutePathOrEmpty>();
-        Load().Config.Text(ConfigKeys.WorktreeGit.GitPath).Should().BeEmpty();
+        ConfigKeys.Worktrees.GitPath.Trust.MachineOnly.Should().BeTrue("an administrator names a program to run");
+        ConfigKeys.Worktrees.GitPath.Rule.Should().BeOfType<TextRule.AbsolutePathOrEmpty>();
+        Load().Config.Text(ConfigKeys.Worktrees.GitPath).Should().BeEmpty();
     }
 
     [Fact]
@@ -48,8 +48,8 @@ public sealed class WorktreeGitKeysTests
         var machine = Load(machine: """{ "worktrees": { "gitPath": "D:\\tools\\git\\cmd\\git.exe" } }""");
         var user = Load(user: """{ "worktrees": { "gitPath": "D:\\evil\\git.exe" } }""");
 
-        machine.Config.Text(ConfigKeys.WorktreeGit.GitPath).Should().Be(@"D:\tools\git\cmd\git.exe");
-        user.Config.Text(ConfigKeys.WorktreeGit.GitPath).Should().BeEmpty("a user layer may not name a program the scan runs");
+        machine.Config.Text(ConfigKeys.Worktrees.GitPath).Should().Be(@"D:\tools\git\cmd\git.exe");
+        user.Config.Text(ConfigKeys.Worktrees.GitPath).Should().BeEmpty("a user layer may not name a program the scan runs");
         user.Notices.Should().Contain(n => n.Key == "worktrees.gitPath");
     }
 

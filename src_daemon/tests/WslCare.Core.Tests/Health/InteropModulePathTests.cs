@@ -33,6 +33,16 @@ public sealed class InteropModulePathTests
         argv.ToList().IndexOf("-NoProfile").Should().BeLessThan(argv.ToList().IndexOf("-Command"));
     }
 
+    /// <summary>E15.S1b: the theories above cover the THIRD member too — the disk script under the MSI pwsh.</summary>
+    [Fact]
+    public void The_theories_cover_every_member_of_the_closed_set_the_pwsh_one_included()
+    {
+        HealthCommands.FixedScripts.Select(c => c.Name).Should().Contain(WindowsDiskCommands.PwshName, "the theories above enumerate the closed set itself");
+        var pwsh = HealthCommands.FixedScripts.Single(c => c.Name == WindowsDiskCommands.PwshName).Argv;
+        pwsh[^1].Should().StartWith(HealthCommands.ModulePathPin + "; ");
+        pwsh.ToList().IndexOf("-NoProfile").Should().BeInRange(1, pwsh.ToList().IndexOf("-Command") - 1);
+    }
+
     [Fact]
     public void The_pin_assigns_the_administrator_only_module_folder_and_nothing_else()
     {

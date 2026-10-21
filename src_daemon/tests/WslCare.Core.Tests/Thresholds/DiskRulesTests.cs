@@ -286,7 +286,7 @@ public sealed class DiskRulesTests : IDisposable
     }
 
     [Fact]
-    public void An_unread_disk_sample_leaves_all_three_unknown_with_its_reason()
+    public void An_unread_disk_sample_leaves_every_disk_rules_verdict_unknown_with_its_reason()
     {
         var verdicts = Evaluate(Reading.Missing<DiskFacts>("the Windows disk script did not answer within 30 s"));
 
@@ -295,11 +295,12 @@ public sealed class DiskRulesTests : IDisposable
     }
 
     [Fact]
-    public void The_three_verdicts_are_full_run_verdicts_after_disk_discard()
+    public void The_disk_verdicts_follow_disk_discard_in_order()
     {
         var ids = ThresholdRules.UnreadFullRun(Config()).Select(v => v.Id).ToList();
 
-        ids.Should().ContainInOrder("disk.discard", DiskRules.GapId, DiskRules.GrowthId, DiskRules.HostFreeId);
+        // E19.S1 widened the list: the three E15.S2 verdicts, then disk.volumeFree — consecutive, right behind disk.discard.
+        ids.SkipWhile(id => id != "disk.discard").Take(5).Should().Equal("disk.discard", DiskRules.GapId, DiskRules.GrowthId, DiskRules.HostFreeId, VolumeFreeRules.Id);
     }
 
     [Fact]

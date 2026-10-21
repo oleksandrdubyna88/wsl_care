@@ -135,7 +135,7 @@ public sealed class GitTemplatesTests
     [Fact]
     public void A_template_takes_at_most_the_most_names_one_call_may_carry()
     {
-        var most = Core.Config.ConfigKeys.WorktreeGit.NamesPerCall.Max;
+        var most = Core.Config.ConfigKeys.Worktrees.GitNamesPerCall.Max;
         var many = Enumerable.Range(0, most).Select(i => $"d{i}/bin").ToArray();
 
         CommandPolicy.Product.Review(Request(GitCommands.CheckIgnore(many))).IsAllowed.Should().BeTrue();

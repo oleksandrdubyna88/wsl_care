@@ -4,7 +4,7 @@ import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText } from '../wsl/wslText';
 import { DAEMON_EXIT } from './exitCodes';
 import { classifyExit, launchFailure, wslRefusal } from './failures';
-import { checkedBody, parseAnswer, parseDaemonVersion, versionRefusal } from './handshake';
+import { checkedBody, ownVersion, parseAnswer, versionRefusal } from './handshake';
 import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutcome } from './outcome';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { DaemonLimits } from '../shared/daemonLimits';
@@ -458,12 +458,4 @@ function unlisted(distro: string, listed: readonly string[]): Failure {
   const names = listed.length === 0 ? 'none' : listed.map((name) => `"${name}"`).join(', ');
 
   return { kind: 'distroRefused', distro, reason: `wsl.exe --list does not report it (it reports: ${names}); a wslCare.distro setting must also match the pattern ${DISTRO_NAME.source}` };
-}
-
-function ownVersion(answer: Answer): DaemonVersion | undefined {
-  if (answer.verb === 'version') {
-    return answer.version;
-  }
-
-  return answer.verb === 'status' && answer.productVersion !== undefined ? parseDaemonVersion(answer.productVersion) : undefined;
 }

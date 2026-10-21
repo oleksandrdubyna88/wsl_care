@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "description": "The ONE shape of a worktrees roots request the extension sends (PLAN_disk_hygiene_windows.md §3.3, E19 stories §4 E19.S3): the Windows binary's argv after the binary, and the chosen folders on stdin, one absolute path per line, each line ended. No path ever travels on argv. The daemon's WorktreesCommandTests parse exactly these bytes; the extension's call test must emit exactly these from the same selection. Neither half may change it alone.",
+  "paths": [
+    "D:\\work\\alpha",
+    "E:\\repos\\team"
+  ],
+  "stdin": "D:\\work\\alpha\nE:\\repos\\team\n",
+  "set": [
+    "worktrees",
+    "roots",
+    "set",
+    "--json"
+  ],
+  "clear": [
+    "worktrees",
+    "roots",
+    "clear",
+    "--json"
+  ],
+  "scan": [
+    "worktrees",
+    "scan",
+    "--json"
+  ]
+}

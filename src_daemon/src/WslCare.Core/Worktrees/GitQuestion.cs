@@ -75,6 +75,18 @@ public static class GitReasons
     public static string NotRun(string why) => $"git could not be run: {why}";
 
     /// <summary>The first line of git's complaint, control characters replaced and cut — a reason is one line.</summary>
+    /// <summary>The closed sentence a reason is COUNTED under in the report: git's own words after a refusal vary, the group does not.</summary>
+    public static string GroupOf(string reason) => reason switch
+    {
+        _ when reason.StartsWith("git refused:", StringComparison.Ordinal) => "git refused the question",
+        _ when reason.StartsWith("git did not answer", StringComparison.Ordinal) => "git did not answer in time",
+        _ when reason.StartsWith("git could not be run:", StringComparison.Ordinal) => "git could not be run",
+        _ => reason,
+    };
+
+    /// <summary>Whether a retained reason says git could not be ASKED (as against git answering no): the verdict then cannot be trusted as "none".</summary>
+    public static bool IsAFailureToAsk(string reason) => GroupOf(reason) is "git refused the question" or "git did not answer in time" or "git could not be run" or Cut or NoAnswer;
+
     public static string FirstLine(string stderr, int maxChars)
     {
         var line = stderr.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;

@@ -21,7 +21,7 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
     public static GitExecutable Product { get; } = new(ProductCandidates, new WindowsAdminOnlyPath());
 
     private static IReadOnlyList<string> ProductCandidates() =>
-        CandidatesOf(name => Environment.GetEnvironmentVariable(name) ?? string.Empty, Tuning.Current.Config.Text(ConfigKeys.WorktreeGit.GitPath));
+        CandidatesOf(name => Environment.GetEnvironmentVariable(name) ?? string.Empty, Tuning.Current.Config.Text(ConfigKeys.Worktrees.GitPath));
 
     /// <summary>The files to try, in order: the install under each Program Files (the 64-bit one too, for a 32-bit process; once if they are
     /// the same), then the machine layer's <c>worktrees.gitPath</c> when it names one. Never a <c>PATH</c> entry.</summary>
