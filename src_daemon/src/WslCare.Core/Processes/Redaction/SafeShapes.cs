@@ -20,6 +20,14 @@ internal static partial class SafeShapes
     [GeneratedRegex(@"^(?:/|\./|\.\./|~/|\\\\|[A-Za-z]:[\\/])[\p{L}\p{N} ._~+@%:/\\()\[\],'&-]*\z", Options, SecretShapes.PatternCeilingMilliseconds)]
     private static partial Regex PathShape();
 
+    /// <summary>The ONE segment of <c>/segment</c> or <c>./segment</c> — empty when the text has more segments or is no such path. A path of
+    /// exactly one segment can be a token (Fable re-check 2); a longer one is a folder tree and stays a path.</summary>
+    public static string SingleSegment(string text)
+    {
+        var rest = text.StartsWith("./", StringComparison.Ordinal) ? text[2..] : text.StartsWith('/') ? text[1..] : string.Empty;
+        return rest.Contains('/') ? string.Empty : rest;
+    }
+
     /// <summary>A GUID — a Claude session id (<c>--resume=&lt;guid&gt;</c>, <c>-r &lt;guid&gt;</c>).</summary>
     public static bool IsGuid(string text) => Match(Guid(), text);
 
@@ -54,7 +62,8 @@ internal static partial class SafeShapes
     public static bool IsSafeValue(string text, int maxExclusive) =>
         IsPath(text) || IsGuid(text) || IsNpmSpec(text) || IsPlainWord(text, maxExclusive);
 
-    /// <summary>One match; a match that ran out of time is NOT a safe shape — a view shows less, never more.</summary>
+    /// <summary>One match. THE TIMEOUT DIRECTION (coai code round 4): a match that ran out of time answers <c>false</c> — "NOT a safe shape" —
+    /// so a view shows less and the rule keeps judging, never more; <see cref="SecretShapes"/> answers the opposite way (a timeout is a hit).</summary>
     private static bool Match(Regex pattern, string text)
     {
         try

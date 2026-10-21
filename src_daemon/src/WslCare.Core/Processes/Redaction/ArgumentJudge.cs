@@ -96,9 +96,17 @@ internal static class ArgumentJudge
         yield return SecretShapes.IsCredsShaped(text) ? Verdict.Is(Redacted) : Verdict.Pass;
         // The blob test runs BEFORE the path test: a Windows switch (/password:value) and a script holding a secret word look like paths.
         yield return SecretShapes.HoldsASecretBeforeASeparator(text) ? Verdict.Cut(Redacted, blob: true) : Verdict.Pass;
-        yield return SafeShapes.IsPath(text) ? Verdict.Is(text) : Verdict.Pass;
+        yield return PathArm(text, limits);
         yield return HighEntropy.Looks(text, limits.SecretMinChars) ? Verdict.Is(Redacted) : Verdict.Pass;
     }
+
+    /// <summary>A path is shown whole — unless it has exactly ONE segment and that segment is a creds shape or high-entropy: <c>/&lt;std base64&gt;</c>
+    /// and <c>./&lt;blob&gt;</c> are tokens with a slash in front (Fable re-check 2), and go. Multi-segment paths stay as decided.</summary>
+    private static Verdict PathArm(string text, RedactionLimits limits) =>
+        !SafeShapes.IsPath(text) ? Verdict.Pass : Verdict.Is(IsTokenPath(text, limits) ? Redacted : text);
+
+    private static bool IsTokenPath(string text, RedactionLimits limits) =>
+        SafeShapes.SingleSegment(text) is { Length: > 0 } segment && (SecretShapes.IsCredsShaped(segment) || HighEntropy.Looks(segment, limits.SecretMinChars));
 
     /// <summary>Arm 4: a URL decides everything about itself (it never reaches the entropy test); a detector that ran out of time cannot
     /// say it is none, so the argument goes (fail closed).</summary>

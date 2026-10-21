@@ -33,6 +33,10 @@ public sealed class SecretShapesTests
     [InlineData("API_KEY")]
     [InlineData("-key")]
     [InlineData("x.key")]
+    [InlineData("--pass")]
+    [InlineData("/pass")]
+    [InlineData("PASS")]
+    [InlineData("/pass:")]
     public void A_name_holding_a_secret_word_or_the_whole_word_key_names_a_secret(string name)
     {
         SecretShapes.NamesASecret(name).Should().BeTrue();
@@ -41,6 +45,9 @@ public sealed class SecretShapesTests
     [Theory]
     [InlineData("--keyboard")]
     [InlineData("--keep")]
+    [InlineData("--bypass")]
+    [InlineData("--passthrough")]
+    [InlineData("--passes")]
     [InlineData("--monkey")]
     [InlineData("--session")]
     [InlineData("--resume")]
@@ -81,6 +88,9 @@ public sealed class SecretShapesTests
     [InlineData("{ \"key\": \"x\" }", true)]
     [InlineData("const net = require('net'); const client = net.createConnection({ host: '127.0.0.1', port: 41304 })", false)]
     [InlineData("tokenizer", false)]
+    [InlineData("cmdkey /add:srv /pass:Hunter2", true)]
+    [InlineData("bypass the proxy", false)]
+    [InlineData("--passthrough=1", false)]
     [InlineData("tool --password Hunter2Invented --port 5", true)]
     [InlineData("the password is in the vault", true)]
     [InlineData("a plain sentence without any of the words", false)]

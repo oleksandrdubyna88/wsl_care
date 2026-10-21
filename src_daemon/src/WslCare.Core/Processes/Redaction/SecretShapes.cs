@@ -41,12 +41,17 @@ internal static partial class SecretShapes
     /// <c>--max-thinking-tokens</c> (the one false positive the golden already carries, kept: a number lost is cheaper than a token
     /// shown), and <c>key</c> only as a whole word: <c>--key</c>, <c>API_KEY</c>, <c>-key</c>, not <c>--keyboard</c> or <c>--keep</c>.</summary>
     public static bool NamesASecret(string name) =>
-        Words.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase)) || Hits(BoundedKey(), name);
+        Words.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase)) || Hits(BoundedKey(), name) || Hits(BoundedPass(), name);
 
     /// <summary>The bounded word <c>key</c> (design §2.2): at the start or after <c>-</c> <c>_</c> <c>.</c>, and at the end or before
     /// <c>-</c> <c>_</c> <c>.</c> <c>=</c>.</summary>
     [GeneratedRegex(@"(?:^|[-_.])key(?:$|[-_.=])", Folded, PatternCeilingMilliseconds)]
     private static partial Regex BoundedKey();
+
+    /// <summary><c>pass</c> as a BOUNDED word (Fable re-check, 2026-10-19): <c>/pass:</c> is cmdkey's real syntax, <c>--pass</c> and <c>PASS=</c> are
+    /// common — but <c>bypass</c>, <c>passthrough</c> and <c>--passes</c> are not secret names, so a letter on either side ends the match.</summary>
+    [GeneratedRegex(@"(?:^|[-_./])pass(?:$|[-_.:=])", Folded, PatternCeilingMilliseconds)]
+    private static partial Regex BoundedPass();
 
     /// <summary>Whether a text holds a secret word, then a run of name characters, then a separator — <c>CollectorApiKey":</c>,
     /// <c>Authorization:</c>, <c>token=</c>, <c>Password=</c> (design §2.1 arm 7). The extent of a value inside a blob cannot be
@@ -54,7 +59,7 @@ internal static partial class SecretShapes
     /// inside <c>sh -c "…"</c>): the cost is that a free-text prompt holding a secret word is redacted whole (plan §9).</summary>
     public static bool HoldsASecretBeforeASeparator(string text) => Hits(WordBeforeSeparator(), text);
 
-    [GeneratedRegex("(?:" + WordList + @"|(?<![A-Za-z0-9])key)[A-Za-z0-9_-]{0,32}(?:[ \t]{0,3}[:=""']|[ \t]+\S)", Folded, PatternCeilingMilliseconds)]
+    [GeneratedRegex("(?:" + WordList + @"|(?<![A-Za-z0-9])key|(?<![A-Za-z0-9])pass(?![A-Za-z0-9]))[A-Za-z0-9_-]{0,32}(?:[ \t]{0,3}[:=""']|[ \t]+\S)", Folded, PatternCeilingMilliseconds)]
     private static partial Regex WordBeforeSeparator();
 
     /// <summary>Whether a text holds a creds-shaped token ANYWHERE (design §2.3): the providers' own prefixes, anchored to a token
@@ -132,7 +137,8 @@ internal static partial class SecretShapes
 
     private static bool Listed(string[] programs, string program) => programs.Contains(program, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>One match, with a match that ran out of time counted as a HIT: the rule denies by default.</summary>
+    /// <summary>One match. THE TIMEOUT DIRECTION (coai code round 4): a match that ran out of time answers <c>true</c> — "a hit" — so every
+    /// caller redacts (fail closed). <see cref="SafeShapes"/> answers the opposite way on purpose: there a timeout means "not a safe shape".</summary>
     private static bool Hits(Regex pattern, string text)
     {
         try

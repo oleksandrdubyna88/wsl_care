@@ -171,6 +171,6 @@ internal static class Program
         }
 
         // At Information on purpose: a run log that holds no line is a file nobody can read anything from.
-        log.Information("{Request}: wsl-care {Argv}", request.GetType().Name, string.Join(' ', args.Select(ShownText.Printable)));
+        log.Information("{Request}: wsl-care {Argv}", request.GetType().Name, string.Join(' ', Core.Collectors.Procfs.CommandLineText.Redact(args)));
     }
 }
