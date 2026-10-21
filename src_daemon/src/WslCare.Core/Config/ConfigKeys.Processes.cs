@@ -32,6 +32,15 @@ public static partial class ConfigKeys
         /// <summary>Characters of a command line a record keeps. Default 200.</summary>
         public static readonly ConfigKey.IntKey ShownCommandChars = new("processes.shownCommandChars", 0, 200) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
+        /// <summary>E15.S7 (design 4): the shortest token the entropy test judges. Lower redacts MORE, so lower is the safe direction;
+        /// machine layer only, because a user layer must not loosen what root writes into a history other accounts read. Default 20 — the
+        /// detectors' common floor.</summary>
+        public static readonly ConfigKey.IntKey SecretMinChars = new("processes.secretMinChars", 12, 64) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+        /// <summary>E15.S7: how many SAFE leading arguments a view shows by default (<c>argumentsShown</c>). Fewer is safer. Default 2.</summary>
+        public static readonly ConfigKey.IntKey ShownSafeArgs = new("processes.shownSafeArgs", 0, 8) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+        /// <summary>E15.S7: the longest argument the rule judges at all — a longer one is a script or a blob and is replaced whole; the
+        /// bound is what keeps every pattern linear. A smaller bound redacts more. Default 4096.</summary>
+        public static readonly ConfigKey.IntKey MaxJudgedArgChars = new("processes.maxJudgedArgChars", 1024, 65536) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
         /// <summary>The poll slice while waiting for processes to end. Default 200.</summary>
         public static readonly ConfigKey.IntKey SignalSliceMilliseconds = new("processes.signalSliceMilliseconds", 50, 1000) { Trust = new(SafeDirection.None, MachineOnly: true) };
 

@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Globalization;
 using System.Text.Json;
 
@@ -50,6 +51,6 @@ internal static class BusyCommand
         var why = report.Reasons.Select(r => string.Create(CultureInfo.InvariantCulture, $"{r.Resource} {r.Window} {r.Value:0.##} > {r.Limit:0.##} ({r.Key})")).Concat(report.Unread);
         var tail = report.State == "calm" ? string.Empty : $" — {string.Join("; ", why)}";
         var figures = read.ToList() is { Count: > 0 } named ? $"PSI some avg60 {string.Join(", ", named)}" : "PSI not read";
-        return CommandLine.Printable($"{report.State}: {figures}{load}{tail}");
+        return ShownText.Printable($"{report.State}: {figures}{load}{tail}");
     }
 }

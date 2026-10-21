@@ -172,8 +172,9 @@ public sealed class AgentOrphans : ICleanupAction, IBoundToShownList
 
     private static bool IsNode(string program) => Path.GetFileName(program) is "node" or "nodejs";
 
-    /// <summary>The script a node process runs: its first argument, when absolute.</summary>
-    private static string Script(ProcessEntry process) =>
+    /// <summary>The script a node process runs: its first argument, when absolute. Read from the SHOWN line, so internal: a test holds
+    /// its answer over the captured tree equal before and after the redaction rule was widened (E15.S7, road R8).</summary>
+    internal static string Script(ProcessEntry process) =>
         process.CommandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1).FirstOrDefault() is { } word && word.StartsWith('/') ? word : string.Empty;
 
     /// <summary>Review A-M5: a process whose environment moves where an agent keeps its files — <c>HOME</c> or an XDG folder off

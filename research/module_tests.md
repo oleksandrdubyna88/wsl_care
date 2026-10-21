@@ -4544,6 +4544,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | the release archive packed on EVERY pull-request leg from the published AOT binary, its pair checked, its path opened outside bash | covered by CI | `ci · daemon`, steps *Package the archive* and *The archive path opens outside bash*; their presence on every leg and their order: `ReleaseWorkflowTests.Every_pull_request_leg_packs_the_archive_as_the_release_does_and_opens_its_path_outside_bash` |
 | the release run itself — the App token's tag starting `release.yml`, the attestation, the upload to the draft, the publish | not covered | needs the owner's settings (`docs/repo-settings.md`) and the cut of `daemon-v0.1.0`; verified after it by `POST_DEPLOY.md` items 8 and 10 |
 | the extension's release run — `release-extension.yml` from the guard to github-public, the Marketplace publish | not covered | needs the E5 live gate (`docs/repo-settings.md` steps 9–11 and *Cutting `extension-v0.1.0`*); verified after it by `POST_DEPLOY.md` items 3, 6 and 12 |
+| One redaction rule for every command line (E15.S7): the 23 design cases plus the judge's additions over invented values in every real shape (`realistic-leaks.txt`, placeholders expanded in `RedactionCases`), one token per creds family, the URL arm before the creds shape, the bounded word `key`, no prefix / length / suffix of a value in the output, the cut after the rule on a rune boundary, `Split` against the real `CommandLineToArgvW` and its round trip, the raw-line backstop, `AgentOrphans.Script` / `IdleGate.IsBuild` / `IsDotnetBuild` over the captured tree unchanged, the three keys machine-only, `program` / `argumentsShown` / `argumentsTotal` on the wire and in the golden | covered | `CommandLineRedactionTests`, `SecretShapesTests`, `ShownArgumentsTests`, `WindowsRedactionTests`, `MatchersOverTheShownLineTests`, `RedactionKeysTests`, `UserLayerTrustTests`, `ShownCommandLineWireTests`, `ShownCommandLineCliTests`, `RedactionContractTests`, `GoldenContractTests` |
 | `install.sh` against a real release, a real `gh attestation verify`, real systemd and apt | not covered | the first live install on the owner's machine is the E4 live gate (plan §16), after the owner cuts `daemon-v0.1.0` (`docs/repo-settings.md`) |
 | Windows memory pressure across the boundary (E15.S5): the captured full run answers the Windows disk script, the distro's `status --json` carries `host.commit` / `host.compression` with `basis: fullRun` in the HEAD golden (and no `host.vmmem`: the full run reads no vmmem), and the extension's status-bar model reads that golden and colours warn from `host.compression`; the Windows binary's `status --json` judges its own host sample and lists each `host.*` id once, with `basis: sample` | covered (the golden written on the Linux legs; the bar's read on every OS; the Windows binary's status on win-x64) | `GoldenContractTests`, extension `statusBar.test.ts` (*across the boundary (E15.S5) …*), `WindowsMcpStatusTests.The_windows_status_judges_its_own_host_sample_and_the_vmmem_verdict_says_the_advice` |
 | the extension: status bar, panel, buttons, logs page, settings sync, help | not covered | the extension is not built yet (E5–E8) |
@@ -4677,9 +4678,13 @@ The extension's own limits are listed in its section (§ *The extension* — *Wh
   match the parser on another Windows build is the live contract's to show, not the suite's: the unit tests read a captured
   answer, never PowerShell. The reliability counters' READ path is proved on a planted line only (unelevated they are always
   refused).
-- **The secret redaction of command lines is a pattern** (`--name=value` / `--name value` where the name
-  holds token, secret, password, apikey or credential); a secret in any other shape is shown as it is,
-  cut at 200 characters.
+- **The secret redaction of command lines is ONE rule, and a rule has residuals** (E15.S7). It catches a secret flag's value, a
+  `NAME=value` with a secret word, a URL's userinfo and secret query values, the creds shapes of the listed providers (one invented
+  token per family in `CredsFamilies`), a blob holding a secret word and a separator, and a bare high-entropy token (hex digests
+  included). It does NOT catch free text (`claude -p "use key …"` is shown unless the value alone is creds-shaped or high-entropy;
+  `argumentsShown` stops at `-p`), a short secret below `processes.secretMinChars`, a passphrase of words, a secret used as a file
+  NAME, a secret split across two arguments or behind another language's flag spelling, kernel ring lines, or history written before
+  the rule — the plan's §9. Every fixture value is invented; no provider-shaped token is a contiguous literal in the repository.
 - The scenario and process tests run the **JIT** build. The Native AOT binary is exercised by the CI
   smoke only — `--help`, `--version` and the configuration round trip (set → get → refused set →
   get) — on all three RIDs. Locally the owner's machine can publish only `win-x64` (with `vswhere.exe`
@@ -4784,3 +4789,90 @@ the fake refusing `status --json`), so each failed for its real symptom, then th
 | the new ceiling sits strictly above the Windows status's worst case (the distro status's expression) at the defaults, at every setting's minimum and at every published limit's maximum; the two settings never follow each other | `ceilings.test.ts` (`windowsStatus` in the three loops, the minimum list, *E19.S2b: the bundled exe's status waits one MCP CPU window…*), `numbers.test.ts` (`package.json` equals the table) | compile-level (`'windowsStatus'` not a `HostCall`, `windowsStatusSeconds` not a setting) |
 | the strict fake answers `status --json` of EXACTLY the bundled path from the distro golden with `side: "windows"` (no Windows golden exists), scripts a failing exit, and still refuses every other argv | `fakeWsl.test.ts` (*E19.S2b: the fake answers…*; *the fake refuses any other argv…* — its old probe `status --json` is now an answered shape, so it probes `preview`, `doctor`, `status`, `status --json --detail`, `--version x`, `runs`) | `98 !== 0` — the fake's refusal of the unknown argv |
 | the `.vsix` e-mail scan does not flag a systemd unit name — the release PR for extension 0.7.0 (#148) was red on `extension/changelog.md:10 holds an e-mail address`, a line quoting `getty@tty1.service`. A match whose LAST label is a unit type is no address. The list is ONE export, `UNIT_TYPES` in `src_vs_code/src/test/support/vsixCheck.ts` (`service`, `socket`, `timer`, `mount`, `target`, `path`, `slice`, `scope`, `device`, `swap`, `automount`, `busname`, `snapshot`); the regex is built from it and the test iterates it, so there is no second copy in the TypeScript. Real addresses are still found: one at `example.org`, one with a middle label `service` (`user@service.example.com`), one at a `.co.uk` host, one with a two-letter TLD | `vsixCheck.test.ts` (*a systemd unit name (getty@tty1.service) is not an e-mail address…* — the pinned literal, so an emptied list cannot pass vacuously; one test per entry of `UNIT_TYPES`; *the unit type is read as the WHOLE last label…*; *an underscore continues the label…*; *a drop-in path…*; *a line with a real address and a unit name gives EXACTLY one finding…*; *the scan reports the FIRST match…*; the real addresses are rows of `PATH_PLANTS`, built by the `address()` helper because this repository's own privacy scan reads every tracked file) | RED against the unfixed rule: `getty@tty1.service` — `+ actual - expected  + [ 'extension/dist/extension.js:9804 holds an e-mail address' ]  - []`. `busname` and `snapshot` were RED first the same way. Underscore: `doe@mail.service_ext` — `0 !== 1` (no finding) against the boundary `(?![A-Za-z0-9-])`, green with `(?![A-Za-z0-9_-])`. Break-its (each file restored and compared with `cmp`): the exemption removed → 16 red; the terminal boundary removed → the *WHOLE last label* test red (63 pass, 1 fail). **The scan reports the FIRST match of each rule per entry** (`pathFindings` calls `pattern.exec` once per rule per file and names that line only) — enough for a gate; a second address in the same file is not listed (pinned by a test). **Sibling lists, aligned:** `UnitTypes` in `src_daemon/tests/WslCare.Scenarios/FixturePrivacy.cs` and `src_daemon/tests/WslCare.TestSupport/FixtureIdentity.cs` (C#, fixture privacy; they fold case, and FixturePrivacy adds `journal`) now carry `busname` and `snapshot` too — `FixturePrivacyTests` (*Anonymised_values_systemd_template_units_and_placeholders_are_not_findings*, a bus name and a snapshot as a new row) and `FixtureAnonymisationTests` (*The_busname_and_snapshot_unit_types_are_template_instances_too_not_addresses*); all three sites carry a one-line comment naming the other two. The C# regexes keep their own boundary `(?![A-Za-z0-9-])` (an underscore after the unit type is not read as part of the label there) |
+
+### One redaction rule for every command line (E15.S7, 2026-10-17, plan *E15.S7 as built*)
+
+**Red first.** The tests (commit `test(daemon): E15.S7 RED`) ran over stubs — `CommandLineRedaction` returning the argv,
+`ShownArguments` an empty value, `ShownText.Printable` the identity, `WindowsCommandLine.Split` one element. Redaction namespace:
+126 tests, **92 red, 34 green**; wire and keys 8/8 red, CLI 3/3, Scenarios `RedactionContractTests` 3/3. Every message names the
+symptom, none a stub exception:
+
+| Test | Red message (stubs) |
+|---|---|
+| the plan's RED, `creds config <cfgk_…>` | *Expected Shown("creds","config",ConfigKey) to be the same string, but they differ at index 13: "…config cfgk_q7Hn2Vx9…" vs "…config <redacted>"* |
+| `GITHUB_TOKEN=…`, docker `-e`, `curl -u`, `mysql -p…`, a URL's userinfo, a blob | the same shape: the value is in the actual line where `<redacted>` is expected |
+| a bare 48-character token / a bare hex digest | *Expected Shown("tool", hex) to be the same string, but they differ at index 5: "tool 3f9a1c7e5b2d84a…" vs "tool <redacted>"* |
+| every value redacted leaves nothing | *Expected shown "creds config cfgk_q7Hn2Vx9…" to contain "<redacted>"* |
+| the cut | *Expected Shown([Blob48], ShownChars = 5) to be "<reda", but "q7Hn2" differs near "q7H"*; *Expected Redacted to start with "q7H" because the cut can only shorten the constant* |
+| the surrogate cut | *Expected shown to be "a " with a length of 2 because the pair does not fit, but "a �" has a length of 3* |
+| control / format / lone surrogate | *Expected Shown("x","a\u001b[31m","\u202e","\ud800") to be … "x a?[31m ? ?"*, actual `"x a ‮ �"` |
+| the keys | *Expected ConfigKeys.Find(name) to be IntKey because processes.secretMinChars is a number the owner may change — in the machine layer, but found <null>* |
+| the wire | *Expected element.TryGetProperty(name, out var value) to be True because the object carries "program" (E15.S7 §5, the additive wire change), but found False* (3 suites) |
+| the contract file | *Expected text "{…config-keys…" to contain "processes.secretMinChars"* |
+| `ShownText` moved, not copied | *Expected …GetMethod("Printable") to be <null> because one definition: ShownText.Printable in Core, but found System.String Printable(System.String)*; the refusal still echoed U+202E |
+| `Split` | *Expected WindowsCommandLine.Split(line) to be equal to {"p", "a bc", "d"} because the line p "a b"c d, but {"p "a b"c d"} contains 2 item(s) less* (14 vectors, the round trip) |
+| the Windows backstop | *Expected WindowsCommandLine.Shown(line, Limits) to be the same string …"prog.exe --auth:'my…" vs "<redacted>"*; the GUID case *…"…ng-tokens 0" vs "…ng-tokens <redacted>"* |
+| `ShownArguments` | *Expected Of(["creds","config",ConfigKey]) to be ShownCommandLine {Arguments = {"config"}, Program = "creds", …}*; *Expected shown.Arguments to be equal to {"--password"}, but found empty collection* |
+
+**GUARDS, green on the stubs by design:** `MatchersOverTheShownLineTests.The_three_matchers_answer_over_the_captured_tree_what_they_answered_before_the_rule_was_widened`
+and `WindowsRedactionTests.Windows_itself_agrees_with_every_edge_vector` (the vectors come from the real `CommandLineToArgvW`).
+Also green on identity stubs by nature (non-regression, they pass for the right reason): the paths / npm specs / versions / plain
+words theory, the three path cases, `A_session_guid_is_shown_after_resume`, `A_flag_that_merely_contains_the_letters_key…`, the
+pathological-input timing test and `A_build_command_line_is_still_recognised…`. One stub-green test was made red-capable first
+(`An_argument_longer_than_the_shown_line_cut…` expects `["ok"]`).
+
+**Break-its** (product code broken, red, restored with `git checkout` — `git diff` empty —, green; the test files were never
+touched). Windows, the focused classes:
+
+| Line broken | Red |
+|---|---|
+| B1 arm 8 (the entropy test) removed | 11 red: *Did not expect shown "tool q7Hn2Vx9…" to contain "q7Hn2Vx9"*, the 5-character cut, the digests; the cfgk case stays green (the shape list catches it) |
+| B2 the `cfgk_` shape removed, arm 8 kept | 3 red: *Expected SecretShapes.IsCredsShaped(token) to be True because CredsForDevs config key, but found False*; the plan's RED stays green by entropy |
+| B3 arm 6's alphabet widened to `{` and `"` | 6 red: *Did not expect shown "/usr/share/code/code /TelemetrySession:{"CollectorApiKey":"invented-collector-value"}" to contain "invented-collector-value"* (an earlier attempt did not compile — a `"` inside a verbatim string — and proved nothing; redone with `""`) |
+| B4 `<redacted>` replaced by `value[..4] + "..."` | 51 red |
+| B5 the cut moved before the rule | 7 red: *Expected Shown([Blob48], ShownChars = 5) to be "<reda", but "q7Hn2" differs*; the 300-character secret at the end of a line |
+| B6 `Split`'s backslash rule simplified | 6 red: *Expected WindowsCommandLine.Split(line) to be equal to {"p", "a\"} because the line p "a\\", but {"p", "a\\"} differs at index 1* |
+| B7 `Printable` not applied in `Shown` | 1 red: *Expected Shown("x","a\u001b[31m","\u202e","\ud800") to be the same string, but they differ at index 3* |
+| B8 `shownSafeArgs` ignored (3 shown) | 6 red: 3 in `ShownArgumentsTests`, 3 in `ShownCommandLineWireTests` |
+| B9 `MachineOnly` dropped from a key | 3 red: *Expected fromUser.Config.Int(ConfigKeys.Processes.SecretMinChars) to be 20 because a user layer must not move what root writes into a shared history, but found 12*; the notice list is missing the key |
+| B10 the URL arm after the creds shape (the old order) | 4 red: *Expected Shown("git","clone","https://alice:"+ Jwt + "@git.example.invalid/o/r") to be the same string, but they differ at index 10* |
+| B11 the backstop compares by substring | 2 red: *Expected WindowsCommandLine.Shown(line, Limits) to be the same string, but they differ at index 0* (the `0` of `--max-thinking-tokens 0` sits inside the shown GUID) |
+| B12 the word `key` unbounded | 3 red: *Expected Shown("setxkbmap","--keyboard","us") to be the same string, but they differ at index 21*; *Expected SecretShapes.NamesASecret(name) to be False, but found True* |
+
+**Found while building, each with a test that went red first** (and named in the plan's as-built): a flag name passed the entropy
+test on its dashes and CamelCase (`--sourceGeneratorExecutionPreference`); a "secret flag" must be a name with no value in it, or
+`--auth:"my secret value"` cost the `--port` after it; a name inside an earlier value span is part of that value (the backstop).
+
+**The security review and the code round (2026-10-18)** — A (a flag-shaped token), B (a trailing `=`), C (a Windows `/switch:value`), D (URL
+segments, query and fragment), E (a secret word then a space inside `sh -c`), G (U+2028 / U+2029), coai 0 (a timeout fails closed),
+coai 1 (the Windows split is internal), coai 2 (attached `-u` / `-p`), coai 3 (`argumentsTotal`): `SecurityReviewTests` and the changed
+tests were red first (28 of 248 in the Redaction namespace, e.g. *Expected Shown("cmdkey","/add:srv","/user:alice","/password:Hunter2Invented")
+to be the same string, but they differ at index 28*; *Expected typeof(WindowsCommandLine).GetMethod(Split, Public | Static) to be <null>,
+but found … Split*), then fourteen more break-its N1–N15 (N3 was not planned), each red and restored byte for byte: N1 dashes kept in the entropy test
+(3 red), N2 assignment name not judged (1), N4 path arm before the blob arm (3), N5 Windows switch not a secret flag (1), N6 URL segments
+not judged (5), N7 `pass` not a secret name (1), N8 whitespace no separator (4), N9 `sshpass` no secret word (1), N10 U+2028 / U+2029
+pass (1), N11 the URL detector fails open (1: *Expected offenders to be empty because a match that ran out of time must redact …
+{"UrlRedaction.cs"}*), N12 `Split` public (1), N13 no attached `-u` (2), N14 the total skips whitespace-only arguments (1), N15 the
+Telegram shape removed (3). The re-check round (2026-10-19, Fable SHIP) added five more: P1 `pass` out of the blob arm (2 red: *Expected
+Shown("cmdkey","/add:srv","/user:alice","/pass:Hunter2Invented") to be the same string, but they differ*), P2 out of `NamesASecret` (4), P3
+`pass` unbounded (6: `--bypass`, `--passthrough`, `--passes` redacted), P4 a one-segment token stays a path (2: *Expected Shown(argv) to be
+the same string, but they differ at index 5*), P5 a family added without a catalogue case (1: *Expected uncovered to be empty because
+each family of SecretShapes.Families needs an invented token …*), and the CLI's own log call put back to `Printable` (red: *Expected line
+"Help: wsl-care "status --password=Hunter2Invented --json"" to contain "status --password=<redacted> --json"*). The plan's *E15.S7 as built*
+has the table.
+
+**Totals** (rebased on `origin/main` a672ae74, 2026-10-18). Windows: Core 3202 (3113 passed, 89 skipped, 0 failed), CLI 443 (440
+passed, 3 skipped, 0 failed), Scenarios 635 (344 passed, 288 skipped, 3 failed: `FixtureAnonymisationTests` was REAL — the identity
+list rewrites an address-shaped `Inv3nted@db.example.invalid` in `realistic-leaks.txt`, fixed and committed; `EventsFlows…` and
+`VirtualDiskFlows…` were timeouts under load and pass alone). Linux (a NEW `/tmp/testsToDelete-wc-e15s7-20261018T091038Z`, WSL): the
+goldens regenerated and then `GoldenContractTests` green without the write variable (7/7, twice), Core 3202 (3101 passed, 101
+skipped, 0 failed), CLI 443 (399 passed, 44 skipped, 0 failed), Scenarios 635 (618 passed, 15 skipped, 2 failed: the two
+`StatusFlows` wall-clock budgets under load — 9/9 and 9/9 on two quiet reruns, one red at 3.003 s against 3 s on the third).
+Extension: not run here (no `node_modules`, and installing is refused on this machine); the change is additive and no extension
+source or test names a changed value.
+
+**Totals after the security review (2026-10-20).** Windows: Core 3280 (3191 passed, 89 skipped, 0 failed), CLI 443 (440 / 3 / 0),
+Scenarios 635 (347 / 288 / 0). Linux (a NEW `/tmp/testsToDelete-wc-e15s7-20261020T182754Z`): the goldens regenerated unchanged,
+`GoldenContractTests` 7 of 7 without the write variable, Core 3280 (3179 / 101 / 0), CLI 443 (399 / 44 / 0), Scenarios 635
+(618 / 15 / 2: the two `StatusFlows` wall-clock budgets on a machine at 80–100 % CPU; 20 `Redact` passes over the 51 captured
+processes take well under 300 ms). Format, plan-lifecycle and the rules check clean; the extension legs are CI's.

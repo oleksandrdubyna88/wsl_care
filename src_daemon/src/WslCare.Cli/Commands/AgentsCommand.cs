@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Text;
 using System.Text.Json;
 
@@ -58,12 +59,12 @@ internal static class AgentsCommand
 
     private static string RenderProbe(AgentProbeReport report)
     {
-        var text = new StringBuilder().AppendLine(CommandLine.Printable($"{report.Path}: {(report.Usable ? "a CLI this user may start" : report.Reason)}{(report.Link ? " (a link)" : string.Empty)}"));
-        text.AppendLine(CommandLine.Printable(report.TrackedAs.Length > 0 ? $"  already tracked as {report.TrackedAs}" : $"  name: {report.Name}"));
+        var text = new StringBuilder().AppendLine(ShownText.Printable($"{report.Path}: {(report.Usable ? "a CLI this user may start" : report.Reason)}{(report.Link ? " (a link)" : string.Empty)}"));
+        text.AppendLine(ShownText.Printable(report.TrackedAs.Length > 0 ? $"  already tracked as {report.TrackedAs}" : $"  name: {report.Name}"));
         foreach (var folder in report.DataFolders)
         {
             var size = folder.Folder.Size.Available ? $"{folder.Folder.Size.Bytes / 1048576.0:0.0} MiB" : "—";
-            text.AppendLine(CommandLine.Printable($"  {folder.Folder.Path} {size}{(folder.Refusal.Length > 0 ? $" — {folder.Refusal}" : string.Empty)}"));
+            text.AppendLine(ShownText.Printable($"  {folder.Folder.Path} {size}{(folder.Refusal.Length > 0 ? $" — {folder.Refusal}" : string.Empty)}"));
         }
 
         return text.Append(report.Suggested is null ? "  nothing to add" : "  could be added as a manual agent").ToString();
@@ -77,7 +78,7 @@ internal static class AgentsCommand
     {
         var targets = found.Where(p => p.Tracked).Select(p => p.Target).ToList();
         Output.Note(stderr, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"measuring {targets.Sum(t => t.Folders.Count)} agent folder(s), up to {AgentWalk.MeasureNowBudget.TotalSeconds:0} s…"));
-        var walk = new AgentWalk(host.Files, host.Clock, host.Paths.Home) { OnFolder = folder => Output.Note(stderr, CommandLine.Printable($"measuring {folder}")) };
+        var walk = new AgentWalk(host.Files, host.Clock, host.Paths.Home) { OnFolder = folder => Output.Note(stderr, ShownText.Printable($"measuring {folder}")) };
         var sample = walk.Measure(targets, AgentWalk.MeasureNowBudget, withNames: true, cancellationToken);
         return (new AgentSizes.Now(sample), Sample(last.Agents.Map(a => a.Value)));
     }
@@ -103,7 +104,7 @@ internal static class AgentsCommand
                 SessionCount.Counted counted => counted.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 _ => "—",
             };
-            text.AppendLine(CommandLine.Printable($"  {agent.Name,-20} {size,12}  sessions {sessions,6}  by {string.Join("+", agent.DetectedBy)}{Version(agent)}"));
+            text.AppendLine(ShownText.Printable($"  {agent.Name,-20} {size,12}  sessions {sessions,6}  by {string.Join("+", agent.DetectedBy)}{Version(agent)}"));
         }
 
         var untracked = report.Agents.Count(a => !a.Tracked);

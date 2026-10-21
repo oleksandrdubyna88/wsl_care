@@ -2,6 +2,7 @@ using WslCare.Core.Config;
 using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
+using WslCare.Core.Processes.Redaction;
 
 namespace WslCare.Core.Collectors;
 
@@ -36,6 +37,15 @@ public sealed record ProcessEntry(
 {
     /// <summary>What the process holds of <c>AnonPages</c> + <c>Shmem</c>: the ranking key.</summary>
     public long HeldBytes => RssAnonBytes + RssShmemBytes;
+
+    /// <summary>What a view shows of the command line by default (E15.S7): the program, the safe leading arguments
+    /// (<c>processes.shownSafeArgs</c> at most, never the redaction constant) and how many arguments there are. Set by the collector
+    /// from the one redaction rule; an entry built without them (a test's) shows none.</summary>
+    public string Program { get; init; } = string.Empty;
+
+    public IReadOnlyList<string> ArgumentsShown { get; init; } = [];
+
+    public int ArgumentsTotal { get; init; }
 
     /// <summary><c>/proc/[pid]/stat</c> field 22 as the snapshot read it — the process's identity within this boot, so a later read
     /// of the same pid can tell it is still this process (plan §15q E7.S2d, final round 3 finding 6).</summary>
@@ -137,8 +147,13 @@ public sealed class ProcessCollector(IFileSystem files, LinuxHostPaths paths, Ti
             [.. counted.GroupBy(e => e.Family).Select(g => new FamilyTotal(g.Key, g.Count(), g.Sum(e => e.HeldBytes))).OrderByDescending(f => f.HeldBytes)]);
     }
 
-    private static ProcessEntry Entry(Raw raw, IReadOnlyDictionary<int, string> users, IReadOnlyDictionary<int, IReadOnlyList<string>> argvByPid, Clocks clocks) =>
-        new(
+    private static ProcessEntry Entry(Raw raw, IReadOnlyDictionary<int, string> users, IReadOnlyDictionary<int, IReadOnlyList<string>> argvByPid, Clocks clocks)
+    {
+        // E15.S7: the argv is judged ONCE; the shown line and the view's program and safe arguments both come from that judgement.
+        var limits = CommandLineText.Limits();
+        var redacted = CommandLineRedaction.Redact(raw.Argv, limits);
+        var view = ShownArguments.Of(raw.Status.Name, raw.Argv, redacted, limits, Tuning.Current.Int(ConfigKeys.Processes.ShownSafeArgs));
+        return new(
             raw.Pid,
             raw.Status.ParentPid,
             users.GetValueOrDefault(raw.Status.Uid, raw.Status.Uid.ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -149,7 +164,7 @@ public sealed class ProcessCollector(IFileSystem files, LinuxHostPaths paths, Ti
             Age(raw.Stat, clocks),
             Reading.Combine(raw.Stat, clocks.Kernel, (s, k) => (double)s.CpuTicks / k.ClockTicksPerSecond),
             raw.Cwd,
-            CommandLineText.Shown(raw.Argv),
+            CommandLineRedaction.Line(redacted, limits),
             ProcessFamilies.Of(raw.Argv, raw.Status.Name),
             IsOrphaned(raw.Status.ParentPid, argvByPid),
             raw.Stat.Map(s => s.TtyNumber != 0).ValueOr(false),
@@ -158,7 +173,11 @@ public sealed class ProcessCollector(IFileSystem files, LinuxHostPaths paths, Ti
             Programs = CommandLineText.ProgramNames(raw.Argv.Count > 0 ? raw.Argv : [raw.Status.Name]),
             Script = CommandLineText.ScriptOf(raw.Argv),
             StartTicks = raw.Stat.Map(s => s.StartTicks),
+            Program = view.Program,
+            ArgumentsShown = view.Arguments,
+            ArgumentsTotal = view.Total,
         };
+    }
 
     private static Reading<TimeSpan> Age(Reading<ProcStat> stat, Clocks clocks) =>
         Reading.Combine(stat, Reading.Combine(clocks.Kernel, clocks.Boot, (k, b) => (k, b)), (s, kb) =>

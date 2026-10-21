@@ -295,6 +295,11 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Archive/WindowsIdentity.cs: OpenReparsePoint"] = "a Win32 ABI constant (FILE_FLAG_OPEN_REPARSE_POINT) — Windows decides it",
         ["WslCare.Core/Files/MountTable.cs: >= 10"] = "the fields of a /proc/self/mountinfo line — the kernel's format",
         ["WslCare.Core/Thresholds/ThresholdRules.cs: Gb"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
+        ["WslCare.Core/Processes/Redaction/HighEntropy.cs: MinEntropyBits"] = "the entropy test's calibration (E15.S7 design 2.4): random base62 of 20 characters measures 4.1-4.3 bits, a dated name 3.3 — a measured property of the credential alphabet, not a tuning; the length floor IS a key (processes.secretMinChars)",
+        ["WslCare.Core/Processes/Redaction/HighEntropy.cs: MinClasses"] = "the entropy test's calibration (E15.S7 design 2.4): the character classes a mixed token holds — a property of the credential alphabet",
+        ["WslCare.Core/Processes/Redaction/HighEntropy.cs: MinDigitPercent"] = "the entropy test's calibration (E15.S7 design 2.4): the digit share of a one-case hex-like token — a property of the credential alphabet",
+        ["WslCare.Core/Processes/Redaction/HighEntropy.cs: Percent"] = "a unit: a percentage is out of one hundred",
+        ["WslCare.Core/Processes/Redaction/SecretShapes.cs: PatternCeilingMilliseconds"] = "the COMPILE-TIME ceiling of every generated pattern: patterns.matchTimeoutMilliseconds' range maximum (a test holds them equal), as TextRule.Matching uses it — an attribute takes a constant, never a configured value",
     };
 
     [Fact]

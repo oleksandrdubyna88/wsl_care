@@ -159,7 +159,7 @@ internal static class StatusText
     private static string Worktrees(WorktreesSection section) => section switch
     {
         { Available: true } => Invariant($"worktrees: scanned {section.Basis.ScannedAt:yyyy-MM-dd HH:mm}Z, {TimeSpan.FromSeconds(section.Basis.AgeSeconds ?? 0).TotalHours:0.0} h ago{(section.Stale ? ", STALE" : string.Empty)}; {section.Report!.Roots.Sum(r => r.Worktrees)} worktrees, {section.Report.Roots.Sum(r => r.Orphans)} orphans"),
-        _ => CommandLine.Printable($"worktrees: {section.Reason}").Replace("—", "-"),
+        _ => WslCare.Core.Processes.Redaction.ShownText.Printable($"worktrees: {section.Reason}").Replace("—", "-"),
     };
 
     /// <summary>One line (E14 S7b.2, the distro): <c>windows mcp relays: 3 (1 re-parented); the timer stops client-gone relays: on (wsl-care
