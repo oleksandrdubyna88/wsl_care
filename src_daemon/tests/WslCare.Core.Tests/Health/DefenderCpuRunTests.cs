@@ -47,7 +47,7 @@ public sealed class DefenderCpuRunTests : IDisposable
         outcome.Usage.IsAvailable.Should().BeFalse();
         outcome.Usage.ReasonOrEmpty.Should().Be(DefenderLedgerRead.NoBaseline);
         outcome.Week.IsAvailable.Should().BeFalse();
-        outcome.NotRecorded.Should().BeEmpty("the reading was recorded");
+        outcome.LedgerNote.Should().BeEmpty("the reading was recorded");
         var lines = Ledger().Lines;
         lines.Should().ContainSingle().Which.Should().Match<DefenderLedgerLine>(l => l.From == null && l.Cores == null && l.Pid == 6964);
     }
@@ -120,7 +120,7 @@ public sealed class DefenderCpuRunTests : IDisposable
         var outcome = Run(Start.AddHours(4), At(Start.AddHours(4), 1_000 + (0.5 * 4 * 3600)), mayRecord: false);
 
         outcome.Usage.Should().BeOfType<Reading<DefenderUsage>.Available>().Which.Value.Cores.Should().BeApproximately(0.5, 1e-6);
-        outcome.NotRecorded.Should().NotBeEmpty("a read-only run says why the reading is not in the ledger");
+        outcome.LedgerNote.Should().NotBeEmpty("a read-only run says why the reading is not in the ledger");
         Ledger().Lines.Should().ContainSingle("only the first run's line");
     }
 

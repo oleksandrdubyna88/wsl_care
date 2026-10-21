@@ -37,11 +37,59 @@ public static class DefenderCpu
     /// <summary>The 100 ns units in one second (FILETIME).</summary>
     public const long TicksPerSecond = TimeSpan.TicksPerSecond;
 
+    private const string NotInOrder = "the two Defender reads are not in order (the interval between them is not positive) — a new baseline";
+
+    private const string CounterWentDown = "Defender's CPU counter went down between the two reads — a new baseline";
+
+    private const string NoSpan = "no Defender span of the last 7 days: the engine was read once, restarted, or not read";
+
+    /// <summary>The definition of the figure "per week" — a unit, not a tuning.</summary>
+    private const int DaysPerWeek = 7;
+
+    private const int HoursPerDay = 24;
+
+    private const int HoursPerWeek = HoursPerDay * DaysPerWeek;
+
     /// <summary>The cores <paramref name="now"/> used since <paramref name="previous"/>, or why no figure is given.</summary>
     public static Reading<DefenderUsage> Between(DefenderReading previous, DefenderReading now) =>
-        Reading.Of(new DefenderUsage(0, TimeSpan.Zero));
+        SameProcess(previous, now) ? Counted(previous, now) : Reading.Missing<DefenderUsage>(Restarted);
 
-    /// <summary>The spans of the 7 days ending at <paramref name="now"/>, summed (clipped at the window's start).</summary>
-    public static Reading<DefenderWeek> Week(IReadOnlyList<DefenderSpan> spans, DateTimeOffset now) =>
-        Reading.Of(new DefenderWeek(0, 0, false));
+    /// <summary>The spans of the 7 days ending at <paramref name="now"/>, summed (clipped to that window); a restart's gap is no span, so
+    /// it adds no covered hours. The week is EXTRAPOLATED — core-hours per covered hour, times 168 — when the spans cover fewer hours.</summary>
+    public static Reading<DefenderWeek> Week(IReadOnlyList<DefenderSpan> spans, DateTimeOffset now)
+    {
+        var inside = spans.Select(s => Clipped(s, now - TimeSpan.FromDays(DaysPerWeek), now)).Where(c => c.Hours > 0).ToList();
+        var covered = inside.Sum(c => c.Hours);
+        return covered > 0
+            ? Reading.Of(new DefenderWeek(inside.Sum(c => c.Hours * c.Cores) / covered * HoursPerWeek, covered, covered < HoursPerWeek))
+            : Reading.Missing<DefenderWeek>(NoSpan);
+    }
+
+    /// <summary>A FILETIME as the UTC instant it names.</summary>
+    public static DateTimeOffset Instant(long fileTime) => new(DateTime.FromFileTimeUtc(fileTime), TimeSpan.Zero);
+
+    private static bool SameProcess(DefenderReading previous, DefenderReading now) =>
+        previous.Pid == now.Pid && previous.StartMarker == now.StartMarker;
+
+    private static Reading<DefenderUsage> Counted(DefenderReading previous, DefenderReading now)
+    {
+        var interval = now.Timestamp100ns - previous.Timestamp100ns;
+        var cpu = now.CpuTicks100ns - previous.CpuTicks100ns;
+        if (interval <= 0)
+        {
+            return Reading.Missing<DefenderUsage>(NotInOrder);
+        }
+
+        return cpu < 0
+            ? Reading.Missing<DefenderUsage>(CounterWentDown)
+            : Reading.Of(new DefenderUsage((double)cpu / interval, TimeSpan.FromTicks(interval)));
+    }
+
+    /// <summary>The part of <paramref name="span"/> inside the window, in hours, with its cores.</summary>
+    private static (double Hours, double Cores) Clipped(DefenderSpan span, DateTimeOffset from, DateTimeOffset to)
+    {
+        var start = span.Start > from ? span.Start : from;
+        var end = span.End < to ? span.End : to;
+        return ((end - start).TotalHours, span.Cores);
+    }
 }

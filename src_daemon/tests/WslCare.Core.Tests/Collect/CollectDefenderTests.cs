@@ -79,7 +79,7 @@ public sealed class CollectDefenderTests : IDisposable
         defender.Available.Should().BeTrue(defender.Reason, "the script read MsMpEng");
         defender.CoresAverage!.Available.Should().BeFalse();
         defender.CoresAverage.Reason.Should().Be(DefenderLedgerRead.NoBaseline);
-        defender.NotRecorded.Should().BeNull("the reading is in the ledger");
+        defender.LedgerNote.Should().BeNull("the reading is in the ledger");
         DefenderVerdict(run).Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == DefenderLedgerRead.NoBaseline);
         Ledger().Lines.Should().ContainSingle();
     }

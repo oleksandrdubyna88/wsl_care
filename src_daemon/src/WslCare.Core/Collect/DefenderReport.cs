@@ -22,7 +22,8 @@ namespace WslCare.Core.Collect;
 /// (<paramref name="Extrapolated"/>).</param>
 /// <param name="CoveredHours">How many hours of those 7 days the spans cover; a restart's gap adds none.</param>
 /// <param name="Extrapolated">The week is extrapolated from fewer than 168 covered hours.</param>
-/// <param name="NotRecorded">Why this read was not written to the ledger (<c>{state}/defender-cpu.jsonl</c>); absent when it was.</param>
+/// <param name="LedgerNote">Why this read was not written to the ledger (<c>{state}/defender-cpu.jsonl</c>), or what could not be done to the
+/// file (its old lines dropped); absent when the reading was recorded and the file is in order.</param>
 public sealed record DefenderReport(
     bool Available,
     string? Reason,
@@ -33,7 +34,7 @@ public sealed record DefenderReport(
     NumberFigure? CoreHoursPerWeek,
     NumberFigure? CoveredHours,
     bool? Extrapolated,
-    string? NotRecorded)
+    string? LedgerNote)
 {
     /// <summary>In <c>status --json</c>: the full run the section was carried from, when it ended and how old it is; absent in the run
     /// detail, whose run IS the basis.</summary>
