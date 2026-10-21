@@ -15,11 +15,11 @@
         "task": "watch",
         "taskPath": "\\wsl-care\\watch",
         "registrable": true,
-        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.4.0",
+        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.6.0",
         "userSid": "S-1-5-21-1000000000-2000000000-3000000000-1001",
         "command": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe",
         "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "version": "0.4.0",
+        "version": "0.6.0",
         "numbers": [
           {
             "key": "windowsTasks.watchLogonDelaySeconds",
@@ -63,11 +63,11 @@
         "task": "archive",
         "taskPath": "\\wsl-care\\archive",
         "registrable": true,
-        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.4.0",
+        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.6.0",
         "userSid": "S-1-5-21-1000000000-2000000000-3000000000-1001",
         "command": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe",
         "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "version": "0.4.0",
+        "version": "0.6.0",
         "numbers": [
           {
             "key": "windowsTasks.archiveLogonDelayMinutes",
@@ -111,11 +111,11 @@
         "task": "cleanup",
         "taskPath": "\\wsl-care\\cleanup",
         "registrable": true,
-        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.4.0",
+        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.6.0",
         "userSid": "S-1-5-21-1000000000-2000000000-3000000000-1001",
         "command": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe",
         "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "version": "0.4.0",
+        "version": "0.6.0",
         "numbers": [
           {
             "key": "windowsTasks.cleanupLogonDelayMinutes",

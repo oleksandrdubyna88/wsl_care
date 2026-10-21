@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { BUNDLED_DAEMON } from '../client/handshake';
 import { TASKS_REMOVE_TAIL, TASKS_STAGE_TAIL, tasksRenderTail } from '../client/verbs';
 import { UNELEVATED_SWITCHES } from '../powershell/unelevatedLauncher';
 import type { Engine } from '../powershell/elevatedEngine';
@@ -307,7 +308,7 @@ test('the install modal names every fact the plan requires, in words, each from 
   assert.ok(detail.includes(`It runs as your account (${USER_SID}), interactive token, least privilege — never elevated, never as SYSTEM.`));
   assert.match(detail, /at logon \+ 60 s, then every 5 min/);
   assert.match(detail, /ended by its own supervisor after 10 min .* by Task Scheduler after 20 min/);
-  assert.ok(detail.includes(`${STAGED_EXE} (SHA-256 ${STAGED_DIGEST}, release 0.4.0)`));
+  assert.ok(detail.includes(`${STAGED_EXE} (SHA-256 ${STAGED_DIGEST}, release ${BUNDLED_DAEMON})`));
   assert.match(detail, /never the extension folder/);
   assert.match(detail, /The copy is already staged; \*Remove the Windows tasks\* deletes it/);
   assert.match(detail, /Dry run: the setting dryRun is on/);
