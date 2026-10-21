@@ -1,7 +1,7 @@
 # PLAN — the disk, the memory behind it, the measured restart advice, statistics kept forever, and the sidebar / full-view split (#87)
 
 > Status: **in progress, 2026-10-12 — E15.S1 merged (#99, *E15.S1 as built*); E15.S2 merged (#111, *E15.S2 as
-> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b merged (#151, *E15.S1b as built*); E15.S7 merged (#161, 2026-10-21, *E15.S7 as built*); E15.S10 designed on its branch `feat/wc-e15s10-defender-cpu` (draft PR #162, *E15.S10 design*); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
+> built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S5 merged (#150, *E15.S5 as built*); E15.S1b merged (#151, *E15.S1b as built*); E15.S7 merged (#161, 2026-10-21, *E15.S7 as built*); E15.S10 built on its branch `feat/wc-e15s10-defender-cpu` (draft PR #162, *E15.S10 design* and *E15.S10 as built*, 2026-10-21); the owner's answers to Q1–Q6 recorded (§9); E15.S3, E15.S4
 > and E15.S6 onwards (E15.S7 aside) not started; E18 is built by another coordinator (the owner's go, 2026-10-15).** Scope: four epics, E15–E18 — the daemon's read-only disk
 
 > built*); E15.S2b merged (#126, *E15.S2b as built*); E15.S1b built on its branch `feat/wc-e15s1b-msi-pwsh` (*E15.S1b as built* at the end); the owner's answers to Q1–Q6 recorded (§9); E15.S3 onwards
@@ -1146,7 +1146,7 @@ Linux `StatusFlows` budgets, and `FetchWindowsDaemonFlows.A_download_that_hangs_
 limit, untouched here). CI is the authority for these.
 
 **Open tail:** a vmmem line in the distro's disk script (so the full run judges `host.vmmem` too) waits for E15.S1b, which changes
-that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it). The three defaults are provisional until the full runs' records calibrate them.
+that script; with it the full run can judge `host.vmmem` again (`FullRunVerdicts` gains it) — **built in E15.S10 §B (2026-10-21, *E15.S10 as built*)**. The three defaults are provisional until the full runs' records calibrate them.
 
 ## E15.S1b design — the MSI pwsh for the root interop scripts (2026-10-11, branch `feat/wc-e15s1b-msi-pwsh`)
 

@@ -399,9 +399,11 @@ allocation-failure / OOM alerts —, since E14 S6 `pressure.*` (a busy machine) 
 pressure: `host.commit`, `host.compression`, `host.vmmem`; `RELEVANT_VERDICT_PREFIXES` in `statusBarModel.ts`), but not
 `memory.committed` (`BAR_EXCLUDED_VERDICT_IDS`: a promise, not a state) — as `statusBarItem.warningBackground` (warn) or
 `statusBarItem.errorBackground` (critical), theme colours; `ok` and `unknown` colour nothing, and the clock / systemd /
-collector / `disk.*` warnings leave it uncoloured on purpose. The distro's `status` carries `host.commit` and `host.compression`
-from the newest full run (`basis: fullRun`) and no `host.vmmem` (only the Windows binary reads vmmem, so the tooltip never lists
-a `host.vmmem: unknown`), so the head golden — whose captured full run read 9.86 GiB of Memory Compression — colours
+collector / `disk.*` warnings leave it uncoloured on purpose. The distro's `status` carries `host.commit`, `host.compression`,
+`host.vmmem` (since E15.S10 §B: the full run's disk script reads vmmemWSL) and `host.defenderCpu` (E15.S10) from the newest full run
+(`basis: fullRun`) — the golden's `host.vmmem` is ok (12.50 GiB, so the tooltip does not list it) and its `host.defenderCpu` is
+`unknown` (one read, no span: it colours nothing, and the tooltip lists it as `host.defenderCpu: unknown —` until a second full run
+exists) — so the head golden, whose captured full run read 9.86 GiB of Memory Compression, colours
 the bar warn; `statusBar.test.ts` reads that golden, so an id or a shape that drifts between the daemon and the extension fails
 there. A daemon without `verdicts` → uncoloured, the tooltip says "update the daemon to
 see warnings". A figure answered `available: false` is `?`, never 0, with its reason in the tooltip. Failures are their

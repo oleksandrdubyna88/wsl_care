@@ -363,8 +363,23 @@ watch) and records in the run detail's `health.windowsDisk` what it read: each d
 reliability counters' refusal (they need elevation, which wsl-care never asks for), the System log's storage events of the last
 `disk.eventsSinceDays` (60) days counted per day, provider, id and disk (at most `disk.eventsMaxRead`, 5000, read, and at most
 `disk.eventGroupsMax`, 500, groups printed — the report says when it cut them), commit and
-Memory Compression, Windows' edition, build and install date, the machine id and the display adapters' problem codes. Its
+Memory Compression, the WSL VM's working set (`vmmemWSL`, E15.S10: a missing process is an error line, never a 0), Windows' edition,
+build and install date, the machine id and the display adapters' problem codes. Its
 ceiling is `health.windowsDiskTimeoutSeconds` (30).
+
+**Windows Defender's CPU** (E15.S10, a report: nothing about Defender is read beyond one performance counter, nothing is changed,
+nothing is elevated). The full run also starts a THIRD fixed Windows PowerShell script, under Windows PowerShell 5.1 and AFTER the
+disk script, with a ceiling of its own, `health.defenderCpuTimeoutSeconds` (5–60, 15): one filtered read of `MsMpEng`'s raw
+process counters (CPU time, an instant, the pid and the process's start instant). Between two full runs the daemon computes how many
+cores the engine averaged — only from two reads of the SAME process (the same pid and start instant; Defender restarting, or
+Windows reusing a pid, is a new baseline, never a figure) — and appends one line per run to `{state}/defender-cpu.jsonl`
+(`/var/lib/wsl-care/defender-cpu.jsonl` as root; lines older than `defender.localRetentionDays`, 30–1000, 400, are dropped at the
+next write; about 160 bytes a line, under 2 MB at the most). The run detail's `defender` section and `status --json`'s `defender`
+carry `coresAverage`, `coreHoursPerWeek` over the last 7 days, `coveredHours` and whether the week is `extrapolated` from fewer than
+168 covered hours, with the run and its age (`basis: fullRun`) as the disk section has; the Windows binary says the distro reads it.
+The verdict `host.defenderCpu` warns above `thresholds.defenderCoresWarnPercent` (10–800, 100) of ONE core and is `unknown` with the
+reason on the first read, after a restart and on the Windows binary. On the owner's development machine one reading showed MsMpEng
+averaging 0.76 cores over 36 h (research/2026-10-16_defender_cpu_cost.md).
 
 **Which PowerShell the daemon uses** (E15.S1b). The clock probe always runs under Windows PowerShell 5.1 (`powershell.exe`,
 System32). The disk script runs under the MSI PowerShell 7 (`C:\Program Files\PowerShell\7\pwsh.exe`) when the clock probe
@@ -428,18 +443,20 @@ floor warns at about 245 GiB, acceptable for a warning. The Windows binary's
   `wsl-care busy` rule) WOULD have fired them. Whether they fire does not change: the run records collect the evidence
   first.
 
-**Windows memory pressure** (E15.S5, a report: nothing acts on these). Three verdicts, judged by ONE rule on both roads: the
+**Windows memory pressure** (E15.S5, a report: nothing acts on these). Three verdicts (and, since E15.S10, a fourth, `host.defenderCpu`), judged by ONE rule on both roads: the
 Windows binary's `status` judges its own sample (`GlobalMemoryStatusEx`, the process list), and the distro's full run judges the
-Windows disk script's `commit=` / `compression=` lines, so the distro's `status` carries `host.commit` and `host.compression` with
-`basis: fullRun` and their age. On the Windows binary a sampled verdict replaces the carried one of the same id, and `host.vmmem`
-(which nothing carries) is added after them, so a `status` never lists an id twice.
+Windows disk script's `commit=` / `compression=` / `vmmem=` lines (the last since E15.S10), so the distro's `status` carries
+`host.commit`, `host.compression` and `host.vmmem` with `basis: fullRun` and their age. On the Windows binary a sampled verdict
+replaces the carried one of the same id, in its carried position, so a `status` never lists an id twice.
 - `host.commit`: Windows' commit charge as a share of its commit limit ("charge of limit = %"). Warn above
   `thresholds.hostCommitWarnPercent` (50–99, 80), critical above `thresholds.hostCommitCriticalPercent` (51–100, 90). A layer that
   sets the critical value at or below the warn value is refused (a coupled limit).
 - `host.compression`: the Memory Compression process's working set. Warn above `thresholds.hostCompressionWarnGb` (1–256, 8) GiB.
 - `host.vmmem`: the WSL VM's working set as Windows sees it (`vmmemWSL`). Warn above the existing `wslConfig.vmmemAdviceGb`; its
-  reason is the vmmem advice text itself. Only the Windows binary reads and judges it; the distro's `status` has no `host.vmmem`
-  (the full run reads no vmmem).
+  reason is the vmmem advice text itself. Both roads judge it since E15.S10: the Windows binary over its own process list, the distro's
+  full run over the disk script's `vmmem=` line (a missing `vmmemWSL` is an error line, `unknown`, never 0).
+- `host.defenderCpu` (E15.S10, see *Windows Defender's CPU* above): the cores `MsMpEng` averaged between two full runs; warn above
+  `thresholds.defenderCoresWarnPercent` (10–800, 100) % of one core.
 
 A figure that was not read is `unknown` with its reason, never `ok`. The three defaults are PROVISIONAL starting values. Measured on
 the owner's machine 4.4 h after boot under heavy agent load (research/2026-10-12_host_memory.md): commit 68.8 % (the same on both
