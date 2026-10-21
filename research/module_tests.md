@@ -4909,3 +4909,61 @@ Scenarios 635 (347 / 288 / 0). Linux (a NEW `/tmp/testsToDelete-wc-e15s7-2026102
 `GoldenContractTests` 7 of 7 without the write variable, Core 3280 (3179 / 101 / 0), CLI 443 (399 / 44 / 0), Scenarios 635
 (618 / 15 / 2: the two `StatusFlows` wall-clock budgets on a machine at 80–100 % CPU; 20 `Redact` passes over the 51 captured
 processes take well under 300 ms). Format, plan-lifecycle and the rules check clean; the extension legs are CI's.
+
+
+### Defender's CPU, recorded every full run; the full run's vmmem line (E15.S10, 2026-10-21, plan *E15.S10 as built*)
+
+**What each guarantee rests on.**
+
+| Guarantee | Test | Why it has teeth |
+|---|---|---|
+| Two reads of one process 10 s apart that added 10.3 core-seconds are 1.03 cores over 10 s (the MEASURED line of `research/2026-10-16_defender_cpu_cost.md`, the second derived with `ElapsedTime` constant, as the six measured reads showed) | `DefenderCpuTests` | the arithmetic |
+| A pid change, a REUSED pid with another start marker (and a LARGER counter), a decreasing counter and a non-positive interval each give "no difference" (never a figure) | `DefenderCpuTests`, `DefenderCpuRunTests` (ledger line has no span), `CollectDefenderTests` (verdict `unknown`, not a bogus warning) | break-its 1 and 2 |
+| A missing line, `defender.none=`, `defender.error=`, and seven malformed lines are unavailable with their reason, never a 0 reading | `DefenderCpuTests` | the parser |
+| The week: two 12 h spans over 7 days cover 24 h and say "extrapolated"; a restart's gap adds no hours; a span older than the window is clipped; none gives no week | `DefenderCpuTests`, `DefenderCpuRunTests` | `Week` |
+| The ledger: appended whole lines, the newest is the baseline; retention drops a line of 401 days and keeps 399, follows `defender.localRetentionDays`; a malformed line is skipped and NAMED by its number; a torn last line is not a line; the rewrite is asked for IN `{state}` beside the ledger (path, scope) and leaves no temp file; the widest line is ≤ 200 B | `DefenderCpuLedgerTests` | a spy on `RewriteLines` |
+| The third script: pin first, one line of ASCII, no double quote, single-quoted filter, the UTF-8 road, the three tags printed; own ceiling 15 s that follows the configuration; `RunBudget` grows by it once; a template of its own; the closed set is now FOUR and admits exactly it, a one-word variant, an appended statement, a cut one, a trailing argument and the script under `pwsh` are refused; the oracle and the policy tests list it | `DefenderCpuCommandsTests`, `PowerShellClosedSetTests`, `CommandPolicyTests`, `NeverOracle` | break-it 4 |
+| The full run starts it ONCE, AFTER the disk script, under its own ceiling; a stalled script costs only itself (the disk facts stay, "did not answer within 15 s; its process tree was killed", the runner's kill told for that argv and no other); seven failed outcomes each give their reason; the Windows binary starts nothing | `DefenderCollectTests`, over the built CLI `DefenderFlows` (two collects, a 60 s hang cut at 5 s with the fake's pid gone) | break-it 3 |
+| `host.defenderCpu`: 1.01 warns, 1.0 and 0.76 are ok, no span is `unknown` with the reason and the limit; `thresholds.defenderCoresWarnPercent` moves the edge (150: 1.5 ok, 1.51 warn); the Windows road says the distro reads it | `HostRulesTests` | break-it 5 |
+| A whole run: first run = baseline + `unknown`; second = 0.76 cores, 4 h, extrapolated, 127.68 core-h/week, ledger of two lines; 1.5 cores warns and the history line carries it; a stalled script leaves the section unavailable | `CollectDefenderTests` | the integration |
+| `status --json`'s `defender` is carried from the SAME detail as the verdicts with run, end and age; with no full run, with an older detail, with a broken section (costs only itself) it says so; the Windows binary says the distro reads it; the script's run time is not carried | `StatusDefenderTests` | |
+| §B: the script prints `vmmem=` after `compression=`; the captured answer carries it and it reads as 13 421 772 800 B; `vmmem.error=ProcessCommandException` is unavailable with the reason; a missing or non-numeric line is unavailable (and counted when printed); the detail records it; `FromWindowsDisk` reads it; the full run judges `host.vmmem` (12.50 GiB ok) and `host.defenderCpu` right behind `host.compression`; the Windows status lists `host.vmmem` ONCE at its carried position (`ids[^1]` is `npm.cache` again) | `WindowsDiskTests`, `HostRulesTests`, `StatusVerdictsTests`, `CollectRunTests`, `CollectFlows` | break-it 6 |
+
+**Red first** (commit `test(daemon): E15.S10 RED …`; stubs: `DefenderCpu.Between` answered 0 cores, `Week` a week of 0, the parser a reading of zeros, the
+ledger read nothing and wrote nothing, `MeasureDefenderAsync` never started the script, `StatusDefender` answered "", the vmmem parser
+`Missing`; the three keys and the record shapes were real). In the 17 Core classes the change touches, 121 of 569 checks were red, and
+3 of 18 scenario checks. Each message named the symptom:
+
+| Guarantee | Message |
+|---|---|
+| 1.03 cores | *Expected usage.Cores to approximate 1.03 +/- 1E-09 because CPU time summed over all cores over wall time is cores, but 0.0 differed by 1.03.* |
+| pid change | *Expected between.IsAvailable to be False because another process is not a continuation of this one, but found True.* |
+| reused pid | *Expected between.IsAvailable to be False because the start marker tells two processes of one pid apart, whatever their counters say, but found True.* |
+| decreasing counter, interval | *… because a counter that went down is not negative usage, but found True.* · *… because two reads at the same instant, or in the wrong order, cover no time (and dividing by it is infinity or a negative), but found True.* |
+| parser | *Expected none.IsAvailable to be False, but found True.* (no line; `defender.none=`; an error line) |
+| week | *Expected week.CoveredHours to approximate 24.0 +/- 1E-09, but 0.0 differed by 24.0.* · *Expected DefenderCpu.Week([], Now).IsAvailable to be False, but found True.* |
+| ledger | *Expected read.Lines.Select(l => l.Pid) to be equal to {2, 3} because 400 days are kept: the line of 401 days ago went, the line of 399 stayed, but found empty collection.* · *Expected spy.Rewrites to contain a single item, but the collection is empty.* |
+| script | *Expected Script "$env:PSModulePath = $PSHOME + '\Modules'" to contain "Get-CimInstance -ClassName Win32_PerfRawData_PerfProc_Process".* |
+| collector | *Expected health.Defender.Read.ReasonOrEmpty "not measured" to contain "did not answer within 15 s; its process tree was killed" because the Defender sample reports its own timeout.* |
+| closed set | *Expected Broken(DefenderCpuCommands.DefenderCpu.Argv) to be <null> because the Defender CPU script (E15.S10) is the fourth, but found "powershell".* · *Expected HealthCommands.FixedScripts.Select(c => c.Name) to be equal to {…, "powershell-defender-cpu"}* |
+| verdict | *Expected HostRules.Verdicts(Facts(), Config()).Select(v => v.Id) to be equal to {…, "host.defenderCpu"}, but {…} contains 1 item(s) less.* |
+| status | *Expected defender.Available to be True, but found False.* · *Expected defender.Reason to be "no full run has been recorded yet; …" with a length of 96, but "" has a length of 0* · *Expected defender.ReasonOrEmpty "not read" to contain "defender section".* |
+| whole run | *Expected detail.Defender not to be <null> because every full run's detail carries the Defender section, read or not.* |
+| §B | *Expected facts.MalformedLines to be 0, but found 1 (difference of 1).* (the captured answer's `vmmem=` line, unknown to the parser: 12 old checks) · *Expected printed to contain only items matching WindowsDiskParsers.KnownTags.Contains(t) … but {"vmmem=", "vmmem.error="} do(es) not match.* · *Expected facts.VmmemBytes.ReasonOrEmpty "vmmemWSL is read by the Windows binary's status" to contain "ProcessCommandException".* · *Expected ids.IndexOf("host.vmmem") to be 32 because its carried position, but found 36 (difference of 4).* |
+| contract | *contracts/config-keys.json must be what the types enumerate - line 1695: checked in 'processes.topCount', the CLI answers 'thresholds.defenderCoresWarnPercent'* |
+
+**Break-its** (product code only; each restored byte for byte — `git diff` of `src_daemon/src` empty — and green again):
+
+| Break | Red | First message |
+|---|---|---|
+| `DefenderCpu.SameProcess` keyed on the pid alone (start-marker check removed) | 3 | *Expected between.IsAvailable to be False because the start marker tells two processes of one pid apart, whatever their counters say, but found True.* · *Expected reused.Usage.ReasonOrEmpty to be "Defender restarted - a new baseline" … but "" has a length of 0* · *Expected DefenderVerdict(second) to match … Level == Unknown && Reason == Restarted* |
+| the decreasing-counter guard removed | 4 | *Expected between.IsAvailable to be False because a counter that went down is not negative usage, but found True.* (two sizes) · the run step's *Expected down.Usage.IsAvailable to be False* · the whole run's verdict |
+| the Defender read moved BEFORE the disk script, sharing the disk script's ceiling | 5 on Windows (+ the Linux scenario's order assertion) | *Expected argv.FindIndex(…) to be greater than 5 because a slow Defender read never costs the disk facts …, but found 4.* · *Expected 15s because health.defenderCpuTimeoutSeconds, not the disk script's, but found 30s.* · *Expected 45s, but found 30s.* · *Expected 55s because the new ceiling is counted once …* |
+| the closed set widened to a PREFIX match (`StartsWith` per argument, extra arguments allowed) | 3 | *Expected Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", longer]) to be "powershell", but found <null>.* · the trailing-argument checks of the Defender and the disk script |
+| `>` → `>=` in `host.defenderCpu` | 2 | *Expected verdict.Level to be Level.Ok {value: 0} because 1.00 cores over 4.0 h, but found Level.Warn {value: 1}.* · *Expected JudgeDefender(Cores(1.5), config).Level to be Level.Ok* |
+| `FromWindowsDisk` back to `Missing` for vmmem | 4 | *Expected type to be Reading<long>.Available because vmmemWSL is read by the Windows binary status, but found Unavailable* · the full run's `host.vmmem` is `unknown` · the two roads differ |
+
+The design's counts (3, 4, 6, 7, 10, 12 red) were its estimates; the guarantee each break-it names is red in every case, and two of them
+(1 and 2) needed the run-level and whole-run checks added to reach more than one red.
+
+**Totals** **Windows** (Debug, on `origin/main` 4d051378 with #171 merged in, one heavy run at a time on a machine at 80–100 % CPU): Core 3683 (3594 passed, 89 skipped, 0 failed), CLI 478 (475 / 3 / 0), Scenarios 651 (358 / 293 / 0). Before the merge of #171: Core 3683 (3594 / 89 / 0), CLI 478 (475 / 3 / 0), Scenarios 647 (354 / 293 / 0). **Linux** (a NEW `/tmp/testsToDelete-wc-e15s10-20261021T154401Z`, WSL, script files only; the goldens written once with `WSL_CARE_WRITE_GOLDENS=1`, copied back with `cp`, then `GoldenContractTests` 7 of 7 without the write variable, three times): Core 3683 (3527 / 156 / 0), CLI 478 (411 / 67 / 0), Scenarios 651 (631 / 19 / 1: a `StatusFlows` wall-clock budget, 5.7 s over its limit on a loaded machine; `StatusFlows` alone ran 9/9 twice and 8/9 twice more, a DIFFERENT budget test each red time — the known load flake of the E15.S7 record; status adds one JSON section read from a file it already reads). `dotnet format wsl_care.slnx --verify-no-changes` clean; `plan-lifecycle` clean; the rules resolver could not run (`Cannot find package 'yaml'`: it needs `npm ci`, and installing is refused here). The extension suite was not run (no `node_modules`); CI covers it.
