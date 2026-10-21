@@ -38,7 +38,7 @@ function within(all: readonly Source[], folder: string): Source[] {
 
 test('the one read lives in src/scheduler/: its query script, answer parser, host and canonical summary', () => {
   const files = within(sources(), 'src/scheduler').map((s) => s.file);
-  for (const expected of ['src/scheduler/queryScript.ts', 'src/scheduler/schedulerAnswer.ts', 'src/scheduler/schedulerHost.ts', 'src/scheduler/taskSummary.ts']) {
+  for (const expected of ['src/scheduler/queryScript.ts', 'src/scheduler/schedulerAnswer.ts', 'src/scheduler/schedulerHost.ts', 'src/scheduler/taskSummary.ts', 'src/scheduler/runScript.ts']) {
     assert.ok(files.includes(expected), `${expected} is a shipped source (found ${files.join(', ')})`);
   }
 });

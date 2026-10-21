@@ -2175,6 +2175,7 @@ flowchart LR
     client -->|"bundled exe: stage, remove · staged copy: render"| daemon["wsl-care.exe (Windows daemon)<br/>renders the task XML, stages and removes copies"]
     flow -->|"the reader's SID, what else is in the folder"| sched["scheduler/ (the peer)<br/>schedulerHost: ONE read of \wsl-care"]
     flow -->|"installTaskScript / removeTasksScript"| reg["scheduler/registerScript<br/>the ONE home of Register-ScheduledTask and the deletes"]
+    flow -->|"run-now: runNowScript, after a read pre-check (no daemon call)"| run["scheduler/runScript<br/>the ONE home of a task's start: the task's own Run"]
     flow -->|"unelevatedRequest: engine.file, -EncodedCommand, killTree"| launch["powershell/unelevatedLauncher<br/>(+ commandLine, modulePath, engineTypes: shared, not elevated)"]
     launch --> runner["process/runner<br/>ceiling + verified tree kill by pid and creation time"]
     runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive"]
@@ -2183,7 +2184,7 @@ flowchart LR
     guard["windowsTime/ (the guard)<br/>same registration scripts, run ELEVATED"] --> reg
 ```
 
-The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own.
+The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own. Since WR-E4 the same flow also STARTS a registered task now (*Run the Windows watch now*, *Archive Windows sessions now*): after a read of the task's row it asks Task Scheduler, through the same unelevated launcher and the one runner, to `Run` the registered task exactly as its next trigger would — the daemon is not called at all, and `scheduler/runScript.ts` is the one shipped source that spells a task's start (`registrationPath.test.ts`, with the tripwire's own `TASK_RUN` pattern).
 
 ## Containers — the system on one page
 

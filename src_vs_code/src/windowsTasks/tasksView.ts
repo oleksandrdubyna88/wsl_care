@@ -19,7 +19,7 @@ export interface WindowsTaskLine {
 }
 
 /** The three buttons of the Windows tasks (WR-E3), each posting its bare id — the page never sends a task, a path or a value. */
-export type TasksAction = 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks';
+export type TasksAction = 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks' | 'runWindowsWatchTask' | 'runWindowsArchiveTask';
 
 export interface WindowsTasksButton {
   readonly id: TasksAction;
@@ -177,9 +177,17 @@ export const TASKS_LABELS: { readonly [K in TasksAction]: string } = {
   installWindowsWatchTask: 'Install the Windows watch task',
   installWindowsArchiveTask: 'Install the Windows archive task',
   removeWindowsTasks: 'Remove the Windows tasks',
+  runWindowsWatchTask: 'Run the Windows watch now',
+  runWindowsArchiveTask: 'Archive Windows sessions now',
 };
 
-const ACTIONS: readonly TasksAction[] = ['installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks'];
+const ACTIONS: readonly TasksAction[] = ['installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks', 'runWindowsWatchTask', 'runWindowsArchiveTask'];
+
+/** The task each run button starts. */
+const RUN_OF: Readonly<Partial<Record<TasksAction, TaskName>>> = { runWindowsWatchTask: 'watch', runWindowsArchiveTask: 'archive' };
+
+/** The rows that say nothing is known yet: a run button waits for the read; every other row leaves it enabled and the PRESS says what is wrong (not installed, disabled, running…). */
+const NOT_KNOWN: ReadonlySet<TaskRow['kind']> = new Set(['checking', 'unknown']);
 
 /** The copy states in which no install can be asked: its digest is unknown, it is being probed, or this is not Windows. */
 const NO_INSTALL: ReadonlySet<CopyState['kind']> = new Set(['digestUnreadable', 'checking', 'unavailable']);
@@ -194,6 +202,11 @@ function removable(state: WindowsTasksState): boolean {
 }
 
 function allowed(id: TasksAction, state: WindowsTasksState): boolean {
+  const run = RUN_OF[id];
+  if (run !== undefined) {
+    return !NOT_KNOWN.has(state.tasks[run].kind);
+  }
+
   return id === 'removeWindowsTasks' ? removable(state) : !NO_INSTALL.has(state.copy.kind);
 }
 
@@ -204,10 +217,15 @@ function tasksButtons(state: WindowsTasksState, held: boolean): readonly Windows
 
 /** The copy line while a pending run stands — the guard's "waiting" shape: what the PowerShell is doing, in every window and after a reload. */
 function waitingLine(pending: PendingTasksOp): Line {
-  const what = pending.op === 'install' ? `installs the Windows ${pending.task} task` : 'removes the Windows tasks';
-
-  return { line: `Waiting for the PowerShell that ${what}…`, level: 'none' };
+  return { line: `Waiting for the PowerShell that ${(WAITING[pending.op] as (p: PendingTasksOp) => string)(pending)}…`, level: 'none' };
 }
+
+/** What the pending PowerShell is doing, by its record: one sentence per op. */
+const WAITING: { readonly [K in PendingTasksOp['op']]: (pending: Extract<PendingTasksOp, { op: K }>) => string } = {
+  install: (pending) => `installs the Windows ${pending.task} task`,
+  run: (pending) => `starts the Windows ${pending.task} task`,
+  remove: () => 'removes the Windows tasks',
+};
 
 /** The part's lines; `pin` is `BUNDLED_DAEMON`, the build the extension carries; `formatInstant` the presentation edge's local-time formatter. */
 export function windowsTasksView(state: WindowsTasksState, pin: string, formatInstant: (iso: string) => string, controls: TasksControls = {}): WindowsTasksView {

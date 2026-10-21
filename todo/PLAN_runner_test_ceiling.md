@@ -1,6 +1,7 @@
 # PLAN — the runner test "a child past its ceiling…" waits on a ceiling shorter than node's start-up
 
-> Status: **plan only, nothing implemented yet, 2026-10-18.** Scope: one test of the extension, `src_vs_code/src/test/runner.test.ts`.
+> Status: **plan only, nothing implemented yet, 2026-10-18 (a second case added 2026-10-20, §7).** Scope: two tests of the extension,
+> `src_vs_code/src/test/runner.test.ts` and `src_vs_code/src/test/scenarios/clientFlows.test.ts`.
 > Found by the WR-E2 full runs (2026-10-17/18, [PLAN_windows_runner.md](PLAN_windows_runner.md) §14 *WR-E2 as built*): a load-only flake that is
 > not a defect of the runner. Related docs: [module_tests.md](../research/module_tests.md), [module_vs_code.md](../research/module_vs_code.md).
 
@@ -63,3 +64,28 @@ long every run.
 - [ ] The case passes 20 of 20 alone and in three full runs on a loaded machine.
 - [ ] `module_tests.md` names the derived ceiling where it names this test.
 - [ ] This plan moves to `research/` as IMPLEMENTED with its date (`/promote-plan`), and its row leaves `todo/README.md`.
+- [ ] The second case (§7) gets the same derived ceiling and passes 20 of 20 alone and in three full runs on a loaded machine.
+
+## 7. A second case of the same cause — `scenarios/clientFlows` "flow · a hung daemon" (added 2026-10-20)
+
+**Symptom.** The full `npm test` of the WR-E3 head (d379a0be, 2026-10-20; 1562 tests, 1560 passed) failed ONE case, on a loaded machine:
+
+```
+✖ flow · a hung daemon: the runner kills wsl.exe at the ceiling and the caller hears "timed out"
+  actual:   { kind: 'wslFailed', message: 'wsl.exe did not answer within 900 ms', verb: 'status' }
+  expected: { kind: 'timedOut', verb: 'status', timeoutMs: 20000 }
+```
+
+Run alone right after, the file passed 28 of 28, three runs out of three. The case is older than WR-E3 and WR-E3 does not touch it;
+it failed the same way once on the builder's machine during WR-E1 (2026-10-15).
+
+**Cause (read in the code).** `src_vs_code/src/test/scenarios/clientFlows.test.ts:127-139` wraps the fake world's runner so every request's
+ceiling becomes `Math.min(r.timeoutMs, 900)`, and asserts the client's answer is `timedOut`. The fake `wsl.exe` is a node child: when its
+start-up alone outlasts 900 ms (a loaded machine), the ceiling fires before the child has answered anything, and the result takes the
+runner's other ending — the client reads it as `wslFailed` with the ceiling in its message. The runner and the client behave as specified;
+the test's premise — "the fake starts within 900 ms" — is false under load. **The same cause class as §1:** a fixed sub-second ceiling
+shorter than node's own start-up.
+
+**Proposed fix.** The same as §3, option 1: derive the case's short ceiling from a measured start-up of the same fake child
+(`max(900, 4 × measured)`), keep every assertion (`timedOut`, the verb's own `timeoutMs`, the elapsed bound), and share ONE helper for the
+measurement between `runner.test.ts` and `clientFlows.test.ts` (reuse-first: a helper in `src/test/support/`, not two copies).

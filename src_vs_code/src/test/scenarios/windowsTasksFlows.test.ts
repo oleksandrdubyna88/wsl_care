@@ -13,6 +13,7 @@ import { MapStore } from '../support/memento';
 import { exited } from '../support/recordingRunner';
 import { schedulerStdout } from '../support/schedulerAnswers';
 import { decoded } from '../support/tasksWorld';
+import { runNowScript } from '../../windowsTasks/tasksScripts';
 import { BUNDLED_EXE_FILE, EXTENSION, LOCAL_APP_DATA, renderAnswer, STAGED_DIGEST, STAGED_EXE, TASKS_SCENARIO } from '../support/windowsTasks';
 
 /**
@@ -56,6 +57,40 @@ test('pressing Install the Windows watch task reaches ONE recorded PowerShell wh
     assert.equal(decoded(recorder.requests[0]), recorder.shown[0]?.text, 'its decoded payload equals the script shown');
     assert.match(host.view().tasks[0]?.line ?? '', /^Windows watch task: installed, never run$/);
     assert.ok(world.calls().includes('tasks stage --json'), 'the strict fake answered the stage');
+  } finally {
+    world.dispose();
+  }
+});
+
+test('pressing Run the Windows watch now reaches ONE recorded PowerShell whose payload is the run-now script; the panel then reads "installed, running (0x41301)"', async () => {
+  assert.equal((globalThis as Record<string, unknown>).__wslCareTripwireArmed, true, 'the tripwire is armed in this process');
+  const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_FILE, stagedExe: STAGED_EXE, tasks: TASKS_SCENARIO });
+  try {
+    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
+    const recorder = newTasksRecorder();
+    recorder.answer = true;
+    let started = false;
+    const idle = { name: 'watch', summary: registered(), lastRunUtc: 'never', lastResult: '267011' };
+    const query = (): Promise<ProcessResult> => Promise.resolve(exited(0, schedulerStdout({ tasks: [started ? { ...idle, state: '4', lastRunUtc: '2026-10-18T09:00:00.0000000Z', lastResult: '267009' } : idle] })));
+    const scheduler = new SchedulerHost({ env: { SystemRoot: 'C:\\Windows' }, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
+    const host = new TasksHost({
+      scheduler, client, pin: '0.4.0', formatInstant: (iso) => iso, ui: recordingTasksUi(recorder), engine: fixedEngine(PS51_READ), durable: new MapStore(),
+      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined,
+    });
+    await Promise.all([scheduler.refresh(), host.refresh()]);
+    assert.match(host.view().tasks[0]?.line ?? '', /^Windows watch task: installed, never run$/);
+    const before = world.calls().length;
+
+    const outcome = await host.run({ kind: 'run', task: 'watch' });
+    started = true;
+    await scheduler.refresh();
+
+    assert.equal(outcome?.kind, 'done');
+    assert.equal(recorder.requests.length, 1, 'expected 1 request');
+    assert.equal(decoded(recorder.requests[0]), runNowScript('watch'));
+    assert.deepEqual(recorder.shown, [], 'no document: the script is in the modal');
+    assert.equal(world.calls().slice(before).filter((call) => call.startsWith('tasks stage') || call.startsWith('tasks run')).length, 0, 'the run-now called no stage and no run of the daemon');
+    assert.equal(host.view().tasks[0]?.line, 'Windows watch task: installed, running (0x41301)');
   } finally {
     world.dispose();
   }

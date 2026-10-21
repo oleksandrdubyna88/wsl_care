@@ -15,10 +15,13 @@ import { clearPendingAt, readPendingAt, sweepPendingAt, writePendingAt, type Pen
 
 export const PENDING_KEY = 'wslCare.windowsTasks.pending';
 
-/** What a pending run is: an install of one task, or the removal of both. */
-export type PendingTasksOp = { readonly op: 'install'; readonly task: TaskName } | { readonly op: 'remove' };
+/** What a pending run is: an install of one task, the start now of one, or the removal of both. */
+export type PendingTasksOp = { readonly op: 'install'; readonly task: TaskName } | { readonly op: 'run'; readonly task: TaskName } | { readonly op: 'remove' };
 
 export type PendingRecord = PendingTasksOp & PendingTimes;
+
+/** The ops that name a task. */
+const TASKED: ReadonlySet<unknown> = new Set(['install', 'run']);
 
 function opOf(value: Readonly<Record<string, unknown>>): PendingTasksOp | undefined {
   if (value.op === 'remove') {
@@ -26,7 +29,7 @@ function opOf(value: Readonly<Record<string, unknown>>): PendingTasksOp | undefi
   }
   const task = TASK_NAMES.find((name) => name === value.task);
 
-  return value.op === 'install' && task !== undefined ? { op: 'install', task } : undefined;
+  return task !== undefined && TASKED.has(value.op) ? { op: value.op as 'install' | 'run', task } : undefined;
 }
 
 /** The pending run while it stands: a malformed value, or one past its deadline, is none. */
