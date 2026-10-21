@@ -1246,3 +1246,8 @@ Rejected, with the reason:
 - **7** — the principal read coerces `[string]$p.UserId` first and translates only when it is not empty (an empty or null UserId keeps `$sid = ''`, so the refusal stands, as before). RED: `the script does not coerce the UserId`.
 - **3 — refuted:** the pending record IS cleared on a failed outcome (`underRecord` clears on every outcome except `timedOut`); the finding read the code before that line.
 - Break-its (each red, restored, `git status`/`git diff` clean): no unwrap (2), a `[uint32]` cast (2), the raw UserId to NTAccount (1), the empty-UserId test removed (1), the modal sentence back (1), the RangeError text back (1), the shared policy changed to RunLevel 1 (16 — the fixtures disagree with the moved policy).
+
+**Follow-up from the merge review of WR-E4 (#170, 2026-10-21):** in `scheduler/runScript.ts` the enabled check (`if (-not $task.Enabled) { exit 36 }`)
+sits outside a `try`: the enabled check falls through on an exception (PowerShell continues with the next statement); `Run` then fails as 37 (a
+disabled task cannot be started). It does not raise privilege — the principal check after it still refuses by default — but it departs from the
+refuse-by-default shape every other check of the script has; to align with refuse-by-default in the next runner story.
