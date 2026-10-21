@@ -45,7 +45,26 @@ public sealed record DefenderReport(
 /// <summary>The domain facts turned into their wire shape — the one place they become available + value or reason.</summary>
 public static class DefenderReports
 {
-    public static DefenderReport From(DefenderSample sample, DefenderOutcome outcome) => Unavailable("stub");
+    /// <summary>The section of one full run: the read (or why there is none), the cores since the previous run, and the week the run's span
+    /// joins — which is reported even when this run's read did not answer, because the ledger still holds the spans before it.</summary>
+    public static DefenderReport From(DefenderSample sample, DefenderOutcome outcome)
+    {
+        var read = sample.Read is Reading<DefenderReading>.Available ? Answered(sample, outcome) : Unavailable(sample.Read.ReasonOrEmpty) with { SampledAt = sample.SampledAt };
+        return WithWeek(read, outcome.Week) with { LedgerNote = outcome.LedgerNote.Length > 0 ? outcome.LedgerNote : null };
+    }
+
+    private static DefenderReport Answered(DefenderSample sample, DefenderOutcome outcome) =>
+        new(true, null, sample.SampledAt, Figure(sample.Elapsed.Map(e => Math.Round(e.TotalSeconds, 3))), Figure(outcome.Usage.Map(u => Math.Round(u.Cores, 6))), Figure(outcome.Usage.Map(u => Math.Round(u.Covered.TotalSeconds, 3))), null, null, null, null);
+
+    private static DefenderReport WithWeek(DefenderReport report, Reading<DefenderWeek> week) =>
+        report with
+        {
+            CoreHoursPerWeek = Figure(week.Map(w => Math.Round(w.CoreHoursPerWeek, 4))),
+            CoveredHours = Figure(week.Map(w => Math.Round(w.CoveredHours, 4))),
+            Extrapolated = week is Reading<DefenderWeek>.Available { Value: var known } ? known.Extrapolated : null,
+        };
+
+    private static NumberFigure Figure(Reading<double> reading) => StatusReports.Number(reading);
 
     public static DefenderReport Unavailable(string reason) => new(false, reason, null, null, null, null, null, null, null, null);
 }

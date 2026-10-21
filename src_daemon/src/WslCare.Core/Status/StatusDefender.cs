@@ -1,5 +1,6 @@
 using WslCare.Core.Collect;
 using WslCare.Core.Collectors;
+using WslCare.Core.Thresholds;
 
 namespace WslCare.Core.Status;
 
@@ -13,8 +14,22 @@ public static class StatusDefender
     /// <summary>Why the Windows binary's <c>status</c> carries no Defender figure.</summary>
     public const string ReadByTheDistro = "the distro's full run reads Windows Defender's CPU (the third fixed script runs from inside the distro); the distro's status --json carries it as defender";
 
-    public static DefenderReport From(Reading<RecordedVerdicts> fullRun, DateTimeOffset now) => DefenderReports.Unavailable(string.Empty);
+    public static DefenderReport From(Reading<RecordedVerdicts> fullRun, DateTimeOffset now) => fullRun switch
+    {
+        Reading<RecordedVerdicts>.Available { Value: var run } => Carried(run, now),
+        _ => DefenderReports.Unavailable(fullRun.ReasonOrEmpty) with { Basis = new VerdictBasis(VerdictSource.FullRun, null, null, null) },
+    };
 
     /// <summary>The Windows binary's answer: unavailable, naming the side that reads it.</summary>
     public static DefenderReport OnWindows => DefenderReports.Unavailable(ReadByTheDistro);
+
+    private static DefenderReport Carried(RecordedVerdicts run, DateTimeOffset now)
+    {
+        var basis = run.BasisAt(now);
+        return run.Defender switch
+        {
+            Reading<DefenderReport>.Available { Value: var defender } => defender with { Basis = basis },
+            var none => DefenderReports.Unavailable(none.ReasonOrEmpty) with { Basis = basis },
+        };
+    }
 }
