@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.5.0...daemon-v0.6.0) (2026-10-21)
+
+
+### Features
+
+* **daemon:** A23 windowsTemp — the Windows %TEMP% cleanup, the engine's first Windows action (WR-T1) ([#155](https://github.com/oleksandrdubyna88/wsl_care/issues/155)) ([c74af46](https://github.com/oleksandrdubyna88/wsl_care/commit/c74af4641df177d0f3595af8abf02cbd0b4d0932))
+* **daemon:** disk.volumeFree — every lettered Windows volume (E19.S1) ([#156](https://github.com/oleksandrdubyna88/wsl_care/issues/156)) ([c9be102](https://github.com/oleksandrdubyna88/wsl_care/commit/c9be1029e05b3abd8a884fc8e71c53fef4749d81))
+* **daemon:** one redaction rule for every command line the daemon shows (E15.S7) ([#161](https://github.com/oleksandrdubyna88/wsl_care/issues/161)) ([5b558d2](https://github.com/oleksandrdubyna88/wsl_care/commit/5b558d2fb72f885b16aded9c7ec88d66f7b40e24))
+* **daemon:** the Windows worktree report without git (E19.S3) ([#158](https://github.com/oleksandrdubyna88/wsl_care/issues/158)) ([1096f8f](https://github.com/oleksandrdubyna88/wsl_care/commit/1096f8f16d413c7bf814c097ddbaf30e333f15a1))
+* **daemon:** Windows memory pressure — host.commit, host.compression, host.vmmem, one rule on both roads (E15.S5) ([#150](https://github.com/oleksandrdubyna88/wsl_care/issues/150)) ([6d68f00](https://github.com/oleksandrdubyna88/wsl_care/commit/6d68f00990f33a7e4120b9317429ec7b2d2e7a69))
+* **health:** the `wsl-care` daemon's disk script runs under the verified MSI PowerShell 7, else 5.1 (E15.S1b) ([#151](https://github.com/oleksandrdubyna88/wsl_care/issues/151)) ([a432e97](https://github.com/oleksandrdubyna88/wsl_care/commit/a432e9708aedf07168a63f80cab01da8c5d5b6e4))
+* **vscode:** install and remove the Windows tasks from the panel (WR-E3) ([#166](https://github.com/oleksandrdubyna88/wsl_care/issues/166)) ([7e8ffec](https://github.com/oleksandrdubyna88/wsl_care/commit/7e8ffec0258d55854be9bda49389bc9ca3333798))
+* **vscode:** wsl_care consumes the webview kit 0.2.0 — the pinned package, the webview bundle, the harness widened by the kit's DOM port (E18.W0) ([#171](https://github.com/oleksandrdubyna88/wsl_care/issues/171)) ([4d05137](https://github.com/oleksandrdubyna88/wsl_care/commit/4d051378c27af5e2a7df2eb7fa0677e7b079ee76))
+
+
+### Bug Fixes
+
+* **extension:** the vsix e-mail scan does not flag a systemd unit name (getty@tty1.service) ([#164](https://github.com/oleksandrdubyna88/wsl_care/issues/164)) ([11553fe](https://github.com/oleksandrdubyna88/wsl_care/commit/11553feb79d1d5d227a67d59b3de09b6cb7c3fbe))
+
 ## [0.5.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.4.0...daemon-v0.5.0) (2026-10-15)
 
 
