@@ -121,6 +121,36 @@ public sealed class SecretShapesTests
     }
 
     [Fact]
+    public void Every_alternative_of_the_creds_shapes_has_an_invented_case_in_the_catalog_so_a_family_added_without_one_turns_the_suite_red()
+    {
+        var uncovered = TopLevelAlternatives(SecretShapes.Families)
+            .Where(alternative => !CredsFamiliesTokens().Any(token => System.Text.RegularExpressions.Regex.IsMatch(token, "(?<![A-Za-z0-9])(?:" + alternative + ")", System.Text.RegularExpressions.RegexOptions.CultureInvariant)))
+            .ToList();
+
+        uncovered.Should().BeEmpty("each family of SecretShapes.Families needs an invented token in RedactionCases.CredsFamilies");
+    }
+
+    private static IEnumerable<string> CredsFamiliesTokens() => CredsFamilyList.Select(family => family.Token);
+
+    /// <summary>The alternatives of a pattern split at its top-level <c>|</c> (not inside a group or a class).</summary>
+    private static IEnumerable<string> TopLevelAlternatives(string pattern)
+    {
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < pattern.Length; i++)
+        {
+            depth += pattern[i] is '(' or '[' ? 1 : pattern[i] is ')' or ']' ? -1 : 0;
+            if (pattern[i] == '|' && depth == 0)
+            {
+                yield return pattern[start..i];
+                start = i + 1;
+            }
+        }
+
+        yield return pattern[start..];
+    }
+
+    [Fact]
     public void The_pattern_ceiling_compiled_into_every_pattern_is_the_range_maximum_of_the_key()
     {
         SecretShapes.PatternCeilingMilliseconds.Should().Be(ConfigKeys.Patterns.MatchTimeoutMilliseconds.Max, "an attribute takes a constant: the bootstrap ceiling TextRule.Matching uses");

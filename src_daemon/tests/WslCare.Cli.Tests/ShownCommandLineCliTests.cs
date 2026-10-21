@@ -37,6 +37,25 @@ public sealed class ShownCommandLineCliTests
         }
     }
 
+    /// <summary>coai code round 9: the CLI logs its OWN invocation into the run log — through the one rule, not through `Printable` alone.</summary>
+    [Fact]
+    public void The_clis_own_invocation_is_logged_through_the_redaction_rule()
+    {
+        var events = new List<Serilog.Events.LogEvent>();
+        var logger = new Serilog.LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(new CollectingSink(events)).CreateLogger();
+        var loaded = Core.Config.ConfigLoader.Load([(Core.Config.ConfigLoader.DefaultsFile, new Core.Files.FileReadResult.Content(Core.Config.ConfigLoader.EmbeddedDefaults()))]);
+
+        Program.LogRequest(logger, new Request.Help(), loaded, ["status", "--password=Hunter2Invented", "--json"]);
+
+        var line = events.Select(e => e.RenderMessage()).Single(m => m.Contains("wsl-care", StringComparison.Ordinal));
+        line.Should().Contain("status --password=<redacted> --json").And.NotContain("Hunter2Invented");
+    }
+
+    private sealed class CollectingSink(List<Serilog.Events.LogEvent> events) : Serilog.Core.ILogEventSink
+    {
+        public void Emit(Serilog.Events.LogEvent logEvent) => events.Add(logEvent);
+    }
+
     [Fact]
     public void A_refusal_echoes_a_bidi_override_in_the_users_text_as_a_question_mark()
     {

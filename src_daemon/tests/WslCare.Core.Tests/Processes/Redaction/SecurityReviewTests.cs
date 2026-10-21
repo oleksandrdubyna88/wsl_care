@@ -121,6 +121,33 @@ public sealed partial class SecurityReviewTests
         ShownText.Printable("a\u2028b\u2029c").Should().Be("a?b?c");
     }
 
+    // 1 (Fable re-check) — `pass` as a BOUNDED secret word ------------------------------------------------------------------
+    [Fact]
+    public void The_cmdkey_pass_switch_is_redacted_on_both_binaries_and_a_word_that_merely_holds_pass_is_not()
+    {
+        Shown("cmdkey", "/add:srv", "/user:alice", "/pass:Hunter2Invented").Should().Be("cmdkey /add:srv /user:alice <redacted>");
+        WindowsCommandLine.Shown("cmdkey.exe /add:srv /user:alice /pass:Hunter2Invented", Limits).Should().Be("cmdkey.exe /add:srv /user:alice <redacted>");
+        Shown("tool", "--bypass=x", "--passthrough", "--passes", "3").Should().Be("tool --bypass=x --passthrough --passes 3");
+    }
+
+    // 2 (Fable re-check) — a single-segment "path" that is a token ----------------------------------------------------------
+    [Theory]
+    [InlineData("/")]
+    [InlineData("./")]
+    public void A_path_of_exactly_one_segment_that_is_a_token_is_no_path_and_never_shown_by_either_view(string lead)
+    {
+        var argv = new[] { "tool", lead + Blob48[..30] + "+" + Blob48[30..] };
+
+        Shown(argv).Should().Be("tool <redacted>");
+        ShownArguments.Of("tool", argv, CommandLineRedaction.Redact(argv, Limits), Limits, SafeArgs).Arguments.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_path_of_several_segments_and_a_short_single_segment_stay_shown()
+    {
+        Shown("tool", "/home/user/.vscode-server/bin/" + Hex40 + "/node", "/usr", "./run.sh").Should().Be("tool /home/user/.vscode-server/bin/" + Hex40 + "/node /usr ./run.sh");
+    }
+
     // coai 0 — a regex timeout fails CLOSED -------------------------------------------------------------------------------
     [Fact]
     public void Every_timeout_handler_of_the_rule_answers_closed_a_hit_or_the_undecided_url_never_a_plain_false()

@@ -64,7 +64,7 @@ internal static partial class SecretShapes
     private const string Boundary = "(?<![A-Za-z0-9])";
 
     /// <summary>One alternative per family; each comment names where the shape is documented.</summary>
-    private const string Families =
+    internal const string Families =
         // GitHub: the five classic token prefixes (ghp, gho, ghu, ghs, ghr) and the fine-grained token.
         "gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
         // OpenAI and Anthropic keys (sk-, sk-ant-, sk-proj-).

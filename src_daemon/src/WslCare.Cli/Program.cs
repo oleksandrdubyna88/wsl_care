@@ -157,7 +157,7 @@ internal static class Program
         _ => null,
     };
 
-    private static void LogRequest(ILogger logger, Request request, ConfigLoadResult loaded, IReadOnlyList<string> args)
+    internal static void LogRequest(ILogger logger, Request request, ConfigLoadResult loaded, IReadOnlyList<string> args)
     {
         var log = logger.ForContext(typeof(Program));
         foreach (var error in loaded.Errors)

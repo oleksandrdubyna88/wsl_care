@@ -59,29 +59,44 @@ internal static class RedactionCases
 
     /// <summary>One invented token per credential family of the design's §2.3, each BUILT FROM HALVES: name, the token. The shape is
     /// what a break-it on any one pattern of <c>SecretShapes</c> turns red for.</summary>
-    public static TheoryData<string, string> CredsFamilies => new()
+    public static IReadOnlyList<(string Name, string Token)> CredsFamilyList { get; } =
+    [
+        ("GitHub classic", GitHubToken),
+        ("GitHub fine-grained", "github" + "_pat_" + "INVENTEDinvented0123456789_INVENTED"),
+        ("OpenAI / Anthropic", AnthropicKey),
+        ("OpenAI project", "sk" + "-proj-" + "INVENTEDinvented0123456789"),
+        ("Stripe", "sk" + "_live_" + "INVENTEDinvented0123456789"),
+        ("Slack", "xox" + "b-" + "1234567890-INVENTED-invented"),
+        ("AWS access key id", "AK" + "IA" + "INVENTED01234567"),
+        ("Google API key", "AI" + "za" + "INVENTEDinvented0123456789-_INVENTE"),
+        ("Google OAuth", "ya" + "29." + "INVENTEDinvented0123456789-_x"),
+        ("GitLab", "glp" + "at-" + "INVENTEDinvented0123456789"),
+        ("npm", "npm" + "_" + "INVENTEDinvented0123456789INVENTEDin"),
+        ("PyPI", "pyp" + "i-" + "INVENTEDinvented0123456789"),
+        ("DigitalOcean", "dop" + "_v1_" + Hex64),
+        ("Hugging Face", "hf" + "_" + "INVENTEDinvented0123456789"),
+        ("SendGrid", "SG" + "." + "INVENTEDinvented0123" + "." + "INVENTEDinvented0123"),
+        ("Telegram bot", "bot" + "123456789" + ":" + "AAHq7Hn2Vx9LmT4bKd8RzY3wPc6Jf1sGa5"),
+        ("CredsForDevs config key", ConfigKey),
+        ("JWT", Jwt),
+        ("PEM private key", "-----BEGIN " + "OPENSSH PRIVATE KEY-----"),
+        ("age secret key", "AGE-SECRET-" + "KEY-1" + "INVENTED0123456789INVENTED0123456789"),
+    ];
+
+    /// <summary>The same catalogue as xUnit theory rows.</summary>
+    public static TheoryData<string, string> CredsFamilies
     {
-        { "GitHub classic", GitHubToken },
-        { "GitHub fine-grained", "github" + "_pat_" + "INVENTEDinvented0123456789_INVENTED" },
-        { "OpenAI / Anthropic", AnthropicKey },
-        { "OpenAI project", "sk" + "-proj-" + "INVENTEDinvented0123456789" },
-        { "Stripe", "sk" + "_live_" + "INVENTEDinvented0123456789" },
-        { "Slack", "xox" + "b-" + "1234567890-INVENTED-invented" },
-        { "AWS access key id", "AK" + "IA" + "INVENTED01234567" },
-        { "Google API key", "AI" + "za" + "INVENTEDinvented0123456789-_INVENTE" },
-        { "Google OAuth", "ya" + "29." + "INVENTEDinvented0123456789-_x" },
-        { "GitLab", "glp" + "at-" + "INVENTEDinvented0123456789" },
-        { "npm", "npm" + "_" + "INVENTEDinvented0123456789INVENTEDin" },
-        { "PyPI", "pyp" + "i-" + "INVENTEDinvented0123456789" },
-        { "DigitalOcean", "dop" + "_v1_" + Hex64 },
-        { "Hugging Face", "hf" + "_" + "INVENTEDinvented0123456789" },
-        { "SendGrid", "SG" + "." + "INVENTEDinvented0123" + "." + "INVENTEDinvented0123" },
-        { "Telegram bot", "bot" + "123456789" + ":" + "AAHq7Hn2Vx9LmT4bKd8RzY3wPc6Jf1sGa5" },
-        { "CredsForDevs config key", ConfigKey },
-        { "JWT", Jwt },
-        { "PEM private key", "-----BEGIN " + "OPENSSH PRIVATE KEY-----" },
-        { "age secret key", "AGE-SECRET-" + "KEY-1" + "INVENTED0123456789INVENTED0123456789" },
-    };
+        get
+        {
+            var data = new TheoryData<string, string>();
+            foreach (var (name, token) in CredsFamilyList)
+            {
+                data.Add(name, token);
+            }
+
+            return data;
+        }
+    }
 
     private static (string Arm, string[] Argv, string Expected) Parse(string line)
     {
