@@ -21,6 +21,10 @@ tag's `install.sh` (the owner's go of 2026-10-22 for 0.6.0; items 4 and 10 were 
   `"healthy": true`; `KillMode=control-group`, `MemoryMax=1073741824`, `TimeoutStopUSec=1min 30s`, `CollectMode=inactive-or-failed`;
   no oom-kill, memory.max or snap-confine line in two days; 0 failed units. The install's first full run `20261021T203111Z-1753537`
   was recorded (it read `kernel.allocationFailures` critical, 4 — the case of todo/PLAN_alloc_recurrence_and_boot_network.md).
+- **How it was read** (the target: the owner's WSL distro `Ubuntu`, as root): `wsl.exe -d Ubuntu -u root -- /bin/sh <script>`
+  with a script FILE holding items 1, 2, 5, 7, 11 exactly as the table below spells them; item 8 on the Windows side with
+  `gh release download daemon-v0.6.0`, `sha256sum -c` and `gh attestation verify` into a new, empty folder. The extension's
+  own items (3, 6, 12) are not part of this stamp — they follow the extension 0.8.0 install.
 
 Earlier record — daemon 0.4.0 (2026-10-11):
 — the release, then items 1, 2, 4, 5, 7, 8, 10 and 11, against the attested `daemon-v0.4.0` install of 2026-10-11, 09:59–10:00:16Z,
