@@ -218,7 +218,9 @@ public sealed class ActionEngine(EngineContext c)
     }
 
     /// <summary>The dry-run week the run as a whole is judged by: the common one, unless every action asked for keeps ITS OWN week (an
-    /// action that deletes on a schedule of its own, A23) and they share one — then that week, so the record says what the action saw.</summary>
+    /// action that deletes on a schedule of its own, A23) and they share one — then that week, so the record says what the action saw.
+    /// A request that MIXES A23 with another action falls back to the COMMON stamp for the run as a whole (each action's own gate still reads its
+    /// own stamp); that is unreachable on Windows today - A23 is its only action - and a future second Windows action must pick its own stamp.</summary>
     private string RunStamp(ActRequest request) =>
         c.Registry.InExecutionOrder(request.Ids).Select(a => a.DryWindowStamp).Distinct(StringComparer.Ordinal).ToList() is [{ Length: > 0 } own] ? own : string.Empty;
 

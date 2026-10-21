@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "The answers of `wsl-care tasks render <task> --json` under the embedded defaults, for a fixed SID and staging root (no real account, no real build): the two tasks from a verified staged copy (registrable), and the watch from the extension folder's exe (not registrable). Built from the daemon's pure parts by ContractFilesTests; the extension's fake replays them and its Windows leg compares Task Scheduler's read-back of each xml with its summary.",
+  "description": "The answers of `wsl-care tasks render <task> --json` under the embedded defaults, for a fixed SID and staging root (no real account, no real build): the three tasks from a verified staged copy (registrable), and the watch from the extension folder's exe (not registrable). Built from the daemon's pure parts by ContractFilesTests; the extension's fake replays them and its Windows leg compares Task Scheduler's read-back of each xml with its summary.",
   "answers": [
     {
       "name": "watch from the staged copy",
@@ -15,11 +15,11 @@
         "task": "watch",
         "taskPath": "\\wsl-care\\watch",
         "registrable": true,
-        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.4.0",
+        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.6.0",
         "userSid": "S-1-5-21-1000000000-2000000000-3000000000-1001",
         "command": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe",
         "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "version": "0.4.0",
+        "version": "0.6.0",
         "numbers": [
           {
             "key": "windowsTasks.watchLogonDelaySeconds",
@@ -63,11 +63,11 @@
         "task": "archive",
         "taskPath": "\\wsl-care\\archive",
         "registrable": true,
-        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.4.0",
+        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.6.0",
         "userSid": "S-1-5-21-1000000000-2000000000-3000000000-1001",
         "command": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe",
         "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "version": "0.4.0",
+        "version": "0.6.0",
         "numbers": [
           {
             "key": "windowsTasks.archiveLogonDelayMinutes",
@@ -90,6 +90,54 @@
           "action type=0 path=C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe args=tasks run archive --json"
         ],
         "xml": "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n<Task version=\"1.4\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n  <RegistrationInfo>\n    <Author>wsl-care</Author>\n    <Description>Archives the Windows side's AI sessions at logon and every few hours while you are logged on: the staged wsl-care.exe (tasks run archive) under its supervisor, as you, never elevated. Installed and removed by the AI OS Care extension.</Description>\n  </RegistrationInfo>\n  <Principals>\n    <Principal id=\"Author\"><UserId>S-1-5-21-1000000000-2000000000-3000000000-1001</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>\n  </Principals>\n  <Triggers>\n    <LogonTrigger><Repetition><Interval>PT4H</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><Enabled>true</Enabled><UserId>S-1-5-21-1000000000-2000000000-3000000000-1001</UserId><Delay>PT20M</Delay></LogonTrigger>\n  </Triggers>\n  <Settings>\n    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n    <StartWhenAvailable>true</StartWhenAvailable>\n    <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>\n    <Enabled>true</Enabled>\n    <Hidden>false</Hidden>\n    <RunOnlyIfIdle>false</RunOnlyIfIdle>\n    <WakeToRun>false</WakeToRun>\n    <ExecutionTimeLimit>PT286M</ExecutionTimeLimit>\n    <Priority>7</Priority>\n  </Settings>\n  <Actions Context=\"Author\">\n    <Exec><Command>C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe</Command><Arguments>tasks run archive --json</Arguments></Exec>\n  </Actions>\n</Task>",
+        "dry": {
+          "dryRun": true,
+          "setting": true,
+          "week": "notStarted",
+          "reason": "the setting dryRun is on; the dry-run week has not started: the first timer or task run starts it"
+        }
+      }
+    },
+    {
+      "name": "cleanup from the staged copy",
+      "argv": [
+        "tasks",
+        "render",
+        "cleanup",
+        "--json"
+      ],
+      "answer": {
+        "schemaVersion": 1,
+        "task": "cleanup",
+        "taskPath": "\\wsl-care\\cleanup",
+        "registrable": true,
+        "reason": "a verified staged copy: C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe hashes to its folder's digest and stage.json names it and release 0.6.0",
+        "userSid": "S-1-5-21-1000000000-2000000000-3000000000-1001",
+        "command": "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe",
+        "digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "version": "0.6.0",
+        "numbers": [
+          {
+            "key": "windowsTasks.cleanupLogonDelayMinutes",
+            "value": 30
+          },
+          {
+            "key": "windowsTasks.cleanupEveryHours",
+            "value": 24
+          },
+          {
+            "key": "timer.runLimitMinutes",
+            "value": 276
+          }
+        ],
+        "executionTimeLimitMinutes": 286,
+        "summary": [
+          "principal=S-1-5-21-1000000000-2000000000-3000000000-1001 logon=3 level=0",
+          "trigger=logon enabled=True delay=PT30M interval=PT24H",
+          "settings limit=PT286M instances=2 whenAvailable=True battery=False enabled=True",
+          "action type=0 path=C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe args=tasks run cleanup --json"
+        ],
+        "xml": "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n<Task version=\"1.4\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\n  <RegistrationInfo>\n    <Author>wsl-care</Author>\n    <Description>Cleans the user's own old scratch entries out of the Windows TEMP folder (A23: allow-listed names older than temp.olderThanDays; never %TEMP%\\claude) at logon and every day while you are logged on: the staged wsl-care.exe (tasks run cleanup) under its supervisor, as you, never elevated. Installed and removed by the AI OS Care extension.</Description>\n  </RegistrationInfo>\n  <Principals>\n    <Principal id=\"Author\"><UserId>S-1-5-21-1000000000-2000000000-3000000000-1001</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>\n  </Principals>\n  <Triggers>\n    <LogonTrigger><Repetition><Interval>PT24H</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><Enabled>true</Enabled><UserId>S-1-5-21-1000000000-2000000000-3000000000-1001</UserId><Delay>PT30M</Delay></LogonTrigger>\n  </Triggers>\n  <Settings>\n    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n    <StartWhenAvailable>true</StartWhenAvailable>\n    <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>\n    <Enabled>true</Enabled>\n    <Hidden>false</Hidden>\n    <RunOnlyIfIdle>false</RunOnlyIfIdle>\n    <WakeToRun>false</WakeToRun>\n    <ExecutionTimeLimit>PT286M</ExecutionTimeLimit>\n    <Priority>7</Priority>\n  </Settings>\n  <Actions Context=\"Author\">\n    <Exec><Command>C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\wsl-care.exe</Command><Arguments>tasks run cleanup --json</Arguments></Exec>\n  </Actions>\n</Task>",
         "dry": {
           "dryRun": true,
           "setting": true,

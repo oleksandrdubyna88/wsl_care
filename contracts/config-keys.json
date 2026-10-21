@@ -1107,6 +1107,18 @@
       "zeroIsUnbounded": true
     },
     {
+      "name": "worktrees.gitPath",
+      "shape": "path",
+      "maxLength": 1024,
+      "default": "",
+      "safeDirection": "none",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "walk.intervalHours",
       "shape": "int",
       "min": 4,
@@ -3512,6 +3524,32 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "windowsTasks.cleanupLogonDelayMinutes",
+      "shape": "int",
+      "min": 0,
+      "max": 720,
+      "default": 30,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "windowsTasks.cleanupEveryHours",
+      "shape": "int",
+      "min": 1,
+      "max": 168,
+      "default": 24,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "temp.olderThanDays",
       "shape": "int",
       "min": 1,
@@ -3985,6 +4023,45 @@
       "min": 1,
       "max": 10240,
       "default": 20,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "worktrees.gitTimeoutSeconds",
+      "shape": "int",
+      "min": 5,
+      "max": 600,
+      "default": 30,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "worktrees.gitNamesPerCall",
+      "shape": "int",
+      "min": 1,
+      "max": 256,
+      "default": 64,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "worktrees.gitCommandLineMaxChars",
+      "shape": "int",
+      "min": 1000,
+      "max": 30000,
+      "default": 7000,
       "safeDirection": "none",
       "rootEffective": false,
       "tightenOnlyForRoot": false,

@@ -39,7 +39,7 @@ public sealed class WorktreeReportStoreTests : IDisposable
 
     private static WorktreeReport Sample() =>
         new(Core.SchemaVersion.Current, Now, 3.5, true, [new RootReport(@"D:\w", null, 1, 1, 0, 0, 0, 0, 0, 0, 0, 10, new IdleOver(3, 0, 0), new BuildOutputTotals(new Tally(0, 0), new Tally(0, 0), new Tally(0, 0), new Tally(0, 0), []), new UnknownTotals(0, string.Empty), [])], [],
-            new ReclaimableReport(false, "git has not confirmed the candidates yet (E19.S4)"));
+            new ReclaimableReport(false, "git has not confirmed the candidates (the scan had no git to ask)"));
 
     private string Temp(string suffix) => Path.Combine(_paths.StateDirectory, $"worktrees.json.{suffix}.tmp");
 

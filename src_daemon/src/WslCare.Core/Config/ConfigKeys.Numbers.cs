@@ -197,6 +197,8 @@ public static partial class ConfigKeys
         WindowsTasks.WatchLogonDelaySeconds,
         WindowsTasks.ArchiveLogonDelayMinutes,
         WindowsTasks.ArchiveEveryHours,
+        WindowsTasks.CleanupLogonDelayMinutes,
+        WindowsTasks.CleanupEveryHours,
         Temp.OlderThanDays,
         Temp.ScanMaxNodes,
         Temp.ScanMaxSeconds,
@@ -234,5 +236,8 @@ public static partial class ConfigKeys
         Worktrees.ReportTop,
         Worktrees.ReportMaxAgeDays,
         Worktrees.ReclaimableWarnGib,
+        Worktrees.GitTimeoutSeconds,
+        Worktrees.GitNamesPerCall,
+        Worktrees.GitCommandLineMaxChars,
     ];
 }

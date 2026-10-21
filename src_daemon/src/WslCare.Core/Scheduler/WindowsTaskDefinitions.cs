@@ -17,7 +17,7 @@ public sealed record TaskNumber(string Key, int Value);
 public sealed record WindowsTaskDefinition(WindowsTask Task, string Xml, IReadOnlyList<TaskNumber> Numbers, int ExecutionTimeLimitMinutes, IReadOnlyList<string> Summary);
 
 /// <summary>
-/// WR-D1 (PLAN_windows_runner.md §3.4): the task XML of <c>\wsl-care\watch</c> and <c>\wsl-care\archive</c>, a pure function of the
+/// WR-D1 (PLAN_windows_runner.md §3.4): the task XML of the three tasks (<c>\wsl-care\watch</c>, <c>\wsl-care\archive</c> and <c>\wsl-care\cleanup</c>), a pure function of the
 /// configuration, the user's SID and the staged exe's path — the precedent is <see cref="Systemd.UnitDropIns"/>, the systemd units
 /// rendered from configuration.
 /// </summary>
@@ -63,6 +63,7 @@ public static class WindowsTaskDefinitions
     {
         _ when task == WindowsTask.Watch => Of(config, ConfigKeys.WindowsTasks.WatchLogonDelaySeconds, "S", ConfigKeys.McpWatchdog.PeriodMinutes, "M", ConfigKeys.McpWatchdog.RunLimitMinutes),
         _ when task == WindowsTask.Archive => Of(config, ConfigKeys.WindowsTasks.ArchiveLogonDelayMinutes, "M", ConfigKeys.WindowsTasks.ArchiveEveryHours, "H", ConfigKeys.Timer.RunLimitMinutes),
+        _ when task == WindowsTask.Cleanup => Of(config, ConfigKeys.WindowsTasks.CleanupLogonDelayMinutes, "M", ConfigKeys.WindowsTasks.CleanupEveryHours, "H", ConfigKeys.Timer.RunLimitMinutes),
         _ => throw new ArgumentOutOfRangeException(nameof(task), task.Name, $"not a task of this plan; one of: {string.Join(", ", WindowsTask.All)}"),
     };
 
@@ -133,6 +134,7 @@ public static class WindowsTaskDefinitions
     private static string DescriptionOf(WindowsTask task) => task switch
     {
         _ when task == WindowsTask.Watch => "Samples the Windows MCP servers into wsl-care's CPU ledger every few minutes while you are logged on: the staged wsl-care.exe (tasks run watch) under its supervisor, as you, never elevated. Installed and removed by the AI OS Care extension.",
+        _ when task == WindowsTask.Cleanup => "Cleans the user's own old scratch entries out of the Windows TEMP folder (A23: allow-listed names older than temp.olderThanDays; never %TEMP%\\claude) at logon and every day while you are logged on: the staged wsl-care.exe (tasks run cleanup) under its supervisor, as you, never elevated. Installed and removed by the AI OS Care extension.",
         _ => "Archives the Windows side's AI sessions at logon and every few hours while you are logged on: the staged wsl-care.exe (tasks run archive) under its supervisor, as you, never elevated. Installed and removed by the AI OS Care extension.",
     };
 

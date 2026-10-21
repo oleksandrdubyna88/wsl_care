@@ -14,8 +14,10 @@ public sealed record WorktreesSection(bool Available, string? Reason, ScanBasis 
 
 /// <summary>
 /// What the Windows <c>status</c> says of the worktrees (E19.S3, E19 stories §3 decision 10): the section, and the verdict
-/// <c>worktrees.reclaimable</c> — which in this story is ALWAYS <c>unknown</c>. What a cleanup could reclaim is what git confirms
-/// (E19.S4); until then no byte figure is called reclaimable, the structural counts ride in the value, and absent is not zero.
+/// <c>worktrees.reclaimable</c>: what a cleanup would be allowed to delete — the candidates that pass every check including git's
+/// (E19.S4), as <c>a24</c> + <c>a24Orphans</c>. <c>warn</c> above <c>worktrees.reclaimableWarnGib</c>; <c>unknown</c> with no root, no usable or a stale
+/// scan, a scan that had no git to ask, or a figure below the warning that a budget or a git failure may have understated — never <c>ok</c> on a
+/// lower bound, and absent is not zero.
 /// </summary>
 public static class WorktreesStatus
 {
@@ -27,7 +29,7 @@ public static class WorktreesStatus
 
     public static (WorktreesSection Section, Verdict Verdict) From(IReadOnlyList<string> configuredRoots, Reading<WorktreeReport> report, WorktreeSettings settings, DateTimeOffset now)
     {
-        var limit = $"warn > {settings.ReclaimableWarnGib} GiB once git confirms the candidates";
+        var limit = $"warn > {settings.ReclaimableWarnGib} GiB confirmed by git";
         var empty = new ScanBasis("scan", null, null);
         if (configuredRoots.Count == 0)
         {
@@ -52,10 +54,33 @@ public static class WorktreesStatus
         var age = now - report.ScannedAt;
         var stale = age > TimeSpan.FromDays(settings.ReportMaxAgeDays);
         var basis = new ScanBasis("scan", report.ScannedAt, Math.Max(0, Math.Round(age.TotalSeconds)));
-        var reason = stale
-            ? $"the last scan is {(int)age.TotalDays} days old (older than worktrees.reportMaxAgeDays = {settings.ReportMaxAgeDays}); {WorktreeReports.GitHasNotConfirmed}"
-            : WorktreeReports.GitHasNotConfirmed;
-        return (new WorktreesSection(true, null, basis, stale, roots, Summary(report)), Unknown(Structure(report), limit, reason, basis));
+        var section = new WorktreesSection(true, null, basis, stale, roots, Summary(report));
+        var reclaimable = report.Reclaimable;
+        if (!reclaimable.Available)
+        {
+            return (section, Unknown(Structure(report), limit, StaleOr(stale, age, settings, reclaimable.Reason), basis));
+        }
+
+        return (section, Confirmed(report, reclaimable, settings, stale, age, limit, basis));
+    }
+
+    private static string StaleOr(bool stale, TimeSpan age, WorktreeSettings settings, string reason) =>
+        stale ? $"the last scan is {(int)age.TotalDays} days old (older than worktrees.reportMaxAgeDays = {settings.ReportMaxAgeDays}); {reason}" : reason;
+
+    /// <summary>The verdict of a scan git answered: the two parts in the value, the reasons things stay in the reason.</summary>
+    private static Verdict Confirmed(WorktreeReport report, ReclaimableReport reclaimable, WorktreeSettings settings, bool stale, TimeSpan age, string limit, ScanBasis basis)
+    {
+        var (worktrees, orphans) = (reclaimable.A24 ?? new Tally(0, 0), reclaimable.A24Orphans ?? new Tally(0, 0));
+        var bytes = Saturated([worktrees.Bytes, orphans.Bytes]);
+        var value = string.Create(CultureInfo.InvariantCulture, $"{bytes / BytesPerGibibyte:0.0} GiB: {worktrees.Bytes / BytesPerGibibyte:0.0} GiB in {Count(worktrees.Count, "worktree folder")} + {orphans.Bytes / BytesPerGibibyte:0.0} GiB in {Count(orphans.Count, "orphan folder")} (tracked files of orphans not checked); {Structure(report)}");
+        var retained = reclaimable.Retained ?? [];
+        var kept = retained.Count == 0 ? "nothing else was found" : "kept: " + string.Join("; ", retained.Select(r => $"{r.Reason} ({r.Count})"));
+        var needed = reclaimable.NothingNeededGit ? "nothing needed git: every candidate is kept by another check, so git confirmed nothing and was asked nothing" : string.Empty;
+        var warns = bytes > (long)settings.ReclaimableWarnGib * (long)BytesPerGibibyte;
+        var doubt = !report.Complete ? "the scan did not finish, so the figure is a lower bound" : reclaimable.NotAsked > 0 ? $"{Count(reclaimable.NotAsked, "candidate")} could not be asked of git, so the figure may be understated" : string.Empty;
+        var level = stale ? Level.Unknown : warns ? Level.Warn : doubt.Length > 0 ? Level.Unknown : Level.Ok;
+        var reason = string.Join("; ", new[] { stale ? StaleOr(true, age, settings, string.Empty).TrimEnd(' ', ';') : string.Empty, doubt, needed, kept }.Where(p => p.Length > 0));
+        return new Verdict(VerdictId, level, value, limit, reason) { Basis = new VerdictBasis(VerdictSource.Scan, null, basis.ScannedAt, basis.AgeSeconds) };
     }
 
     /// <summary>The report without its lists of names: the section is read on every poll.</summary>
