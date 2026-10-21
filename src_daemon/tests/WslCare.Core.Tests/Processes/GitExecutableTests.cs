@@ -239,9 +239,16 @@ public sealed class GitExecutableTests
         Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
         using var folder = new ThrowAwayFolder("gitexe");
         var exe = DummyProgram(folder, "Git/cmd/git.exe", withDllFolder: false);
+        Directory.CreateDirectory(folder.Under("Git/usr/bin"));
+        Directory.CreateDirectory(folder.Under("Git/etc"));
+        folder.Write("Git/cmd/other.dll", "x");
 
-        new GitExecutable(() => [exe], new ScriptedAcl((_, _) => string.Empty)).Resolve()
-            .Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().Contain("mingw64").And.Contain("mingw32").And.Contain("clangarm64");
+        var reason = new GitExecutable(() => [exe], new ScriptedAcl((_, _) => string.Empty)).Resolve()
+            .Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason;
+
+        reason.Should().Contain("mingw64").And.Contain("mingw32").And.Contain("clangarm64");
+        // A refusal says what it saw, so a layout nobody has met is read from the message and not guessed: the install root's folders and the program's own.
+        reason.Should().Contain("the install root holds: cmd, etc, usr").And.Contain("cmd holds: git.exe, other.dll");
     }
 
     [Fact]

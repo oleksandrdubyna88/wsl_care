@@ -1,4 +1,5 @@
 using WslCare.Core.Config;
+using WslCare.Core.Hosting;
 using WslCare.Core.Worktrees;
 
 namespace WslCare.Core.Processes;
@@ -43,7 +44,7 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
     internal static IReadOnlyList<string> CandidatesOf(Func<string, string> variable, string configured) =>
         [.. ProgramFilesVariables.Select(name => InstallUnder(variable(name))).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase), .. new[] { configured }.Where(c => c.Length > 0)];
 
-    private static string InstallUnder(string programFiles) => programFiles.Length > 0 ? Path.Combine(programFiles, "Git", "cmd", "git.exe") : string.Empty;
+    private static string InstallUnder(string programFiles) => programFiles.Length > 0 ? Windows.Join(programFiles, "Git", "cmd", "git.exe") : string.Empty;
 
     /// <summary>The first candidate that passes every check, or why none did — each candidate named with its own reason.</summary>
     public ResolvedExecutable Resolve()
@@ -117,9 +118,36 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
         _ when !OperatingSystem.IsWindows() => "can be started on Windows only",
         _ when !File.Exists(path) => "is not a file",
         _ when !HasPeHeader(path) => "is not a Windows program (no MZ header)",
-        _ when DllFolders(path).Count == 0 => $"has none of {string.Join(", ", DllFolderNames.Select(n => n + @"\bin"))} beside it, so the program it starts and the DLLs it loads cannot be named",
+        _ when DllFolders(path).Count == 0 => $"has none of {string.Join(", ", DllFolderNames.Select(n => n + @"\bin"))} beside it, so the program it starts and the DLLs it loads cannot be named ({Layout(path)})",
         _ => string.Empty,
     };
+
+    /// <summary>What the refused install looks like, read-only: the folders of the install root and the files of the program's own folder — so a git layout
+    /// nobody has met is read from the refusal and not guessed. Capped to what a sentence can carry.</summary>
+    private static string Layout(string exe)
+    {
+        var folder = Windows.Parent(exe);
+        var root = InstallRoot(folder);
+        return $"the install root holds: {Listing(root, Directory.EnumerateDirectories)}; {Windows.Segments(folder)[^1]} holds: {Listing(folder, Directory.EnumerateFiles)}";
+    }
+
+    private static string Listing(string folder, Func<string, IEnumerable<string>> entries)
+    {
+        try
+        {
+            var names = entries(folder).Select(e => Windows.Segments(e)[^1]).Order(StringComparer.OrdinalIgnoreCase).Take(MaxListed).ToList();
+            return names.Count == 0 ? "nothing" : string.Join(", ", names);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return "(unreadable)";
+        }
+    }
+
+    /// <summary>The most names a refusal lists of one folder — a display bound, not behaviour.</summary>
+    private const int MaxListed = 30;
+
+    private static PathRules Windows => PathRules.Windows;
 
     /// <summary>The folders git for Windows keeps its real <c>git.exe</c> and its DLLs in, by architecture; <c>cmd\git.exe</c> only starts the one
     /// of them that exists.</summary>
@@ -151,10 +179,10 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
     /// it is the program that actually runs); the folders they and the DLLs load from; and all above.</summary>
     internal static IReadOnlyList<(string Path, AdminOnlyRole Role)> Checks(string exe)
     {
-        var folder = Path.GetDirectoryName(exe) ?? string.Empty;
+        var folder = Windows.Parent(exe);
         var dlls = DllFolders(exe);
         var loaders = new[] { folder }.Concat(dlls).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var programs = new[] { exe }.Concat(dlls.Select(d => Path.Combine(d, "git.exe")).Where(File.Exists)).Distinct(StringComparer.OrdinalIgnoreCase);
+        var programs = new[] { exe }.Concat(dlls.Select(d => Windows.Join(d, "git.exe")).Where(File.Exists)).Distinct(StringComparer.OrdinalIgnoreCase);
         var above = loaders.SelectMany(Ancestors).Distinct(StringComparer.OrdinalIgnoreCase).Where(a => !loaders.Contains(a, StringComparer.OrdinalIgnoreCase));
         return
         [
@@ -168,23 +196,27 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
     /// <c>&lt;arch&gt;\bin</c> when the file given is the real <c>git.exe</c> itself.</summary>
     private static IReadOnlyList<string> DllFolders(string exe)
     {
-        var folder = Path.GetDirectoryName(exe) ?? string.Empty;
-        var root = InstallRoot(folder);
-        return root.Length == 0 ? [] : [.. DllFolderNames.Select(n => Path.Combine(root, n, "bin")).Where(Directory.Exists)];
+        var root = InstallRoot(Windows.Parent(exe));
+        return root.Length == 0 ? [] : [.. DllFolderNames.Select(n => Windows.Join(root, n, "bin")).Where(Directory.Exists)];
     }
 
+    /// <summary>The install's root: the folder above <c>cmd</c> — or, when the file is the real <c>git.exe</c> in <c>&lt;arch&gt;\bin</c>, the folder above that.</summary>
     private static string InstallRoot(string exeFolder)
     {
-        var parent = Path.GetDirectoryName(exeFolder) ?? string.Empty;
-        var inDllFolder = string.Equals(Path.GetFileName(exeFolder), "bin", StringComparison.OrdinalIgnoreCase) && DllFolderNames.Contains(Path.GetFileName(parent), StringComparer.OrdinalIgnoreCase);
-        return inDllFolder ? Path.GetDirectoryName(parent) ?? string.Empty : parent;
+        var parent = Windows.Parent(exeFolder);
+        var inDllFolder = Last(exeFolder).Equals("bin", StringComparison.OrdinalIgnoreCase) && DllFolderNames.Contains(Last(parent), StringComparer.OrdinalIgnoreCase);
+        return inDllFolder ? Windows.Parent(parent) : parent;
     }
 
+    private static string Last(string path) => Windows.Segments(path) is { Count: > 0 } segments ? segments[^1] : string.Empty;
+
+    /// <summary>Every folder above <paramref name="folder"/> up to and including the volume root, by Windows rules whatever the host.</summary>
     private static IEnumerable<string> Ancestors(string folder)
     {
-        for (var up = Path.GetDirectoryName(folder); up is not null; up = Path.GetDirectoryName(up))
+        for (var current = folder; !Windows.IsRoot(current);)
         {
-            yield return up;
+            current = Windows.Parent(current);
+            yield return current;
         }
     }
 }
