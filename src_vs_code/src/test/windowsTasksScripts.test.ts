@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { UNELEVATED_SWITCHES, unelevatedRequest } from '../powershell/unelevatedLauncher';
@@ -167,9 +170,17 @@ test('the run-now script names ONE folder and ONE task, reads the state before R
     precedesRun(text, '-not $task.Enabled', 'the disabled test comes AFTER Run(');
     precedesRun(text, '$task.Definition.Principal', 'the principal is read AFTER Run(');
     precedesRun(text, 'WindowsIdentity]::GetCurrent().User.Value', 'the reader SID is read AFTER Run(');
-    precedesRun(text, '[int]$p.LogonType -ne 3', 'the logon type is compared AFTER Run(');
-    precedesRun(text, '[int]$p.RunLevel -ne 0', 'the run level is compared AFTER Run(');
-    assert.ok(text.indexOf('exit 38') < text.indexOf('.Run('), 'the principal refusal comes AFTER Run(');
+    precedesRun(text, '[int]$p.LogonType -eq 3', 'the logon type is compared AFTER Run(');
+    precedesRun(text, '[int]$p.RunLevel -eq 0', 'the run level is compared AFTER Run(');
+    precedesRun(text, '$ok = $false', 'the verdict does not start refused AFTER Run(');
+    precedesRun(text, 'if (-not $ok) { exit 38 }', 'the principal refusal comes AFTER Run(');
+    precedesRun(text, '$running = $true', 'the running verdict does not start refused AFTER Run(');
+    precedesRun(text, 'if ($running) { exit 35 }', 'the running refusal comes AFTER Run(');
+    assert.ok(text.indexOf('$ok = $false') < text.indexOf('$ok = ($sid -eq'), 'the verdict starts refused BEFORE the compare');
+    const guard = text.split(String.fromCharCode(10)).find((line) => line.startsWith('$ok = $false; try {')) ?? '';
+    assert.ok(guard.includes('$ok = ($sid -eq') && guard.endsWith('catch { $ok = $false }'), 'the compare sits INSIDE a try whose catch refuses');
+    const state = text.split(String.fromCharCode(10)).find((line) => line.startsWith('$running = $true; try {')) ?? '';
+    assert.ok(state.includes('$running = (') && state.includes('catch {') && state.includes('exit 37'), 'a state that cannot be read is exit 37, never a fall through to Run');
     assert.match(text, /\.Run\(\$null\)/);
     for (const code of [34, 35, 36, 37, 38]) {
       assert.ok(text.includes('exit ' + code), 'exit ' + code);
@@ -188,4 +199,18 @@ test('Fable minor 1: the order helper refuses a script where a line is absent, n
   assert.throws(() => precedesRun(without, "'state='", 'x'), /the script has no/);
   assert.throws(() => precedesRun("$task.Run($null)\n'state='", "'state='", 'x'), /x/);
   assert.doesNotThrow(() => precedesRun("'state='\n$task.Run($null)", "'state='", 'x'));
+});
+
+test('Fable minor 6: PowerShell\'s parser reads the run-now script without an error (parse only — nothing is run)', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-wsl-care-runnow-'));
+  try {
+    for (const task of ['watch', 'archive'] as const) {
+      fs.writeFileSync(path.join(dir, task + '.ps1'), runNowScript(task), 'utf8');
+    }
+    const parse = "& { $e = $null; $t = $null; foreach ($f in 'watch.ps1','archive.ps1') { [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 } }; exit 0 }";
+    const result = childProcess.spawnSync(PS51_ENGINE.file, ['-NoProfile', '-NonInteractive', '-Command', parse, dir], { encoding: 'utf8', timeout: 60_000 });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

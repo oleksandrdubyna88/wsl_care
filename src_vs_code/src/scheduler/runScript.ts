@@ -25,7 +25,8 @@ const RUNNING_RESULT = SCHEDULER_RESULT.running;
  * Start `name` of `folder` now. Order, and why: connect; get the task (not found is exit 34, any other refusal is 37 with the HRESULT printed);
  * print `state=` BEFORE any decision; refuse a disabled task (a `Run` on one fails with 0x80041326 — the script says why instead); refuse a task
  * that is ALREADY running (State 4 or the result 0x41301: the same test as the panel's row) — nothing is started, exit 35, and the overlap is
- * never silent; the PRINCIPAL of the task as it is registered RIGHT NOW — the reader's own SID (the same call the status query prints), an interactive
+ * never silent (a state that cannot be read is exit 37, never a fall through to the start: PowerShell continues after a statement-terminating error, so every
+ * verdict starts REFUSED and is lifted only by a completed read); the PRINCIPAL of the task as it is registered RIGHT NOW — the reader's own SID (the same call the status query prints), an interactive
  * token (LogonType 3), the least privilege (RunLevel 0) — exit 38 when it is anything else, nothing started (the flow checks the same from its earlier
  * read, as the early answer; this check is the authoritative one, because the modal and the press come between that read and this `Run`); only then `Run($null)`, an exit 37 with the HRESULT when it throws, and exit 0.
  */
@@ -39,10 +40,12 @@ export function runTaskScript(folder: string, name: string): string {
     `try { $task = $service.GetFolder('\\${safeFolder}').GetTask('${safeName}') } catch { if ($_.Exception.HResult -eq ${NOT_FOUND_HRESULT}) { exit ${RUN_EXIT.notRegistered} }; 'hresult=0x{0:X8}' -f $_.Exception.HResult; exit ${RUN_EXIT.runFailed} }`,
     "'state=' + [int]$task.State",
     `if (-not $task.Enabled) { exit ${RUN_EXIT.disabled} }`,
-    '$p = $task.Definition.Principal; $sid = [string]$p.UserId',
-    'try { $sid = (New-Object System.Security.Principal.NTAccount($p.UserId)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = [string]$p.UserId }',
-    `if ($sid -ne [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or [int]$p.LogonType -ne 3 -or [int]$p.RunLevel -ne 0) { exit ${RUN_EXIT.notYours} }`,
-    `if ([int]$task.State -eq 4 -or $task.LastTaskResult -eq ${RUNNING_RESULT}) { exit ${RUN_EXIT.alreadyRunning} }`,
+    // REFUSE BY DEFAULT: PowerShell goes on with the NEXT statement after a statement-terminating error, so a read or a compare that throws outside a try would
+    // fall through to the running test and the Run. The verdicts start refused and only a completed, matching read lifts them.
+    "$ok = $false; try { $p = $task.Definition.Principal; $sid = [string]$p.UserId; try { $sid = (New-Object System.Security.Principal.NTAccount($p.UserId)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = [string]$p.UserId }; $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $ok = ($sid -eq $me -and [int]$p.LogonType -eq 3 -and [int]$p.RunLevel -eq 0) } catch { $ok = $false }",
+    `if (-not $ok) { exit ${RUN_EXIT.notYours} }`,
+    `$running = $true; try { $running = ([int]$task.State -eq 4 -or $task.LastTaskResult -eq ${RUNNING_RESULT}) } catch { 'hresult=0x{0:X8}' -f $_.Exception.HResult; exit ${RUN_EXIT.runFailed} }`,
+    `if ($running) { exit ${RUN_EXIT.alreadyRunning} }`,
     `try { $null = $task.Run($null) } catch { 'hresult=0x{0:X8}' -f $_.Exception.HResult; exit ${RUN_EXIT.runFailed} }`,
     'exit 0',
   ].join('\n');
