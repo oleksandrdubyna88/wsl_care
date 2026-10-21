@@ -2587,6 +2587,32 @@
       }
     },
     {
+      "id": "host.vmmem",
+      "level": "ok",
+      "value": "12.50 GiB",
+      "limit": "warn > 24 GiB (wslConfig.vmmemAdviceGb)",
+      "reason": "the WSL VM's working set as Windows sees it (vmmemWSL)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "host.defenderCpu",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 100 % of one core (thresholds.defenderCoresWarnPercent)",
+      "reason": "no earlier full run recorded a Defender reading — a new baseline",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "docker.A4",
       "level": "ok",
       "value": "3 volumes, 0.64 GB",
@@ -3080,5 +3106,31 @@
         "judgedBy": "gib-or-percent"
       }
     ]
+  },
+  "defender": {
+    "available": true,
+    "sampledAt": "2000-01-01T00:00:00+00:00",
+    "coresAverage": {
+      "available": false,
+      "reason": "no earlier full run recorded a Defender reading — a new baseline"
+    },
+    "coveredSeconds": {
+      "available": false,
+      "reason": "no earlier full run recorded a Defender reading — a new baseline"
+    },
+    "coreHoursPerWeek": {
+      "available": false,
+      "reason": "no Defender span of the last 7 days: the engine was read once, restarted, or not read"
+    },
+    "coveredHours": {
+      "available": false,
+      "reason": "no Defender span of the last 7 days: the engine was read once, restarted, or not read"
+    },
+    "basis": {
+      "source": "fullRun",
+      "runId": "20000101T000000Z-1",
+      "evaluatedAt": "2000-01-01T00:00:00+00:00",
+      "ageSeconds": 0
+    }
   }
 }

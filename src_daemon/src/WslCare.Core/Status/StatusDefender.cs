@@ -7,7 +7,8 @@ namespace WslCare.Core.Status;
 /// <summary>
 /// E15.S10: <c>status --json</c>'s <c>defender</c> — Windows Defender's CPU exactly as the newest full run recorded it in its detail
 /// (read with its verdicts, one file), with the basis a carried verdict has: <c>fullRun</c>, the run, when it ended, how old it is.
-/// <c>status</c> starts no process, so it never reads the counters itself.
+/// <c>status</c> starts no process, so it never reads the counters itself. The script's own run time stays in the run detail: it moves at every run
+/// and is no part of what <c>status</c> carries about Defender.
 /// </summary>
 public static class StatusDefender
 {
@@ -28,7 +29,7 @@ public static class StatusDefender
         var basis = run.BasisAt(now);
         return run.Defender switch
         {
-            Reading<DefenderReport>.Available { Value: var defender } => defender with { Basis = basis },
+            Reading<DefenderReport>.Available { Value: var defender } => defender with { Basis = basis, ElapsedSeconds = null },
             var none => DefenderReports.Unavailable(none.ReasonOrEmpty) with { Basis = basis },
         };
     }

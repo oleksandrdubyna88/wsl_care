@@ -60,6 +60,7 @@ public sealed class StatusDefenderTests : IDisposable
         defender.CoreHoursPerWeek!.Value.Should().Be(127.7);
         defender.CoveredHours!.Value.Should().Be(24);
         defender.Extrapolated.Should().BeTrue();
+        defender.ElapsedSeconds.Should().BeNull("how long the script ran is the run detail's; it moves at every run and is no part of what status carries");
         defender.Basis.Should().Be(new VerdictBasis(VerdictSource.FullRun, id.Text, Now.AddHours(-3).AddSeconds(40), (3 * 3600) - 40));
     }
 
