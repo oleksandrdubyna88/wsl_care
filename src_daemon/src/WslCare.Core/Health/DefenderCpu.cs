@@ -62,8 +62,16 @@ public static class DefenderCpu
             : Reading.Missing<DefenderWeek>(NoSpan);
     }
 
-    /// <summary>A FILETIME as the UTC instant it names.</summary>
-    public static DateTimeOffset Instant(long fileTime) => new(DateTime.FromFileTimeUtc(fileTime), TimeSpan.Zero);
+    /// <summary>The last FILETIME a <see cref="DateTime"/> can name — a number past it (or not above 0) names no instant any clock reads. ONE definition
+    /// for the script's parser and the ledger's reader (security round, Fable 1).</summary>
+    public static readonly long LastFileTime = DateTime.MaxValue.ToFileTimeUtc();
+
+    /// <summary>Whether <paramref name="fileTime"/> names an instant: above 0 and not past <see cref="LastFileTime"/>.</summary>
+    public static bool IsInstant(long fileTime) => fileTime is > 0 && fileTime <= LastFileTime;
+
+    /// <summary>A FILETIME as the UTC instant it names — TOTAL: a number outside the range is clamped into it, never an exception (a value from
+    /// outside must not be able to crash a full run; readers check <see cref="IsInstant"/> first).</summary>
+    public static DateTimeOffset Instant(long fileTime) => new(DateTime.FromFileTimeUtc(Math.Clamp(fileTime, 0, LastFileTime)), TimeSpan.Zero);
 
     private static bool SameProcess(DefenderReading previous, DefenderReading now) =>
         previous.Pid == now.Pid && previous.StartMarker == now.StartMarker;

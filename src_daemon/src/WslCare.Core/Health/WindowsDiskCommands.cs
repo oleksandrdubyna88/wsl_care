@@ -208,7 +208,7 @@ public static class WindowsDiskCommands
     /// such process throws <c>ProcessCommandException</c> under <c>-ErrorAction Stop</c>, and the error line is the answer — never a 0. The
     /// legacy <c>vmmem</c> name is not read: one rule with the Windows binary's <c>vmmemWSL</c>, and plain <c>vmmem</c> is also other Hyper-V VMs' worker.</summary>
     private static readonly string Vmmem =
-        $$"""try { $p=@(Get-Process -Name 'vmmemWSL' -ErrorAction Stop); $o.Add('{{VmmemTag}}'+[string](($p | Measure-Object WorkingSet64 -Sum).Sum)) } catch { $o.Add('{{VmmemErrorTag}}'+$_.Exception.GetType().Name) }""";
+        $$"""try { $p=@(Get-Process -Name 'vmmemWSL' -ErrorAction Stop); $o.Add('{{VmmemTag}}'+[string][long](($p | Measure-Object WorkingSet64 -Sum).Sum)) } catch { $o.Add('{{VmmemErrorTag}}'+$_.Exception.GetType().Name) }""";
 
     /// <summary>The edition, the display version, the build with its update revision, the install date (unix seconds) and the
     /// account the script runs as (its SID) — interop runs it as the Windows user who started the VM, whose hive HKCU is.</summary>

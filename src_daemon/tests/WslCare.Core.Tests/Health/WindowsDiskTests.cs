@@ -89,10 +89,10 @@ public sealed class WindowsDiskTests
     // ----- E15.S10 §B: the vmmem line (E15.S5's open tail) -----
 
     /// <summary>The kernel's process snapshot, no handle opened, the same reading the Windows binary's <c>ProcessWorkingSets.Sum</c> takes:
-    /// the working sets of every process named <c>vmmemWSL</c>, summed. No such process throws <c>ProcessCommandException</c> under
+    /// the working sets of every process named <c>vmmemWSL</c>, summed — as a <c>long</c> (security round, Fable 6: <c>Measure-Object -Sum</c> answers a Double in Windows PowerShell 5.1, and a Double above 1e15 prints as <c>1E+15</c>, as <c>ProcessWorkingSets.Sum</c> casts too). No such process throws <c>ProcessCommandException</c> under
     /// <c>-ErrorAction Stop</c>, and the error line is the answer — never a 0.</summary>
     private const string VmmemSnippet =
-        "try { $p=@(Get-Process -Name 'vmmemWSL' -ErrorAction Stop); $o.Add('vmmem='+[string](($p | Measure-Object WorkingSet64 -Sum).Sum)) } catch { $o.Add('vmmem.error='+$_.Exception.GetType().Name) }";
+        "try { $p=@(Get-Process -Name 'vmmemWSL' -ErrorAction Stop); $o.Add('vmmem='+[string][long](($p | Measure-Object WorkingSet64 -Sum).Sum)) } catch { $o.Add('vmmem.error='+$_.Exception.GetType().Name) }";
 
     [Fact]
     public void The_script_reads_the_vmmem_working_set_after_memory_compression_and_before_the_identity()

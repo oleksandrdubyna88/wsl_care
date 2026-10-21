@@ -53,7 +53,7 @@ public static class DefenderCpuRun
     /// <summary>What the run says about the file: the write's note, the lines skipped on the read, why it could not be read at all.</summary>
     private static string Noted(DefenderLedgerRead read, string note)
     {
-        string[] parts = [note, read.Problem, .. read.Skipped];
+        string[] parts = [note, read.Problem, read.Skipped > 0 ? $"{read.Skipped} {(read.Skipped == 1 ? "line" : "lines")} skipped" : string.Empty];
         return string.Join("; ", parts.Where(n => n.Length > 0));
     }
 }

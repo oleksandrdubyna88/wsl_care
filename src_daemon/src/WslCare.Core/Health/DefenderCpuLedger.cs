@@ -28,9 +28,6 @@ public sealed record DefenderLedgerLine(long Ts, long Cpu, int Pid, long Start)
     /// <summary>The span's average cores; absent when there is no same-process span.</summary>
     public double? Cores { get; init; }
 
-    /// <summary>The last FILETIME a <see cref="DateTime"/> can name — a line past it cannot be read as an instant.</summary>
-    private static readonly long LastFileTime = DateTime.MaxValue.ToFileTimeUtc();
-
     /// <summary>A line a reader may use: the deserializer runs no defaults and checks no range (C# doctrine §4a), so a line with a missing
     /// field (a pid of 0, a start marker of 0) or an instant no clock reads is no line.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -40,9 +37,9 @@ public sealed record DefenderLedgerLine(long Ts, long Cpu, int Pid, long Start)
 
     public static DefenderLedgerLine Of(DefenderReading reading) => new(reading.Timestamp100ns, reading.CpuTicks100ns, reading.Pid, reading.StartMarker);
 
-    private bool InstantWellFormed => Ts is > 0 && Ts <= LastFileTime;
+    private bool InstantWellFormed => DefenderCpu.IsInstant(Ts) && DefenderCpu.IsInstant(Start);
 
-    private bool ProcessWellFormed => Cpu >= 0 && Pid > 0 && Start > 0;
+    private bool ProcessWellFormed => Cpu >= 0 && Pid > 0;
 
     /// <summary>Both span members or neither; the span starts before it ends, and its cores are a finite non-negative number.</summary>
     private bool SpanWellFormed => (From, Cores) switch
@@ -52,12 +49,12 @@ public sealed record DefenderLedgerLine(long Ts, long Cpu, int Pid, long Start)
         _ => false,
     };
 
-    private bool IsSpan(long from, double cores) => from is > 0 && from < Ts && double.IsFinite(cores) && cores >= 0;
+    private bool IsSpan(long from, double cores) => DefenderCpu.IsInstant(from) && from < Ts && double.IsFinite(cores) && cores >= 0;
 }
 
-/// <summary>The ledger as read: every line that parses (oldest first), the lines skipped and named, and why the file could not be read
+/// <summary>The ledger as read: every line that parses (oldest first), HOW MANY lines were skipped, and why the file could not be read
 /// at all. A missing file is no problem — it is "no baseline".</summary>
-public sealed record DefenderLedgerRead(IReadOnlyList<DefenderLedgerLine> Lines, IReadOnlyList<string> Skipped, string Problem)
+public sealed record DefenderLedgerRead(IReadOnlyList<DefenderLedgerLine> Lines, int Skipped, string Problem)
 {
     public const string NoBaseline = "no earlier full run recorded a Defender reading — a new baseline";
 
@@ -70,13 +67,13 @@ public sealed record DefenderLedgerRead(IReadOnlyList<DefenderLedgerLine> Lines,
     public IReadOnlyList<DefenderSpan> Spans => [.. Lines.SelectMany(SpanOf)];
 
     /// <summary>The text of a ledger: every COMPLETE line (a trailing segment without its newline is a write in progress, not a line —
-    /// <see cref="WslCare.Core.Files.LineFiles"/>), the ones that do not parse skipped and named by their number in the file.</summary>
-    public static DefenderLedgerRead Parse(string text, string name)
+    /// <see cref="WslCare.Core.Files.LineFiles"/>), the ones that do not parse skipped and counted.</summary>
+    public static DefenderLedgerRead Parse(string text)
     {
         var parsed = Numbered(text).Select(l => (l.Number, Line: ParseLine(l.Text))).ToList();
         return new(
             [.. parsed.SelectMany(p => p.Line)],
-            [.. parsed.Where(p => p.Line.Count == 0).Select(p => $"line {p.Number} of {name} does not parse and is skipped")],
+            parsed.Count(p => p.Line.Count == 0),
             string.Empty);
     }
 
@@ -122,12 +119,13 @@ public sealed class DefenderCpuLedger(IHostPaths paths, IFileSystem files)
 
     public string File => paths.Rules.Join(paths.StateDirectory, FileName);
 
-    /// <summary>The ledger; a missing file is no baseline, an unreadable one says why — never an error.</summary>
-    public DefenderLedgerRead Read() => files.ReadFile(File, RootFileCaps.History) switch
+    /// <summary>The ledger, read as ROOT'S OWN STATE (the owner-checked reader, as the MCP ledger's root place is — security round, Fable 3); a missing
+    /// file is no baseline, an unreadable one says why — never an error.</summary>
+    public DefenderLedgerRead Read() => files.ReadStateFile(File, RootFileCaps.History) switch
     {
-        FileReadResult.Content content => DefenderLedgerRead.Parse(Encoding.UTF8.GetString(content.Bytes), FileName),
-        FileReadResult.Missing => new([], [], string.Empty),
-        FileReadResult.Unreadable unreadable => new([], [], $"{File} could not be read: {unreadable.Reason}"),
+        FileReadResult.Content content => DefenderLedgerRead.Parse(Encoding.UTF8.GetString(content.Bytes)),
+        FileReadResult.Missing => new([], 0, string.Empty),
+        FileReadResult.Unreadable unreadable => new([], 0, $"{File} could not be read: {unreadable.Reason}"),
         _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
     };
 
@@ -152,14 +150,16 @@ public sealed class DefenderCpuLedger(IHostPaths paths, IFileSystem files)
     public static string Serialise(DefenderLedgerLine line) =>
         JsonSerializer.Serialize(line with { Cores = line.Cores is { } cores ? Math.Round(cores, 6) : null }, WslCareJsonContext.Compact.DefenderLedgerLine);
 
-    /// <summary>The lines older than the retention dropped, under the append lock; a line that does not parse is never judged (kept).</summary>
+    /// <summary>The lines older than the retention dropped — and the lines that do not parse (security round: they are never aged, so they would stay
+    /// for ever; the run counted them in its note). This rewrite and the append after it are TWO sequential acquisitions of the file's lock, not one;
+    /// a line another process appends between them lands after the rewrite and is kept.</summary>
     private string Trim(DateTimeOffset now)
     {
         var cutoff = now - TimeSpan.FromDays(Tuning.Current.Int(ConfigKeys.Defender.LocalRetentionDays));
-        var verdict = files.RewriteLines(File, lines => [.. lines.Where(l => !Aged(l, cutoff))], new DeletionScope(paths.StateDirectory, Action), RunRecordWriter.LockTimeout);
+        var verdict = files.RewriteLines(File, lines => [.. lines.Where(l => Kept(l, cutoff))], new DeletionScope(paths.StateDirectory, Action), RunRecordWriter.LockTimeout);
         return verdict is DeletionVerdict.Refused refused ? $"the ledger's old lines could not be dropped: {refused.Reason}" : string.Empty;
     }
 
-    private static bool Aged(string line, DateTimeOffset cutoff) =>
-        DefenderLedgerRead.ParseLine(line) is [var parsed] && DefenderCpu.Instant(parsed.Ts) < cutoff;
+    private static bool Kept(string line, DateTimeOffset cutoff) =>
+        DefenderLedgerRead.ParseLine(line) is [var parsed] && DefenderCpu.Instant(parsed.Ts) >= cutoff;
 }

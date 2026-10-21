@@ -155,6 +155,57 @@ public sealed class DefenderCpuTests
         parsed.ReasonOrEmpty.Should().Contain("does not parse");
     }
 
+    /// <summary>Security round (Fable 1): the line is printed by a script a user-level process could have forged the output of — a timestamp
+    /// or a start marker no clock reads (past the FILETIME range, or 0), a pid of 0, is no reading. It must never reach a span (where
+    /// <c>DateTime.FromFileTimeUtc</c> throws) and so never crash the full run.</summary>
+    [Theory]
+    [InlineData("defender=1|9000000000000000000|1|1")]
+    [InlineData("defender=1|0|1|1")]
+    [InlineData("defender=1|134370000000000000|0|1")]
+    [InlineData("defender=1|134370000000000000|1|0")]
+    [InlineData("defender=1|134370000000000000|1|9000000000000000000")]
+    public void A_timestamp_pid_or_start_marker_no_clock_reads_is_no_reading(string line)
+    {
+        var parsed = DefenderParsers.Parse(line + "\n");
+
+        parsed.IsAvailable.Should().BeFalse(line);
+        parsed.ReasonOrEmpty.Should().Contain("does not parse");
+    }
+
+    [Theory]
+    [InlineData(long.MaxValue)]
+    [InlineData(9_000_000_000_000_000_000)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(long.MinValue)]
+    public void The_instant_of_any_number_is_an_instant_and_never_an_exception(long fileTime)
+    {
+        var act = () => DefenderCpu.Instant(fileTime);
+
+        act.Should().NotThrow("an instant is a pure conversion that cannot fail on a number from outside");
+    }
+
+    /// <summary>Fable 6, with the disk parser's rule: the script's own error line wins over a value, and a second tagged line is no answer.</summary>
+    [Fact]
+    public void A_forged_value_ahead_of_the_scripts_own_error_line_is_not_read_as_a_value()
+    {
+        var parsed = DefenderParsers.Parse(Measured + "\ndefender.error=CimException\n");
+
+        parsed.IsAvailable.Should().BeFalse();
+        parsed.ReasonOrEmpty.Should().Contain("CimException");
+    }
+
+    [Theory]
+    [InlineData("defender=1|134370000000000000|1|1\ndefender=2|134370000000000000|1|1\n")]
+    [InlineData("defender=1|134370000000000000|1|1\ndefender.none=\n")]
+    public void A_second_tagged_line_is_no_answer(string stdout)
+    {
+        var parsed = DefenderParsers.Parse(stdout);
+
+        parsed.IsAvailable.Should().BeFalse();
+        parsed.ReasonOrEmpty.Should().Contain("more than once");
+    }
+
     [Fact]
     public void Crlf_line_ends_read_like_lf()
     {

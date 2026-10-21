@@ -30,7 +30,7 @@ public sealed class DefenderCpuLedgerTests : IDisposable
     public DefenderCpuLedgerTests()
     {
         _paths = new LinuxHostPaths(LinuxEnvironment.Sandboxed(_root.Path));
-        _files = new PhysicalFileSystem(_paths);
+        _files = new PhysicalFileSystem(_paths) { TrustedStateOwner = RegularFiles.EffectiveUid(), OwnersAreThisProcess = true };
     }
 
     public void Dispose() => _root.Dispose();
@@ -67,7 +67,7 @@ public sealed class DefenderCpuLedgerTests : IDisposable
         var read = Ledger().Read();
 
         read.Problem.Should().BeEmpty();
-        read.Skipped.Should().BeEmpty();
+        read.Skipped.Should().Be(0);
         read.Lines.Should().Equal(line);
         read.Newest.Should().BeOfType<Reading<DefenderReading>.Available>().Which.Value.Should().Be(line.ToReading());
         read.Spans.Should().ContainSingle().Which.Should().Match<DefenderSpan>(s => s.Start == Now.AddHours(-4) && s.End == Now && s.Cores == 0.7612);
@@ -98,17 +98,58 @@ public sealed class DefenderCpuLedgerTests : IDisposable
     }
 
     [Fact]
-    public void A_malformed_line_is_skipped_and_named_and_the_rest_still_reads()
+    public void A_malformed_line_is_skipped_and_counted_and_the_rest_still_reads()
     {
         Put(Json(Line(Now.AddHours(-8))), "{ this is not json", Json(Line(Now.AddHours(-4), pid: 2)), "{\"ts\":1}", "[]");
 
         var read = Ledger().Read();
 
         read.Lines.Select(l => l.Pid).Should().Equal(6964, 2);
-        read.Skipped.Should().HaveCount(3);
-        read.Skipped[0].Should().Contain("line 2").And.Contain("defender-cpu.jsonl");
-        read.Skipped.Should().Contain(s => s.Contains("line 4", StringComparison.Ordinal)).And.Contain(s => s.Contains("line 5", StringComparison.Ordinal));
+        read.Skipped.Should().Be(3, "the unparseable line, the one with no process and the array: counted, not listed one by one");
         read.Newest.Should().BeOfType<Reading<DefenderReading>.Available>().Which.Value.Pid.Should().Be(2);
+    }
+
+    /// <summary>The same rule as the script's parser (E15.S10 security round): a start marker past the FILETIME range is no line.</summary>
+    [Theory]
+    [InlineData(9_000_000_000_000_000_000, 134_365_236_258_808_755)]
+    [InlineData(134_370_000_000_000_000, 9_000_000_000_000_000_000)]
+    public void A_line_whose_instant_or_start_marker_is_past_the_filetime_range_is_not_a_line(long ts, long start)
+    {
+        Put($"{{\"ts\":{ts},\"cpu\":1,\"pid\":6964,\"start\":{start}}}");
+
+        var read = Ledger().Read();
+
+        read.Lines.Should().BeEmpty("no clock reads such an instant");
+        read.Skipped.Should().Be(1);
+    }
+
+    /// <summary>Security round (coai, Fable): a line that does not parse is never aged and never leaves; the next write drops it and the run says
+    /// HOW MANY, not which.</summary>
+    [Fact]
+    public void Lines_that_do_not_parse_are_dropped_at_the_next_write_and_the_valid_ones_stay()
+    {
+        Put(Json(Line(Now.AddHours(-8), pid: 1)), "{ this is not json", Json(Line(Now.AddHours(-4), pid: 2)), "[]");
+
+        Ledger().Append(Line(Now, pid: 3), Now).Should().BeEmpty();
+
+        Text().Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(3, "the two valid lines and the new one");
+        var read = Ledger().Read();
+        read.Skipped.Should().Be(0, "nothing unreadable is left");
+        read.Lines.Select(l => l.Pid).Should().Equal(1, 2, 3);
+    }
+
+    /// <summary>Fable 3: the ledger is root's own state, read by the owner-checked reader, as the MCP ledger's root place is.</summary>
+    [Fact]
+    public void The_ledger_is_read_by_the_owner_checked_state_reader()
+    {
+        Put(Json(Line(Now.AddHours(-4))));
+        var spy = new ReadSpy(_files);
+
+        var read = Ledger(spy).Read();
+
+        read.Lines.Should().ContainSingle();
+        spy.StateReads.Should().ContainSingle().Which.Should().Be(Ledger().File);
+        spy.PlainReads.Should().BeEmpty("a file root keeps in {state} is read as root's state, never by the plain reader");
     }
 
     [Fact]
@@ -120,7 +161,7 @@ public sealed class DefenderCpuLedgerTests : IDisposable
         var read = Ledger().Read();
 
         read.Lines.Should().ContainSingle();
-        read.Skipped.Should().BeEmpty("a line still being written is neither parsed nor counted as damage");
+        read.Skipped.Should().Be(0, "a line still being written is neither parsed nor counted as damage");
     }
 
     [Fact]
@@ -209,6 +250,26 @@ public sealed class DefenderCpuLedgerTests : IDisposable
         ]);
         loaded.Errors.Should().BeEmpty();
         return loaded.Config;
+    }
+
+    /// <summary>The real file system, noting which reader the ledger reads its file by.</summary>
+    private sealed class ReadSpy(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public List<string> StateReads { get; } = [];
+
+        public List<string> PlainReads { get; } = [];
+
+        public override FileReadResult ReadStateFile(string path, int maxBytes)
+        {
+            StateReads.Add(path);
+            return base.ReadStateFile(path, maxBytes);
+        }
+
+        public override FileReadResult ReadFile(string path)
+        {
+            PlainReads.Add(path);
+            return base.ReadFile(path);
+        }
     }
 
     /// <summary>The real file system, noting what the ledger asks to rewrite.</summary>

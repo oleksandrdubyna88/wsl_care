@@ -63,20 +63,21 @@ public sealed class HostRulesTests : IDisposable
     }
 
     [Fact]
-    public void The_four_verdicts_in_their_order()
+    public void The_windows_binarys_road_judges_exactly_the_three_verdicts_its_sample_can()
     {
-        HostRules.Verdicts(Facts(), Config()).Select(v => v.Id).Should().Equal("host.commit", "host.compression", "host.vmmem", "host.defenderCpu");
+        HostRules.Verdicts(Facts(), Config()).Select(v => v.Id).Should().Equal("host.commit", "host.compression", "host.vmmem");
     }
 
-    /// <summary>E15.S10 §B: the Windows disk script reads vmmem now (E15.S5's open tail), so the full run judges all of them — and the
-    /// two roads are ONE list again, not a list and a shorter list.</summary>
+    /// <summary>E15.S10 §B: the Windows disk script reads vmmem now (E15.S5's open tail), so the full run judges the Windows binary's three — and,
+    /// since only the distro's full run reads Defender, <c>host.defenderCpu</c> after them. Security round (coai 0): the Windows binary's road
+    /// does NOT judge Defender — an unknown stub there REPLACED the carried full-run verdict in its status, so Windows showed unknown always.</summary>
     [Fact]
-    public void The_full_run_road_judges_the_same_list_as_the_windows_road()
+    public void The_full_run_road_is_the_windows_road_plus_defender()
     {
         var facts = Facts();
 
         HostRules.FullRunVerdicts(facts, Config()).Select(v => v.Id).Should().Equal("host.commit", "host.compression", "host.vmmem", "host.defenderCpu");
-        HostRules.FullRunVerdicts(facts, Config()).Should().Equal(HostRules.Verdicts(facts, Config()), "one list on both roads");
+        HostRules.FullRunVerdicts(facts, Config()).Take(3).Should().Equal(HostRules.Verdicts(facts, Config()), "the same functions over the same facts");
     }
 
     [Theory]
@@ -180,7 +181,7 @@ public sealed class HostRulesTests : IDisposable
         var windows = HostRules.Verdicts(HostMemoryFacts.FromProbe(probe, WslConfig), config);
         var fullRun = HostRules.FullRunVerdicts(HostMemoryFacts.FromWindowsDisk(disk, WslConfig), config);
 
-        fullRun.Should().Equal(windows, "the same function over the same figures: commit, compression and vmmem alike");
+        fullRun.Take(3).Should().Equal(windows, "the same function over the same figures: commit, compression and vmmem alike");
         Only(windows, "host.vmmem").Value.Should().Be("18.00 GiB");
         windows.Single(v => v.Id == "host.commit").Level.Should().Be(Level.Warn);
         windows.Single(v => v.Id == "host.compression").Level.Should().Be(Level.Warn);
@@ -278,7 +279,7 @@ public sealed class HostRulesTests : IDisposable
     }
 
     [Fact]
-    public void The_windows_binarys_road_says_the_distro_reads_defender()
+    public void The_windows_binarys_road_judges_no_defender_the_distros_full_run_reads_it()
     {
         var probe = new HostSample(
             Reading.Of(new HostMemory(92 * Gib, 40 * Gib)),
@@ -287,9 +288,7 @@ public sealed class HostRulesTests : IDisposable
             Reading.Of(new HostCommit(50 * Gib, 100 * Gib)),
             Reading.Of(2 * Gib));
 
-        var verdict = Only(HostRules.Verdicts(HostMemoryFacts.FromProbe(probe, WslConfig), Config()), "host.defenderCpu");
-
-        verdict.Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == HostMemoryFacts.DefenderReadByTheDistro);
+        HostRules.Verdicts(HostMemoryFacts.FromProbe(probe, WslConfig), Config()).Select(v => v.Id).Should().NotContain("host.defenderCpu", "an unknown stub there would replace the carried full-run verdict");
     }
 
     [Fact]

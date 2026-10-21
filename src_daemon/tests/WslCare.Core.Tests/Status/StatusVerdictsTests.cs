@@ -226,7 +226,8 @@ public sealed class StatusVerdictsTests : IDisposable
 
     /// <summary>E15.S10 §B (E15.S5's open tail): the full run judges <c>host.vmmem</c> now, so on the Windows binary the sampled verdict
     /// REPLACES the carried one, in its carried position (right behind <c>host.compression</c>) — still exactly once, no longer appended after
-    /// every carried verdict. <c>host.defenderCpu</c>, the next id, is the same: one, sampled (the Windows binary cannot read it), in place.</summary>
+    /// every carried verdict. <c>host.defenderCpu</c>, the next id, stays CARRIED (security round, coai 0): the Windows binary cannot read it, so it
+    /// samples nothing there — with no full run it is the full run's own "unknown", with the basis the full run has.</summary>
     [Fact]
     public void The_windows_status_lists_its_sampled_host_vmmem_once_at_its_carried_position()
     {
@@ -237,8 +238,22 @@ public sealed class StatusVerdictsTests : IDisposable
         ids.IndexOf("host.vmmem").Should().Be(ids.IndexOf("host.compression") + 1, "its carried position");
         ids[^1].Should().Be("npm.cache", "nothing is appended after the full run's last id any more");
         ids.Should().OnlyHaveUniqueItems();
-        verdicts.Where(v => v.Id == "host.defenderCpu").Should().ContainSingle().Which.Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == HostMemoryFacts.DefenderReadByTheDistro && v.Basis!.Source == VerdictSource.Sample);
+        verdicts.Where(v => v.Id == "host.defenderCpu").Should().ContainSingle().Which.Basis!.Source.Should().Be(VerdictSource.FullRun, "carried, never sampled on the Windows side");
         ids.IndexOf("host.defenderCpu").Should().Be(ids.IndexOf("host.vmmem") + 1);
+    }
+
+    /// <summary>Security round (coai 0): the Windows binary's status used to REPLACE the carried full-run Defender verdict with its own unknown
+    /// stub, so it showed unknown always. A carried warn is shown, once, with the full run's run and age.</summary>
+    [Fact]
+    public void The_windows_status_keeps_the_carried_full_run_defender_verdict()
+    {
+        var runId = RunId.New(Now.AddHours(-2), 99);
+        var carried = new Verdict("host.defenderCpu", Level.Warn, "1.50 cores over 4.0 h", "warn > 100 % of one core (thresholds.defenderCoresWarnPercent)", "recorded two hours ago");
+        var recorded = Reading.Of(new RecordedVerdicts(runId, Now.AddHours(-2), [carried]));
+
+        var verdicts = StatusVerdicts.From(WindowsSample(chargeGib: 50), recorded, Config(), Now);
+
+        verdicts.Where(v => v.Id == "host.defenderCpu").Should().ContainSingle().Which.Should().Be(carried with { Basis = new VerdictBasis(VerdictSource.FullRun, runId.Text, Now.AddHours(-2), 7200) });
     }
 
     /// <summary>E15.S5 code round, finding 2: only the WINDOWS side judges its host sample. A distro-side sample that ever carried a

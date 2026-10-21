@@ -32,7 +32,7 @@ public sealed class CollectDefenderTests : IDisposable
     public CollectDefenderTests()
     {
         _paths = new LinuxHostPaths(LinuxEnvironment.Sandboxed(_root.Path));
-        _files = new PhysicalFileSystem(_paths);
+        _files = new PhysicalFileSystem(_paths) { TrustedStateOwner = RegularFiles.EffectiveUid(), OwnersAreThisProcess = true };
     }
 
     public void Dispose() => _root.Dispose();
@@ -133,6 +133,25 @@ public sealed class CollectDefenderTests : IDisposable
 
         DefenderVerdict(second).Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == DefenderCpu.Restarted);
         Defender(second).CoresAverage!.Available.Should().BeFalse("no same-process span, so no cores");
+    }
+
+    /// <summary>Security round (Fable 1): a timestamp past the FILETIME range is no reading, never a span — and the full run completes. The repro:
+    /// run N prints a small valid line, run N+1 a timestamp of 9e18 (<c>DateTime.FromFileTimeUtc</c> threw inside the week's spans and nothing caught it).</summary>
+    [Fact]
+    public async Task A_timestamp_past_the_filetime_range_is_no_reading_never_a_span_and_the_run_completes()
+    {
+        await RunAsync(First, "defender=1|134370000000000000|1|1\n");
+
+        var forged = await RunAsync(First.AddHours(4), "defender=2|9000000000000000000|1|1\n");
+        var after = await RunAsync(First.AddHours(8), "defender=3|134370000000000000|1|1\n");
+
+        forged.Recording.Should().Be(Recording.Recorded, "one failed part never ends a run");
+        var defender = Defender(forged);
+        defender.Available.Should().BeFalse();
+        defender.Reason.Should().Contain("does not parse");
+        DefenderVerdict(forged).Level.Should().Be(Level.Unknown);
+        Ledger().Lines.Should().HaveCount(2, "the forged reading is not a line");
+        after.Recording.Should().Be(Recording.Recorded, after.Reason);
     }
 
     [Fact]

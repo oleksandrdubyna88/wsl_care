@@ -34,19 +34,20 @@ public static class HostRules
 
     private const string DefenderReason = "Windows Defender's engine (MsMpEng): CPU time summed over all cores per second of wall time, between two reads of the same process a full run apart";
 
-    /// <summary>The Windows binary's road, over its own sample — the SAME list as the full run's (E15.S10 §B): its vmmem is its own
-    /// reading, and Defender's CPU, which it cannot read, is <c>unknown</c> saying the distro's full run reads it.</summary>
-    public static IReadOnlyList<Verdict> Verdicts(HostMemoryFacts facts, EffectiveConfig config) => FullRunVerdicts(facts, config);
-
-    /// <summary>The full run's road: commit, compression, vmmem (the Windows disk script reads it since E15.S10 §B, which closed E15.S5's open
-    /// tail) and Defender's CPU (E15.S10) — one list on both roads, judged by the SAME functions.</summary>
-    public static IReadOnlyList<Verdict> FullRunVerdicts(HostMemoryFacts facts, EffectiveConfig config) =>
+    /// <summary>The Windows binary's road, over its own sample: exactly the verdicts a SAMPLE of the Windows host can judge — commit, compression and
+    /// vmmem. <c>host.defenderCpu</c> is NOT here (security round, coai 0): it needs two reads a full run apart, which only the distro's full run has,
+    /// and a stub that said "unknown" would REPLACE the carried full-run verdict in the Windows status, which would then show unknown always.</summary>
+    public static IReadOnlyList<Verdict> Verdicts(HostMemoryFacts facts, EffectiveConfig config) =>
     [
         Commit(facts, config.Int(ConfigKeys.Thresholds.HostCommitWarnPercent), config.Int(ConfigKeys.Thresholds.HostCommitCriticalPercent)),
         Compression(facts.CompressionBytes, config.Int(ConfigKeys.Thresholds.HostCompressionWarnGb)),
         Vmmem(facts, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb)),
-        Defender(facts.Defender, config.Int(ConfigKeys.Thresholds.DefenderCoresWarnPercent)),
     ];
+
+    /// <summary>The full run's road: the Windows binary's three (the disk script reads vmmem since E15.S10 §B, which closed E15.S5's open tail) and
+    /// Defender's CPU (E15.S10) after them — the same functions over the same facts.</summary>
+    public static IReadOnlyList<Verdict> FullRunVerdicts(HostMemoryFacts facts, EffectiveConfig config) =>
+        [.. Verdicts(facts, config), Defender(facts.Defender, config.Int(ConfigKeys.Thresholds.DefenderCoresWarnPercent))];
 
     private static Verdict Commit(HostMemoryFacts facts, int warnPercent, int criticalPercent)
     {

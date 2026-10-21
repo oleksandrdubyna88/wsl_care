@@ -23,7 +23,7 @@ public sealed class DefenderCpuRunTests : IDisposable
     public DefenderCpuRunTests()
     {
         _paths = new LinuxHostPaths(LinuxEnvironment.Sandboxed(_root.Path));
-        _files = new PhysicalFileSystem(_paths);
+        _files = new PhysicalFileSystem(_paths) { TrustedStateOwner = RegularFiles.EffectiveUid(), OwnersAreThisProcess = true };
     }
 
     public void Dispose() => _root.Dispose();
@@ -130,6 +130,23 @@ public sealed class DefenderCpuRunTests : IDisposable
         var next = Run(Start.AddHours(8), At(Start.AddHours(8), 1_000 + (2.0 * 8 * 3600)));
 
         next.Usage.Should().BeOfType<Reading<DefenderUsage>.Available>().Which.Value.Should().Match<DefenderUsage>(u => Math.Abs(u.Cores - 2.0) < 1e-6 && u.Covered == TimeSpan.FromHours(8), "the span runs from the last READ, across the missed run");
+    }
+
+    /// <summary>Security round (coai 1/3, Fable 4): unreadable lines are never aged out and used to be named at every run. Now the note says HOW
+    /// MANY were skipped, and the write that records the run drops them — the next run's note is empty.</summary>
+    [Fact]
+    public void Unreadable_lines_are_counted_in_the_note_and_dropped_by_the_write()
+    {
+        Run(Start, At(Start, 1_000));
+        File.AppendAllText(new DefenderCpuLedger(_paths, _files).File, "{ junk\n[]\nnot json at all\n");
+
+        var outcome = Run(Start.AddHours(4), At(Start.AddHours(4), 1_000 + (0.5 * 4 * 3600)));
+        var next = Run(Start.AddHours(8), At(Start.AddHours(8), 1_000 + (0.5 * 8 * 3600)));
+
+        outcome.LedgerNote.Should().Be("3 lines skipped", "a count, not each line");
+        outcome.Usage.Should().BeOfType<Reading<DefenderUsage>.Available>("the valid lines still give the baseline");
+        next.LedgerNote.Should().BeEmpty("the write dropped them");
+        File.ReadAllLines(new DefenderCpuLedger(_paths, _files).File).Should().HaveCount(3, "the three valid lines");
     }
 
     [Fact]

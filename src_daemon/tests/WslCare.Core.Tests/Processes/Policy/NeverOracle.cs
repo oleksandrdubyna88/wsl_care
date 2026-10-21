@@ -54,7 +54,7 @@ internal static partial class NeverOracle
     /// <summary>The plan's fixed scripts (the clock probe; since E15.S1 the Windows disk script, PLAN_disk_health.md §3.1; since E15.S10 the Defender CPU script) —
     /// judged by their ARGUMENTS, as the plan states them; the product's never-list is stricter (the program too).</summary>
     private static bool IsAFixedScript(IReadOnlyList<string> argv) =>
-        new[] { Core.Health.HealthCommands.WindowsClock, Core.Health.WindowsDiskCommands.WindowsDisk, Core.Health.DefenderCpuCommands.DefenderCpu }
+        Core.Health.HealthCommands.FixedScripts
             .Any(script => argv.Skip(1).SequenceEqual(script.Arguments, StringComparer.Ordinal));
 
     private static bool DropCachesNotOne(string line) =>
