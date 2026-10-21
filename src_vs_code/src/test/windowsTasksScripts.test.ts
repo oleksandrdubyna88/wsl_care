@@ -148,6 +148,13 @@ test('coai finding 4: the registration module\'s refusal of a terminator line na
 
 // ---- WR-E4: the run-now script ----
 
+/** `needle` is in the script AND comes before the start — an ABSENT line (index -1) would pass a bare `<`, so presence is asserted first. */
+function precedesRun(text: string, needle: string, why: string): void {
+  const at = text.indexOf(needle);
+  assert.notEqual(at, -1, 'the script has no ' + needle);
+  assert.ok(at < text.indexOf('.Run('), why);
+}
+
 test('the run-now script names ONE folder and ONE task, reads the state before Run, and refuses a foreign name', () => {
   for (const task of ['watch', 'archive'] as const) {
     const text = runNowScript(task);
@@ -155,9 +162,9 @@ test('the run-now script names ONE folder and ONE task, reads the state before R
     assert.equal(text.split("GetTask('" + task + "')").length, 2, 'ONE task');
     assert.equal(text.split('.Run(').length, 2, 'ONE start');
     assert.ok(text.startsWith('$env:PSModulePath'), 'the module path is pinned first');
-    assert.ok(text.indexOf("'state='") < text.indexOf('.Run('), 'the state is read AFTER Run(');
-    assert.ok(text.indexOf('-eq 4 -or $task.LastTaskResult -eq 267009') < text.indexOf('.Run('), 'the running test comes AFTER Run(');
-    assert.ok(text.indexOf('-not $task.Enabled') < text.indexOf('.Run('), 'the disabled test comes AFTER Run(');
+    precedesRun(text, "'state='", 'the state is read AFTER Run(');
+    precedesRun(text, '-eq 4 -or $task.LastTaskResult -eq 267009', 'the running test comes AFTER Run(');
+    precedesRun(text, '-not $task.Enabled', 'the disabled test comes AFTER Run(');
     assert.match(text, /\.Run\(\$null\)/);
     for (const code of [34, 35, 36, 37]) {
       assert.ok(text.includes('exit ' + code), 'exit ' + code);
@@ -169,4 +176,11 @@ test('the run-now script names ONE folder and ONE task, reads the state before R
   assert.throws(() => runNowScript('windows-time-guard' as never), RangeError, 'the guard\'s name is not one of the two tasks');
   assert.throws(() => runTaskScript("wsl-care'; evil", 'watch'), RangeError);
   assert.throws(() => runTaskScript('wsl-care', "x'; Remove-Item /"), RangeError);
+});
+
+test('Fable minor 1: the order helper refuses a script where a line is absent, not only one where it comes late', () => {
+  const without = runNowScript('watch').replace("'state=' + [int]$task.State", '$null');
+  assert.throws(() => precedesRun(without, "'state='", 'x'), /the script has no/);
+  assert.throws(() => precedesRun("$task.Run($null)\n'state='", "'state='", 'x'), /x/);
+  assert.doesNotThrow(() => precedesRun("'state='\n$task.Run($null)", "'state='", 'x'));
 });

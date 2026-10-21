@@ -156,8 +156,8 @@ export function windowsTasksState(read: SchedulerRead, copy: CopyState): Windows
   return { copy, tasks, dry: dryOf(copy) };
 }
 
-/** One minute of tolerance for Task Scheduler's last-run instant (its resolution is a second, and a start takes one). */
-const RUN_TOLERANCE_MS = 60_000;
+/** Tolerance for Task Scheduler's last-run instant: it truncates to the second, so a run that began at the record's instant can read up to a second earlier. */
+const RUN_TOLERANCE_MS = 5_000;
 
 /** A start-now record is over when the task is running, or ran at or after the record started (less the tolerance) — the read's evidence, never a flow's word. */
 function startedOrRan(row: TaskRow, startedAtUtcMs: number): boolean {

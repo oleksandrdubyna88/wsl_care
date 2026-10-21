@@ -7,7 +7,9 @@ import { installTaskScript, removeTasksScript, runNowScript } from '../windowsTa
 import { queryRequest } from '../windowsTime/guardScripts';
 import { PS51_ENGINE } from './support/engines';
 import { isMachineChange, refusalOf, TASK_RUN, TASK_TRIPWIRE_MESSAGE } from './support/noRealWsl';
-import { renderAnswer } from './support/windowsTasks';
+import { runTasksOp } from '../windowsTasks/tasksFlow';
+import { renderAnswer, registeredSummary } from './support/windowsTasks';
+import { tasksWorld } from './support/tasksWorld';
 
 /**
  * WR-E3 (PLAN_windows_runner.md §4, §6 "the tripwire refuses Register-ScheduledTask and a task's Run("): the tripwire of every test process
@@ -76,5 +78,15 @@ test('the real run-now request is what the tripwire refuses — judged by the pu
     const request = unelevatedRequest(PS51_ENGINE, runNowScript(task), 60_000);
     assert.ok(typeof request !== 'string', 'a request was built');
     assert.equal(refusalOf(request.file, request.args), TASK_TRIPWIRE_MESSAGE, 'the tripwire lets the run-now through');
+  }
+});
+
+test('the request the FLOW records for a run-now is refused by the tripwire too — both tasks, judged by the pure function', async () => {
+  for (const task of ['watch', 'archive'] as const) {
+    const w = tasksWorld({ read: { tasks: [{ name: task, summary: registeredSummary(task) }] } });
+    assert.equal((await runTasksOp({ kind: 'run', task }, w.deps)).kind, 'done');
+    const request = w.ps()[0];
+    assert.ok(request !== undefined, 'the flow recorded a request');
+    assert.equal(refusalOf(request.file, request.args), TASK_TRIPWIRE_MESSAGE, 'the tripwire lets the flow\'s run-now through');
   }
 });

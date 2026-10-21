@@ -12,6 +12,7 @@ import { elevatedProgramOf, PS51, PS51_READ, STORE_READ } from './support/engine
 import { isElevatedPowerShell, revealed } from './support/noRealWsl';
 import { exited } from './support/recordingRunner';
 import { decoded, tasksWorld, type World, type WorldOptions } from './support/tasksWorld';
+import { USER_SID } from './support/schedulerAnswers';
 import { registeredSummary } from './support/windowsTasks';
 
 /**
@@ -91,6 +92,7 @@ test('not installed → install first: nothing started, no modal, told once as a
     const { w, outcome } = await run(WATCH, { read });
     assert.equal(outcome.kind, 'notStarted', SHOWN(outcome));
     assert.match(message(w), /install the Windows watch task first/);
+    assert.match(message(w), /^The start of the Windows watch task could not begin: /, 'the wording of a start that never began');
     assert.equal(w.ps().length, 0, 'a request was made');
     assert.deepEqual(w.recorder.prompts, []);
     assert.equal(w.store.writes, 0);
@@ -234,4 +236,31 @@ test('a timeout of the run is told with its ceiling and the tree verdict; a refu
   assert.match(message(slow.w), /The start of the Windows watch task did not finish within 60 s .*could not confirm/);
   const store = await run(WATCH, { engine: [STORE_READ, STORE_READ], run: () => Promise.resolve<ProcessResult>({ kind: 'failedToStart', reason: 'spawn ENOENT' }) });
   assert.match(message(store.w), /Store package could not be started by its package path/);
+});
+
+test('Fable major 1: a registered task that does not run as the reader, interactive, at the least privilege starts nothing — and the sentence names the principal line', async () => {
+  const doctored: readonly (readonly [string, string])[] = [
+    ['highest available (elevated, no UAC prompt)', 'principal=' + USER_SID + ' logon=3 level=1'],
+    ['a foreign account', 'principal=S-1-5-21-9-9-9-500 logon=3 level=0'],
+    ['SYSTEM', 'principal=S-1-5-18 logon=5 level=1'],
+    ['a stored password', 'principal=' + USER_SID + ' logon=1 level=0'],
+  ];
+  for (const [name, line] of doctored) {
+    const summary = [line, ...registeredSummary('watch').slice(1)];
+    const { w, outcome } = await run(WATCH, { read: installed('watch', { summary }) });
+    assert.equal(outcome.kind, 'notStarted', name + ': ' + SHOWN(outcome));
+    assert.ok(message(w).includes(line), name + ': the sentence does not name the principal line');
+    assert.match(message(w), /does not run as you at the least privilege/);
+    assert.match(message(w), /install it again/);
+    assert.deepEqual([w.ps().length, w.recorder.prompts.length, w.store.writes], [0, 0, 0], name + ': something started');
+  }
+  const running = await run(WATCH, { read: installed('watch', { state: '4', lastResult: '267009', summary: ['principal=S-1-5-18 logon=5 level=1', ...registeredSummary('watch').slice(1)] }) });
+  assert.equal(running.outcome.kind, 'notStarted', 'the principal is judged BEFORE "already running"');
+  const none = await run(WATCH, { read: installed('watch', { summary: [] }) });
+  assert.equal(none.outcome.kind, 'notStarted', 'a task with no principal line is refused');
+  const ours = registeredSummary('watch');
+  const differs = [ours[0] as string, 'trigger=logon enabled=True delay=PT99S interval=PT7M', ...ours.slice(2)];
+  const { w: ran, outcome: allowed } = await run(WATCH, { read: installed('watch', { summary: differs }) });
+  assert.equal(allowed.kind, 'done', 'an updateNeeded row whose principal IS ours still runs: ' + SHOWN(allowed));
+  assert.equal(ran.ps().length, 1);
 });

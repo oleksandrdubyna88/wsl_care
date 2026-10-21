@@ -328,15 +328,36 @@ async function remove(deps: TasksFlowDeps): Promise<TasksOutcome> {
 
 // ---- run now ----
 
-function presentBlock(task: TaskName, row: Extract<TaskRead, { kind: 'present' }>): TasksOutcome | undefined {
+/**
+ * The principal line a task of THIS extension has: the reader's own SID, an interactive token (`logon=3`), the least privilege (`level=0`) — the numbers
+ * of the canonical summary (`SUMMARY_FUNCTION`, pinned by `summaryOfXml.ts`). A registered task whose line is anything else was registered elsewhere (an
+ * elevated run level, another account, a stored password): a start now would run IT, while the modal says "your account, interactive, the least
+ * privilege" — so it starts nothing, the install's rule ("a problem starts nothing") applied to a task that already exists.
+ */
+function ownPrincipalLine(user: string): string {
+  return 'principal=' + user + ' logon=3 level=0';
+}
+
+/** The refusal for a registered task that does not run as the reader (naming the principal line it has), or none. */
+function principalRefusal(row: Extract<TaskRead, { kind: 'present' }>, user: string): TasksOutcome | undefined {
+  const line = row.summary[0];
+
+  return line === ownPrincipalLine(user) ? undefined : notStarted(`the registered task does not run as you at the least privilege (${line ?? 'no principal line'}) — install it again`);
+}
+
+function presentBlock(task: TaskName, row: Extract<TaskRead, { kind: 'present' }>, user: string): TasksOutcome | undefined {
   if (!row.enabled) {
     return notStarted('the task is disabled in Task Scheduler — install it again to enable it');
+  }
+  const foreign = principalRefusal(row, user);
+  if (foreign !== undefined) {
+    return foreign;
   }
 
   return row.running ? { kind: 'alreadyRunning', task } : undefined;
 }
 
-const ROW_BLOCKS: { readonly [K in TaskRead['kind']]: (task: TaskName, row: Extract<TaskRead, { kind: K }>) => TasksOutcome | undefined } = {
+const ROW_BLOCKS: { readonly [K in TaskRead['kind']]: (task: TaskName, row: Extract<TaskRead, { kind: K }>, user: string) => TasksOutcome | undefined } = {
   absent: (task) => notStarted(`install the Windows ${task} task first: it is not registered`),
   unreadable: (_task, row) => notStarted(row.reason),
   present: presentBlock,
@@ -349,7 +370,7 @@ function runBlock(task: TaskName, read: SchedulerRead): TasksOutcome | undefined
   }
   const row = taskOf(read, task);
 
-  return (ROW_BLOCKS[row.kind] as (t: TaskName, r: TaskRead) => TasksOutcome | undefined)(task, row);
+  return (ROW_BLOCKS[row.kind] as (t: TaskName, r: TaskRead, u: string) => TasksOutcome | undefined)(task, row, read.user);
 }
 
 /** The ONE PowerShell that asks Task Scheduler to start the task: exit 0 is started, 35 is "it was running" (nothing started), every other ending as the install's. */

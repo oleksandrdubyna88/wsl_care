@@ -293,7 +293,8 @@ test('finishedBy for a run record: running, or ran since the record started — 
   const rows: readonly (readonly [string, TaskRow, boolean])[] = [
     ['running', { kind: 'running', byCode: true }, true],
     ['installed, ran after the start', ranAt(NOW + 5_000), true],
-    ['installed, ran within the minute before', ranAt(NOW - 30_000), true],
+    ['installed, ran within the second before (truncation)', ranAt(NOW - 3_000), true],
+    ['installed, ran 30 s before', ranAt(NOW - 30_000), false],
     ['installed, ran long before', ranAt(NOW - 120_000), false],
     ['installed, never run', never, false],
     ['not installed', { kind: 'notInstalled' }, false],

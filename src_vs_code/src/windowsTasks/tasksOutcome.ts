@@ -187,7 +187,7 @@ const SENTENCE: { readonly [K in TasksOutcome['kind']]: Sentence<K> } = {
   busy: () => 'An install, removal or start of the Windows tasks is still waiting (its PowerShell, or its stage) — nothing new was started.',
   failed: (o, op, engine) => `${subject(op)} failed: ${o.sentence}.${byProgram(engine)}`,
   timedOut: (o, op, engine) => `${subject(op)} did not finish within ${Math.round(o.timeoutMs / 1000)} s (${o.setting ?? 'wslCare.timeouts.windowsTasksSeconds'}); ${treeVerdict(o.treeEnded)}. The panel shows what Task Scheduler holds.${byProgram(engine)}`,
-  notStarted: (o, op, engine) => `${subject(op)} could not start: ${o.engineStart === true ? withUnelevatedStoreNote(o.reason, engine) : o.reason}.`,
+  notStarted: (o, op, engine) => `${subject(op)} could not ${op.kind === 'run' ? 'begin' : 'start'}: ${o.engineStart === true ? withUnelevatedStoreNote(o.reason, engine) : o.reason}.`,
   notRun: (o) => o.sentence,
 };
 
