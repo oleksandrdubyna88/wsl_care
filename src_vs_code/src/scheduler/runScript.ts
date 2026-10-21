@@ -47,7 +47,9 @@ export function runTaskScript(folder: string, name: string): string {
     `try { $service = New-Object -ComObject Schedule.Service; $service.Connect() } catch { ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
     `try { $task = $service.GetFolder('\\${safeFolder}').GetTask('${safeName}') } catch { if ($_.Exception.HResult -eq ${NOT_FOUND_HRESULT}) { exit ${RUN_EXIT.notRegistered} }; ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
     "'state=' + [int]$task.State",
-    `if (-not $task.Enabled) { exit ${RUN_EXIT.disabled} }`,
+    // REFUSE BY DEFAULT, here too (the E4 merge follow-up, taken by WR-T3): a read of `Enabled` that throws is exit 37 with the HRESULT, never a fall through to the principal check and the Run.
+    `$enabled = $false; try { $enabled = [bool]$task.Enabled } catch { ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
+    `if (-not $enabled) { exit ${RUN_EXIT.disabled} }`,
     // REFUSE BY DEFAULT: PowerShell goes on with the NEXT statement after a statement-terminating error, so a read or a compare that throws outside a try would
     // fall through to the running test and the Run. The verdicts start refused and only a completed, matching read lifts them.
     `$ok = $false; try { $p = $task.Definition.Principal; $id = [string]$p.UserId; $sid = $id; if ($id -ne '') { try { $sid = (New-Object System.Security.Principal.NTAccount($id)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = $id } }; $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $ok = ($sid -eq $me -and [int]$p.LogonType -eq ${PRINCIPAL_POLICY.logonType} -and [int]$p.RunLevel -eq ${PRINCIPAL_POLICY.runLevel}) } catch { $ok = $false }`,

@@ -157,14 +157,14 @@ export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = Obje
  *
  * `tasks run` is the task's own action (the supervisor, which spells the timer's mark): the extension never runs it, so it is not here.
  */
-export const TASK_NAMES = ['watch', 'archive'] as const;
+export const TASK_NAMES = ['watch', 'archive', 'cleanup'] as const;
 
 export type TaskName = (typeof TASK_NAMES)[number];
 
 /** The daemon tail of `tasks render <task>` — the task is a closed word, checked again at runtime (a cast cannot widen it). */
 export function tasksRenderTail(task: TaskName): readonly string[] {
   if (!TASK_NAMES.includes(task)) {
-    throw new RangeError(`"${String(task)}" is not one of the two Windows tasks`);
+    throw new RangeError(`"${String(task)}" is not a valid Windows task name`);
   }
 
   return ['tasks', 'render', task, '--json'];
@@ -190,3 +190,9 @@ export const TASKS_DEFAULT_TIMEOUT_MS = 60_000;
 export const WINDOWS_READ_NAMES = ['runsShow', 'runs', 'logs', 'archiveStatus', 'archiveList'] as const satisfies readonly RunReadName[];
 
 export type WindowsRunRead = Extract<RunRead, { readonly read: (typeof WINDOWS_READ_NAMES)[number] }>;
+
+/**
+ * The daemon tail of `tasks preview cleanup --json` (WR-T3): read-only, run on the STAGED copy. A CONSTANT, not a function of a task — the
+ * cleanup is the one previewable task by plan (T2 code round), so there is no task parameter to widen.
+ */
+export const TASKS_PREVIEW_TAIL: readonly string[] = ['tasks', 'preview', 'cleanup', '--json'];

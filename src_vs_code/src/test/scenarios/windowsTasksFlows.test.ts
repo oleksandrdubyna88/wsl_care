@@ -32,7 +32,7 @@ test('pressing Install the Windows watch task reaches ONE recorded PowerShell wh
   assert.equal((globalThis as Record<string, unknown>).__wslCareTripwireArmed, true, 'the tripwire is armed in this process');
   const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_FILE, stagedExe: STAGED_EXE, tasks: TASKS_SCENARIO });
   try {
-    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
+    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: () => 180_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
     const recorder = newTasksRecorder();
     recorder.answer = true;
     let installed = false;
@@ -66,7 +66,7 @@ test('pressing Run the Windows watch now reaches ONE recorded PowerShell whose p
   assert.equal((globalThis as Record<string, unknown>).__wslCareTripwireArmed, true, 'the tripwire is armed in this process');
   const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_FILE, stagedExe: STAGED_EXE, tasks: TASKS_SCENARIO });
   try {
-    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
+    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: () => 180_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
     const recorder = newTasksRecorder();
     recorder.answer = true;
     let started = false;
@@ -91,6 +91,37 @@ test('pressing Run the Windows watch now reaches ONE recorded PowerShell whose p
     assert.deepEqual(recorder.shown, [], 'no document: the script is in the modal');
     assert.equal(world.calls().slice(before).filter((call) => call.startsWith('tasks stage') || call.startsWith('tasks run')).length, 0, 'the run-now called no stage and no run of the daemon');
     assert.equal(host.view().tasks[0]?.line, 'Windows watch task: installed, running (0x41301)');
+  } finally {
+    world.dispose();
+  }
+});
+
+test('pressing Preview the Windows TEMP cleanup reaches the strict fake as tasks stage then tasks preview cleanup --json on the staged exe, opens the recorder\'s preview and starts no PowerShell; the tripwire is armed', async () => {
+  assert.equal((globalThis as Record<string, unknown>).__wslCareTripwireArmed, true, 'the tripwire is armed in this process');
+  const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_FILE, stagedExe: STAGED_EXE, tasks: TASKS_SCENARIO });
+  try {
+    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: () => 180_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
+    const recorder = newTasksRecorder();
+    const query = (): Promise<ProcessResult> => Promise.resolve(exited(0, schedulerStdout({ tasks: [] })));
+    const scheduler = new SchedulerHost({ env: { SystemRoot: 'C:\\Windows' }, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
+    const host = new TasksHost({
+      scheduler, client, pin: '0.4.0', formatInstant: (iso) => iso, ui: recordingTasksUi(recorder), engine: fixedEngine(PS51_READ), durable: new MapStore(),
+      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined,
+    });
+    await Promise.all([scheduler.refresh(), host.refresh()]);
+    const before = world.calls().length;
+
+    const outcome = await host.run({ kind: 'preview' });
+
+    assert.equal(outcome?.kind, 'previewed', JSON.stringify(outcome));
+    assert.deepEqual(world.calls().slice(before), ['tasks stage --json', 'tasks preview cleanup --json'], 'stage, then preview');
+    assert.equal(world.files().at(-1), STAGED_EXE, 'the preview ran on the staged exe');
+    assert.equal(recorder.previews.length, 1, 'expected 1 preview, got ' + recorder.previews.length);
+    assert.match(recorder.previews[0] ?? '', /^Windows TEMP cleanup preview — C:\\Users\\user\\AppData\\Local\\Temp/);
+    assert.equal(recorder.requests.length, 0, 'no PowerShell was started');
+    assert.deepEqual(recorder.prompts, [], 'and nothing was asked');
+    assert.equal(recorder.reports.length, 1);
+    assert.equal(recorder.reports[0]?.failed, false);
   } finally {
     world.dispose();
   }

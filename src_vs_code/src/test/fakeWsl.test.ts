@@ -724,7 +724,7 @@ const BUNDLED_EXE_PATH = 'C:\\Users\\u\\.vscode\\extensions\\pub.ai-os-care-0.5.
 test('E7.S5a: WindowsCareClient through the Test-mode seam — the fake answers --version for EXACTLY the bundled path and records it', async () => {
   const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: BUNDLED_EXE_PATH, bundledVersion: '0.4.0+0123456789abcdef0123456789abcdef01234567' });
   try {
-    const read = await new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: BUNDLED_EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000 }).version();
+    const read = await new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: BUNDLED_EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: () => 180_000 }).version();
     assert.deepEqual(read, { kind: 'version', text: '0.4.0+0123456789abcdef0123456789abcdef01234567' });
     assert.deepEqual(world.files(), [BUNDLED_EXE_PATH], 'the exact absolute path the client started');
     assert.deepEqual(world.calls(), ['--version']);

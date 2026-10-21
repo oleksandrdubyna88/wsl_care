@@ -6,8 +6,8 @@ import type { VerbOutcome } from './outcome';
 import { STAGED_DIGEST_SHAPE } from '../shared/shapes';
 import { sha256OfFile } from './fileDigest';
 import { answerExitsOf, readRefusal } from './runReadChecks';
-import { RUN_READ_TIMEOUT_MS, runReadTail, TASKS_DEFAULT_TIMEOUT_MS, TASKS_REMOVE_TAIL, TASKS_STAGE_TAIL, tasksRenderTail, VERBS, WINDOWS_READ_NAMES, type RunReadName, type TaskName, type WindowsRunRead } from './verbs';
-import { endingReason, firstLine, readOutcomeOf, removeResultOf, renderResultOf, stagedDigest, stageResultOf, type RemoveResult, type RenderResult, type StageResult, type WindowsReadOutcome } from './windowsTasks';
+import { RUN_READ_TIMEOUT_MS, runReadTail, TASKS_DEFAULT_TIMEOUT_MS, TASKS_PREVIEW_TAIL, TASKS_REMOVE_TAIL, TASKS_STAGE_TAIL, tasksRenderTail, VERBS, WINDOWS_READ_NAMES, type RunReadName, type TaskName, type WindowsRunRead } from './verbs';
+import { endingReason, firstLine, previewResultOf, readOutcomeOf, removeResultOf, renderResultOf, stagedDigest, stageResultOf, type PreviewResult, type RemoveResult, type RenderResult, type StageResult, type WindowsReadOutcome } from './windowsTasks';
 import { windowsStatusOutcomeOf, windowsStatusUnavailable } from './windowsStatus';
 
 /**
@@ -92,6 +92,8 @@ export interface WindowsClientOptions {
   readonly readTimeoutMs?: (read: RunReadName) => number;
   /** `wslCare.timeouts.windowsStatusSeconds` (through `ceilings.ts`), in milliseconds — the Windows `status` read's own ceiling. */
   readonly statusTimeoutMs: () => number;
+  /** `wslCare.timeouts.windowsTempPreviewSeconds` (through `ceilings.ts`), in milliseconds, read at EVERY preview: the ceiling after which the preview's process tree is ended. */
+  readonly previewTimeoutMs: () => number;
 }
 
 /** What `--version` of the bundled exe answered: its version line, why it was not started, or why it did not answer. */
@@ -224,6 +226,20 @@ export class WindowsCareClient {
     const timeoutMs = this.tasksTimeout();
 
     return renderResultOf(await this.options.runner({ file, args: tasksRenderTail(task), timeoutMs }), task, digest, file);
+  }
+
+  /**
+   * `tasks preview cleanup --json` on the STAGED copy `digest` (WR-T3): what the Windows TEMP cleanup would do now — read-only, bounded by the daemon's own
+   * scan budget and by THIS call's ceiling, at which the process tree is ended (verified). Never the bundled exe, never another task, never another word:
+   * the argv is the one closed tail. A start that finds no file is `notStaged`; a timeout is typed and carries no partial result.
+   */
+  async tasksPreview(digest: string): Promise<PreviewResult> {
+    const file = this.exe(staged(digest));
+    if (typeof file !== 'string') {
+      return { kind: 'unavailable', reason: file.reason };
+    }
+
+    return previewResultOf(await this.options.runner({ file, args: TASKS_PREVIEW_TAIL, timeoutMs: this.options.previewTimeoutMs(), killTree: true }));
   }
 
   /**

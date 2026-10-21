@@ -52,14 +52,16 @@ test('a foreign task name or folder throws RangeError; a terminator line throws 
   assert.equal(terminatesHereString("a '@ b"), false);
 });
 
-test('the removal deletes the two tasks, never names the guard, HKLM or a service, and deletes the folder only when nothing else is in it', () => {
+test('the removal deletes the three tasks, never names the guard, HKLM or a service, and deletes the folder only when nothing else is in it', () => {
   const script = removeTasksScript();
   assert.match(script, /\$folder\.DeleteTask\('watch', 0\)/);
   assert.match(script, /\$folder\.DeleteTask\('archive', 0\)/);
+  assert.match(script, /\$folder\.DeleteTask\('cleanup', 0\)/, "does not match /DeleteTask\\('cleanup', 0\\)/");
+  assert.equal(script.split('DeleteTask(').length, TASK_NAMES.length + 1, 'one delete per task of the closed list');
   assert.doesNotMatch(script, /windows-time-guard|HKLM|-Service|w32tm|Remove-Item|Test-Path/);
   assert.match(script, /GetTasks\(1\)\)\.Count -eq 0 -and @\(\$folder\.GetFolders\(0\)\)\.Count -eq 0\) \{ \$service\.GetFolder\('\\'\)\.DeleteFolder\('wsl-care', 0\)/, 'the remove deleted the folder with a task in it');
   assert.equal(script.split('DeleteFolder(').length, 2, 'ONE folder delete');
-  assert.ok(script.indexOf("DeleteTask('archive'") < script.indexOf('DeleteFolder('), 'the folder goes after the tasks');
+  assert.ok(script.indexOf("DeleteTask('cleanup'") < script.indexOf('DeleteFolder('), 'the folder goes after the tasks');
   assert.match(script, /exit 31/);
   assert.match(script, /exit 32/);
   assert.equal(script, peerRemove('wsl-care', TASK_NAMES));
@@ -168,7 +170,7 @@ test('the run-now script names ONE folder and ONE task, reads the state before R
     assert.ok(text.startsWith('$env:PSModulePath'), 'the module path is pinned first');
     precedesRun(text, "'state='", 'the state is read AFTER Run(');
     precedesRun(text, '-eq 4 -or $task.LastTaskResult -eq 267009', 'the running test comes AFTER Run(');
-    precedesRun(text, '-not $task.Enabled', 'the disabled test comes AFTER Run(');
+    precedesRun(text, 'if (-not $enabled) { exit 36 }', 'the disabled test comes AFTER Run(');
     precedesRun(text, '$task.Definition.Principal', 'the principal is read AFTER Run(');
     precedesRun(text, 'WindowsIdentity]::GetCurrent().User.Value', 'the reader SID is read AFTER Run(');
     precedesRun(text, '[int]$p.LogonType -eq 3', 'the logon type is compared AFTER Run(');
@@ -208,7 +210,8 @@ test('Fable minor 6: PowerShell\'s parser reads the run-now script without an er
     for (const task of TASK_NAMES) {
       fs.writeFileSync(path.join(dir, task + '.ps1'), runNowScript(task), 'utf8');
     }
-    const parse = "& { $e = $null; $t = $null; foreach ($f in 'watch.ps1','archive.ps1') { [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 } }; exit 0 }";
+    const files = TASK_NAMES.map((name) => `'${name}.ps1'`).join(',');
+    const parse = `& { $e = $null; $t = $null; foreach ($f in ${files}) { [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 } }; exit 0 }`;
     const result = childProcess.spawnSync(PS51_ENGINE.file, ['-NoProfile', '-NonInteractive', '-Command', parse, dir], { encoding: 'utf8', timeout: 60_000 });
     assert.equal(result.status, 0, result.stdout + result.stderr);
   } finally {
@@ -256,4 +259,31 @@ test('coai finding 7: the UserId is coerced to text first and translated only wh
   assert.ok(text.includes("if ($id -ne '') {"), 'an empty UserId is translated');
   assert.ok(text.indexOf("if ($id -ne '') {") < text.indexOf('NTAccount($id)'), 'the empty test comes after the translation');
   assert.ok(!text.includes('NTAccount($p.UserId)'), 'the raw UserId reaches NTAccount');
+});
+
+// ---- WR-T3: the enabled check refuses by default, and the third name builds ----
+
+test('the enabled check of the run script refuses by default: a read that throws is exit 37 with the HRESULT, never a fall through to the principal check and Run', () => {
+  for (const task of TASK_NAMES) {
+    const text = runNowScript(task);
+    const lines = text.split(String.fromCharCode(10));
+    const guard = lines.find((line) => line.startsWith('$enabled = $false; try {')) ?? '';
+    assert.ok(guard !== '', 'the script has no $enabled = $false');
+    assert.ok(text.indexOf('$enabled = $false') < text.indexOf('[bool]$task.Enabled'), 'the verdict starts refused BEFORE the read');
+    assert.ok(guard.includes('$enabled = [bool]$task.Enabled') && guard.includes('catch {') && guard.includes('hresult=') && guard.endsWith('exit 37 }'), 'the read sits INSIDE a try whose catch prints the HRESULT and exits 37: ' + guard);
+    const refusal = text.indexOf('if (-not $enabled) { exit 36 }');
+    assert.notEqual(refusal, -1, 'the disabled refusal');
+    assert.ok(text.indexOf(guard) < refusal && refusal < text.indexOf('$ok = $false'), 'enabled read, then the disabled refusal, then the principal check');
+    assert.ok(refusal < text.indexOf('.Run('), 'and all of it before Run(');
+    assert.doesNotMatch(text, /if \(-not \$task\.Enabled\)/, 'the bare read outside a try is gone');
+  }
+});
+
+test('the cleanup builds: the run-now script and the install script name ONE folder and ONE task', () => {
+  const run = runNowScript('cleanup');
+  assert.equal(run.split("GetTask('cleanup')").length, 2);
+  const install = installTaskScript('cleanup', XML);
+  assert.match(install, /cleanup/);
+  assert.equal(install.split("'wsl-care'").length >= 2, true);
+  assert.throws(() => runNowScript('cleanups' as never), RangeError);
 });

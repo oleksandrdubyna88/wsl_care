@@ -35,6 +35,7 @@ const FIXED: readonly [HostCall, number][] = [
   [{ call: 'doctor' }, WORST_CASE_S.doctor],
   [{ call: 'preview' }, WORST_CASE_S.preview],
   [{ call: 'runRead' }, WORST_CASE_S.runRead],
+  [{ call: 'windowsTempPreview' }, WORST_CASE_S.windowsTempPreview],
   [{ call: 'detach' }, WORST_CASE_S.detach],
   [{ call: 'stop' }, WORST_CASE_S.stop],
 ];
@@ -67,7 +68,7 @@ test('each ceiling setting\'s minimum is its worst case plus the stated margin â
   const ceilings: readonly [keyof Numbers, number][] = [
     ['statusSeconds', WORST_CASE_S.status], ['windowsStatusSeconds', WORST_CASE_S.windowsStatus], ['versionSeconds', WORST_CASE_S.version], ['doctorSeconds', WORST_CASE_S.doctor],
     ['previewSeconds', WORST_CASE_S.preview], ['previewPerDockerRowSeconds', DOCKER_SNAPSHOT_S], ['runReadSeconds', WORST_CASE_S.runRead],
-    ['detachSeconds', WORST_CASE_S.detach], ['stopSeconds', WORST_CASE_S.stop],
+    ['detachSeconds', WORST_CASE_S.detach], ['stopSeconds', WORST_CASE_S.stop], ['windowsTempPreviewSeconds', WORST_CASE_S.windowsTempPreview],
   ];
   for (const [name, worstS] of ceilings) {
     assert.equal(NUMBER_SETTINGS[name].minimum, worstS + MARGIN_S, name);
@@ -133,4 +134,13 @@ test('E19.S2b: the bundled exe\'s status waits one MCP CPU window and starts no 
   assert.equal(NUMBER_SETTINGS.windowsStatusSeconds.key, 'timeouts.windowsStatusSeconds');
   assert.equal(ceilingMs({ ...DEFAULT_NUMBERS, windowsStatusSeconds: 33, statusSeconds: 20 }, { call: 'windowsStatus' }), 33_000, 'it follows its own setting, never the distro\'s');
   assert.equal(ceilingMs({ ...DEFAULT_NUMBERS, windowsStatusSeconds: 33, statusSeconds: 44 }, { call: 'status' }), 44_000, 'and the distro\'s call never follows the Windows setting');
+});
+
+test('WR-T3: the ceiling of the Windows TEMP preview covers ONE allowance of temp.scanMaxSeconds at its default (120 s) and the margin, and reaches 3 700 s', () => {
+  assert.equal(WORST_CASE_S.windowsTempPreview, 120);
+  const setting = NUMBER_SETTINGS.windowsTempPreviewSeconds;
+  assert.deepEqual([setting.default, setting.minimum, setting.maximum], [180, 130, 3_700]);
+  assert.match(setting.description, /temp.scanMaxSeconds/);
+  assert.equal(ceilingMs(DEFAULT_NUMBERS, { call: 'windowsTempPreview' }), 180_000);
+  assert.equal(ceilingMs({ ...DEFAULT_NUMBERS, windowsTempPreviewSeconds: 3_700 }, { call: 'windowsTempPreview' }), 3_700_000, 'a person who raised temp.scanMaxSeconds to its maximum can cover it');
 });

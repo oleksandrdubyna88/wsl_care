@@ -1,4 +1,4 @@
-import type { TaskName } from '../client/verbs';
+import { TASK_NAMES, type TaskName } from '../client/verbs';
 import type { RenderAnswer } from '../client/windowsTasks';
 import { programLine, type Engine } from '../powershell/engineTypes';
 import { TASK_FOLDER } from '../scheduler/taskFolder';
@@ -34,25 +34,78 @@ function numberText(answer: RenderAnswer, key: string): string {
   return found === undefined ? NOT_REPORTED : String(found.value);
 }
 
-/** The triggers, in words, from the render's numbers: the task's first run after logon and how it repeats. */
+/** The sentences of one task — a table keyed by `TaskName`, so a task added to the closed list does not compile until it has its words (WR-T3). */
+interface TaskWords {
+  /** What the task does, for the outcome's sentence ("Task Scheduler runs <what> every <cadence>"). */
+  readonly what: string;
+  /** The task's first run after logon and how it repeats, from the render's numbers. */
+  readonly triggers: (answer: RenderAnswer) => string;
+  /** How often it runs, from the render's numbers. */
+  readonly cadence: (answer: RenderAnswer) => string;
+  /** The key of the render's numbers that holds the task's own run limit. */
+  readonly runLimitKey: string;
+  /** What each run does. */
+  readonly body: string;
+  /** What "dry" means for this task. */
+  readonly dryDoes: string;
+  /** The question that opens the install modal. */
+  readonly installQuestion: string;
+  /** What a start now changes. */
+  readonly runChanges: string;
+}
+
+const NO_SETTINGS_CHANGED = 'No Windows settings or other tasks are changed';
+
+const WORDS: { readonly [K in TaskName]: TaskWords } = {
+  watch: {
+    what: 'the Windows MCP watch',
+    triggers: (answer) => `The task starts at logon + ${numberText(answer, 'windowsTasks.watchLogonDelaySeconds')} s, then every ${numberText(answer, 'mcpWatchdog.periodMinutes')} min.`,
+    cadence: (answer) => `${numberText(answer, 'mcpWatchdog.periodMinutes')} min`,
+    runLimitKey: 'mcpWatchdog.runLimitMinutes',
+    body: 'Each run samples the Windows MCP servers into the daemon\'s CPU ledger and acts on nothing (the stop of idle servers arrives in a later version).',
+    dryDoes: 'samples only and changes nothing',
+    installQuestion: 'Install the Windows watch task — a scheduled task that runs as you, not elevated?',
+    runChanges: `${NO_SETTINGS_CHANGED}.`,
+  },
+  archive: {
+    what: 'the archive of the Windows side\'s aged AI sessions',
+    triggers: (answer) => `The task starts at logon + ${numberText(answer, 'windowsTasks.archiveLogonDelayMinutes')} min, then every ${numberText(answer, 'windowsTasks.archiveEveryHours')} h.`,
+    cadence: (answer) => `${numberText(answer, 'windowsTasks.archiveEveryHours')} h`,
+    runLimitKey: 'timer.runLimitMinutes',
+    body: 'Each run archives the Windows side\'s aged AI sessions (archive run); while dry it previews what it would move (archive preview).',
+    dryDoes: 'previews only and changes nothing',
+    installQuestion: 'Install the Windows archive task — a scheduled task that runs as you, not elevated?',
+    runChanges: `${NO_SETTINGS_CHANGED}; the archive task may move session files when the dry line says it acts.`,
+  },
+  cleanup: {
+    what: 'the cleanup of your own old scratch entries in the Windows TEMP folder (A23)',
+    triggers: (answer) => `The task starts at logon + ${numberText(answer, 'windowsTasks.cleanupLogonDelayMinutes')} min, then every ${numberText(answer, 'windowsTasks.cleanupEveryHours')} h.`,
+    cadence: (answer) => `${numberText(answer, 'windowsTasks.cleanupEveryHours')} h`,
+    runLimitKey: 'timer.runLimitMinutes',
+    body: 'Each run deletes your OWN old scratch entries in the Windows TEMP folder: only top-level names the allow-list (temp.allowGlobs) covers, older than temp.olderThanDays (by their newest file), owned by you; never %TEMP%\\claude, never a git working folder, never a reparse point, never more than temp.maxItemsPerRun per run. Press *Preview the Windows TEMP cleanup* to see the values in force and what would go.',
+    dryDoes: 'previews only and deletes nothing',
+    installQuestion: 'Install the Windows cleanup task — a scheduled task that runs as you, not elevated, and DELETES old scratch entries in your TEMP folder?',
+    runChanges: `${NO_SETTINGS_CHANGED}; the cleanup task deletes your old scratch entries in the Windows TEMP folder when the dry line says it acts (never %TEMP%\\claude).`,
+  },
+};
+
+/** The triggers, in words, from the render's numbers. */
 function triggersLine(task: TaskName, answer: RenderAnswer): string {
-  return task === 'watch'
-    ? `The task starts at logon + ${numberText(answer, 'windowsTasks.watchLogonDelaySeconds')} s, then every ${numberText(answer, 'mcpWatchdog.periodMinutes')} min.`
-    : `The task starts at logon + ${numberText(answer, 'windowsTasks.archiveLogonDelayMinutes')} min, then every ${numberText(answer, 'windowsTasks.archiveEveryHours')} h.`;
+  return WORDS[task].triggers(answer);
 }
 
 /** What a task does, for the outcome's sentence ("Task Scheduler runs <what> every <cadence>"). */
 export function whatOf(task: TaskName): string {
-  return task === 'watch' ? 'the Windows MCP watch' : 'the archive of the Windows side\'s aged AI sessions';
+  return WORDS[task].what;
 }
 
 /** How often a task runs, from the render's numbers: a number the render did not report is said so. */
 export function cadenceOf(task: TaskName, answer: RenderAnswer): string {
-  return task === 'watch' ? `${numberText(answer, 'mcpWatchdog.periodMinutes')} min` : `${numberText(answer, 'windowsTasks.archiveEveryHours')} h`;
+  return WORDS[task].cadence(answer);
 }
 
 function deadlineLine(task: TaskName, answer: RenderAnswer): string {
-  const own = task === 'watch' ? numberText(answer, 'mcpWatchdog.runLimitMinutes') : numberText(answer, 'timer.runLimitMinutes');
+  const own = numberText(answer, WORDS[task].runLimitKey);
 
   return `Each run is ended by its own supervisor after ${own} min (its whole process tree), and by Task Scheduler after ${answer.executionTimeLimitMinutes} min.`;
 }
@@ -62,20 +115,19 @@ function dryLines(answer: RenderAnswer): string[] {
   if (!answer.dry.dryRun) {
     return [reason];
   }
-  const does = answer.task === 'watch' ? 'samples only' : 'previews only';
+  const own = answer.task === 'cleanup' ? ['This task has its OWN dry week (A23\'s, separate from the watch\'s and the archive\'s).'] : [];
 
-  return [reason, `While dry the task ${does} and changes nothing; the dry run ends when the daemon's dryRun setting is turned off on the Windows side — this extension never writes the daemon's settings.`];
+  return [reason, ...own, `While dry the task ${WORDS[answer.task].dryDoes}; the dry run ends when the daemon's dryRun setting is turned off on the Windows side — this extension never writes the daemon's settings.`];
 }
 
 function bodyLine(task: TaskName): string {
-  return task === 'watch'
-    ? 'Each run samples the Windows MCP servers into the daemon\'s CPU ledger and acts on nothing (the stop of idle servers arrives in a later version).'
-    : 'Each run archives the Windows side\'s aged AI sessions (archive run); while dry it previews what it would move (archive preview).';
+  return WORDS[task].body;
 }
 
 const LIMITATIONS = [
   'The task runs only while you are logged on (an interactive-token task does not run logged out).',
-  'If UAC is off (EnableLUA=0) or this is the built-in Administrator account, every process counts as elevated and the task\'s runs are refused with exit 81 — the panel shows it.',
+  'If UAC is off (EnableLUA=0) or this is the built-in Administrator account, every process counts as elevated: the task\'s runs are refused with exit 81, the daemon will not render this task as registrable, and the preview answers 81 too — run it from an account that is not an administrator, or turn UAC on.',
+  'A last result of 75 means busy — a watch was sampling under the daemon\'s run lock; the next scheduled run retries.',
 ];
 
 /**
@@ -84,7 +136,7 @@ const LIMITATIONS = [
  */
 export function installPrompt(task: TaskName, answer: RenderAnswer, engine: Engine): TasksPrompt {
   return {
-    message: `Install the Windows ${task} task — a scheduled task that runs as you, not elevated?`,
+    message: WORDS[task].installQuestion,
     detail: [
       `One PowerShell runs AS YOU — not elevated, no UAC prompt — and registers ONE scheduled task, \\${TASK_FOLDER}\\${task}, exactly as the read-only editor tab beside this dialog shows (create or replace, so install is also update).`,
       programLine(engine),
@@ -98,10 +150,17 @@ export function installPrompt(task: TaskName, answer: RenderAnswer, engine: Engi
       bodyLine(task),
       '',
       ...LIMITATIONS,
-      'Remove both tasks and the copy at any time with *Remove the Windows tasks*. Nothing else on Windows is changed.',
+      'Remove every Windows task and the copy at any time with *Remove the Windows tasks*. Nothing else on Windows is changed.',
     ].map(noticeText).join('\n'),
     confirm: INSTALL_CONFIRM,
   };
+}
+
+/** Every task's path, as a sentence: the folder's tasks in the closed list's order, joined with "and" — derived from the list, never hand-listed. */
+export function taskPaths(): string {
+  const paths = TASK_NAMES.map((name) => `\\${TASK_FOLDER}\\${name}`);
+
+  return `${paths.slice(0, -1).join(', ')} and ${paths.at(-1) ?? ''}`;
 }
 
 /** The removal's modal: the exact script it runs, then the daemon's removal of the staged copies — and the rule for a copy still executing. */
@@ -109,7 +168,7 @@ export function removePrompt(script: string, engine: Engine): TasksPrompt {
   return {
     message: 'Remove the Windows tasks and their staged copy?',
     detail: [
-      `One PowerShell runs AS YOU — not elevated — and runs exactly this: it deletes the tasks \\${TASK_FOLDER}\\watch and \\${TASK_FOLDER}\\archive when present, and the folder only when nothing else is in it (the Windows Time guard's task keeps it).`,
+      `One PowerShell runs AS YOU — not elevated — and runs exactly this: it deletes the tasks ${taskPaths()} when present, and the folder only when nothing else is in it (the Windows Time guard's task keeps it).`,
       `Then the daemon's staged-copy removal deletes every staged copy under your LocalAppData's ${TASK_FOLDER}\\bin — a copy whose exe is still executing (a task run in progress) is kept and named, and the next install or removal retries it.`,
       programLine(engine),
       '',
@@ -121,11 +180,9 @@ export function removePrompt(script: string, engine: Engine): TasksPrompt {
   };
 }
 
-/** What a start now changes, said precisely: no settings and no other task; the archive task may MOVE session files once its dry line says it acts. */
+/** What a start now changes, said precisely: no settings and no other task; the archive task may MOVE session files and the cleanup task DELETES scratch entries once its dry line says it acts. */
 function runChanges(task: TaskName): string {
-  return task === 'archive'
-    ? 'No Windows settings or other tasks are changed; the archive task may move session files when the dry line says it acts.'
-    : 'No Windows settings or other tasks are changed.';
+  return WORDS[task].runChanges;
 }
 
 /**

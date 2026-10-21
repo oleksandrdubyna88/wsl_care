@@ -11,6 +11,8 @@ import type { TasksPrompt } from './tasksPrompts';
 export interface TasksRecorder {
   /** Each script the person was shown, with the task it was shown for. */
   readonly shown: { readonly text: string; readonly task: string }[];
+  /** Each preview report the person was shown in the read-only tab (WR-T3). */
+  readonly previews: string[];
   readonly prompts: TasksPrompt[];
   /** Each request the ONE PowerShell would have been started with, with the title of its progress notification. */
   readonly requests: ProcessRequest[];
@@ -26,7 +28,7 @@ const NOTHING = Buffer.alloc(0);
 
 export function newTasksRecorder(): TasksRecorder {
   return {
-    shown: [], prompts: [], requests: [], titles: [], reports: [], answer: false,
+    shown: [], previews: [], prompts: [], requests: [], titles: [], reports: [], answer: false,
     result: { kind: 'exited', code: 0, stdout: NOTHING, stderr: NOTHING },
   };
 }
@@ -35,6 +37,7 @@ export function newTasksRecorder(): TasksRecorder {
 export function recordingTasksUi(recorder: TasksRecorder): TasksUi {
   return {
     show: (text, task) => { recorder.shown.push({ text, task }); return Promise.resolve(); },
+    showPreview: (text) => { recorder.previews.push(text); return Promise.resolve(); },
     confirm: (prompt) => { recorder.prompts.push(prompt); return Promise.resolve(recorder.answer); },
     run: (request, title) => { recorder.requests.push(request); recorder.titles.push(title); return Promise.resolve(recorder.result); },
     report: (message, failed) => { recorder.reports.push({ message, failed }); },

@@ -2,9 +2,12 @@ import type { DurableStore } from '../cleanup/journal';
 import type { WindowsCareClient } from '../client/WindowsCareClient';
 import type { RenderResult } from '../client/windowsTasks';
 import type { EngineSource } from '../powershell/engineSource';
+import { TASK_NAMES, type TaskName } from '../client/verbs';
 import { Listeners } from '../shared/listeners';
 import { SingleFlight } from '../shared/singleFlight';
 import type { SchedulerHost } from '../scheduler/schedulerHost';
+import type { LastRun } from '../scheduler/schedulerAnswer';
+import { readCleanupRecord, type CleanupRecordRead } from './cleanupRecord';
 import { runTasksOp, type TasksOp, type TasksOutcome, type TasksUi } from './tasksFlow';
 import { ceilingPassed, clearPending, readPending, type PendingRecord } from './tasksPending';
 import { finishedBy, NOT_PROBED, windowsTasksState, type CopyState, type WindowsTasksState } from './tasksState';
@@ -31,7 +34,7 @@ import { windowsTasksView, type WindowsTasksView } from './tasksView';
  */
 
 /** The calls of the client the probe and the flows make. */
-export type TasksClient = Pick<WindowsCareClient, 'bundledDigest' | 'tasksRender' | 'tasksStage' | 'tasksStageRemove' | 'exe'>;
+export type TasksClient = Pick<WindowsCareClient, 'bundledDigest' | 'tasksRender' | 'tasksPreview' | 'tasksStage' | 'tasksStageRemove' | 'exe' | 'read'>;
 
 export interface TasksHostDeps {
   /** The ONE Task Scheduler read — the guard's too. */
@@ -91,6 +94,10 @@ export class TasksHost {
   private copy: CopyState = NOT_PROBED;
   private opRunning = false;
   private readonly listeners = new Listeners();
+  /** WR-T3: the record read for the cleanup task's last run — `at` is the last-run instant it was read for, so a newer run never shows an older run's record. */
+  private cleanup: { readonly at: string; readonly read: CleanupRecordRead } | undefined;
+  /** ONE record read in flight (the probe's rule); a refresh that changes nothing about the last run reads nothing. */
+  private readonly recording = new SingleFlight(() => this.recordOnce(), { ended: () => { this.listeners.tell(); } });
   /** The persisted record, seen through this host: every write of it re-derives the part's lines at once (the buttons grey before the PowerShell starts). */
   private readonly durable: DurableStore;
   /** ONE probe in flight; a refresh during a flight is answered by ONE more after it (the same rule as the shared read). */
@@ -107,7 +114,9 @@ export class TasksHost {
   }
 
   view(): WindowsTasksView {
-    return windowsTasksView(this.state(), this.deps.pin, this.deps.formatInstant, { pending: readPending(this.deps.durable, this.deps.nowUtcMs()), busy: this.opRunning });
+    const state = this.state();
+
+    return windowsTasksView(state, this.deps.pin, this.deps.formatInstant, { pending: readPending(this.deps.durable, this.deps.nowUtcMs()), busy: this.opRunning, cleanupRecord: this.recordFor(state) });
   }
 
   onChange(listener: () => void): () => void {
@@ -161,6 +170,47 @@ export class TasksHost {
     this.listeners.tell();
     if (!this.deps.scheduler.checking()) {
       this.settled();
+      this.followRecord();
+    }
+  }
+
+  /** The record read for the cleanup task's CURRENT last run, if it was read for that run. */
+  private recordFor(state: WindowsTasksState): CleanupRecordRead | undefined {
+    const run = state.cleanupRun;
+
+    return run?.kind === 'ran' ? this.recordedFor(run.utc) : undefined;
+  }
+
+  /** The record read for exactly the last run `utc`. */
+  private recordedFor(utc: string): CleanupRecordRead | undefined {
+    return this.cleanup?.at === utc ? this.cleanup.read : undefined;
+  }
+
+  /** Whether the cleanup task's last run still needs its record read: it has none for THAT run, or the history could not be read last time. */
+  private needsRecord(run: LastRun | undefined): run is Extract<LastRun, { kind: 'ran' }> {
+    if (run?.kind !== 'ran') {
+      return false;
+    }
+    const done = this.recordedFor(run.utc);
+
+    return done === undefined || done.kind === 'unreadable';
+  }
+
+  /**
+   * The Task Scheduler read answered: when the registered cleanup task has run and its last run has no record read yet, ONE record read starts (detached — a
+   * fault is the read's own). Never for a task that is absent, unreadable or never ran; never twice for the same last run (an unreadable history is the one
+   * exception: the next read tries again). No timer, no poll.
+   */
+  private followRecord(): void {
+    if (this.needsRecord(this.state().cleanupRun)) {
+      void this.recording.request().catch(() => undefined);
+    }
+  }
+
+  private async recordOnce(): Promise<void> {
+    const run = this.state().cleanupRun;
+    if (this.needsRecord(run)) {
+      this.cleanup = { at: run.utc, read: await readCleanupRecord(this.deps.client, run.utc, this.deps.nowUtcMs()) };
     }
   }
 
@@ -206,12 +256,22 @@ export class TasksHost {
     }
   }
 
+  /** The renders of every task after the first, asked one after another (the daemon answers one at a time) — derived from the closed list, never hand-listed. */
+  private async restOfRenders(digest: string): Promise<Partial<Record<TaskName, RenderResult>>> {
+    const answers: (readonly [TaskName, RenderResult])[] = [];
+    for (const name of TASK_NAMES.slice(1)) {
+      answers.push([name, await this.deps.client.tasksRender(name, digest)]);
+    }
+
+    return Object.fromEntries(answers);
+  }
+
   private async copyOf(digest: string): Promise<CopyState> {
     try {
-      const first = await this.deps.client.tasksRender('watch', digest);
+      const first = await this.deps.client.tasksRender(TASK_NAMES[0], digest);
       const early = copyAfterFirst(first, digest);
 
-      return early ?? { kind: 'staged', digest, renders: { watch: first, archive: await this.deps.client.tasksRender('archive', digest) } };
+      return early ?? { kind: 'staged', digest, renders: { [TASK_NAMES[0]]: first, ...(await this.restOfRenders(digest)) } };
     } catch (e: unknown) {
       return { kind: 'unreadable', digest, reason: reasonOf(e) };
     }

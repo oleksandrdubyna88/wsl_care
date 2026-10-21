@@ -358,3 +358,33 @@ test('the brand scan finds a planted cast, in both spellings, and ignores a ment
   ];
   assert.deepEqual(judgedFolderCasters(planted), ['src/archive/archiveFlow.ts', 'src/panel/x.ts']);
 });
+
+// ---- WR-T3 (I4): the preview button never spells the act verb ----
+//
+// The root-word scan above reads a literal that IS `act`. A cleanup preview, install or run-now has no business near the verb at all, and an argv built from
+// one string — `'act A23 --preview'`, a template `act ${id} --confirm` — is not an exact `act`. So: no shipped module but the root module has a string literal
+// that is `act` or BEGINS with it as a word (an argv written as one string). Prose that names the verb inside a sentence (the settings' descriptions say
+// "`act <ids> --preview`" to a person) is not an argv, and neither are "the task acts" or "action".
+
+/** The modules with a literal that spells the act verb: the whole word, or a string that begins with it as a word. */
+function actSpellers(all: readonly Source[]): string[] {
+  const spelt = (literal: string): boolean => /^act(\s|$)/.test(literal);
+
+  return all.filter((s) => s.file !== ROOT_CALL && stringLiteralsOf(s.text).some(spelt)).map((s) => s.file);
+}
+
+test('no shipped module outside the root module spells the act verb — the Windows tasks\' modules included', () => {
+  assert.deepEqual(actSpellers(sources()), []);
+  assert.ok(sources().some((s) => s.file === 'src/windowsTasks/tasksFlow.ts'), 'the scan reads the Windows tasks\' modules');
+});
+
+test('the act scan finds a planted argv in an array, a one-string argv and a template — and ignores prose and comments', () => {
+  const planted: Source[] = [
+    { file: 'src/windowsTasks/x.ts', text: "const argv = ['act', 'A23'];" },
+    { file: 'src/windowsTasks/y.ts', text: "const argv = 'act A23 --preview';" },
+    { file: 'src/windowsTasks/z.ts', text: 'const argv = `act ${id} --confirm`;' },
+    { file: 'src/windowsTasks/ok.ts', text: "// act A23 is the root's\nconst s = 'when the dry line says it acts, the action of the cleanup act is A23 only';" },
+  ];
+  assert.deepEqual(actSpellers(planted), ['src/windowsTasks/x.ts', 'src/windowsTasks/y.ts', 'src/windowsTasks/z.ts']);
+  assert.deepEqual(actSpellers([{ file: ROOT_CALL, text: "const t = ['act'];" }]), [], 'the root module is the one that may');
+});

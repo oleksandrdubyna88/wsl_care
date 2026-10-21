@@ -134,6 +134,21 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.installWindowsCleanupTask",
+        "title": "Install the Windows cleanup task (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.previewWindowsTempCleanup",
+        "title": "Preview the Windows TEMP cleanup (read-only)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.runWindowsCleanupTask",
+        "title": "Clean Windows TEMP now (as you, not elevated)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.chooseArchiveFolder",
         "title": "Choose the AI-session archive folder…",
         "category": "AI OS Care"
@@ -322,6 +337,14 @@
           "maximum": 600,
           "scope": "application",
           "markdownDescription": "How long installing, removing or starting now the Windows tasks may take, in seconds — the ONE PowerShell that runs as you (not elevated, no UAC prompt) registers, deletes or starts a scheduled task. At the ceiling it and everything it started are ended, and the panel keeps the buttons held until the deadline of twice this number."
+        },
+        "wslCare.timeouts.windowsTempPreviewSeconds": {
+          "type": "integer",
+          "default": 180,
+          "minimum": 130,
+          "maximum": 3700,
+          "scope": "application",
+          "markdownDescription": "How long *Preview the Windows TEMP cleanup* (`tasks preview cleanup --json` on the staged copy) may take, in seconds. It must cover ONE allowance of the daemon's `temp.scanMaxSeconds` (120 by default; the listing is paid from the same budget) plus the process start: raise it when you raise that key. At the ceiling the daemon's process tree is ended (verified) and the preview says it did not answer — never a guessed result."
         },
         "wslCare.timeouts.engineProbeSeconds": {
           "type": "integer",

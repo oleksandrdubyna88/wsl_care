@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { TASK_NAMES, type TaskName } from '../client/verbs';
 import type { RenderAnswer } from '../client/windowsTasks';
 import { schedulerReadOf, type SchedulerRead } from '../scheduler/schedulerAnswer';
 import { registrationProblem } from '../windowsTasks/tasksGuards';
@@ -16,23 +17,32 @@ import { EXTENSION, renderAnswerOf, STAGED_EXE } from './support/windowsTasks';
 
 const READ: SchedulerRead = schedulerReadOf(exited(0, schedulerStdout()));
 
-function golden(name: 'watch' | 'archive' = 'watch'): RenderAnswer {
+function golden(name: TaskName = 'watch'): RenderAnswer {
   return renderAnswerOf(name + ' from the staged copy', name);
 }
 
-function withXml(edit: (xml: string) => string, name: 'watch' | 'archive' = 'watch'): RenderAnswer {
+function withXml(edit: (xml: string) => string, name: TaskName = 'watch'): RenderAnswer {
   const answer = golden(name);
 
   return { ...answer, xml: edit(answer.xml) };
 }
 
-function problem(answer: RenderAnswer, read: SchedulerRead = READ, task: 'watch' | 'archive' = answer.task): string {
+function problem(answer: RenderAnswer, read: SchedulerRead = READ, task: TaskName = answer.task): string {
   return registrationProblem(answer, task, read, STAGED_EXE, EXTENSION.fsPath);
 }
 
-test('the daemon\'s own golden renders pass every check, for both tasks', () => {
-  assert.equal(problem(golden('watch')), '');
-  assert.equal(problem(golden('archive')), '');
+test('the daemon\'s own golden renders pass every check, for every task', () => {
+  for (const name of TASK_NAMES) {
+    assert.equal(problem(golden(name)), '', name);
+  }
+});
+
+test('WR-T3: a render of another task\'s path is refused for the cleanup, and the cleanup\'s own path for the others', () => {
+  const cleanup = golden('cleanup');
+  assert.equal(cleanup.taskPath, '\\wsl-care\\cleanup');
+  assert.match(problem({ ...cleanup, taskPath: '\\wsl-care\\watch' }), /the render's task path .*watch.* is not \\wsl-care\\cleanup/, 'the render\'s task path "\\\\wsl-care\\\\watch" is not \\wsl-care\\cleanup');
+  assert.match(problem({ ...golden('watch'), taskPath: '\\wsl-care\\cleanup' }), /is not \\wsl-care\\watch/);
+  assert.match(problem(cleanup, READ, 'archive'), /is not \\wsl-care\\archive/, 'the task asked decides, not the render\'s own name');
 });
 
 test('every defect of the principal is refused with a sentence naming it', () => {

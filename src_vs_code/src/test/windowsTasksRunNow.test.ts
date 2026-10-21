@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { TASK_NAMES } from '../client/verbs';
+import { TASK_NAMES, type TaskName } from '../client/verbs';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { UNELEVATED_SWITCHES } from '../powershell/unelevatedLauncher';
 import { RUN_EXIT } from '../scheduler/runScript';
@@ -29,7 +29,7 @@ const RUN_OPS: readonly TasksOp[] = TASK_NAMES.map((task) => ({ kind: 'run', tas
 const NOW = 1_000_000;
 
 /** A read with the task installed as the golden would install it: present, enabled, idle. */
-function installed(task: 'watch' | 'archive', over: Partial<TaskFixture> = {}): SchedulerFixture {
+function installed(task: TaskName, over: Partial<TaskFixture> = {}): SchedulerFixture {
   return { tasks: [{ name: task, summary: registeredSummary(task), ...over }] };
 }
 
@@ -278,4 +278,16 @@ test('coai finding 2: the run-now modal closes with what it really changes — t
   const watch = (await run(WATCH)).w.recorder.prompts[0]?.detail ?? '';
   assert.match(watch, /No Windows settings or other tasks are changed./);
   assert.doesNotMatch(watch, /may move session files|Nothing else on Windows is changed/);
+});
+
+test('WR-T3: the clean-now modal says the cleanup task deletes TEMP entries when the dry line says it acts — and the other two\'s words do not fall back to it', async () => {
+  const cleanup = (await run({ kind: 'run', task: 'cleanup' })).w.recorder.prompts[0];
+  const detail = cleanup?.detail ?? '';
+  assert.match(cleanup?.message ?? '', /Start the Windows cleanup task now — as you, not elevated\?/);
+  assert.match(detail, /asks Task Scheduler to start \\wsl-care\\cleanup exactly as its next trigger would/);
+  assert.match(detail, /What it does: the cleanup of your own old scratch entries in the Windows TEMP folder \(A23\)\./);
+  assert.match(detail, /the cleanup task deletes your old scratch entries in the Windows TEMP folder when the dry line says it acts \(never %TEMP%\\claude\)/, 'The input did not match /deletes your old scratch entries/');
+  assert.doesNotMatch(detail, /may move session files/);
+  const archive = (await run({ kind: 'run', task: 'archive' })).w.recorder.prompts[0]?.detail ?? '';
+  assert.doesNotMatch(archive, /deletes your old scratch entries/);
 });

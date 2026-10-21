@@ -50,6 +50,9 @@ export type PageMessage =
   | { readonly type: 'removeWindowsTasks' }
   | { readonly type: 'runWindowsWatchTask' }
   | { readonly type: 'runWindowsArchiveTask' }
+  | { readonly type: 'installWindowsCleanupTask' }
+  | { readonly type: 'previewWindowsTempCleanup' }
+  | { readonly type: 'runWindowsCleanupTask' }
   | { readonly type: 'chooseArchiveFolder' }
   | { readonly type: 'stopArchiving' }
   | { readonly type: 'archiveNow' }
@@ -62,7 +65,7 @@ export type PageMessage =
   | { readonly type: 'stop'; readonly index: number }
   | { readonly type: 'enableGpu'; readonly index: number; readonly readAt: number };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks', 'runWindowsWatchTask', 'runWindowsArchiveTask', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow', 'openArchive', 'stopRelays']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks', 'runWindowsWatchTask', 'runWindowsArchiveTask', 'installWindowsCleanupTask', 'previewWindowsTempCleanup', 'runWindowsCleanupTask', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow', 'openArchive', 'stopRelays']);
 
 /** The host holds at most this many stoppable runs plus one (the daemon has ONE running state; the list is a list for shape only). */
 export const MAX_STOP_INDEX = 3;

@@ -51,6 +51,8 @@ export interface WindowsTasksState {
   readonly tasks: Readonly<Record<TaskName, TaskRow>>;
   /** The Windows dry state's sentence from a render that answered ('' when none did). */
   readonly dry: string;
+  /** WR-T3: the cleanup task's last run as Task Scheduler read it — whatever the row says of the comparison — and nothing when the task is not registered or the read did not answer. */
+  readonly cleanupRun?: LastRun | undefined;
 }
 
 const CHECKING: TaskRow = { kind: 'checking' };
@@ -153,11 +155,21 @@ function dryOf(copy: CopyState): string {
 export function windowsTasksState(read: SchedulerRead, copy: CopyState): WindowsTasksState {
   const tasks = read.kind === 'unknown' ? allTasks(() => unknownRow(read)) : allTasks((name) => rowOf(read, name, copy));
 
-  return { copy, tasks, dry: dryOf(copy) };
+  return { copy, tasks, dry: dryOf(copy), cleanupRun: cleanupRunOf(read) };
+}
+
+/** The cleanup task's last run when the read answered and the task is registered. */
+function cleanupRunOf(read: SchedulerRead): LastRun | undefined {
+  if (read.kind !== 'read') {
+    return undefined;
+  }
+  const task = taskOf(read, 'cleanup');
+
+  return task.kind === 'present' ? task.lastRun : undefined;
 }
 
 /** Tolerance for Task Scheduler's last-run instant: it truncates to the second, so a run that began at the record's instant can read up to a second earlier. */
-const RUN_TOLERANCE_MS = 5_000;
+export const RUN_TOLERANCE_MS = 5_000;
 
 /** A start-now record is over when the task is running, or ran at or after the record started (less the tolerance) — the read's evidence, never a flow's word. */
 function startedOrRan(row: TaskRow, startedAtUtcMs: number): boolean {

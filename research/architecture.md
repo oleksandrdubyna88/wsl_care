@@ -2178,13 +2178,30 @@ flowchart LR
     flow -->|"run-now: runNowScript, after a read pre-check (no daemon call)"| run["scheduler/runScript<br/>the ONE home of a task's start: the task's own Run"]
     flow -->|"unelevatedRequest: engine.file, -EncodedCommand, killTree"| launch["powershell/unelevatedLauncher<br/>(+ commandLine, modulePath, engineTypes: shared, not elevated)"]
     launch --> runner["process/runner<br/>ceiling + verified tree kill by pid and creation time"]
-    runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive"]
+    runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive · \wsl-care\cleanup"]
     flow -->|"pending record before the launch; cleared on every answer but a timeout"| state["globalState<br/>wslCare.windowsTasks.pending"]
     sched -->|"refresh after an answer; settle past the ceiling"| flow
     guard["windowsTime/ (the guard)<br/>same registration scripts, run ELEVATED"] --> reg
 ```
 
 The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own. Since WR-E4 the same flow also STARTS a registered task now (*Run the Windows watch now*, *Archive Windows sessions now*): after a read of the task's row it asks Task Scheduler, through the same unelevated launcher and the one runner, to `Run` the registered task exactly as its next trigger would — the daemon is not called at all, and `scheduler/runScript.ts` is the one shipped source that spells a task's start (`registrationPath.test.ts`, with the tripwire's own `TASK_RUN` pattern).
+
+**The third task, the preview and the last-cleanup line (WR-T3, 2026-10-22).** `\wsl-care\cleanup` (A23, the person's OWN old scratch entries in the Windows TEMP folder) is the third name of the same closed list: its install and its clean-now are the flows above, unchanged. Two edges are new, both through the same client and neither near PowerShell:
+
+```mermaid
+flowchart LR
+    panel["panel / palette: previewWindowsTempCleanup (bare)"] --> pflow["windowsTasks/tasksFlow: preview<br/>busy if ANY record stands · no record of its own"]
+    pflow -->|"1. tasks stage (the install's own stage step, one busy retry)"| client["client/WindowsCareClient"]
+    pflow -->|"2. tasksPreview(digest): tasks preview cleanup --json, killTree, wslCare.timeouts.windowsTempPreviewSeconds"| client
+    client -->|"bundled exe: stage · STAGED exe: preview (read-only, takes no lock)"| daemon["wsl-care.exe (Windows daemon)"]
+    pflow -->|"typed report"| text["windowsTasks/previewText<br/>the extension's own text, every path sanitised and re-capped"]
+    text --> tab["read-only .txt tab + one headline"]
+    sched["scheduler/schedulerHost: the ONE read"] -->|"the cleanup task ran at T"| host["windowsTasks/tasksHost<br/>ONE record read per T"]
+    host -->|"read(runs) over [T-5s, now], then read(runsShow) for the newest A23 line"| client
+    host --> line["windowsTasks/cleanupRecord: the last-cleanup line<br/>+ Task Scheduler's own last result"]
+```
+
+The preview needs a VERIFIED staged copy, so it stages on demand; it writes no pending record (nothing to recover after a reload) and another window's standing record makes it `busy`, which is how it cannot race a removal. A timeout ends the daemon's process tree (verified) and shows no result. The line reads the run history only through the client's closed run reads, with checked instants, on the bundled exe, and never twice for the same last run. The panel states what the daemon measured: logical bytes (never "freed"), "entries kept in use" counted from the run's own notes, a lower bound only when the scan ran out of its budget. The details are in [module_vs_code.md](module_vs_code.md) and the plan's *WR-T3 as built*.
 
 ## Containers — the system on one page
 

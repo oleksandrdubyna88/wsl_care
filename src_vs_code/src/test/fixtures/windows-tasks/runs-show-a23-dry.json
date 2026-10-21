@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "runId": "20261001T210000Z-4242",
+  "state": "done",
+  "run": {
+    "runId": "20261001T210000Z-4242",
+    "trigger": "timer",
+    "startedAt": "2026-10-01T21:00:00+00:00",
+    "endedAt": "2026-10-01T21:02:00+00:00",
+    "outcome": "completed",
+    "dryRun": true,
+    "detail": "runs/2026-10-01/20261001T210000Z-4242.json",
+    "detailState": "present",
+    "freedBytes": 0,
+    "cleanup": false,
+    "actions": [
+      {
+        "id": "A23",
+        "status": "dryRun",
+        "count": 12,
+        "freedBytes": 0
+      }
+    ],
+    "kind": "act"
+  },
+  "detailState": "present",
+  "detail": {
+    "kind": "act",
+    "dryRun": false,
+    "dryRunReason": "the setting dryRun is off",
+    "targetUser": {
+      "found": false,
+      "source": "no target user: the Windows binary has none"
+    },
+    "actions": [
+      {
+        "id": "A23",
+        "summary": "the Windows TEMP cleanup: delete your own old scratch entries",
+        "status": "ran",
+        "reason": "ran",
+        "run": {
+          "count": 0,
+          "freedBytes": 0,
+          "freedBasis": "the logical sizes of the files in the deleted trees",
+          "removed": [],
+          "commands": [],
+          "failure": "",
+          "succeeded": true,
+          "notRemoved": [],
+          "notes": [
+            "deleted 12, kept in use 7, not deleted 2"
+          ]
+        }
+      }
+    ],
+    "notes": []
+  }
+}

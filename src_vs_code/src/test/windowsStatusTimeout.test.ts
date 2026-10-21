@@ -21,7 +21,7 @@ const CEILING_MS = 1_500;
 test('a hung windows status ends at its ceiling as a timeout, the runner kills the exe, and the distro slot is untouched', async () => {
   const world = fakeWorld({ ...UBUNTU_RUNNING, bundledExe: EXE, bundledStatusDelayMs: 60_000 });
   try {
-    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => CEILING_MS });
+    const client = new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => CEILING_MS, previewTimeoutMs: () => 180_000 });
     const store = new OutcomeStore();
     const distro: VerbOutcome = answered('status', headBody('status'));
     const poller = new Poller({

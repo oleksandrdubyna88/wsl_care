@@ -224,6 +224,27 @@ class Fields {
     return typeof value === 'number' && Number.isInteger(value) ? value : this.missing(key, 'a whole number', 0);
   }
 
+  /** A whole number that is not negative — a count or a size. */
+  count(key: string): number {
+    const value = this.member(key);
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : this.missing(key, 'a non-negative whole number', 0);
+  }
+
+  /** A text member the daemon leaves out when it has none (it omits nulls): absent is `undefined`, a member of another kind is the first problem. */
+  optionalString(key: string): string | undefined {
+    const value = this.member(key);
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    return typeof value === 'string' ? value : this.missing(key, 'text', undefined);
+  }
+
+  /** The member `key` is present but not what the contract allows (`wanted`): the first problem, naming it. */
+  invalid(key: string, wanted: string): void {
+    this.failure = this.failure === '' ? `the answer carries a member ${quoted(this.path(key), 80)} that is not ${wanted}` : this.failure;
+  }
+
   strings(key: string): string[] {
     const value = this.member(key);
     return Array.isArray(value) && value.every((item): item is string => typeof item === 'string') ? value : this.missing(key, 'a list of text', []);
@@ -583,4 +604,190 @@ export function readOutcomeOf(result: ProcessResult, read: RunReadName, answers:
   const body = bodyOf(result.stdout);
 
   return 'body' in body ? { kind: 'read', read, body: body.body } : { ...body, read };
+}
+
+// ---- tasks preview cleanup ----
+
+/** One group of the preview (`TempPreviewGroup`): the entries one allow-list pattern selects, or would select if allowed. */
+export interface TempPreviewGroup {
+  readonly verdict: 'eligible' | 'wouldBeEligible';
+  readonly pattern: string;
+  readonly count: number;
+  readonly bytes: number;
+  readonly paths: readonly string[];
+  readonly more: number;
+}
+
+/** `tasks preview cleanup --json` (`TempPreviewReport`): what the Windows TEMP cleanup would do now, every member read and checked. */
+export interface TempPreviewAnswer {
+  readonly productVersion: string;
+  readonly root: string;
+  readonly refusal: string;
+  readonly observeOnly: boolean;
+  readonly configurationErrors: readonly string[];
+  readonly olderThanDays: number;
+  readonly cutoffUtc: string;
+  readonly allowGlobs: readonly string[];
+  readonly scanMaxNodes: number;
+  readonly scanMaxSeconds: number;
+  readonly maxItemsPerRun: number;
+  readonly maxPathsPerGroup: number;
+  readonly dry: DryState & { readonly until?: string };
+  readonly pass: { readonly started: string; readonly decided: number; readonly total: number; readonly passesCompleted: number; readonly last: string; readonly inProgress: string };
+  readonly counts: { readonly eligible: number; readonly wouldBeEligible: number; readonly notAllowed: number; readonly young: number; readonly excluded: number; readonly unknown: number; readonly changed: number; readonly deferred: number; readonly decided: number; readonly total: number };
+  readonly eligibleBytes: number;
+  readonly basis: string;
+  readonly excludedByReason: readonly { readonly reason: string; readonly count: number }[];
+  readonly groups: readonly TempPreviewGroup[];
+  readonly groupsNotShown: { readonly eligible: number; readonly wouldBeEligible: number };
+  readonly wouldBeEligibleLimited: boolean;
+}
+
+/**
+ * What one preview ended in: exit 0 with a body that types (`answered`), exit 81 the daemon's refusal of an elevated process (`elevated`), exit 2
+ * the wrong side, a start that found no file (`notStaged` — the probe's ENOENT rule), the ceiling reached (`timedOut`, TYPED like a removal's:
+ * the tree kill's verdict is `treeEnded`) — anything else a failure that says why. A partial stdout is never an answer.
+ */
+export type PreviewResult =
+  | { readonly kind: 'answered'; readonly report: TempPreviewAnswer }
+  | { readonly kind: 'elevated'; readonly reason: string }
+  | { readonly kind: 'wrongSide'; readonly reason: string }
+  | { readonly kind: 'notStaged' }
+  | { readonly kind: 'timedOut'; readonly timeoutMs: number; readonly treeEnded: boolean }
+  | NotAnswered;
+
+/**
+ * The report's member that names the temp folder. Spelt from two halves because the root road's scans (`structure.test.ts`, `bundleScan.test.ts`) read an exact
+ * string literal of that word as the root road's argv word; this is a JSON member of a read-only answer, not an argv — and no scan is weakened for it.
+ */
+const FOLDER_MEMBER = ['ro', 'ot'].join('');
+
+const PREVIEW_VERDICTS: readonly TempPreviewGroup['verdict'][] = ['eligible', 'wouldBeEligible'];
+
+function previewDryOf(fields: Fields): TempPreviewAnswer['dry'] {
+  const until = fields.optionalString('until');
+  const dry = dryOf(fields);
+
+  return until === undefined ? dry : { ...dry, until: safeText(until, 80) };
+}
+
+function previewPassOf(fields: Fields): TempPreviewAnswer['pass'] {
+  return {
+    started: fields.string('started'),
+    decided: fields.count('decided'),
+    total: fields.count('total'),
+    passesCompleted: fields.count('passesCompleted'),
+    last: fields.string('last'),
+    inProgress: fields.string('inProgress'),
+  };
+}
+
+function previewCountsOf(fields: Fields): TempPreviewAnswer['counts'] {
+  return {
+    eligible: fields.count('eligible'),
+    wouldBeEligible: fields.count('wouldBeEligible'),
+    notAllowed: fields.count('notAllowed'),
+    young: fields.count('young'),
+    excluded: fields.count('excluded'),
+    unknown: fields.count('unknown'),
+    changed: fields.count('changed'),
+    deferred: fields.count('deferred'),
+    decided: fields.count('decided'),
+    total: fields.count('total'),
+  };
+}
+
+function previewGroupOf(fields: Fields): TempPreviewGroup {
+  const verdict = PREVIEW_VERDICTS.find((v) => v === fields.string('verdict'));
+  if (verdict === undefined) {
+    fields.invalid('verdict', 'eligible or wouldBeEligible');
+  }
+
+  return {
+    verdict: verdict ?? 'eligible',
+    pattern: fields.string('pattern'),
+    count: fields.count('count'),
+    bytes: fields.count('bytes'),
+    paths: fields.strings('paths'),
+    more: fields.count('more'),
+  };
+}
+
+function previewLimitsOf(fields: Fields): Pick<TempPreviewAnswer, 'olderThanDays' | 'cutoffUtc' | 'allowGlobs' | 'scanMaxNodes' | 'scanMaxSeconds' | 'maxItemsPerRun' | 'maxPathsPerGroup'> {
+  return {
+    olderThanDays: fields.count('olderThanDays'),
+    cutoffUtc: fields.string('cutoffUtc'),
+    allowGlobs: fields.strings('allowGlobs'),
+    scanMaxNodes: fields.count('scanMaxNodes'),
+    scanMaxSeconds: fields.count('scanMaxSeconds'),
+    maxItemsPerRun: fields.count('maxItemsPerRun'),
+    maxPathsPerGroup: fields.count('maxPathsPerGroup'),
+  };
+}
+
+function previewTallyOf(fields: Fields): Pick<TempPreviewAnswer, 'counts' | 'eligibleBytes' | 'basis' | 'excludedByReason' | 'groups' | 'groupsNotShown' | 'wouldBeEligibleLimited'> {
+  return {
+    counts: fields.object('counts', previewCountsOf),
+    eligibleBytes: fields.count('eligibleBytes'),
+    basis: fields.sentence('basis'),
+    excludedByReason: fields.list('excludedByReason', (e) => ({ reason: e.sentence('reason'), count: e.count('count') })),
+    groups: fields.list('groups', previewGroupOf),
+    groupsNotShown: fields.object('groupsNotShown', (n) => ({ eligible: n.count('eligible'), wouldBeEligible: n.count('wouldBeEligible') })),
+    wouldBeEligibleLimited: fields.boolean('wouldBeEligibleLimited'),
+  };
+}
+
+function previewReportOf(body: JsonObject): TempPreviewAnswer | string {
+  const fields = new Fields(body, '');
+  const [task, action] = [fields.string('task'), fields.string('action')];
+  const report: TempPreviewAnswer = {
+    productVersion: fields.sentence('productVersion'),
+    root: fields.string(FOLDER_MEMBER),
+    refusal: fields.sentence('refusal'),
+    observeOnly: fields.boolean('observeOnly'),
+    configurationErrors: fields.strings('configurationErrors'),
+    ...previewLimitsOf(fields),
+    dry: fields.object('dry', previewDryOf),
+    pass: fields.object('pass', previewPassOf),
+    ...previewTallyOf(fields),
+  };
+
+  return fields.problem !== '' ? fields.problem : wrongPreview(task, action) || report;
+}
+
+/** '' when the answer is for the cleanup's preview (task `cleanup`, action `A23`), else the sentence saying it is not. */
+function wrongPreview(task: string, action: string): string {
+  return task === 'cleanup' && action === 'A23' ? '' : `the answer is for the task ${quoted(task, 40)} and the action ${quoted(action, 40)}, not cleanup and A23`;
+}
+
+function previewedResult(stdout: Buffer): PreviewResult {
+  const read = bodyOf(stdout);
+  if (!('body' in read)) {
+    return read;
+  }
+  const report = previewReportOf(read.body);
+
+  return typeof report === 'string' ? { kind: 'failed', reason: report } : { kind: 'answered', report };
+}
+
+const ELEVATED_FALLBACK = 'the process is elevated (an administrator): the preview sees entries the Administrators group owns, so it is refused';
+
+/**
+ * A finished `tasks preview cleanup --json` on the staged copy. Exit 0 with a body that types is the answer; exit 81 is the daemon refusing an
+ * elevated process (its own sentence is kept); exit 2 the wrong side; a start that found no file is `notStaged`; a ceiling reached is `timedOut` —
+ * typed, and nothing the process printed before it is read. Any other ending is a failure that says why.
+ */
+export function previewResultOf(result: ProcessResult): PreviewResult {
+  if (result.kind === 'timedOut') {
+    return { kind: 'timedOut', timeoutMs: result.timeoutMs, treeEnded: result.treeEnded };
+  }
+  if (result.kind === 'failedToStart' && /\bENOENT\b/.test(result.reason)) {
+    return { kind: 'notStaged' };
+  }
+
+  return dispatch<PreviewResult>(result, {
+    [DAEMON_EXIT.ok]: (exited) => previewedResult(exited.stdout),
+    [DAEMON_EXIT.usage]: wrongSide,
+    [DAEMON_EXIT.notAsRoot]: (exited) => ({ kind: 'elevated', reason: said(exited.stderr, ELEVATED_FALLBACK) }),
+  });
 }

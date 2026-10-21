@@ -117,7 +117,7 @@ function daemonWordsSpelled(text: string): string[] {
  * What WR-E1 (the staged exe, `tasks` and the Windows run reads) takes from `verbs.ts` besides the table: the tails and ceilings it
  * builds there. The name of a verb TABLE (`RUN_READ_VERBS`, `RUN_READ_NAMES`) is not among them — the words stay in `verbs.ts`.
  */
-const WR_E1_VERB_IMPORTS: readonly string[] = ['RUN_READ_TIMEOUT_MS', 'runReadTail', 'TASKS_DEFAULT_TIMEOUT_MS', 'TASKS_REMOVE_TAIL', 'TASKS_STAGE_TAIL', 'tasksRenderTail', 'WINDOWS_READ_NAMES', 'type RunReadName', 'type TaskName', 'type WindowsRunRead'];
+const WR_E1_VERB_IMPORTS: readonly string[] = ['RUN_READ_TIMEOUT_MS', 'runReadTail', 'TASKS_DEFAULT_TIMEOUT_MS', 'TASKS_PREVIEW_TAIL', 'TASKS_REMOVE_TAIL', 'TASKS_STAGE_TAIL', 'tasksRenderTail', 'WINDOWS_READ_NAMES', 'type RunReadName', 'type TaskName', 'type WindowsRunRead'];
 
 /** What the source takes from `./verbs` besides the table itself. */
 function otherVerbImports(text: string): string[] {

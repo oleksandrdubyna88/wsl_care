@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "period": {
+    "label": "instants",
+    "from": "2026-10-01",
+    "to": "2026-10-02",
+    "fromInstant": "2026-10-01T20:59:55+00:00",
+    "toInstant": "2026-10-01T22:00:00+00:00"
+  },
+  "count": 3,
+  "runs": [
+    {
+      "runId": "20261001T100000Z-100",
+      "trigger": "timer",
+      "startedAt": "2026-10-01T10:00:00+00:00",
+      "endedAt": "2026-10-01T10:01:00+00:00",
+      "outcome": "completed",
+      "dryRun": false,
+      "detailState": "none",
+      "freedBytes": 100,
+      "cleanup": false,
+      "actions": [
+        {
+          "id": "A23",
+          "status": "ran",
+          "count": 5,
+          "freedBytes": 100
+        }
+      ],
+      "kind": "act"
+    },
+    {
+      "runId": "20261001T200000Z-200",
+      "trigger": "timer",
+      "startedAt": "2026-10-01T20:00:00+00:00",
+      "endedAt": "2026-10-01T20:00:30+00:00",
+      "outcome": "completed",
+      "dryRun": false,
+      "detailState": "none",
+      "freedBytes": 0,
+      "cleanup": false,
+      "actions": [
+        {
+          "id": "A10",
+          "status": "ran",
+          "count": 0,
+          "freedBytes": 0
+        }
+      ],
+      "kind": "act"
+    },
+    {
+      "runId": "20261001T210000Z-4242",
+      "trigger": "timer",
+      "startedAt": "2026-10-01T21:00:00+00:00",
+      "endedAt": "2026-10-01T21:02:00+00:00",
+      "outcome": "completed",
+      "dryRun": false,
+      "detail": "runs/2026-10-01/20261001T210000Z-4242.json",
+      "detailState": "present",
+      "freedBytes": 4096,
+      "cleanup": false,
+      "actions": [
+        {
+          "id": "A23",
+          "status": "ran",
+          "count": 12,
+          "freedBytes": 4096
+        }
+      ],
+      "kind": "act"
+    }
+  ]
+}
