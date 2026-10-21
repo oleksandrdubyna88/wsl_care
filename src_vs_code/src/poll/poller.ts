@@ -95,7 +95,7 @@ export function effectiveSeconds(raw: unknown): number {
 
 /** Failures that say where the daemon is (or is not) — `preview` / `doctor` would end the same way, so they are not asked. */
 const TARGET_FAILURES: ReadonlySet<Failure['kind']> = new Set<Failure['kind']>([
-  'stopped', 'notWindows', 'wslMissing', 'distroRefused', 'noDefaultDistro', 'wslFailed', 'notInstalled', 'unsupportedDistro', 'wsl1',
+  'stopped', 'notWindows', 'wslMissing', 'distroRefused', 'noDefaultDistro', 'wslFailed', 'notInstalled', 'unsupportedDistro', 'wsl1', 'versionUnknown',
 ]);
 
 function stopsTheOthers(outcome: VerbOutcome): boolean {

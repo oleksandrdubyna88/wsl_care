@@ -82,8 +82,8 @@ export interface TerminalTarget {
   readonly shellPath: string;
   readonly shellArgs: readonly string[];
   readonly distro: string;
-  /** Only for a PICKED target: whether the distribution is running — the install modal says it "will be started" when it is not. */
-  readonly running?: boolean;
+  /** Only for a PICKED target: whether the distribution runs; `undefined` when the running question FAILED (never "stopped" on an unanswered question). */
+  readonly running?: boolean | undefined;
 }
 
 /** The DEFAULT ceiling of each of the three WSL questions (`wslCare.timeouts.wslListSeconds`; measured: each answers in about 50 ms). */
@@ -359,7 +359,7 @@ export class WslCareClient {
     const rows = parseVerboseTable(table.value);
     const listed = checkListed(picked, rows.map((row) => row.name));
 
-    return listed.ok && rows.some((row) => row.name === picked && row.version === 1) ? fail({ kind: 'wsl1', distro: picked }) : listed;
+    return listed.ok ? versionJudged(picked, rows.find((row) => row.name === picked)?.version) : listed;
   }
 
   private async defaultTerminal(wsl: string): Promise<TerminalTarget | Failure> {
@@ -371,7 +371,7 @@ export class WslCareClient {
   private async pickedTerminal(wsl: string, picked: DistroName): Promise<TerminalTarget | Failure> {
     const distro = await this.pickedListed(wsl, picked);
 
-    return distro.ok ? { ...terminalOf(wsl, distro.value), running: await this.isRunning(wsl, distro.value) } : distro.failure;
+    return distro.ok ? { ...terminalOf(wsl, distro.value), running: (await this.runningNames(wsl))?.includes(distro.value) } : distro.failure;
   }
 
   private launcher(): Step<string> {
@@ -551,6 +551,15 @@ function unanswered(result: Extract<ProcessResult, { kind: 'exited' }>, checked:
 /** The target when the distribution may be asked (running, or the user asked to start it); "stopped" otherwise. */
 function targetOf(wsl: string, distro: string, mayAsk: boolean): Step<Resolved> {
   return mayAsk ? ok({ wsl, distro }) : fail({ kind: 'stopped', distro });
+}
+
+/** Only a provable WSL 2 passes: 1 is `wsl1`, and a version column that is neither 1 nor 2 is `versionUnknown` — never assumed to be 2. */
+function versionJudged(distro: string, version: 1 | 2 | undefined): Step<string> {
+  if (version === 2) {
+    return ok(distro);
+  }
+
+  return fail(version === 1 ? { kind: 'wsl1', distro } : { kind: 'versionUnknown', distro });
 }
 
 /** The terminal *Install daemon* opens in `distro`: the person's own login shell in their home folder. */

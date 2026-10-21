@@ -721,3 +721,15 @@ The coai code round (session d18198b1, 12 reviewers, verdict `good_enough`, 14 f
 
 **Break-its of the round** (restored byte for byte, SHA-256 compared): the `mayRemember` guard removed → the late-answer test red; `forgetUnlisted` of `rootOk` removed → its test red; `controller.stop` via the default → the enumeration red; `previewRestore` via the default → the enumeration red;
 `targetOf(…, true)` in the picked resolution → 3 `clientDistros` tests (RED 5, the failed running question, `rootTarget(picked stopped)`) and the stopped `test:host` scenario red.
+
+**The security check of the picked root road (Fable, verdict SHIP — nothing Blocking or Major).** Its cheap minors, fixed in one more commit, RED-first:
+
+1. **Only a provable WSL 2 gets a `-d`.** `pickedListed` answers `wsl1` for version 1 and the new `versionUnknown` ("WSL did not report … as WSL version 1 or 2") for a version column that is neither (a `3`); a row with no version column is no row, so
+   the name is `distroRefused`. Chosen over reusing `wsl1` because "is a WSL 1 distribution" would be false for a 3. `versionUnknown` is in the poller's `TARGET_FAILURES`. RED: the picked `run`, `rootTarget` and `terminalTarget` of a version-3 row sent a `-d`
+   (`Expected values to be strictly deep-equal`). The EMPTY setting's default `*` row keeps today's road for an unknown version (only a version 1 is `wsl1`) — the default is "byte for byte today's".
+2. **`persistedNameOf` applies `DISTRO_NAME`** (every name `listDistros` can mint already does): a journal name with a space, a quote, a newline or `~` is not minted and the entry is dropped. RED: `"My Distro"` was minted.
+3. **`TerminalTarget.running` is `boolean | undefined`** — `undefined` when the running question failed, so W1b's modal never says "stopped" on an unanswered question. RED: `running` read `false`.
+4. **`freezePreview` freezes the `target`** too. RED: `ok(Object.isFrozen(outcome.preview.target))`.
+5. **The header of `-l -v` is the line immediately before the first row** (not the first non-row line): a stray line above it no longer becomes the state column. RED: the fixture with a stray notice lost its two-word state.
+
+Break-its (SHA-256 restored): `version !== 1` passing as 2 → the version-3 test red; `persistedNameOf` by length only → the name tests red.

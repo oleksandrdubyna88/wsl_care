@@ -173,3 +173,13 @@ test('forgetUnlisted drops a distribution\'s remembered root check: Debian is as
   assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'rootOk');
   assert.deepEqual(w.runner.argvs().slice(2), [`${ROOT_FOR('Debian')} --version`], 'Debian asked again, Ubuntu still remembered');
 });
+
+test('the held preview\'s target is frozen with the rest of the preview — a caller cannot re-aim a confirm by editing it', async () => {
+  const preview = `${ROOT_FOR('Debian')} act A4 --preview --json`;
+  const w = world({ script: { [preview]: exited(0, JSON.stringify(goldenFile('act-a4-preview.json'))) } });
+  const outcome = await w.controller.preview(['A4'], DEBIAN);
+  assert.ok(outcome.kind === 'previewed');
+  assert.ok(Object.isFrozen(outcome.preview.target));
+  assert.throws(() => { (outcome.preview.target as { distro: string }).distro = 'Ubuntu'; }, TypeError);
+  assert.deepEqual(outcome.preview.target, DEBIAN);
+});

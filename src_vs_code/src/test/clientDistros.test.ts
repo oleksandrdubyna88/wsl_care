@@ -420,3 +420,33 @@ test('two * rows are no default: neither row is isDefault and default is undefin
   assert.deepEqual(list.distros.map((d) => d.isDefault), [false, false]);
   assert.equal(list.default, undefined);
 });
+
+// ---- security check (Fable, SHIP): only a provable WSL 2 gets a -d; a failed running question is not "stopped" ----
+
+test('a picked row whose version column is neither 1 nor 2 (a 3) is versionUnknown: no -d, no running question — on every picked road', async () => {
+  const odd = wsl([{ name: 'Ubuntu', running: true }, { name: 'Future', running: true, version: 3 }]);
+  const target = pickedTarget(listed('Future', ['Future']));
+  const run = clientOf({ ...odd, ...daemons(['Future']) });
+  assert.deepEqual(await run.c.run('status', target), { kind: 'versionUnknown', verb: 'status', distro: 'Future' });
+  assert.deepEqual(run.rec.argvs(), [LIST_VERBOSE]);
+  const root = clientOf(odd);
+  assert.deepEqual(await root.c.rootTarget(target), { kind: 'versionUnknown', distro: 'Future' });
+  const terminal = clientOf(odd);
+  assert.deepEqual(await terminal.c.terminalTarget(target), { kind: 'versionUnknown', distro: 'Future' });
+});
+
+test('a row with NO version column is not a row at all: the picked name is not listed (distroRefused), no -d', async () => {
+  const text = `  ${'NAME'.padEnd(18)}${'STATE'.padEnd(16)}VERSION\r\n* ${'Ubuntu'.padEnd(18)}${'Running'.padEnd(16)}2\r\n  ${'Broken'.padEnd(18)}${'Running'.padEnd(16)}\r\n`;
+  const { c, rec } = clientOf({ [LIST_VERBOSE]: exitedUtf16(0, text), [LIST_RUNNING]: exitedUtf16(0, 'Ubuntu\r\nBroken\r\n') });
+  const outcome = await c.run('status', pickedTarget(listed('Broken', ['Broken'])));
+  assert.equal(kindOf(outcome), 'distroRefused');
+  assert.deepEqual(rec.argvs(), [LIST_VERBOSE]);
+});
+
+test('terminalTarget(picked) says running: undefined when the running question FAILED — never "stopped" on an unanswered question', async () => {
+  const { c } = clientOf({ ...wsl(UBUNTU_AND_DEBIAN), [LIST_RUNNING]: exitedUtf16(-1, 'There are no running distributions.\r\n') });
+  const target = await c.terminalTarget(pick('Debian'));
+  assert.ok(target.kind === 'terminal', JSON.stringify(target));
+  assert.equal(target.running, undefined);
+  assert.deepEqual([target.shellArgs, target.distro], [['-d', 'Debian', '--cd', '~'], 'Debian']);
+});

@@ -694,7 +694,7 @@ function freezePreview(preview: HeldPreview): HeldPreview {
   const processes = preview.processes === undefined ? {} : { processes: frozenSelection(preview.processes) };
   const restore = preview.restore === undefined ? {} : { restore: frozenSelection(preview.restore) };
 
-  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4, ...processes, ...restore });
+  return Object.freeze({ ...preview, target: Object.freeze({ ...preview.target }), ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4, ...processes, ...restore });
 }
 
 /** A held shown list, frozen with its names (A21's processes, A20's entries). */

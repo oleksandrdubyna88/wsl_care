@@ -55,9 +55,10 @@ interface TableRow extends VerboseRow {
  */
 const VERBOSE_ROW = /^(\*?)\s+(\S+)\s+(.*?)\s+(\d+)\s*$/d;
 
-/** The column the STATE starts at, read from the header line (the first line that is no row): its second word. `undefined` without a header. */
+/** The column the STATE starts at, read from the header line (the line IMMEDIATELY before the first row): its second word. `undefined` without a header. */
 function stateColumn(lines: readonly string[]): number | undefined {
-  const header = lines.find((line) => !VERBOSE_ROW.test(line));
+  const first = lines.findIndex((line) => VERBOSE_ROW.test(line));
+  const header = first > 0 ? lines[first - 1] : undefined;
   const second = header === undefined ? null : /^\s*\S+\s+(?=\S)/.exec(header);
 
   return second === null ? undefined : second[0].length;

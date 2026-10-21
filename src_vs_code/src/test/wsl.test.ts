@@ -138,3 +138,9 @@ test('parseDefaultDistro runs over the same parser and keeps its answers: the ma
   assert.equal(parseDefaultDistro('  NAME              STATE           VERSION\r\n  Ubuntu            Running         2\r\n* -x                Running         2\r\n'), '-x', 'the default road refuses it itself, naming the option rule');
   assert.equal(parseDefaultDistro('  NAME  STATE  VERSION\r\n* Ubuntu+Dev~2  Running  2\r\n'), 'Ubuntu+Dev~2');
 });
+
+test('security check: the header is the line IMMEDIATELY before the first row — a stray line above it does not become the state column', () => {
+  const stray = 'Some notice a launcher printed before the table\r\n';
+  const text = `${stray}  NAME              STATE           VERSION\r\n* Ubuntu            Running         2\r\n  Debian            Wird ausgeführt 2\r\n  My Distro         Running         2\r\n`;
+  assert.deepEqual(parseVerboseTable(text).map((r) => [r.name, r.stateText]), [['Ubuntu', 'Running'], ['Debian', 'Wird ausgeführt']]);
+});

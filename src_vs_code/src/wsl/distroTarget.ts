@@ -1,3 +1,5 @@
+import { isDistroName } from './distros';
+
 /**
  * The typed distro (E18.W1a, todo/PLAN_disk_health_E18.md §3.1): WHICH distribution a call is about.
  *
@@ -31,16 +33,14 @@ export function listedNameOf(text: string, listed: readonly string[]): DistroNam
   return listed.includes(text) && !text.startsWith('-') ? (text as DistroName) : undefined;
 }
 
-/** The longest name a persisted record may hold (the journal's own bound for its `distro` field). */
-const PERSISTED_NAME_MAX = 64;
-
 /**
  * A name persisted by the journal, re-minted at reload by its SHAPE alone (§3.5): no list exists at reload time, so this is a compile-time
  * promise only — the runtime authority stays the client's listed check on the next call, which answers `distroRefused` for a name WSL no
- * longer lists. Text of 1 to 64 characters not starting with "-".
+ * longer lists. The setting's own pattern (`DISTRO_NAME`: letters, digits, `.` `_` `-`, at most 64, never a leading `-`) — every name `listDistros` can
+ * mint already satisfies it, so a journal name with a space, a quote, a newline or `~` is not one.
  */
 export function persistedNameOf(text: string): DistroName | undefined {
-  return text.length > 0 && text.length <= PERSISTED_NAME_MAX && !text.startsWith('-') ? (text as DistroName) : undefined;
+  return isDistroName(text) ? (text as DistroName) : undefined;
 }
 
 /**

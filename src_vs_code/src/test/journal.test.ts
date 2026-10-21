@@ -196,5 +196,8 @@ test('E18.W1a: a stored entry whose targetKind is anything but "picked", or whos
   }
   assert.equal(journalOver(stored({ targetKind: 'picked', distro: '-x' })).entries().length, 0, 'a name wsl.exe would read as an option after -d');
   assert.equal(journalOver(stored({ targetKind: 'picked', distro: 'x'.repeat(65) })).entries().length, 0);
+  for (const odd of ['My Distro', 'a"b', 'a' + String.fromCharCode(10) + 'b', '~', 'a~b']) {
+    assert.equal(journalOver(stored({ targetKind: 'picked', distro: odd })).entries().length, 0, JSON.stringify(odd));
+  }
   assert.equal(journalOver(stored({ distro: '-x' })).entries().length, 1, 'a default entry\'s distro is the daemon\'s answer and checked as before');
 });
