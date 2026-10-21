@@ -75,6 +75,11 @@ public sealed record RunDetail(
     /// written before it.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public DiskReport? Disk { get; init; }
+
+    /// <summary>E15.S10: Windows Defender's CPU since the previous full run, and the week it joins (<see cref="DefenderReport"/>); absent on
+    /// every detail written before it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DefenderReport? Defender { get; init; }
 }
 
 /// <summary>What became of the run's records: written, not written because this process may not (read-only), a

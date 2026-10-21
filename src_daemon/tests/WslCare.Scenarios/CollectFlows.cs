@@ -49,6 +49,8 @@ public sealed class CollectFlows
         // E15.S2: the Windows disk script answers with the 2026-10-10 capture, so the full run judges real virtual disks (and the
         // status goldens show them).
         home.Script("powershell", WindowsDiskCommands.WindowsDisk.Arguments, 0, $"health/{WindowsDiskFixture.Name}/{WindowsDiskFixture.AnswerFile}");
+        // E15.S10: the Defender CPU script answers with the line measured on 2026-10-16 (one read: the first run has no baseline).
+        home.Script("powershell", DefenderCpuCommands.DefenderCpu.Arguments, 0, $"health/{DefenderCpuFixture.Name}/{DefenderCpuFixture.AnswerFile}");
         // The journal searches carry an instant: matched by prefix.
         home.Answer(new FakeAnswer(SystemdCommands.Journalctl, ["--since"], 0, ScenarioHome.Fixture($"health/{HealthFixture.Name}/journalctl-search-clock.out"), string.Empty) { Prefix = true });
         return home;
@@ -124,12 +126,9 @@ public sealed class CollectFlows
 
         status.Exit.Should().Be((int)ExitCode.Ok, status.Stderr);
         var verdicts = JsonSerializer.Deserialize(status.Stdout, WslCareJsonContext.Default.StatusReport)!.Verdicts ?? [];
-        // E15.S5 code round: the Windows binary also judges host.vmmem over its own sample — an id no full run judges (its disk script
-        // reads no vmmem) — and adds it after the carried verdicts, before the MCP servers' own; the distro's status answers exactly
-        // the run's ids.
-        string[] sampledOnly = home.Paths.Side == Core.Hosting.HostSide.Windows ? ["host.vmmem"] : [];
-        var runIds = report.Detail.Thresholds.Select(t => t.Id).ToList();
-        string[] expected = [.. runIds.TakeWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal)), .. sampledOnly, .. runIds.SkipWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal))];
+        // E15.S10 §B: the full run judges host.vmmem too (its disk script reads it), so the Windows binary's own host.vmmem REPLACES the
+        // carried one in its carried position and adds no id: both binaries answer exactly the run's ids.
+        var expected = report.Detail.Thresholds.Select(t => t.Id).ToList();
         // E19.S3: the Windows binary also answers worktrees.reclaimable, its own scan's verdict, which no full run records.
         verdicts.Select(v => v.Id).Where(id => id != Core.Worktrees.WorktreesStatus.VerdictId).Should().Equal(expected, "status answers every threshold id the run recorded, in its order (plan §15g B1)");
         var carried = verdicts.Where(v => v.Basis?.Source == Core.Thresholds.VerdictSource.FullRun).ToList();

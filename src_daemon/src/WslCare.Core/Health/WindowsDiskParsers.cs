@@ -56,7 +56,7 @@ public static class WindowsDiskParsers
         var (identity, badIdentity) = Identity(a);
         var compression = Single(a, C.CompressionTag, C.CompressionErrorTag, "Memory Compression's working set").Bind(v => Long(v, "Memory Compression's working set"));
         var malformed = a.Unread + distros.Bad + volumes.Bad + disks.Bad + adapters.Bad + badReliability + badEvents + docker.Bad + badCommit + badIdentity + Bad(compression, a, C.CompressionTag);
-        return new WindowsDiskFacts(distros.Items, docker.Disk, volumes.Items, disks.Items, reliability, events, commit, limit, compression, identity, adapters.Items, malformed);
+        return new WindowsDiskFacts(distros.Items, docker.Disk, volumes.Items, disks.Items, reliability, events, commit, limit, compression, Reading.Missing<long>(HostMemoryFacts.VmmemReadByWindows), identity, adapters.Items, malformed);
     }
 
     /// <summary>The lines of one tag as a list, or — when the script printed its error tag — why the section could not be read.

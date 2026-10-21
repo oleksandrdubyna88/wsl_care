@@ -96,6 +96,11 @@ public sealed record StatusReport(
     /// absent from the sample a run detail embeds.</summary>
     public Collect.DiskReport? Disk { get; init; }
 
+    /// <summary>E15.S10: Windows Defender's CPU from the newest full run, with its basis and age — or why there is none. The distro's
+    /// binary reads it from that run's detail; the Windows binary says the distro reads it. Additive; absent from the sample a run
+    /// detail embeds.</summary>
+    public Collect.DefenderReport? Defender { get; init; }
+
     /// <summary>E19.S3: the last worktree scan (<c>worktrees.json</c>), summarised, with its basis and age; the Windows binary only. Additive.</summary>
     public WslCare.Core.Worktrees.WorktreesSection? Worktrees { get; init; }
 }

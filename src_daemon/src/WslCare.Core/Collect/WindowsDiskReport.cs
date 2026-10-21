@@ -69,6 +69,7 @@ public sealed record WindowsDiskReport(
     ByteFigure? CommitBytes,
     ByteFigure? CommitLimitBytes,
     ByteFigure? CompressionBytes,
+    ByteFigure? VmmemBytes,
     WindowsIdentityReport? Identity,
     DisplayAdaptersReport? Adapters)
 {
@@ -93,9 +94,9 @@ public static class WindowsDiskReports
         var elapsed = StatusReports.Number(sample.Elapsed.Map(e => Math.Round(e.TotalSeconds, 3)));
         return sample.Facts is Reading<WindowsDiskFacts>.Available { Value: var f }
             ? new(true, null, sample.SampledAt, elapsed, f.MalformedLines, Disks(f.Distros), Docker(f.DockerDataDisk), Volumes(f.Volumes), Physical(f.PhysicalDisks),
-                Reliability(f.Reliability), Events(f.Events), StatusReports.Bytes(f.CommitBytes), StatusReports.Bytes(f.CommitLimitBytes), StatusReports.Bytes(f.CompressionBytes),
+                Reliability(f.Reliability), Events(f.Events), StatusReports.Bytes(f.CommitBytes), StatusReports.Bytes(f.CommitLimitBytes), StatusReports.Bytes(f.CompressionBytes), StatusReports.Bytes(f.VmmemBytes),
                 Identity(f.Identity), Adapters(f.Adapters))
-            : new(false, sample.Facts.ReasonOrEmpty, sample.SampledAt, elapsed, null, null, null, null, null, null, null, null, null, null, null, null);
+            : new(false, sample.Facts.ReasonOrEmpty, sample.SampledAt, elapsed, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private static VirtualDiskReport Disk(WindowsVirtualDisk d) =>

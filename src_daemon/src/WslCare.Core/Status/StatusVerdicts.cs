@@ -13,6 +13,10 @@ public sealed record RecordedVerdicts(Records.RunId RunId, DateTimeOffset Evalua
     /// <summary>E15.S2: the run's disk section (virtual disks and their hosting volumes), read from the SAME detail file — or why
     /// there is none (a detail written before E15.S2).</summary>
     public Reading<Collect.DiskReport> Disk { get; init; } = Reading.Missing<Collect.DiskReport>("not read");
+
+    /// <summary>E15.S10: the run's Defender section, read from the SAME detail file — or why there is none (a detail written before
+    /// E15.S10).</summary>
+    public Reading<Collect.DefenderReport> Defender { get; init; } = Reading.Missing<Collect.DefenderReport>("not read");
 }
 
 /// <summary>

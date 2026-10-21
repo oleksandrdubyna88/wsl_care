@@ -68,6 +68,10 @@ public sealed record HealthSample(
     /// them yet, the run detail records them.</summary>
     public WindowsDiskSample WindowsDisk { get; init; } = WindowsDiskSample.Unavailable(DateTimeOffset.UnixEpoch, "not read");
 
+    /// <summary>E15.S10: Windows Defender's engine as the third fixed interop script read it (the full run's only, after the disk script);
+    /// the ledger and the verdict <c>host.defenderCpu</c> are made from it.</summary>
+    public DefenderSample Defender { get; init; } = DefenderSample.Unavailable(DateTimeOffset.UnixEpoch, "not read");
+
     /// <summary>The whole sample unavailable for one reason — the Windows binary, which has no systemd to ask.</summary>
     public static HealthSample Unavailable(DateTimeOffset since, string reason, WindowsClockSample clock, Reading<string> profile, Reading<WslConfigAudit> wslConfig) =>
         new(

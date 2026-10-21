@@ -16,6 +16,7 @@ event=2026-10-08|disk|11|Harddisk1|16
 event=2026-10-07|disk|11|Harddisk1|9
 commit=110976245760|156356161536
 compression=10582515712
+vmmem=13421772800
 windows.edition=Professional
 windows.version=26H2
 windows.build=26300.9550

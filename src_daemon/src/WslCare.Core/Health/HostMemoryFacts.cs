@@ -23,11 +23,18 @@ public sealed record HostMemoryFacts(
     Reading<long> HostTotalBytes,
     Reading<WslConfigAudit> WslConfig)
 {
+    /// <summary>E15.S10: what Windows Defender's engine used since the previous full run — the distro's full run only; the Windows binary's
+    /// road says the distro reads it (<see cref="DefenderReadByTheDistro"/>).</summary>
+    public Reading<DefenderUsage> Defender { get; init; } = Reading.Missing<DefenderUsage>(DefenderReadByTheDistro);
+
     /// <summary>Why the full run has no vmmem figure: the disk script does not read it (E15.S1b may add it).</summary>
     public const string VmmemReadByWindows = "vmmemWSL is read by the Windows binary's status";
 
     /// <summary>Why the full run has no host RAM figure.</summary>
     public const string HostTotalReadByWindows = "the host's RAM is read by the Windows binary's status";
+
+    /// <summary>Why the Windows binary has no Defender figure (E15.S10): the distro's full run reads it, from two reads of one process.</summary>
+    public const string DefenderReadByTheDistro = "Windows Defender's CPU is read by the distro's full run (two reads of the same MsMpEng, a full run apart)";
 
     /// <summary>The Windows binary's road: its own <c>GlobalMemoryStatusEx</c> and process listing.</summary>
     public static HostMemoryFacts FromProbe(HostSample host, Reading<WslConfigAudit> wslConfig) =>

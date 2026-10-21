@@ -99,7 +99,8 @@
     "wslMemoryCriticalPercent": 90,
     "hostCommitWarnPercent": 80,
     "hostCommitCriticalPercent": 90,
-    "hostCompressionWarnGb": 8
+    "hostCompressionWarnGb": 8,
+    "defenderCoresWarnPercent": 100
   },
   "aiAgents": {
     "warnGb": 5,
@@ -284,11 +285,15 @@
   "health": {
     "windowsClockTimeoutSeconds": 20,
     "windowsDiskTimeoutSeconds": 30,
+    "defenderCpuTimeoutSeconds": 15,
     "snapTimeoutSeconds": 30,
     "outputCapBytes": 1048576,
     "kernelLinesKept": 5,
     "kernelLineChars": 200,
     "maxWslConfigBytes": 1048576
+  },
+  "defender": {
+    "localRetentionDays": 400
   },
   "disk": {
     "eventsSinceDays": 60,

@@ -14,7 +14,9 @@ namespace WslCare.Core.Status;
 /// <param name="Disk">E15.S2: the run's disk section, kept as raw JSON and parsed on its own — so a disk section that does not parse
 /// costs only <c>disk</c>, never the verdicts carried with it (own review, 2026-10-11); absent (<c>null</c>) in a detail written before
 /// E15.S2.</param>
-public sealed record RunDetailVerdicts(int SchemaVersion, RunId RunId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, IReadOnlyList<Verdict>? Thresholds, JsonElement? Disk);
+/// <param name="Defender">E15.S10: the run's Defender section, kept as raw JSON the same way — a section that does not parse costs only
+/// <c>defender</c>; absent in a detail written before E15.S10.</param>
+public sealed record RunDetailVerdicts(int SchemaVersion, RunId RunId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, IReadOnlyList<Verdict>? Thresholds, JsonElement? Disk, JsonElement? Defender);
 
 /// <summary>
 /// The verdicts of the newest FULL run, read back from its detail (plan §15g B1). A full run is a <c>collect</c> line — the

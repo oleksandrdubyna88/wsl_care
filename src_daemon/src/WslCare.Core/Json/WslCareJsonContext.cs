@@ -37,6 +37,8 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(RunDetailVerdicts))]
 [JsonSerializable(typeof(Collect.DiskReport))]
 [JsonSerializable(typeof(Collect.LetteredVolumeReport))]
+[JsonSerializable(typeof(Collect.DefenderReport))]
+[JsonSerializable(typeof(Health.DefenderLedgerLine))]
 [JsonSerializable(typeof(Events.CoverageLineJson))]
 [JsonSerializable(typeof(Events.StartsSummary))]
 [JsonSerializable(typeof(Doctor.DoctorReport))]

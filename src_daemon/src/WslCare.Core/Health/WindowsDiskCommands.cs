@@ -60,6 +60,8 @@ public static class WindowsDiskCommands
     public const string CommitErrorTag = "commit.error=";
     public const string CompressionTag = "compression=";
     public const string CompressionErrorTag = "compression.error=";
+    public const string VmmemTag = "vmmem=";
+    public const string VmmemErrorTag = "vmmem.error=";
     public const string EditionTag = "windows.edition=";
     public const string VersionTag = "windows.version=";
     public const string BuildTag = "windows.build=";

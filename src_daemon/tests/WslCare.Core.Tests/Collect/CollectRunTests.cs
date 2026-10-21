@@ -188,17 +188,17 @@ public sealed class CollectRunTests : IDisposable
         LastFullRun.Read(_sandbox.Paths, _sandbox.Files, _clock).ContainerStats.ReasonOrEmpty.Should().Contain(result.Detail!.RunId.Text);
     }
 
-    /// <summary>E15.S5 own review: the full run reads no vmmem, so its history line carries no <c>host.vmmem</c> warning — a verdict
-    /// that could only ever be <c>unknown</c> would be written into every run's history. The run's own host verdicts (here
-    /// <c>unknown</c>: the Windows disk script did not answer) are still recorded.</summary>
+    /// <summary>E15.S10 §B (E15.S5's open tail): the Windows disk script reads vmmem now, so the full run judges <c>host.vmmem</c> like
+    /// <c>host.commit</c> — and when the script did not answer (here: nothing is installed) both are <c>unknown</c> with the reason and both
+    /// are in the history line. Before §B a vmmem that could only ever be <c>unknown</c> was kept out of every run's history.</summary>
     [Fact]
-    public async Task A_collect_writes_no_host_vmmem_warning_to_its_history_line()
+    public async Task A_collect_whose_disk_script_did_not_answer_writes_host_vmmem_and_host_commit_warnings_alike()
     {
         await CollectRun.RunAsync(Context(_sandbox.Files), CancellationToken.None);
 
         var warnings = History().Single().Warnings!;
-        warnings.Should().NotContain(w => w.Id == "host.vmmem");
-        warnings.Should().Contain(w => w.Id == "host.commit");
+        warnings.Should().Contain(w => w.Id == "host.vmmem" && w.Level == "unknown");
+        warnings.Should().Contain(w => w.Id == "host.commit" && w.Level == "unknown");
     }
 
     /// <summary>The real file system, with every write recorded in order: <c>atomic:{path}</c>, <c>append:{path}</c>,

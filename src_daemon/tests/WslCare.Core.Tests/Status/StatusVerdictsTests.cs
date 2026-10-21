@@ -68,7 +68,11 @@ public sealed class StatusVerdictsTests : IDisposable
                 Reading.Of(new VolumeUsage("/", 1000, 130, 870)))),
             Reading.Missing<HostSample>("the Windows binary's"));
 
-    private static Verdict Find(IReadOnlyList<Verdict> verdicts, string id) => verdicts.Single(v => v.Id == id);
+    private static Verdict Find(IReadOnlyList<Verdict> verdicts, string id)
+    {
+        verdicts.Select(v => v.Id).Should().Contain(id, "the status lists " + id);
+        return verdicts.Single(v => v.Id == id);
+    }
 
     /// <summary>The Windows binary's sample (E15.S5): no VM, and the host read by its own counters.</summary>
     private static ProbeSample WindowsSample(long chargeGib, long compressionGib = 2) =>
@@ -216,21 +220,25 @@ public sealed class StatusVerdictsTests : IDisposable
         verdicts.Where(v => v.Id == "host.commit").Should().ContainSingle()
             .Which.Should().Match<Verdict>(v => v.Level == Level.Warn && v.Value == "86.0 of 100.0 GiB = 86.0 %" && v.Basis == new VerdictBasis(VerdictSource.Sample, null, Now, 0));
         verdicts.Select(v => v.Id).Should().OnlyHaveUniqueItems();
-        verdicts.Select(v => v.Id).Where(id => id != "host.vmmem").Should().Equal(StatusVerdicts.From(Sample(Memory(60)), NoFullRun, config, Now).Select(v => v.Id), "the replacement keeps the full run's order");
+        verdicts.Select(v => v.Id).Should().Equal(StatusVerdicts.From(Sample(Memory(60)), NoFullRun, config, Now).Select(v => v.Id), "the replacement keeps the full run's order — and since E15.S10 §B host.vmmem is one of the full run's ids, so nothing is appended");
         Find(verdicts, "host.compression").Basis!.Source.Should().Be(VerdictSource.Sample);
     }
 
-    /// <summary>E15.S5 own review: the full run judges no vmmem, so the Windows binary's sampled <c>host.vmmem</c> replaces nothing —
-    /// it is ADDED once, after every carried verdict (after <c>npm.cache</c>, the full run's last id).</summary>
+    /// <summary>E15.S10 §B (E15.S5's open tail): the full run judges <c>host.vmmem</c> now, so on the Windows binary the sampled verdict
+    /// REPLACES the carried one, in its carried position (right behind <c>host.compression</c>) — still exactly once, no longer appended after
+    /// every carried verdict. <c>host.defenderCpu</c>, the next id, is the same: one, sampled (the Windows binary cannot read it), in place.</summary>
     [Fact]
-    public void The_windows_status_adds_its_sampled_host_vmmem_once_after_the_carried_verdicts()
+    public void The_windows_status_lists_its_sampled_host_vmmem_once_at_its_carried_position()
     {
         var verdicts = StatusVerdicts.From(WindowsSample(chargeGib: 50), NoFullRun, Config(), Now);
 
         var ids = verdicts.Select(v => v.Id).ToList();
         verdicts.Where(v => v.Id == "host.vmmem").Should().ContainSingle().Which.Basis.Should().Be(new VerdictBasis(VerdictSource.Sample, null, Now, 0));
-        ids.IndexOf("host.vmmem").Should().Be(ids.IndexOf("npm.cache") + 1);
-        ids[^1].Should().Be("host.vmmem");
+        ids.IndexOf("host.vmmem").Should().Be(ids.IndexOf("host.compression") + 1, "its carried position");
+        ids[^1].Should().Be("npm.cache", "nothing is appended after the full run's last id any more");
+        ids.Should().OnlyHaveUniqueItems();
+        verdicts.Where(v => v.Id == "host.defenderCpu").Should().ContainSingle().Which.Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == HostMemoryFacts.DefenderReadByTheDistro && v.Basis!.Source == VerdictSource.Sample);
+        ids.IndexOf("host.defenderCpu").Should().Be(ids.IndexOf("host.vmmem") + 1);
     }
 
     /// <summary>E15.S5 code round, finding 2: only the WINDOWS side judges its host sample. A distro-side sample that ever carried a
@@ -246,7 +254,7 @@ public sealed class StatusVerdictsTests : IDisposable
         var verdicts = StatusVerdicts.From(distroWithHost, recorded, Config(), Now);
 
         Find(verdicts, "host.commit").Should().Be(commit with { Basis = new VerdictBasis(VerdictSource.FullRun, runId.Text, Now.AddHours(-1), 3600) });
-        verdicts.Should().NotContain(v => v.Id == "host.vmmem");
+        Find(verdicts, "host.vmmem").Basis!.Source.Should().Be(VerdictSource.FullRun, "a distro-side sample judges no host verdict: vmmem is carried too (unknown here: this run recorded none)");
     }
 
     /// <summary>E15.S5: the distro's binary has no host sample, so it carries the full run's host verdicts with their run and age.</summary>
@@ -263,6 +271,6 @@ public sealed class StatusVerdictsTests : IDisposable
         var basis = new VerdictBasis(VerdictSource.FullRun, runId.Text, Now.AddHours(-1), 3600);
         Find(verdicts, "host.commit").Should().Be(commit with { Basis = basis });
         Find(verdicts, "host.compression").Should().Be(compression with { Basis = basis });
-        verdicts.Should().NotContain(v => v.Id == "host.vmmem", "the full run does not read vmmem; only the Windows binary judges it");
+        Find(verdicts, "host.vmmem").Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Basis == basis && v.Reason.Contains("recorded no host.vmmem verdict", StringComparison.Ordinal), "this run (written before §B) recorded none; a run of today carries one");
     }
 }

@@ -27,6 +27,10 @@ public sealed record ThresholdInputs(
     /// <summary>E15.S2: the virtual disks and their hosting volumes, judged ONCE per run (<see cref="VirtualDisks"/>) — the run detail
     /// and the verdicts project the same facts; unavailable when the run did not read them.</summary>
     public Reading<DiskFacts> Disk { get; init; } = Reading.Missing<DiskFacts>("not read");
+
+    /// <summary>E15.S10: what Windows Defender's engine used since the previous full run (<see cref="DefenderCpu.Between"/>), made by
+    /// <see cref="DefenderCpuRun"/> once per run; unavailable, with the reason, when the run did not read it.</summary>
+    public Reading<DefenderUsage> Defender { get; init; } = Reading.Missing<DefenderUsage>("not read");
 }
 
 /// <summary>

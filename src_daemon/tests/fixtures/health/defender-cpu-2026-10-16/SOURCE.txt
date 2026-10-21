@@ -1,0 +1,13 @@
+The Defender CPU script's answer (E15.S10, PLAN_disk_health.md) - MEASURED, not synthetic.
+
+Source:   the owner's machine, 2026-10-16, Windows PowerShell 5.1 (unelevated), the command of
+          research/2026-10-16_defender_cpu_cost.md (the filtered CIM read of Win32_PerfRawData_PerfProc_Process, Name = MsMpEng).
+          Read-only: nothing was elevated, enabled or changed. One of six reads; on this raw class ElapsedTime is the process START
+          instant and stayed constant across the six while Timestamp_Sys100NS advanced.
+
+Files:
+  powershell-defender-cpu.out   the script's stdout (1 line, LF): PercentProcessorTime 993 513 593 750 (99 351 s of CPU summed over all
+                                cores), Timestamp_Sys100NS 134 366 539 776 100 740, IDProcess 6964, ElapsedTime (the start instant)
+                                134 365 236 258 808 755 - 0.76 cores averaged since the process started, 36.2 h earlier.
+
+Redacted: nothing - the line holds counters, an instant and a process id; no user name, path or machine id.

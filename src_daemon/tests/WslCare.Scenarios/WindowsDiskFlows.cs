@@ -156,7 +156,8 @@ public sealed class WindowsDiskFlows
         ProcessGone(fake).Should().BeTrue("the fake that hung was killed with its tree (pid {0})", fake);
     }
 
-    private static bool ProcessGone(int pid)
+    /// <summary>Whether the process is gone — shared with <see cref="DefenderFlows"/>, whose stalled script is killed the same way.</summary>
+    internal static bool ProcessGone(int pid)
     {
         try
         {
