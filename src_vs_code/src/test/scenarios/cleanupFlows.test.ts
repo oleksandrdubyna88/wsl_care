@@ -80,7 +80,7 @@ test('the RELOAD scenario: start A4, reload, the new window shows "Cleaning… A
   await within(async (world) => {
     const durable = new MapStore();
     const first = openWindow(world, durable);
-    const outcome = await first.host.clean(['A4'], false);
+    const outcome = await first.host.clean(['A4'], false, DEFAULT_TARGET);
     assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
     assert.equal(first.host.journal.entries()[0]?.kind, 'run', 'the started run is persisted');
     first.host.dispose();
@@ -105,7 +105,7 @@ test('the RELOAD scenario: start A4, reload, the new window shows "Cleaning… A
 test('a DEAD run after a reload ends as interrupted — the panel never sticks on "Cleaning…"', async () => {
   await within(async (world) => {
     const durable = new MapStore();
-    await openWindow(world, durable).host.clean(['A4'], false);
+    await openWindow(world, durable).host.clean(['A4'], false, DEFAULT_TARGET);
     world.rewrite({ answers: answers(world, 'dead', { 'status.json': 'status-running-dead.json' }), runsShow: 'runs-show-interrupted.json' });
     const window = openWindow(world, durable);
     await window.host.follower.tick();
@@ -118,7 +118,7 @@ test('a DEAD run after a reload ends as interrupted — the panel never sticks o
 test('a REFUSED request after a reload shows its reason', async () => {
   await within(async (world) => {
     const durable = new MapStore();
-    await openWindow(world, durable).host.clean(['A4'], false);
+    await openWindow(world, durable).host.clean(['A4'], false, DEFAULT_TARGET);
     const refused = { schemaVersion: 1, runId: RUN, state: 'refused', reason: 'busy: run 20000101T000000Z-9 holds the lock', run: { runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'refused', actions: [{ id: 'A4', status: 'refused', count: 0, freedBytes: 0 }] } };
     world.rewrite({ answers: answers(world, 'refused', { 'runs-show-refused.json': refused }), runsShow: 'runs-show-refused.json' });
     const window = openWindow(world, durable);
@@ -130,14 +130,14 @@ test('a REFUSED request after a reload shows its reason', async () => {
 test('a 387-volume A4 pipes all 387 names; Clean selected is ONE act call through the real client, runner and fake', async () => {
   await within(async (world) => {
     const window = openWindow(world, new MapStore());
-    await window.host.clean(['A4'], false);
+    await window.host.clean(['A4'], false, DEFAULT_TARGET);
     assert.equal(world.stdins()[0]?.split('\n').filter((l) => l.length > 0).length, 387);
     await window.host.follower.tick();
     const confirms = () => world.calls().filter((c) => c.startsWith(`${ROOT} act`) && c.includes('--confirm'));
     const before = confirms().length;
     world.rewrite({ runsShow: 'runs-show-done.json' });
     await window.host.follower.tick();
-    const outcome = await window.host.clean(['A5', 'A4'], true);
+    const outcome = await window.host.clean(['A5', 'A4'], true, DEFAULT_TARGET);
     assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
     assert.deepEqual(confirms().slice(before), [`${ROOT} act A4,A5 --confirm --manual --detach --only - --json`]);
   });
@@ -156,7 +156,7 @@ test('the RELOAD scenario for Archive now: start A13, reload, "Archiving…" fro
     const durable = new MapStore();
     const first = openWindow(world, durable);
     await first.host.follower.tick(); // the window's status, as the poll gives a real one
-    const outcome = await first.host.archiveNow();
+    const outcome = await first.host.archiveNow(DEFAULT_TARGET);
     assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
     assert.ok(world.calls().includes(`${ROOT} act A13 --confirm --manual --detach --json`));
     assert.deepEqual(first.host.journal.entries().map((e) => e.actions), [['A13']], 'the started archive run is persisted');
@@ -180,7 +180,7 @@ test('a DEAD archive run after a reload ends as interrupted — never stuck on "
     const durable = new MapStore();
     const started = openWindow(world, durable);
     await started.host.follower.tick();
-    await started.host.archiveNow();
+    await started.host.archiveNow(DEFAULT_TARGET);
     world.rewrite({ answers: answers(world, 'archive-dead', { 'status.json': archiving('dead') }), runsShow: 'runs-show-interrupted.json' });
     const window = openWindow(world, durable);
     await window.host.follower.tick();
@@ -194,13 +194,13 @@ test('Archive now while a run is in flight is told and starts nothing — the cl
     const durable = new MapStore();
     const started = openWindow(world, durable);
     await started.host.follower.tick();
-    await started.host.archiveNow();
+    await started.host.archiveNow(DEFAULT_TARGET);
     world.rewrite({ answers: answers(world, 'busy', { 'status.json': archiving('live') }) });
     const window = openWindow(world, durable);
     await window.host.follower.tick();
     const confirms = (): number => world.calls().filter((c) => c.includes('--confirm')).length;
     const before = confirms();
-    assert.equal(await window.host.archiveNow(), undefined);
+    assert.equal(await window.host.archiveNow(DEFAULT_TARGET), undefined);
     assert.equal(confirms(), before, 'no second confirm');
     assert.match(window.recorder.notices.at(-1)?.sentence ?? '', /^Archive now is not available: /);
   });
@@ -220,7 +220,7 @@ test('the RELOAD scenario for Stop client-gone relays: A21 bound to the shown pa
     const durable = new MapStore();
     const first = openWindow(world, durable);
     await first.host.follower.tick();
-    const outcome = await first.host.stopRelays();
+    const outcome = await first.host.stopRelays(DEFAULT_TARGET);
     assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
     assert.ok(world.calls().includes(`${ROOT} act A21 --confirm --manual --detach --process ${keys[0] ?? ''} --process ${keys[1] ?? ''} --json`), world.calls().join('\n'));
     assert.deepEqual(first.host.journal.entries().map((e) => e.actions), [['A21']], 'the started relay stop is persisted');
@@ -245,7 +245,7 @@ test('Stop client-gone relays while a run is in flight is told and starts nothin
     const window = openWindow(world, new MapStore());
     await window.host.follower.tick();
     const before = world.calls().filter((c) => c.includes('--confirm')).length;
-    assert.equal(await window.host.stopRelays(), undefined);
+    assert.equal(await window.host.stopRelays(DEFAULT_TARGET), undefined);
     assert.equal(world.calls().filter((c) => c.includes('--confirm')).length, before, 'no confirm');
     assert.match(window.recorder.notices.at(-1)?.sentence ?? '', /^Stop client-gone relays is not available: /);
   });

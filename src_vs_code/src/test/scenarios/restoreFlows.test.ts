@@ -88,7 +88,7 @@ function openWindow(world: FakeWorld, durable: MapStore): Window {
   const views: ArchivePageView[] = [];
   const page = new ArchiveController({
     read: (request) => client.read(request, DEFAULT_TARGET), status: () => outcomes.snapshot().status, post: (view) => { views.push(view); },
-    restore: { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids) => host.restore(ids) },
+    restore: { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids) => host.restore(ids, DEFAULT_TARGET) },
   });
   const pending: Promise<void>[] = [];
   host.onChange(() => { pending.push(page.restoreChanged()); });
@@ -166,7 +166,7 @@ test('a DEAD restore run after a reload ends as interrupted — never stuck on "
     const durable = new MapStore();
     const started = openWindow(world, durable);
     await started.host.follower.tick();
-    assert.equal((await started.host.restore([VERIFIED]))?.kind, 'handedOff');
+    assert.equal((await started.host.restore([VERIFIED], DEFAULT_TARGET))?.kind, 'handedOff');
     world.rewrite({ answers: answers(world, 'dead', { 'status.json': restoring('dead') }), runsShow: 'runs-show-interrupted.json' });
     const window = openWindow(world, durable);
     await window.host.follower.tick();
@@ -191,7 +191,7 @@ test('a selection past a LOWERED act.maxShownNames (still under restoreCeiling) 
     }
     assert.equal(last(window).selection.count, 1);
     assert.match(last(window).notice, /^One restore takes at most 1 /);
-    const outcome = await window.host.restore([VERIFIED, OTHER]);
+    const outcome = await window.host.restore([VERIFIED, OTHER], DEFAULT_TARGET);
     assert.ok(outcome?.kind === 'refused' && outcome.failure.kind === 'entriesRefused', JSON.stringify(outcome).slice(0, 300));
     assert.ok(world.calls().every((c) => !c.includes(' act A20 ')), 'nothing reached the root daemon');
     await window.settled();

@@ -3795,6 +3795,27 @@ Break-it, each restored byte for byte (SHA-256 compared): `readPicked` writing t
 picked map → the store test and both setting-change poller tests red; the poller's `listDistros()` not calling `dropUnlisted` → every picked write is
 then ignored, ten red; the store accepting a name the last list did not hold → the three finding-4 tests red.
 
+### What the picked-distro actions and the enumeration rest on (E18.W1a-3, 2026-10-21)
+
+Third and last slice of [PLAN_disk_health_E18.md](../todo/PLAN_disk_health_E18.md) W1a: every action road takes a `DistroTarget` and the proof is
+ONE test that drives them all with the picked `Debian` (the default being `Ubuntu`). Every extension caller still passes `DEFAULT_TARGET`, so
+the existing cleanup, archive, install and follower suites changed only by gaining that argument. New tests: `distroEnumeration.test.ts`,
+`cleanupControllerPicked.test.ts`, `cleanFlowPicked.test.ts`, `runFollowerPicked.test.ts`, `archiveHostPicked.test.ts`, `installDaemonPicked.test.ts`,
+cases in `journal.test.ts`, three scenarios in `host/suite.ts` (`test:host`).
+
+| Guarantee | Test | Red observed |
+|---|---|---|
+| with the picked target the controller's target, fresh status, root check and call all go to Debian; the held preview carries its target and its confirm goes to Debian though the DEFAULT is Ubuntu; `rootCheck`, `stop`, `runFullCheck`, `previewRestore` likewise; `distroChanged` still fires; a stopped / WSL 1 target starts nothing; an unknown detach is followed through the SAME target's status | `cleanupControllerPicked.test.ts` | `unscripted argv: -d Ubuntu -u root … act A4 --preview --json` (the default road was taken); `not even the gate's status was asked` |
+| the flow writes the journal entry BEFORE the call with the picked name and `targetKind: 'picked'`; a default run's entry has no such key; a picked full check or stop needs no default status | `cleanFlowPicked.test.ts` | `{"kind":"noStatus"}`; `Cannot read properties of undefined (reading 'distro')` |
+| a journal entry keeps `targetKind` through add / reload / replace; one with another value, or a picked name that cannot be one, is dropped; one without it reads as before | `journal.test.ts` | `"default" 1 !== 0`; `Expected values to be strictly deep-equal` |
+| after a reload the follower asks `status` and reads `runs show` with the PICKED target; a pre-W1a entry asks the default only; a picked-only journal never touches the default; two picked and one default entry cost one status per distribution | `runFollowerPicked.test.ts` | `status was asked for ["default"]` |
+| the archive flows (judged-folder read, resolved target, `config set`) and *Archive now* name the picked distribution; the host's view is not re-read after a picked write | `archiveHostPicked.test.ts` | `Expected values to be strictly deep-equal` (the default's reads / target) |
+| the install terminal for a picked distro is `-d Debian --cd ~`; WSL 1 gets none | `installDaemonPicked.test.ts` | green on arrival: the client road is W1a-1's — the test pins it for the installer |
+| **the enumeration**: every `VERB_NAMES`, `RUN_READ_NAMES`, `ROOT_OPS` (+ A21 with one process), config op, the terminal and every host / archive flow, `installDaemon` and `readPicked(…, { startIfStopped })` driven through the real client, runner and strict fake — (a) every call carrying `-d` carries `-d Debian`, none `-d Ubuntu`; (b) every row of every register was driven and reached Debian (the tables are typed by the registers, so a new name fails to compile); (c) the 19 commands are classified and the `windowsSide` ones' modules import no WSL road | `distroEnumeration.test.ts` | see the break-its below (the test was written after the product slice; its teeth are those) |
+| `readPicked(Debian)` = `-l -v`, the running list, exactly three `-d Debian` calls, bar and rows unchanged; a stopped Debian: no `-d`; a version-1 Debian: no `-d` and no running question of its own | `host/suite.ts` (`test:host`, 1.85.0 and stable) | pinned by the break-its below |
+
+Break-it, each restored byte for byte (SHA-256 compared): see the as-built subsection of the plan (`todo/PLAN_disk_health_E18.md`, W1a §10).
+
 ### What the manual Marketplace route and the clean changelog rest on (owner decision, 2026-10-06)
 
 The owner publishes the extension by uploading the attested `.vsix` by hand — no `VSCE_PAT`, no Entra identity

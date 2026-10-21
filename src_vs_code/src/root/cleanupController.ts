@@ -3,7 +3,7 @@ import { classifyExit, launchFailure } from '../client/failures';
 import { parseDaemonVersion } from '../client/handshake';
 import type { DaemonVersion, Failure, JsonObject, VerbOutcome } from '../client/outcome';
 import { DAEMON_PATH } from '../client/WslCareClient';
-import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
+import type { DistroTarget } from '../wsl/distroTarget';
 import type { ProcessResult, Runner } from '../process/runner';
 import { actionGate, pickIds, type GateOpen } from './actionGate';
 import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult, type PreviewContext } from './rootAnswers';
@@ -19,8 +19,8 @@ import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, Rest
  * `rootCall.ts` (`structure.test.ts`). Each root op is one HOST transaction, in this order, and stops at the first refusal
  * having started nothing further:
  *
- * 1. the target — `WslCareClient.rootTarget()`: the validated, listed, RUNNING distribution (a root call never starts a
- *    stopped one);
+ * 1. the target — `WslCareClient.rootTarget(target)`: the validated, listed, RUNNING distribution the caller's `DistroTarget` names (E18.W1a:
+ *    the default, or a PICKED one — never a stopped or WSL 1 one: a root call never starts a distribution);
  * 2. one root operation in flight per distribution — a second is refused at once (plan §15j m9; the daemon's run lock
  *    stays the authority, and its 75 comes back with the `running` block);
  * 3. a FRESH `status`, and the gate: the capabilities the op needs, then the ids — the compiled registry ∩ `status.actions`
@@ -90,6 +90,8 @@ export const CERTAIN_DETACH_EXITS: ReadonlySet<number> = new Set([
 /** What a follow with no run id may adopt: a run of THIS distribution, started by the panel, holding exactly these actions. */
 interface Expected {
   readonly distro: string;
+  /** The target the run was handed off for — its status is what the follow polls. */
+  readonly aim: DistroTarget;
   readonly actions: readonly string[];
 }
 
@@ -172,15 +174,15 @@ export class CleanupController {
   }
 
   /** The root check alone (§15j m4): what root sees as the daemon's version, or why the actions are greyed "needs root". */
-  rootCheck(): Promise<RootCheckOutcome> {
-    return this.transaction((target) => this.checkedRoot(target));
+  rootCheck(aim: DistroTarget): Promise<RootCheckOutcome> {
+    return this.transaction(aim, (target) => this.checkedRoot(target));
   }
 
   /** `act <ids> --preview --json` as root — held, so a confirm can name it. */
-  preview(ids: readonly string[]): Promise<PreviewOutcome> {
-    return this.transaction(async (target) => {
-      const call = await this.acting(target, previewNeeds(ids), (gate) => previewOp(ids, gate));
-      return 'kind' in call ? call : this.held(call, target);
+  preview(ids: readonly string[], aim: DistroTarget): Promise<PreviewOutcome> {
+    return this.transaction(aim, async (target) => {
+      const call = await this.acting(target, aim, previewNeeds(ids), (gate) => previewOp(ids, gate));
+      return 'kind' in call ? call : this.held(call, target, aim);
     });
   }
 
@@ -189,15 +191,15 @@ export class CleanupController {
    * twice, at most `MAX_RESTORE_ENTRIES`; anything else starts nothing), A20 only when the daemon reports it — held, so its confirm
    * pipes the ids THIS preview showed and nothing else.
    */
-  previewRestore(texts: readonly string[]): Promise<PreviewOutcome> {
+  previewRestore(texts: readonly string[], aim: DistroTarget): Promise<PreviewOutcome> {
     const entries = entryIdsOf(texts);
     if (entries === undefined) {
       return Promise.resolve({ kind: 'entriesRefused', reason: `${texts.length} entr${texts.length === 1 ? 'y' : 'ies'} asked: none, one twice, an id that is not 16 lowercase hex digits, or more than one restore takes` });
     }
 
-    return this.transaction(async (target) => {
-      const call = await this.acting(target, previewNeeds(['A20']), (gate) => restoreOp(gate, { op: 'restorePreview', entries }));
-      return 'kind' in call ? call : this.held(call, target);
+    return this.transaction(aim, async (target) => {
+      const call = await this.acting(target, aim, previewNeeds(['A20']), (gate) => restoreOp(gate, { op: 'restorePreview', entries }));
+      return 'kind' in call ? call : this.held(call, target, aim);
     });
   }
 
@@ -207,33 +209,33 @@ export class CleanupController {
       return Promise.resolve({ kind: 'previewNotHeld' });
     }
 
-    return this.transaction((target) => this.confirmIn(target, preview));
+    return this.transaction(preview.target, (target) => this.confirmIn(target, preview));
   }
 
   /** `act --stop <runId> --json` as root — only for a run id the daemon writes. */
-  stop(runIdText: string): Promise<HandOffOutcome> {
+  stop(runIdText: string, aim: DistroTarget): Promise<HandOffOutcome> {
     const runId = runIdOf(runIdText);
     if (runId === undefined) {
       return Promise.resolve({ kind: 'runIdRefused' });
     }
 
-    return this.transaction(async (target) => {
-      const call = await this.acting(target, CAPABILITIES.stop, () => ({ op: 'stop', runId }));
-      return 'kind' in call ? call : this.handedOff(call, target.distro, false);
+    return this.transaction(aim, async (target) => {
+      const call = await this.acting(target, aim, CAPABILITIES.stop, () => ({ op: 'stop', runId }));
+      return 'kind' in call ? call : this.handedOff(call, target.distro, aim, false);
     });
   }
 
   /** *Run full check now*: `collect --detach --json` as root — never `--timer` (§15j M9). */
-  runFullCheck(): Promise<HandOffOutcome> {
-    return this.transaction(async (target) => {
-      const call = await this.acting(target, CAPABILITIES.fullCheck, () => ({ op: 'fullCheck' }));
-      return 'kind' in call ? call : this.handedOff(call, target.distro, true);
+  runFullCheck(aim: DistroTarget): Promise<HandOffOutcome> {
+    return this.transaction(aim, async (target) => {
+      const call = await this.acting(target, aim, CAPABILITIES.fullCheck, () => ({ op: 'fullCheck' }));
+      return 'kind' in call ? call : this.handedOff(call, target.distro, aim, true);
     });
   }
 
   /** Steps 1 and 2: the target, and this distribution's one slot. */
-  private async transaction<T>(body: (target: RootTarget) => Promise<T | RootFailure>): Promise<T | RootFailure> {
-    const target = await this.options.client.rootTarget(DEFAULT_TARGET);
+  private async transaction<T>(aim: DistroTarget, body: (target: RootTarget) => Promise<T | RootFailure>): Promise<T | RootFailure> {
+    const target = await this.options.client.rootTarget(aim);
     if ('kind' in target) {
       return target;
     }
@@ -249,8 +251,8 @@ export class CleanupController {
   }
 
   /** Steps 3–5: the gate over a fresh status, the op (or its refusal), the root check, the call. */
-  private async acting(target: RootTarget, required: readonly string[], prepare: (gate: GateOpen) => Prepared): Promise<Call | RootFailure> {
-    const gate = await this.gated(target, required);
+  private async acting(target: RootTarget, aim: DistroTarget, required: readonly string[], prepare: (gate: GateOpen) => Prepared): Promise<Call | RootFailure> {
+    const gate = await this.gated(target, aim, required);
     if (gate.kind !== 'open') {
       return gate;
     }
@@ -263,8 +265,8 @@ export class CleanupController {
     return root.kind === 'rootOk' ? { op, result: await callRoot(this.options.runner, target, op, this.numbers(), gate.limits), limits: gate.limits } : root;
   }
 
-  private async gated(target: RootTarget, required: readonly string[]): Promise<GateOpen | RootFailure> {
-    const outcome = await this.options.client.run('status', DEFAULT_TARGET);
+  private async gated(target: RootTarget, aim: DistroTarget, required: readonly string[]): Promise<GateOpen | RootFailure> {
+    const outcome = await this.options.client.run('status', aim);
     if (outcome.kind !== 'answered') {
       return withoutVerb(outcome);
     }
@@ -297,11 +299,11 @@ export class CleanupController {
   /** The confirm's call; the preview is consumed once the call went out and the daemon took it (review M4). */
   private async confirmCall(target: RootTarget, preview: HeldPreview): Promise<HandOffOutcome> {
     const required = confirmNeeds(preview.ids);
-    const call = await this.acting(target, required, (gate) => confirmOp(preview, gate));
+    const call = await this.acting(target, preview.target, required, (gate) => confirmOp(preview, gate));
     if ('kind' in call) {
       return call;
     }
-    const outcome = await this.handedOff(call, target.distro, true);
+    const outcome = await this.handedOff(call, target.distro, preview.target, true);
     if (consumed(call, outcome)) {
       this.issued.delete(preview);
     }
@@ -310,14 +312,14 @@ export class CleanupController {
   }
 
   /** A preview's answer, held and registered — or why not. */
-  private held(call: Call, target: RootTarget): PreviewOutcome {
+  private held(call: Call, target: RootTarget, aim: DistroTarget): PreviewOutcome {
     const ids = previewIds(call.op);
     const answer = answerOf(call.result, target.distro);
     if (ids === undefined || typeof answer !== 'string') {
       return typeof answer === 'string' ? NOT_BUILT : answer;
     }
 
-    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now(), maxShownNames: call.limits.maxShownNames, asked: askedOf(call.op) } satisfies PreviewContext));
+    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now(), maxShownNames: call.limits.maxShownNames, asked: askedOf(call.op), target: aim } satisfies PreviewContext));
   }
 
   private registered(preview: HeldPreview | RootFailure): PreviewOutcome {
@@ -331,12 +333,12 @@ export class CleanupController {
   }
 
   /** A detach or a stop, answered or not. `follows`: a detach, whose unknown outcome is followed through `status.running`. */
-  private async handedOff(call: Call, distro: string, follows: boolean): Promise<HandOffOutcome> {
+  private async handedOff(call: Call, distro: string, aim: DistroTarget, follows: boolean): Promise<HandOffOutcome> {
     const result = call.result;
     if (result === undefined) {
       return NOT_BUILT;
     }
-    const expected = { distro, actions: expectedActions(call.op) };
+    const expected = { distro, aim, actions: expectedActions(call.op) };
 
     return result.kind === 'exited' && result.code !== 0 ? this.refusedOrUnknown(call, result, expected, follows) : this.notRefused(result, expected, follows);
   }
@@ -345,7 +347,7 @@ export class CleanupController {
   private refusedOrUnknown(call: Call, result: Extract<ProcessResult, { kind: 'exited' }>, expected: Expected, follows: boolean): Promise<HandOffOutcome> {
     return follows && !CERTAIN_DETACH_EXITS.has(result.code)
       ? this.follow(`the detach exited ${result.code} (${exitFailure(result, expected.distro, false).kind}) — it may have written its request`, expected)
-      : this.withRunning(exitFailure(result, expected.distro, pipedShown(call.op)), expected.distro);
+      : this.withRunning(exitFailure(result, expected.distro, pipedShown(call.op)), expected.distro, expected.aim);
   }
 
   /** Not a refusal: a launcher that never started (certain), or an answer — read, or none at all (a timeout, a kill). */
@@ -380,28 +382,28 @@ export class CleanupController {
     let watch = NO_WATCH;
     while (this.options.now() < deadline && watch.ours === undefined) {
       await this.options.sleep(numbers.followPollSeconds * 1000);
-      watch = watched(watch, await this.poll(expected.distro), expected);
+      watch = watched(watch, await this.poll(expected.distro, expected.aim), expected);
     }
 
     return watch.ours === undefined ? followedUnknown(reason, watch) : { kind: 'acceptedObserved', runId: watch.ours.runId, running: watch.ours };
   }
 
   /** One status read — counted only when it answered for THIS distribution (review L3). */
-  private async poll(distro: string): Promise<Poll> {
-    const outcome = await this.options.client.run('status', DEFAULT_TARGET);
+  private async poll(distro: string, aim: DistroTarget): Promise<Poll> {
+    const outcome = await this.options.client.run('status', aim);
 
     return outcome.kind === 'answered' && outcome.distro === distro ? { answered: true, running: runningOf(statusBody(outcome)) } : { answered: false };
   }
 
-  private async runningNow(distro: string): Promise<RunningBlock | undefined> {
-    const poll = await this.poll(distro);
+  private async runningNow(distro: string, aim: DistroTarget): Promise<RunningBlock | undefined> {
+    const poll = await this.poll(distro, aim);
 
     return poll.answered ? poll.running : undefined;
   }
 
   /** 75 / 76 come back with the `running` block the daemon reports right after (§15j m9). */
-  private async withRunning(failure: RootFailure, distro: string): Promise<RootFailure> {
-    return failure.kind === 'busy' || failure.kind === 'wedged' ? { ...failure, running: await this.runningNow(distro) } : failure;
+  private async withRunning(failure: RootFailure, distro: string, aim: DistroTarget): Promise<RootFailure> {
+    return failure.kind === 'busy' || failure.kind === 'wedged' ? { ...failure, running: await this.runningNow(distro, aim) } : failure;
   }
 }
 

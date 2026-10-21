@@ -21,6 +21,7 @@ import { MapStore } from './support/memento';
 import { answered, headBody, type Body } from './support/outcomes';
 import { goldenFile } from './support/paths';
 import { exited, recordingRunner, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S1b: *Archive now* — A13 through the cleanup controller as it is. Its capabilities, its preview's ceiling, its
@@ -68,7 +69,7 @@ function controller(script: Readonly<Record<string, Scripted>>, status: () => Bo
 }
 
 async function heldA13(): Promise<HeldPreview> {
-  const outcome = await controller({ [PREVIEW_A13]: exited(0, a13PreviewText()) }).controller.preview(['A13']);
+  const outcome = await controller({ [PREVIEW_A13]: exited(0, a13PreviewText()) }).controller.preview(['A13'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 300));
   assert.ok(outcome.kind === 'previewed');
   return outcome.preview;
@@ -91,7 +92,7 @@ test('a golden read as a body is CHECKED — an array, a scalar or null is refus
 
 test('a preview of A13 without archive.preview advertised is refused before any root call', async () => {
   const c = controller({ [PREVIEW_A13]: exited(0, a13PreviewText()) }, () => statusWithout('archive.preview'));
-  const outcome = await c.controller.preview(['A13']);
+  const outcome = await c.controller.preview(['A13'], DEFAULT_TARGET);
   assert.notEqual(outcome.kind, 'previewed');
   assert.deepEqual(c.runner.argvs(), [], 'nothing ran as root');
 });
@@ -99,7 +100,7 @@ test('a preview of A13 without archive.preview advertised is refused before any 
 test('a confirm of A13 without archive.run advertised is refused before the confirm goes out', async () => {
   let status = headBody('status');
   const c = controller({ [PREVIEW_A13]: exited(0, a13PreviewText()), [CONFIRM_A13]: exited(0, handOff()) }, () => status);
-  const previewed = await c.controller.preview(['A13']);
+  const previewed = await c.controller.preview(['A13'], DEFAULT_TARGET);
   assert.ok(previewed.kind === 'previewed');
   status = statusWithout('archive.run');
   const outcome = await c.controller.confirm(previewed.preview);
@@ -196,7 +197,7 @@ test('Archive now: the preview of A13, its modal, the journal entry BEFORE the c
   const ui: CleanUi = { confirm: (m) => { modals.push(m); return Promise.resolve(true); }, notify: (level, sentence) => { notices.push({ level, sentence }); return Promise.resolve(undefined); } };
   const journal = new CleanupJournal(store, () => Date.parse('2026-10-10T12:00:00.000Z'));
   const flow = new CleanFlow({ controller: c.controller, journal, ui, follower: { started: () => undefined, kick: () => undefined }, now: () => 1_000_000, wallNow: () => Date.parse('2026-10-10T12:00:00.000Z'), distro: () => 'Ubuntu', changed: () => undefined });
-  const outcome = await flow.archive();
+  const outcome = await flow.archive(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'handedOff');
   assert.deepEqual(c.runner.argvs(), [ROOT_CHECK, PREVIEW_A13, CONFIRM_A13]);
   assert.deepEqual(seenBefore, ['A13'], 'persisted before the call');

@@ -191,6 +191,9 @@ poller, install or store module imports `root/`):
   evicted. Windows share it: no cached copy, serialised writes read back one turn later and re-applied, tombstones merged,
   and a result is shown by the window whose claim stands. `vscode.Memento` has only `update(key, value)`, so this is advisory;
   the residual race is in the module's header.
+  **E18.W1a-3:** an entry has an OPTIONAL `targetKind: "picked"` beside `distro` (absent = the default, which is what every entry
+  written before W1a reads as); a picked entry's name must pass `persistedNameOf`'s shape check or the entry is dropped, and the follower
+  asks `status` / `runs show` of the entry's own distribution.
 - **`runFollower.ts`** + **`runMatching.ts`** (its pure decisions) — the durable poll (M6): only while a journal entry this
   window may follow is open (its own always, another window's only while focused — the same predicate decides what a tick
   settles) or, focused, the store's newest `status.running` is queued / live (so it starts from idle); every 4 s; `status`

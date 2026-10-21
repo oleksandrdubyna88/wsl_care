@@ -166,3 +166,35 @@ test('§15p: a tombstone lives `wslCare.cleanup.tombstoneMinutes` — 3 minutes 
     assert.equal(value.removed.some((t) => t.id === 'gone'), kept, String(minutes));
   }
 });
+
+// ---- E18.W1a-3: the optional `targetKind` beside `distro` ----
+
+const PICKED_RUN: NewEntry = { ...RUN, distro: 'Debian', targetKind: 'picked' };
+
+test('E18.W1a: a picked entry keeps its targetKind through the store (add, reload, replace), and an entry without it is read exactly as before', async () => {
+  const store = new MapStore();
+  const picked = await added(journalOver(store), PICKED_RUN);
+  assert.equal(picked.targetKind, 'picked');
+  const plain = await added(journalOver(store), RUN);
+  assert.equal('targetKind' in plain, false, 'a default entry carries no key at all');
+  const reloaded = journalOver(store).entries();
+  assert.deepEqual(reloaded, [picked, plain]);
+  await journalOver(store).replace(picked.id, { ...PICKED_RUN, actions: ['A5'] });
+  assert.equal(journalOver(store).entries()[0]?.targetKind, 'picked');
+});
+
+test('E18.W1a: a stored entry whose targetKind is anything but "picked", or whose picked name cannot be one, is malformed and dropped', () => {
+  const stored = (patch: Record<string, unknown>): MapStore => {
+    const store = new MapStore();
+    store.values.set(JOURNAL_KEY, { entries: [{ id: 'a', kind: 'run', op: 'clean', distro: 'Debian', actions: ['A4'], since: '2026-10-05T10:00:00.000Z', runId: '20261005T100000Z-77', ...patch }], removed: [] });
+    return store;
+  };
+  assert.equal(journalOver(stored({ targetKind: 'picked' })).entries().length, 1);
+  assert.equal(journalOver(stored({})).entries().length, 1);
+  for (const bad of ['default', 'Picked', '', 1, true, null, {}]) {
+    assert.equal(journalOver(stored({ targetKind: bad })).entries().length, 0, JSON.stringify(bad));
+  }
+  assert.equal(journalOver(stored({ targetKind: 'picked', distro: '-x' })).entries().length, 0, 'a name wsl.exe would read as an option after -d');
+  assert.equal(journalOver(stored({ targetKind: 'picked', distro: 'x'.repeat(65) })).entries().length, 0);
+  assert.equal(journalOver(stored({ distro: '-x' })).entries().length, 1, 'a default entry\'s distro is the daemon\'s answer and checked as before');
+});

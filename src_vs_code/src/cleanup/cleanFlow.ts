@@ -1,4 +1,5 @@
 import { FULL_CHECK_ACTIONS, type CleanupController } from '../root/cleanupController';
+import type { DistroTarget } from '../wsl/distroTarget';
 import { rootFailureText } from '../root/rootFailureText';
 import type { ActionIds, RunId } from '../root/rootIds';
 import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, RootFailure } from '../root/rootOutcome';
@@ -145,20 +146,20 @@ export class CleanFlow {
   }
 
   /** A row's *Clean* (one id) or *Clean selected* (several) — ONE preview, ONE confirm either way. */
-  async clean(rowIds: readonly RowId[], selected: boolean): Promise<FlowOutcome> {
-    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(rowIds), selected));
+  async clean(rowIds: readonly RowId[], selected: boolean, target: DistroTarget): Promise<FlowOutcome> {
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(rowIds, target), selected));
 
-    return pass.retry ? this.clean(rowIds, selected) : pass.result;
+    return pass.retry ? this.clean(rowIds, selected, target) : pass.result;
   }
 
   /**
    * *Archive now* (E10.S1b): A13 through the SAME transaction — one flow at a time, the preview, its modal, the age re-check, the
    * journal entry before the confirm, the follower — told as the archive run.
    */
-  async archive(): Promise<FlowOutcome> {
-    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(ARCHIVE_IDS), false, ARCHIVE_RUN));
+  async archive(target: DistroTarget): Promise<FlowOutcome> {
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(ARCHIVE_IDS, target), false, ARCHIVE_RUN));
 
-    return pass.retry ? this.archive() : pass.result;
+    return pass.retry ? this.archive(target) : pass.result;
   }
 
   /**
@@ -166,10 +167,10 @@ export class CleanFlow {
    * entry before the confirm, the follower — told as the relay stop. A preview that selected nothing is told with the daemon's
    * basis (every kept relay and why), one that could not read the relays with its reason; neither opens a modal.
    */
-  async relays(): Promise<FlowOutcome> {
-    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(RELAY_IDS), false, RELAY_RUN));
+  async relays(target: DistroTarget): Promise<FlowOutcome> {
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.preview(RELAY_IDS, target), false, RELAY_RUN));
 
-    return pass.retry ? this.relays() : pass.result;
+    return pass.retry ? this.relays(target) : pass.result;
   }
 
   /**
@@ -177,20 +178,20 @@ export class CleanFlow {
    * ids as the page sent them — the controller checks their shape (`entryIdsOf`) and refuses before any call; the confirm pipes
    * the ids the HELD preview showed, never these. A preview that offers none still restorable is told and opens no modal.
    */
-  async restore(texts: readonly string[]): Promise<FlowOutcome> {
-    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.previewRestore(texts), false, RESTORE_RUN));
+  async restore(texts: readonly string[], target: DistroTarget): Promise<FlowOutcome> {
+    const pass = await this.exclusive(() => this.cleanOnce(() => this.options.controller.previewRestore(texts, target), false, RESTORE_RUN));
 
-    return pass.retry ? this.restore(texts) : pass.result;
+    return pass.retry ? this.restore(texts, target) : pass.result;
   }
 
   /** *Stop* — only ever for a wedged run the host read from `status.running` (`cleanupView.ts` decides which). */
-  async stop(target: StopTarget): Promise<FlowOutcome> {
-    return (await this.exclusive(() => this.stopOnce(target))).result;
+  async stop(target: StopTarget, aim: DistroTarget): Promise<FlowOutcome> {
+    return (await this.exclusive(() => this.stopOnce(target, aim))).result;
   }
 
   /** *Run full check now* (§15j M9): no modal — a full run that is not the timer's measures and does not act. */
-  async fullCheck(): Promise<FlowOutcome> {
-    return (await this.exclusive(() => this.fullCheckOnce())).result;
+  async fullCheck(target: DistroTarget): Promise<FlowOutcome> {
+    return (await this.exclusive(() => this.fullCheckOnce(target))).result;
   }
 
   private async exclusive(body: () => Promise<Pass>): Promise<Pass> {
@@ -211,7 +212,7 @@ export class CleanFlow {
     if ('kind' in held) {
       return { result: held, retry: false };
     }
-    return this.persisted({ kind: 'unresolved', op: 'clean', distro: held.distro, actions: held.ids, since: this.since() }, async (entry) => this.handedOff(entry, await this.options.controller.confirm(held), label ?? held.ids.join(', '), true));
+    return this.persisted({ kind: 'unresolved', op: 'clean', distro: held.distro, ...pickedMark(held.target), actions: held.ids, since: this.since() }, async (entry) => this.handedOff(entry, await this.options.controller.confirm(held), label ?? held.ids.join(', '), true));
   }
 
   /** Steps 2–4, at most `previewRounds` times: a preview confirmed in time, or why there is none. */
@@ -273,25 +274,25 @@ export class CleanFlow {
     return second === undefined ? true : this.options.ui.confirm(second);
   }
 
-  private async stopOnce(target: StopTarget): Promise<Pass> {
-    const distro = this.options.distro();
+  private async stopOnce(target: StopTarget, aim: DistroTarget): Promise<Pass> {
+    const distro = this.distroOf(aim);
     if (distro === undefined || !(await this.options.ui.confirm(stopModal(target.runId)))) {
       return this.notStarted(distro);
     }
-    const followed = await this.followedFor(target, distro);
-    const stop = async (entry: JournalEntry): Promise<Pass> => this.handedOff(entry, await this.options.controller.stop(target.runId), `run ${target.runId}`, followed === undefined);
+    const followed = await this.followedFor(target, distro, aim);
+    const stop = async (entry: JournalEntry): Promise<Pass> => this.handedOff(entry, await this.options.controller.stop(target.runId, aim), `run ${target.runId}`, followed === undefined);
 
-    return followed === undefined ? this.persisted({ kind: 'run', op: 'stop', distro, actions: target.actions, since: this.since(), runId: target.runId }, stop) : stop(followed);
+    return followed === undefined ? this.persisted({ kind: 'run', op: 'stop', distro, ...pickedMark(aim), actions: target.actions, since: this.since(), runId: target.runId }, stop) : stop(followed);
   }
 
   /**
    * The entry that already follows this run (review B4): its run entry — or an UNRESOLVED confirm of this distribution with
    * exactly its actions, which this run is, adopted here so the stop and the confirm are one entry, never two.
    */
-  private async followedFor(target: StopTarget, distro: string): Promise<JournalEntry | undefined> {
+  private async followedFor(target: StopTarget, distro: string, aim: DistroTarget): Promise<JournalEntry | undefined> {
     const entries = this.options.journal.entries();
     const run = entries.find((e) => e.kind === 'run' && e.runId === target.runId);
-    const waiting = run === undefined && isPanelRun(target) ? entries.find((e) => e.kind === 'unresolved' && e.distro === distro && sameActions(e.actions, target.actions)) : undefined;
+    const waiting = run === undefined && isPanelRun(target) ? entries.find((e) => e.kind === 'unresolved' && e.distro === distro && (e.targetKind === 'picked') === (aim.kind === 'picked') && sameActions(e.actions, target.actions)) : undefined;
     if (waiting === undefined) {
       return run;
     }
@@ -301,12 +302,17 @@ export class CleanFlow {
     return { ...rest, id, kind: 'run', runId: target.runId };
   }
 
-  private async fullCheckOnce(): Promise<Pass> {
-    const distro = this.options.distro();
+  private async fullCheckOnce(aim: DistroTarget): Promise<Pass> {
+    const distro = this.distroOf(aim);
     if (distro === undefined) {
       return this.notStarted(distro);
     }
-    return this.persisted({ kind: 'unresolved', op: 'fullCheck', distro, actions: FULL_CHECK_ACTIONS, since: this.since() }, async (entry) => this.handedOff(entry, await this.options.controller.runFullCheck(), 'the full check', true));
+    return this.persisted({ kind: 'unresolved', op: 'fullCheck', distro, ...pickedMark(aim), actions: FULL_CHECK_ACTIONS, since: this.since() }, async (entry) => this.handedOff(entry, await this.options.controller.runFullCheck(aim), 'the full check', true));
+  }
+
+  /** The distribution a stop or a full check is written down for: the picked name, or the one the default's newest status answered for. */
+  private distroOf(aim: DistroTarget): string | undefined {
+    return aim.kind === 'picked' ? aim.distro : this.options.distro();
   }
 
   /** No status yet (told), or a declined modal. */
@@ -374,6 +380,11 @@ export class CleanFlow {
   private since(): string {
     return new Date(this.options.wallNow()).toISOString();
   }
+}
+
+/** The journal field a picked run carries beside its `distro` (E18.W1a): nothing at all for the default, so every entry from before reads as today. */
+function pickedMark(target: DistroTarget): { readonly targetKind?: 'picked' } {
+  return target.kind === 'picked' ? { targetKind: 'picked' } : {};
 }
 
 /** Why a single-action preview leaves nothing to confirm (`runWords.ts` names the run) — '' when it does. */

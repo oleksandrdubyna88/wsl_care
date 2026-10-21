@@ -14,6 +14,7 @@ import { answered, failed, headBody, setAt, type Body } from './support/outcomes
 import { GOLDEN_ROOT } from './support/paths';
 import { exited, recordingRunner, type Scripted } from './support/recordingRunner';
 import { relayKeys, relayPreviewBody } from './support/relayBodies';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * The host-side cleanup controller (E6.S2) — the API E6.S3's buttons will call, and the ONLY importer of `rootCall.ts`.
@@ -82,7 +83,7 @@ function world(input: WorldInput = {}): World {
 }
 
 async function heldA4(w: World): Promise<HeldPreview> {
-  const outcome = await w.controller.preview(['A4']);
+  const outcome = await w.controller.preview(['A4'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 400));
   assert.ok(outcome.kind === 'previewed');
   return outcome.preview;
@@ -106,7 +107,7 @@ test('ids are the compiled registry ∩ status.actions: an id the daemon does no
   // Since daemon E9.S4 the head golden reports A13: the gate is shown with an OLDER daemon's status that does not.
   const head = headBody('status');
   const w = world({ status: { ...head, actions: (head.actions as string[]).filter((id) => id !== 'A13') } });
-  const outcome = await w.controller.preview(['A4', 'A13']);
+  const outcome = await w.controller.preview(['A4', 'A13'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'idsRefused');
   assert.ok(outcome.kind === 'idsRefused');
   assert.deepEqual(outcome.refused, ['A13']);
@@ -116,7 +117,7 @@ test('ids are the compiled registry ∩ status.actions: an id the daemon does no
 test('E7 (#17): A18 in status.actions is tolerated but never acted on by the E6 controller — its confirm needs --process, the button of E7.S4: refused before any root call, and A4 beside it still previews', async () => {
   assert.ok((headBody('status').actions as string[]).includes('A18'), 'the head golden reports A18 (daemon #17)');
   const w = world();
-  const outcome = await w.controller.preview(['A18']);
+  const outcome = await w.controller.preview(['A18'], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'idsRefused', JSON.stringify(outcome));
   assert.deepEqual(outcome.refused, ['A18']);
   assert.ok(!(outcome.allowed as readonly string[]).includes('A18'), 'not in what the gate allows');
@@ -126,7 +127,7 @@ test('E7 (#17): A18 in status.actions is tolerated but never acted on by the E6 
 test('an id outside the compiled registry, or none at all, is refused before any root call', async () => {
   for (const ids of [['A99'], ['--timer'], ['A4,A5'], []]) {
     const w = world();
-    const outcome = await w.controller.preview(ids);
+    const outcome = await w.controller.preview(ids, DEFAULT_TARGET);
     assert.equal(outcome.kind, 'idsRefused', JSON.stringify(ids));
     assert.deepEqual(w.runner.argvs(), [], JSON.stringify(ids));
   }
@@ -135,7 +136,7 @@ test('an id outside the compiled registry, or none at all, is refused before any
 test('the ids go in the registry\'s order, each once, whatever order they were asked in', async () => {
   const preview = argv('act', 'A4,A5,A10', '--preview', '--json');
   const w = world({ script: { [preview]: exited(0, goldenText('act-a4-preview.json')) } });
-  await w.controller.preview(['A10', 'A5', 'A4', 'A5']);
+  await w.controller.preview(['A10', 'A5', 'A4', 'A5'], DEFAULT_TARGET);
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, preview]);
 });
 
@@ -143,7 +144,7 @@ test('capabilities are the AUTHORITY: a daemon without them shows "Update daemon
   const status = setAt(headBody('status'), 'capabilities', ['running.block', 'runs.show']);
   setAt(status, 'productVersion', '0.1.0');
   const w = world({ status });
-  const outcome = await w.controller.preview(['A4']);
+  const outcome = await w.controller.preview(['A4'], DEFAULT_TARGET);
   assert.deepEqual(outcome, { kind: 'actionsUnavailable', version: '0.1.0', minimum: MIN_DAEMON_FOR_ACTIONS, missing: ['act.shownList'] });
   assert.deepEqual(w.runner.argvs(), []);
 });
@@ -153,7 +154,7 @@ test('a status with no capabilities at all (a daemon before E6.S0) is "Update da
   delete status.capabilities;
   delete status.actions;
   const w = world({ status });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'actionsUnavailable');
   assert.ok(outcome.kind === 'actionsUnavailable');
   assert.deepEqual(outcome.missing, ['running.block', 'runs.show', 'act.detach']);
@@ -163,18 +164,18 @@ test('a status with no capabilities at all (a daemon before E6.S0) is "Update da
 test('the version only supplies the message: an unstamped daemon that ADVERTISES the capabilities may act', async () => {
   const status = setAt(headBody('status'), 'productVersion', 'unknown');
   const w = world({ status, script: { [PREVIEW_A4]: exited(0, goldenText('act-a4-preview.json')) } });
-  assert.equal((await w.controller.preview(['A4'])).kind, 'previewed');
+  assert.equal((await w.controller.preview(['A4'], DEFAULT_TARGET)).kind, 'previewed');
 });
 
 test('a status that did not answer is the answer: no gate, no root call', async () => {
   const w = world({ status: () => failed('status', { kind: 'notInstalled', distro: 'Ubuntu' }) });
-  assert.deepEqual(await w.controller.preview(['A4']), { kind: 'notInstalled', distro: 'Ubuntu' });
+  assert.deepEqual(await w.controller.preview(['A4'], DEFAULT_TARGET), { kind: 'notInstalled', distro: 'Ubuntu' });
   assert.deepEqual(w.runner.argvs(), []);
 });
 
 test('a stopped distribution is never started by a root call: the client\'s answer, and nothing ran', async () => {
   const w = world({ target: { kind: 'stopped', distro: 'Ubuntu' } });
-  assert.deepEqual(await w.controller.preview(['A4']), { kind: 'stopped', distro: 'Ubuntu' });
+  assert.deepEqual(await w.controller.preview(['A4'], DEFAULT_TARGET), { kind: 'stopped', distro: 'Ubuntu' });
   assert.equal(w.statusCalls(), 0);
   assert.deepEqual(w.runner.argvs(), []);
 });
@@ -190,15 +191,15 @@ test('the root check is cached per session: two previews ask --version as root O
 
 test('a refused root check greys the actions ("needs root"), runs no act — and is asked again next time, not cached', async () => {
   const w = world({ script: { [ROOT_CHECK]: exited(1, '', 'su: authentication failure\n') } });
-  const first = await w.controller.preview(['A4']);
+  const first = await w.controller.preview(['A4'], DEFAULT_TARGET);
   assert.equal(first.kind, 'rootRefused');
-  assert.equal((await w.controller.rootCheck()).kind, 'rootRefused');
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'rootRefused');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, ROOT_CHECK]);
 });
 
 test('rootCheck() answers the daemon version root sees', async () => {
   const w = world();
-  const outcome = await w.controller.rootCheck();
+  const outcome = await w.controller.rootCheck(DEFAULT_TARGET);
   assert.deepEqual(outcome, { kind: 'rootOk', distro: 'Ubuntu', version: { kind: 'release', text: '0.1.0', parts: [0, 1, 0] } });
 });
 
@@ -226,7 +227,7 @@ test('a preview whose shown list holds a name that is not 64 hex digits is refus
   const body = previewBody();
   (a4Of(body).shown as string[])[5] = 'ab'.repeat(31) + '-u';
   const w = world({ script: { [PREVIEW_A4]: exited(0, JSON.stringify(body)) } });
-  const outcome = await w.controller.preview(['A4']);
+  const outcome = await w.controller.preview(['A4'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'shownListInvalid');
 });
 
@@ -234,7 +235,7 @@ test('a preview whose shown list does not match its count is refused (shown.leng
   const body = previewBody();
   setAt(a4Of(body), 'preview.count', 388);
   const w = world({ script: { [PREVIEW_A4]: exited(0, JSON.stringify(body)) } });
-  assert.equal((await w.controller.preview(['A4'])).kind, 'shownListInvalid');
+  assert.equal((await w.controller.preview(['A4'], DEFAULT_TARGET)).kind, 'shownListInvalid');
 });
 
 test('a preview past the cap is honoured: count 12 000, 10 000 shown, shownTruncated — held, and a confirm pipes exactly those 650 000 bytes', async () => {
@@ -266,7 +267,7 @@ test('a confirm without A4 sends no stdin and no --only', async () => {
   const body = previewBody();
   setAt(body, 'actions', [{ id: 'A10', summary: 'x', status: 'previewed', reason: '', preview: { available: true, count: 1, bytes: 0 } }]);
   const w = world({ script: { [preview]: exited(0, JSON.stringify(body)), [confirm]: exited(0, handOff('accepted')) } });
-  const held = await w.controller.preview(['A10']);
+  const held = await w.controller.preview(['A10'], DEFAULT_TARGET);
   assert.ok(held.kind === 'previewed');
   assert.equal((await w.controller.confirm(held.preview)).kind, 'accepted');
   assert.equal(w.runner.requests.at(-1)?.stdin, undefined);
@@ -288,7 +289,7 @@ test('a confirm in another distribution than the preview\'s is refused', async (
     client: { rootTarget: () => Promise.resolve(target), run: () => Promise.resolve(answered('status', headBody('status'))) },
     runner: runner.runner, now: () => 0, sleep: () => Promise.resolve(),
   });
-  const held = await controller.preview(['A4']);
+  const held = await controller.preview(['A4'], DEFAULT_TARGET);
   assert.ok(held.kind === 'previewed');
   target = { wsl: TARGET.wsl, distro: 'Ubuntu-24.04' };
   assert.deepEqual(await controller.confirm(held.preview), { kind: 'distroChanged', previewed: 'Ubuntu', now: 'Ubuntu-24.04' });
@@ -299,15 +300,15 @@ test('a confirm in another distribution than the preview\'s is refused', async (
 test('a second root operation while one is in flight in the same distribution is refused at once, and starts nothing', async () => {
   let release: (r: ProcessResult) => void = () => undefined;
   const w = world({ script: { [PREVIEW_A4]: () => new Promise<ProcessResult>((resolve) => { release = resolve; }) } });
-  const first = w.controller.preview(['A4']);
+  const first = w.controller.preview(['A4'], DEFAULT_TARGET);
   await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
-  const second = await w.controller.runFullCheck();
+  const second = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.deepEqual(second, { kind: 'rootBusy', distro: 'Ubuntu' });
   release(exited(0, goldenText('act-a4-preview.json')));
   assert.equal((await first).kind, 'previewed');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, PREVIEW_A4]);
-  assert.equal((await w.controller.rootCheck()).kind, 'rootOk', 'the slot is free again once the first answered');
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'rootOk', 'the slot is free again once the first answered');
 });
 
 // ---- a detach whose outcome is unknown is followed through status.running (plan §15k #3) ----
@@ -328,7 +329,7 @@ function a10PreviewBody(): string {
 }
 
 async function heldA10(w: World): Promise<HeldPreview> {
-  const held = await w.controller.preview(['A10']);
+  const held = await w.controller.preview(['A10'], DEFAULT_TARGET);
   assert.ok(held.kind === 'previewed', JSON.stringify(held).slice(0, 300));
   return held.preview;
 }
@@ -338,7 +339,7 @@ async function heldA10(w: World): Promise<HeldPreview> {
 test('M3: result "unknown" WITH a run id is handed back at once as outcome unknown with that run id — no follow, no wait', async () => {
   const w = world({ script: { [FULL_CHECK]: exited(0, handOff('unknown', 'collect')) } });
   const started = w.clock.now;
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'outcomeUnknown', JSON.stringify(outcome));
   assert.ok(outcome.kind === 'outcomeUnknown');
   assert.equal(outcome.runId, RUN_ID);
@@ -349,7 +350,7 @@ test('M3: result "unknown" WITH a run id is handed back at once as outcome unkno
 
 test('M3: a result this extension does not know reads "unknown (<value>)", and with its run id is handed back at once', async () => {
   const w = world({ script: { [FULL_CHECK]: exited(0, handOff('deferred', 'collect')) } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.ok(outcome.kind === 'outcomeUnknown', JSON.stringify(outcome));
   assert.equal(outcome.runId, RUN_ID);
   assert.match(outcome.reason, /unknown \(deferred\)/);
@@ -362,7 +363,7 @@ test('M2: a detach that TIMED OUT adopts a queued run only when it is the panel\
   const statuses = [headBody('status'), running('none'), running('queued', RUN_ID, 'manual', ['collect'])];
   const w = world({ status: () => answered('status', statuses.shift() ?? running('live')), script: { [FULL_CHECK]: TIMED_OUT } });
   const started = w.clock.now;
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'acceptedObserved', JSON.stringify(outcome));
   assert.ok(outcome.kind === 'acceptedObserved');
   assert.equal(outcome.runId, RUN_ID);
@@ -371,7 +372,7 @@ test('M2: a detach that TIMED OUT adopts a queued run only when it is the panel\
 
 test('M2: with no run id, the TIMER\'s run in flight is not adopted — reported unknown, naming the other run', async () => {
   const w = world({ status: () => answered('status', running('live', '20000101T000000Z-99', 'timer', ['collect'])), script: { [FULL_CHECK]: TIMED_OUT } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'outcomeUnknown', JSON.stringify(outcome));
   assert.ok(outcome.kind === 'outcomeUnknown');
   assert.equal(outcome.runId, undefined);
@@ -397,14 +398,14 @@ test('M2: with no run id, a manual run of exactly the confirmed actions is adopt
 
 test('§15q: the unknown-detach follow reads the settings — 10 s polls for 30 s are three polls', async () => {
   const w = world({ script: { [FULL_CHECK]: TIMED_OUT }, numbers: { ...DEFAULT_NUMBERS, followPollSeconds: 10, unknownDetachFollowSeconds: 30 } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.ok(outcome.kind === 'outcomeUnknown', JSON.stringify(outcome));
   assert.deepEqual(outcome.followed, { polls: 3, answered: 3 });
 });
 
 test('a detach that TIMED OUT and is never seen: outcome unknown after the bound, the polls counted, never a failure', async () => {
   const w = world({ script: { [FULL_CHECK]: TIMED_OUT } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'outcomeUnknown');
   assert.ok(outcome.kind === 'outcomeUnknown');
   assert.equal(outcome.runId, undefined);
@@ -415,7 +416,7 @@ test('a detach that TIMED OUT and is never seen: outcome unknown after the bound
 test('"accepted" with NO run id is not certain: it is followed like an unknown outcome, never reported accepted', async () => {
   const noRunId = JSON.stringify({ schemaVersion: 1, result: 'accepted', kind: 'collect', unit: 'wsl-care.service', productVersion: '0.1.0' });
   const w = world({ script: { [FULL_CHECK]: exited(0, noRunId) } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'outcomeUnknown');
   assert.ok(outcome.kind === 'outcomeUnknown');
   assert.match(outcome.reason, /accepted with no run id/);
@@ -427,7 +428,7 @@ test('"accepted" with NO run id is not certain: it is followed like an unknown o
 test('L3: a follow whose every status fails says so: polls counted, none answered — and the reason names it', async () => {
   let calls = 0;
   const w = world({ status: () => (calls++ === 0 ? answered('status', headBody('status')) : failed('status', { kind: 'timedOut', timeoutMs: 20_000 })), script: { [FULL_CHECK]: TIMED_OUT } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.ok(outcome.kind === 'outcomeUnknown', JSON.stringify(outcome));
   assert.deepEqual(outcome.followed, { polls: 15, answered: 0 });
   assert.match(outcome.reason, /status answered none of 15 polls/);
@@ -439,14 +440,14 @@ test('L3: a status of ANOTHER distribution during the follow is not this one\'s 
     status: () => (calls++ === 0 ? answered('status', headBody('status')) : answered('status', running('queued', RUN_ID, 'manual', ['collect']), 'Debian')),
     script: { [FULL_CHECK]: TIMED_OUT },
   });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.ok(outcome.kind === 'outcomeUnknown', JSON.stringify(outcome));
   assert.deepEqual(outcome.followed, { polls: 15, answered: 0 });
 });
 
 test('a detach that could not even start wsl.exe is a certain failure — nothing to follow', async () => {
   const w = world({ script: { [FULL_CHECK]: { kind: 'failedToStart', reason: 'ENOENT' } } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'wslFailed');
   assert.equal(w.statusCalls(), 1);
 });
@@ -460,7 +461,7 @@ const CERTAIN: readonly [number, string][] = [
 for (const [code, kind] of CERTAIN) {
   test(`M1: a full check answered exit ${code} is a CERTAIN ${kind} (nothing written), with the daemon's own wsl-care: line`, async () => {
     const w = world({ script: { [FULL_CHECK]: exited(code, '', `\u001b[31m[12:00:00 ERR]\u001b[0m noise\nwsl-care: refused for a reason\n`) } });
-    const outcome = await w.controller.runFullCheck();
+    const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
     assert.equal(outcome.kind, kind);
     if ('messages' in outcome) {
       assert.deepEqual(outcome.messages, ['wsl-care: refused for a reason']);
@@ -470,13 +471,13 @@ for (const [code, kind] of CERTAIN) {
 
 test('M1: wsl.exe refusing on its own account (-1) is certain for a detach', async () => {
   const w = world({ script: { [FULL_CHECK]: { kind: 'exited', code: -1, stdout: Buffer.from('There is no distribution with the supplied name.\r\n', 'utf16le'), stderr: Buffer.alloc(0) } } });
-  assert.equal((await w.controller.runFullCheck()).kind, 'wslFailed');
+  assert.equal((await w.controller.runFullCheck(DEFAULT_TARGET)).kind, 'wslFailed');
 });
 
 for (const code of [70, 130, 137, 143, 3, 4]) {
   test(`M1: a detach that exited ${code} may have written its request — outcome UNKNOWN, followed, never a failure`, async () => {
     const w = world({ script: { [FULL_CHECK]: exited(code, '', 'wsl-care: cut off\n') } });
-    const outcome = await w.controller.runFullCheck();
+    const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
     assert.equal(outcome.kind, 'outcomeUnknown', JSON.stringify(outcome));
     assert.ok(outcome.kind === 'outcomeUnknown');
     assert.match(outcome.reason, new RegExp(`exited ${code}`));
@@ -487,13 +488,13 @@ for (const code of [70, 130, 137, 143, 3, 4]) {
 test('M1: a STOP keeps reading its exits as they are — 130 is interrupted', async () => {
   const stop = argv('act', '--stop', RUN_ID, '--json');
   const w = world({ script: { [stop]: exited(130, '', '') } });
-  assert.equal((await w.controller.stop(RUN_ID)).kind, 'interrupted');
+  assert.equal((await w.controller.stop(RUN_ID, DEFAULT_TARGET)).kind, 'interrupted');
 });
 
 test('exit 75 (busy) carries the running block the daemon reports, read from status right after', async () => {
   let calls = 0;
   const w = world({ status: () => answered('status', calls++ === 0 ? headBody('status') : running('live')), script: { [FULL_CHECK]: exited(75, '', 'wsl-care: busy: run x is acting\n') } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.ok(outcome.kind === 'busy');
   assert.equal(outcome.running?.runId, RUN_ID);
 });
@@ -501,7 +502,7 @@ test('exit 75 (busy) carries the running block the daemon reports, read from sta
 test('exit 76 (wedged) carries the running block too', async () => {
   let calls = 0;
   const w = world({ status: () => answered('status', calls++ === 0 ? headBody('status') : running('wedged')), script: { [FULL_CHECK]: exited(76, '', 'wsl-care: wedged\n') } });
-  const outcome = await w.controller.runFullCheck();
+  const outcome = await w.controller.runFullCheck(DEFAULT_TARGET);
   assert.ok(outcome.kind === 'wedged', JSON.stringify(outcome));
   assert.equal(outcome.running?.state.kind === 'known' ? outcome.running.state.value : '', 'wedged');
 });
@@ -548,29 +549,29 @@ test('M4: refusals where nothing started keep the preview — a gate refusal, a 
 test('L2: a root check that timed out is its own failure — not "needs root" — and is not cached', async () => {
   let answer: ProcessResult = { kind: 'timedOut', timeoutMs: 20_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   const w = world({ script: { [ROOT_CHECK]: () => answer } });
-  assert.deepEqual(await w.controller.rootCheck(), { kind: 'timedOut', timeoutMs: 20_000 });
+  assert.deepEqual(await w.controller.rootCheck(DEFAULT_TARGET), { kind: 'timedOut', timeoutMs: 20_000 });
   answer = { kind: 'failedToStart', reason: 'ENOENT' };
-  assert.equal((await w.controller.rootCheck()).kind, 'wslFailed');
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'wslFailed');
   answer = { kind: 'exited', code: -1, stdout: Buffer.from('There is no distribution with the supplied name.\r\n', 'utf16le'), stderr: Buffer.alloc(0) };
-  assert.equal((await w.controller.rootCheck()).kind, 'wslFailed', 'wsl.exe refusing on its own account is not a root refusal');
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'wslFailed', 'wsl.exe refusing on its own account is not a root refusal');
   answer = exited(0, '0.1.0\n');
-  assert.equal((await w.controller.rootCheck()).kind, 'rootOk', 'asked again: none of them was cached');
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'rootOk', 'asked again: none of them was cached');
 });
 
 // ---- the in-flight slot is freed whatever happens ----
 
 test('the in-flight slot is freed even when the runner REJECTS — the next op is not refused as busy', async () => {
   const w = world({ script: { [PREVIEW_A4]: () => Promise.reject(new Error('runner exploded')) } });
-  await assert.rejects(w.controller.preview(['A4']), /runner exploded/);
-  assert.equal((await w.controller.rootCheck()).kind, 'rootOk');
+  await assert.rejects(w.controller.preview(['A4'], DEFAULT_TARGET), /runner exploded/);
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'rootOk');
 });
 
 test('the in-flight slot is freed even when the status read REJECTS', async () => {
   let reject = true;
   const w = world({ status: () => { if (reject) { throw new Error('status exploded'); } return answered('status', headBody('status')); } });
-  await assert.rejects(w.controller.runFullCheck(), /status exploded/);
+  await assert.rejects(w.controller.runFullCheck(DEFAULT_TARGET), /status exploded/);
   reject = false;
-  assert.notEqual((await w.controller.runFullCheck()).kind, 'rootBusy');
+  assert.notEqual((await w.controller.runFullCheck(DEFAULT_TARGET)).kind, 'rootBusy');
 });
 
 // ---- stop and full check ----
@@ -578,35 +579,35 @@ test('the in-flight slot is freed even when the status read REJECTS', async () =
 test('stop: exactly act --stop <runId> --json, answered stopping', async () => {
   const stop = argv('act', '--stop', RUN_ID, '--json');
   const w = world({ script: { [stop]: exited(0, handOff('stopping')) } });
-  assert.deepEqual(await w.controller.stop(RUN_ID), { kind: 'stopping', runId: RUN_ID, unit: `wsl-care-act@${RUN_ID}.service` });
+  assert.deepEqual(await w.controller.stop(RUN_ID, DEFAULT_TARGET), { kind: 'stopping', runId: RUN_ID, unit: `wsl-care-act@${RUN_ID}.service` });
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, stop]);
 });
 
 test('stop with a run id the daemon would never write starts nothing', async () => {
   for (const bad of ['20000101T000000Z-01', '--timer', `${RUN_ID} --user x`, '']) {
     const w = world();
-    assert.deepEqual(await w.controller.stop(bad), { kind: 'runIdRefused' });
+    assert.deepEqual(await w.controller.stop(bad, DEFAULT_TARGET), { kind: 'runIdRefused' });
     assert.deepEqual(w.runner.argvs(), []);
   }
 });
 
 test('stop needs act.stop: a daemon without it is "Update daemon"', async () => {
   const w = world({ status: setAt(headBody('status'), 'capabilities', ['running.block', 'runs.show', 'act.detach']) });
-  const outcome = await w.controller.stop(RUN_ID);
+  const outcome = await w.controller.stop(RUN_ID, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'actionsUnavailable');
   assert.deepEqual(w.runner.argvs(), []);
 });
 
 test('Run full check now: exactly collect --detach --json — never --timer — answered accepted', async () => {
   const w = world({ script: { [FULL_CHECK]: exited(0, handOff('accepted', 'collect')) } });
-  assert.equal((await w.controller.runFullCheck()).kind, 'accepted');
+  assert.equal((await w.controller.runFullCheck(DEFAULT_TARGET)).kind, 'accepted');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, FULL_CHECK]);
 });
 
 test('#17: a root call is sized under the limits of the fresh status — a daemon whose drain is 10 s gets a detach ceiling above its 1 215 s', async () => {
   const status = { ...headBody('status'), limits: { ...(headBody('status').limits as Record<string, unknown>), drainGraceMilliseconds: 10_000 } };
   const w = world({ status, script: { [FULL_CHECK]: exited(0, handOff('accepted', 'collect')) } });
-  await w.controller.runFullCheck();
+  await w.controller.runFullCheck(DEFAULT_TARGET);
   const detach = w.runner.requests.find((r) => r.args.includes('collect'));
   assert.equal(detach?.timeoutMs, (1215 + 10) * 1000);
 });
@@ -629,11 +630,11 @@ function statusCapped(cap: number): Record<string, unknown> {
 
 test('#17: a preview is held to the cap IN FORCE — 300 names of 387 with maxShownNames 300 is consistent; the same list under 10 000 is not', async () => {
   const capped = world({ status: statusCapped(300), script: { [PREVIEW_A4]: exited(0, cappedPreview(300)) } });
-  const held = await capped.controller.preview(['A4']);
+  const held = await capped.controller.preview(['A4'], DEFAULT_TARGET);
   assert.ok(held.kind === 'previewed', JSON.stringify(held).slice(0, 300));
   assert.deepEqual([held.preview.a4?.names.length, held.preview.a4?.count, held.preview.a4?.truncated, held.preview.a4?.cap], [300, 387, true, 300]);
   const uncapped = world({ script: { [PREVIEW_A4]: exited(0, cappedPreview(300)) } });
-  assert.equal((await uncapped.controller.preview(['A4'])).kind, 'shownListInvalid', 'under the default cap 300 of 387 names is a cut list');
+  assert.equal((await uncapped.controller.preview(['A4'], DEFAULT_TARGET)).kind, 'shownListInvalid', 'under the default cap 300 of 387 names is a cut list');
 });
 
 test('#17: the confirm checks the cap in force AT THE CONFIRM — a 387-name list held under 10 000 is refused when the daemon now takes 300', async () => {
@@ -656,7 +657,7 @@ function relayScript(keys: readonly string[]): Readonly<Record<string, Scripted>
 
 test('S7b.2b: A21 passes the gate (it left BUTTON_ONLY_IDS) and its preview holds the shown processes', async () => {
   const w = world({ script: relayScript(relayKeys(2)) });
-  const outcome = await w.controller.preview(['A21']);
+  const outcome = await w.controller.preview(['A21'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 300));
   assert.ok(outcome.kind === 'previewed');
   assert.deepEqual(outcome.preview.processes?.names, relayKeys(2));
@@ -667,7 +668,7 @@ test('S7b.2b: the confirm carries exactly the held processes as --process pairs,
   const keys = relayKeys(2);
   const confirm = argv('act', 'A21', '--confirm', '--manual', '--detach', '--process', keys[0] ?? '', '--process', keys[1] ?? '', '--json');
   const w = world({ script: { ...relayScript(keys), [confirm]: exited(0, handOff('accepted')) } });
-  const outcome = await w.controller.preview(['A21']);
+  const outcome = await w.controller.preview(['A21'], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed');
   const handed = await w.controller.confirm(outcome.preview);
   assert.equal(handed.kind, 'accepted', JSON.stringify(handed).slice(0, 300));
@@ -679,14 +680,14 @@ test('S7b.2b: a daemon that does not advertise act.processList is refused before
   const head = headBody('status');
   const older = { ...head, capabilities: (head.capabilities as string[]).filter((c) => c !== 'act.processList') };
   const w = world({ status: older, script: relayScript(relayKeys(1)) });
-  const outcome = await w.controller.preview(['A21']);
+  const outcome = await w.controller.preview(['A21'], DEFAULT_TARGET);
   assert.notEqual(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 300));
   assert.deepEqual(w.runner.argvs(), []);
 });
 
 test('S7b.2b: an empty A21 preview cannot be confirmed — a bare button run would be refused by the daemon', async () => {
   const w = world({ script: relayScript([]) });
-  const outcome = await w.controller.preview(['A21']);
+  const outcome = await w.controller.preview(['A21'], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed');
   const before = w.runner.argvs().length;
   const handed = await w.controller.confirm(outcome.preview);

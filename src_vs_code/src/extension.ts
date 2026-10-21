@@ -44,7 +44,7 @@ import { guardUiFor, newGuardRecorder, recordingQuery, type GuardRecorder } from
 import { startWindowsTime } from './windowsTime/windowsTimeFix';
 import { newWindowsTimeRecorder, windowsTimeUiFor, type WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import { distroSettingText } from './wsl/distros';
-import { DEFAULT_TARGET } from './wsl/distroTarget';
+import { DEFAULT_TARGET, type DistroTarget } from './wsl/distroTarget';
 
 /**
  * AI OS Care — the extension over the `wsl-care` daemon (plan §7, E5–E6). It runs on the Windows side
@@ -168,8 +168,8 @@ function build(context: vscode.ExtensionContext): Parts {
   const log = vscode.window.createOutputChannel('AI OS Care', { log: true });
   context.subscriptions.push(log);
   const host = new CleanupHost({
-    durable: context.globalState, controller: cleanup, read: (request) => client.read(request, DEFAULT_TARGET), outcomes: store,
-    askStatus: () => poller.askStatus(DEFAULT_TARGET), refreshPanel: () => poller.refreshPanel(), focused: () => focus.override ?? vscode.window.state.focused,
+    durable: context.globalState, controller: cleanup, read: (request, target) => client.read(request, target), outcomes: store,
+    askStatus: (target) => poller.askStatus(target), refreshPanel: () => poller.refreshPanel(), focused: () => focus.override ?? vscode.window.state.focused,
     ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(), log: (line) => log.error(line), numbers,
   });
 
@@ -288,9 +288,9 @@ function tasksHostOf(context: vscode.ExtensionContext, parts: TasksParts): Tasks
  */
 function archiveHostOf(testMode: boolean, client: WslCareClient, runner: ReturnType<typeof clientRunner>, store: OutcomeStore, host: CleanupHost, recorder: ArchiveRecorder, log: vscode.LogOutputChannel): ArchiveHost {
   return new ArchiveHost({
-    read: (request) => client.read(request, DEFAULT_TARGET), target: () => client.rootTarget(DEFAULT_TARGET), runner, outcomes: store, ui: archiveUiFor(testMode, recorder),
+    read: (request, target) => client.read(request, target), target: (target) => client.rootTarget(target), runner, outcomes: store, ui: archiveUiFor(testMode, recorder),
     log: (line) => log.error(line), numbers, limits: () => limitsOf(store),
-    cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: () => host.archiveNow(),
+    cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: (target) => host.archiveNow(target),
   });
 }
 
@@ -376,10 +376,10 @@ function tasksFlowsOf(parts: Parts): TasksFlows {
 }
 
 /** *Install daemon*: the client resolves the distribution, the modal and the terminal are real — or recorded in Test mode. */
-function installer(parts: Parts): () => void {
+function installer(parts: Parts, target: DistroTarget): () => void {
   const ui = installUiFor(parts.testMode, parts.install);
 
-  return () => { void installDaemon({ target: () => parts.client.terminalTarget(DEFAULT_TARGET), ...ui }); };
+  return () => { void installDaemon({ target: () => parts.client.terminalTarget(target), ...ui }); };
 }
 
 /**
@@ -401,7 +401,7 @@ function windowsTimeFixer(parts: Parts): () => void {
       env: process.env,
       setAutomaticStart: () => settings().get<boolean>('windowsTime.setAutomaticStart', true) !== false,
       timeoutMs: () => numbers().windowsTimeFixSeconds * 1000,
-      afterDone: () => { void parts.host.runFullCheck(); },
+      afterDone: () => { void parts.host.runFullCheck(DEFAULT_TARGET); },
       engine: parts.engine,
       ...ui,
     }).catch((e: unknown) => { parts.log.error(`Start Windows Time failed: ${String(e)}`); }).finally(() => { running = false; });
@@ -442,10 +442,10 @@ function archiveActions(parts: Parts, page: ArchivePanel): Pick<PanelActions, 'a
   return {
     archive: () => parts.archive.view(),
     onArchiveChange: (listener) => parts.archive.onChange(listener),
-    chooseArchiveFolder: () => { void parts.archive.choose(); },
-    stopArchiving: () => { void parts.archive.stop(); },
+    chooseArchiveFolder: () => { void parts.archive.choose(DEFAULT_TARGET); },
+    stopArchiving: () => { void parts.archive.stop(DEFAULT_TARGET); },
     // E10.S1b own review #1: the archive host refuses on the archive's conditions, then hands it to the cleanup host (its own).
-    archiveNow: () => { void parts.archive.archiveNow(); },
+    archiveNow: () => { void parts.archive.archiveNow(DEFAULT_TARGET); },
     // E10.S2a: the Archive page — it reads the list itself.
     openArchive: () => { void page.show(); },
   };
@@ -455,7 +455,7 @@ function archiveActions(parts: Parts, page: ArchivePanel): Pick<PanelActions, 'a
 function relayActions(parts: Parts): Pick<PanelActions, 'relays' | 'stopRelays'> {
   return {
     relays: () => parts.host.relays(),
-    stopRelays: () => { void parts.host.stopRelays(); },
+    stopRelays: () => { void parts.host.stopRelays(DEFAULT_TARGET); },
   };
 }
 
@@ -488,7 +488,7 @@ function archiveCommands(archive: Pick<PanelActions, 'chooseArchiveFolder' | 'st
 function archivePanel(context: vscode.ExtensionContext, parts: Parts): ArchivePanel {
   const { client, store, log, host } = parts;
   // E10.S2b: *Restore* is the cleanup host's — the page hands it entry ids as text and reads its facts; it never touches root/.
-  const restore = { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids: readonly string[]) => host.restore(ids) };
+  const restore = { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids: readonly string[]) => host.restore(ids, DEFAULT_TARGET) };
 
   return new ArchivePanel(context.extensionUri, { read: (request) => client.read(request, DEFAULT_TARGET), status: () => store.snapshot().status, restore }, (line) => log.error(line));
 }
@@ -516,7 +516,7 @@ function logsSubscriptions(logs: LogsPanel, store: OutcomeStore): vscode.Disposa
 
 function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar; panel: PanelProvider; logs: LogsPanel; archivePage: ArchivePanel } {
   const { poller, store, focus, host } = parts;
-  const install = installer(parts);
+  const install = installer(parts, DEFAULT_TARGET);
   const windowsTime = windowsTimeFixer(parts);
   const logs = logsPanel(context, parts);
   const archivePage = archivePanel(context, parts);
@@ -529,9 +529,9 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
     installDaemon: install,
     startWindowsTime: windowsTime,
-    clean: (rowIds, selected) => { void host.clean(rowIds, selected); },
-    runFullCheck: () => { void host.runFullCheck(); },
-    stop: (index) => { void host.stop(index); },
+    clean: (rowIds, selected) => { void host.clean(rowIds, selected, DEFAULT_TARGET); },
+    runFullCheck: () => { void host.runFullCheck(DEFAULT_TARGET); },
+    stop: (index) => { void host.stop(index, DEFAULT_TARGET); },
     cleanup: () => host.controls(),
     onCleanupChange: (listener) => host.onChange(listener),
     openRunLogs: () => { void logs.show(lastCleanupPeriod(store.snapshot().status)); },

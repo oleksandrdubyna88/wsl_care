@@ -635,3 +635,46 @@ The gate's operator order "this plan is a piece of a split already under way —
 built on ONE branch and goes through ONE code round and ONE pull request, as three commits in the order of § 9
 (W1a-1 client + list, W1a-2 store + poller, W1a-3 actions + enumeration), so a reader can still take it a slice at a time.
 § 9's three-PR recommendation is recorded as what this would have been cut into.
+
+### 10. As built (2026-10-21)
+
+Built on ONE branch (`feat/wc-e18-w1a-distros`) as three commits in the order of § 9 — W1a-1 client + list, W1a-2 store + poller, W1a-3 actions +
+enumeration + host scenario. Every extension caller passes `DEFAULT_TARGET`; the existing expectations (`distroSwitch`, `poller` churn numbers,
+`clientFlows`, the host suites) are unchanged — their call sites gained the target argument and nothing they assert moved. What shipped differently:
+
+- **One parser, two answers.** `parseVerboseTable` returns `{ name, marked, stateText, version }` and drops a name failing `DISTRO_NAME` or holding
+  a space (the header's state column tells a spaced name from a two-word state). `parseDefaultDistro` runs over the same rows through `defaultRow`
+  WITHOUT the name filter: a default named `-x` must still answer `distroRefused` naming the option rule (`client.test.ts`), where the picker simply
+  never offers it. `listDistros` builds its answer in a new pure module, `src/wsl/distroList.ts` (not in the client).
+- **`wsl1` words:** bar label `needs WSL 2`; the strict fake's refusal is `FAKE_EXIT.wsl1` = 94. `TerminalTarget` gained the optional `running`.
+- **`installDaemon(deps)` kept its one-parameter signature** (its test pins "no parameter a page value could reach"): the extension's `installer(parts, target)`
+  binds the `DistroTarget` into `deps.target`, instead of `InstallDeps.target` taking it.
+- **The follower asks per entry.** A journal entry's `targetKind: 'picked'` + `distro` build its target (`entryTarget`); `RunFollower` asks `status` once per
+  DISTINCT target its entries follow and reads `runs show` / `runs` from the entry's distribution. The default is asked unless EVERY entry is a picked one
+  (so a picked-only journal never touches the default distro — which is what makes RED 20(a) hold through the real follower); the observing poll stays the default's.
+- **`ArchiveHost` does not re-read its (default) view after a picked write** — the view is the default's; a per-distro card is W1b's.
+- **A picked full check or stop** is written for the picked name and needs no default `status`; `CleanupHost.stop(index, target)` reads the stoppable run from that
+  target's snapshot (`snapshotOf`). `HeldPreview` and `PreviewContext` carry `target`.
+- **RED 20(c) is a classification plus a scan, not 12 driven commands.** The enumeration drives the seven `distro` commands' flows (`refresh` as `verb:status`); the
+  `windowsSide` / `opener` commands are classified in the test (a 20th command fails it) and the modules of the windowsSide ones are scanned to import
+  — as values — no WSL client, root controller, cleanup flow or poller. Nothing executes them in a node test (they need VS Code); the host suite does not drive them either.
+- **RED 21 lives in `test/host/suite.ts`** (`test:host`), not in `scenarios/clientFlows.test.ts` (a node test, which has no test API): three scenarios — a running Debian
+  (`-l -v`, the running list, exactly three `-d Debian` calls, preview / doctor in either order, bar and rendered rows unchanged), a stopped one (no `-d`), a version-1 one (no
+  `-d`, no running question of its own). "No `wouldStart` refusal in the fake's log" is asserted as the absence of any `-d` call (the call log holds argv, not exit codes).
+- **Not red-first, said plainly:** `installDaemonPicked.test.ts` was green on arrival (the client road is W1a-1's; it pins it for the installer); the enumeration (RED 20) and the
+  host scenarios (RED 21) were written after their product slice, their teeth are the break-its below; `statusBar` / `poller` wsl1 cases and the structure scan were red-first.
+- Test support added: `support/manualClock.ts` (the clock `poller.test.ts` had inline), `support/distroNames.ts` (`listed` / `pick`), `NO_DISTRO_LIST` in `support/outcomes.ts`;
+  `Poller` has a required `listDistros` option and the test API `listDistros()` / `readPicked(name, options?)` (the list first, an unlisted name throws).
+
+**Break-its** (each restored byte for byte, SHA-256 compared, never a tripwire touched): the in-flight key without the target → `clientDistros` 2 red; the picked road through
+`--list --quiet` → 6 red; the version check dropped → the 3 wsl1 tests red; `listDistros` not pruning (`knownVersion`, `knownContainers`) → 1 red each; a cast into `DistroName` in the client →
+the structure test red; `wsl1` out of `TARGET_FAILURES` → the poller test red; `readPicked` writing through `set` → 9 red; `clear()` emptying the picked map → 3 red; the poller not calling
+`dropUnlisted` → 10 red; the store accepting an unlisted name → 3 red; the confirm resolved through the default instead of the preview's target → the controller test red (the
+enumeration stays green there: the `distroChanged` guard refuses the call, so nothing wrong is SENT); `rootTarget(picked)` routed through the default → the enumeration + 2 client tests red;
+the archive flows ignoring the target → 3 red, the enumeration among them; the journal dropping `targetKind` → 8 red; the follower always asking the default → 1 red; a verb added to
+`VERB_NAMES` or an op to `ROOT_OPS` without its row → the compile fails (`VERBS`, `TAILS`, the enumeration's typed tables); `askPicked` through `DEFAULT_TARGET` → all 3 host scenarios red.
+
+**Final counts (extension):** typecheck and lint clean; `npm test` 1736 tests, 1735 pass, 0 fail, 1 skipped (the `clientFlows` / kill-tree timing tests flake under load and pass alone — they did
+once in three full runs); `test:host` green on VS Code 1.85.0 and stable, fake and closed; `check:vsix` OK. Daemon classes that read `src_vs_code` (Release build, 0 errors): `ReleaseExtension` 74,
+`Architecture` 1 + 26, `InteropModulePath` 8, `FullCheckLine` 22, `FixturePrivacy` 58, `ExtensionPackageName` 2, `ReleaseConfig` 11 — all pass. Family checks clean. The WSL 1 row shape is still Microsoft's documented
+layout, not measured here (§ 7).

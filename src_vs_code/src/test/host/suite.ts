@@ -8,6 +8,7 @@ import { INSTALL_COMMAND } from '../../install/installCommand';
 import { FIELD_MAP } from '../../panel/fieldMap';
 import { CLOSED_REASON } from '../../process/runner';
 import type { WslCareTestApi } from '../../testApi';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * The extension-host scenarios: run INSIDE a real VS Code by `scripts/run-host.mjs` (`@vscode/test-electron`, 1.85.0
@@ -61,6 +62,7 @@ function daemonCalls(api: WslCareTestApi): string[] {
 }
 
 const RUNNING = { distros: [{ name: 'Ubuntu', running: true }], startable: false };
+const TWO = { distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: true }], defaultDistro: 'Ubuntu', startable: false };
 const STOPPED = { distros: [{ name: 'Ubuntu', running: false }], startable: false };
 
 /** Every mode: the running bundle is the one built for this manifest's version (scripts/bundle.mjs's stamp). */
@@ -198,7 +200,7 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       assert.ok(host.controls().rows.some((r) => r.rowId === 'A4' && r.enabled), JSON.stringify(host.controls()).slice(0, 300));
       api.cleanRecorder().answer = true;
       api.resetCalls();
-      const outcome = await host.clean(['A4'], false);
+      const outcome = await host.clean(['A4'], false, DEFAULT_TARGET);
       assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
       assert.equal(api.cleanRecorder().modals.at(-1)?.message, 'Clean A4 in "Ubuntu"?');
       assert.deepEqual(daemonCalls(api).filter((c) => c.includes('--confirm')), ['-d Ubuntu -u root --cd / --exec /opt/wsl-care/bin/wsl-care act A4 --confirm --manual --detach --only - --json']);
@@ -236,6 +238,54 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       const reads = daemonCalls(api).filter((c) => / archive /.test(c));
       assert.deepEqual(reads, ['-d Ubuntu --cd / --exec /opt/wsl-care/bin/wsl-care archive list --json'], JSON.stringify(reads));
       assert.equal(archive.view().agents[0]?.agent, 'claude-code', 'the golden list reached the page');
+    },
+  },
+  {
+    // E18.W1a-3 (RED 21): a PICKED distribution is read with no UI — and the default's views do not move.
+    name: "E18.W1a: readPicked(Debian) asks -l -v, the running list and exactly three -d Debian daemon calls; the bar and the rendered rows stay the default's",
+    run: async (api) => {
+      scenario(TWO);
+      api.setFocused(false);
+      await api.settled();
+      await api.refreshPanel();
+      await api.settled();
+      const bar = api.statusBar();
+      const rendered = api.lastRendered();
+      api.resetCalls();
+      await api.readPicked('Debian');
+      await api.settled();
+      // status first; preview and doctor run at once, so their order in the log is the race of two processes
+      const calls = daemonCalls(api);
+      assert.equal(calls[0], '-d Debian --cd / --exec /opt/wsl-care/bin/wsl-care status --json');
+      assert.deepEqual([...calls].sort(), ['status', 'preview --all', 'doctor'].map((t) => `-d Debian --cd / --exec /opt/wsl-care/bin/wsl-care ${t} --json`).sort());
+      const asked = new Set(api.calls().filter((c) => !c.startsWith('-d ')));
+      assert.deepEqual([...asked].sort(), ['--list --running --quiet', '-l -v']);
+      assert.equal(api.calls().includes('--list --quiet'), false, 'a picked road never asks the setting list');
+      assert.deepEqual(api.statusBar(), bar, 'the status bar still shows the default distribution');
+      assert.equal(api.lastRendered(), rendered, 'the panel was not re-rendered by a picked read');
+    },
+  },
+  {
+    name: 'E18.W1a: readPicked(Debian) while Debian is stopped makes no -d call — nothing starts it',
+    run: async (api) => {
+      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: false }] });
+      api.resetCalls();
+      await api.readPicked('Debian');
+      await api.settled();
+      assert.deepEqual(daemonCalls(api), []);
+      assert.ok(api.calls().includes('--list --running --quiet'), 'the running question was asked');
+    },
+  },
+  {
+    name: 'E18.W1a: readPicked(Debian) with Debian at WSL version 1 makes no -d call and no running question of its own',
+    run: async (api) => {
+      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: true, version: 1 }] });
+      api.resetCalls();
+      await api.readPicked('Debian');
+      await api.settled();
+      assert.deepEqual(daemonCalls(api), []);
+      assert.equal(api.calls().filter((c) => c === '--list --running --quiet').length, 1, 'only the list own question; the picked road stopped at the version');
+      scenario(RUNNING);
     },
   },
   {
