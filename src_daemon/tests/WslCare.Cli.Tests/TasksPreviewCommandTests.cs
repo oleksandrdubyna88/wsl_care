@@ -90,7 +90,7 @@ public sealed class TasksPreviewCommandTests : IDisposable
 
         exit.Should().Be((int)ExitCode.NotAsRoot);
         stdout.Should().BeEmpty();
-        stderr.Should().Contain("Administrators").And.Contain("misleading").And.NotContain("act ", "the preview is refused for its own reason, not act's");
+        stderr.Should().Contain("Administrators").And.Contain("misleading").And.Contain("Nothing was read.").And.NotContain("act ", "the preview is refused for its own reason, not act's");
         Directory.Exists(_sandbox.Paths.StateDirectory).Should().BeFalse();
         Directory.Exists(old).Should().BeTrue();
         Snapshot().Should().Equal(before);

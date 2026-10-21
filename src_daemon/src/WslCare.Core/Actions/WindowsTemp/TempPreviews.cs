@@ -25,21 +25,19 @@ internal static class TempPreviews
         var limit = context.Config.Int(ConfigKeys.Preview.MaxItems);
 
         // The counts, the groups and the eligible verdict are the TASK's: planned as the timer plans (the names the allow-list does not cover
-        // cost one node each and are not scanned), so the shared scan budget is spent as the task will spend it (the Fable own review of
-        // WR-T2, major 1). "Would be eligible if allowed" needs those names scanned, so it comes from a second, person-trigger plan.
-        return Planning.Of(context with { Trigger = RunTrigger.Timer }, settings, token) switch
+        // cost one node each and are not scanned), so the shared scan budget is spent as the task will spend it (the Fable own review of WR-T2,
+        // major 1). "Would be eligible if allowed" needs those names scanned, so it comes from a second plan under a person's trigger. THIS method
+        // sets both triggers (whatever the context carries) and the plans share ONE listing and ONE budget: the task first, the person's plan
+        // on what is left (code round 4663beda, findings 1 and 8).
+        var (task, person) = Planning.OfTaskThenPerson(context, settings, token);
+        return task switch
         {
-            Planning.Planned planned => FromPlan(context, settings, dry, planned.Plan, Uncovered(context, settings, token), limit),
+            Planning.Planned planned => FromPlan(context, settings, dry, planned.Plan, person, limit),
             Planning.Refused refused => Nothing(context, settings, dry, string.Empty, refused.Reason, limit),
             Planning.Unreadable unreadable => Nothing(context, settings, dry, string.Empty, unreadable.Reason, limit),
             _ => throw new System.Diagnostics.UnreachableException("Planning is a closed set"),
         };
     }
-
-    /// <summary>The plan a PERSON's trigger makes, which scans the names the allow-list does not cover; <c>null</c>-free: an empty plan when it
-    /// cannot be made (the same root was just planned, so this is not expected).</summary>
-    private static TempPlan? Uncovered(ActionContext context, TempSettings settings, CancellationToken token) =>
-        Planning.Of(context with { Trigger = RunTrigger.Cli }, settings, token) is Planning.Planned planned ? planned.Plan : null;
 
     private static TempPreviewReport FromPlan(ActionContext context, TempSettings settings, DryRunPeek dry, TempPlan plan, TempPlan? uncovered, int limit)
     {
@@ -55,7 +53,7 @@ internal static class TempPreviews
             ExcludedByReason = [.. plan.Entries.Where(e => e.Judgement.Verdict == TempVerdict.Excluded).GroupBy(e => e.Judgement.Reason).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).Select(g => new TempExcludedReason(g.Key, g.Count()))],
             Groups = [.. eligible.Shown, .. would.Shown],
             GroupsNotShown = new TempGroupsNotShown(eligible.NotShown, would.NotShown),
-            WouldBeEligibleLimited = uncovered is { Deferred: > 0 },
+            WouldBeEligibleLimited = uncovered is { BudgetStopped: true },
         };
     }
 

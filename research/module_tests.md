@@ -3444,7 +3444,9 @@ because the preview says what the task will do, but found 0L`; `Expected timer.C
 The reviewer's premise for fix 2 ("`TempRun` gives every candidate a fresh budget") was already stale (T1 m6 shares the re-validation allowance), so only the wording
 moved. **Break-it** (product only, sandboxed, each restored with `cmp`, `git diff` clean): N1 the supervisor's elevated refusal removed (6 red); N2 the preview planning with
 the Cli trigger for the counts (1); N3 the `wouldBeEligible` plan dropped (2); N4 the limited flag fixed false (2); N5 the elevated message reworded back (1); N6 the refusal moved
-after the sweep (5). **Consequence for CI:** an elevated runner now takes the 81 leg in the supervisor for all three tasks, so the scenarios that supervised a task there assert 81.
+after the sweep (5). 
+
+**The code round 4663beda (2026-10-21), the last cycle.** Rows added to `WindowsTempPreviewTests` (red first, each failure named in plan §14): the preview lists the top level once (`The_preview_lists_the_top_level_once`, 2 listings before); the two plans spend ONE budget and the second gets what is left (`The_two_plans_of_a_preview_spend_one_scan_budget_and_the_second_gets_what_is_left`); reaching `temp.maxItemsPerRun` does not set `wouldBeEligibleLimited` (`Reaching_the_per_run_maximum_is_not_a_budget_that_ran_out`). The recursive-delete scanner now catches a method group (fixture line `Remove(files.DeleteDirectory);`); `TasksPreviewCommandTests` pins the refusal's closing "Nothing was read.". Break-its M1-M8 are in plan §14. **Consequence for CI (earlier cycle):** an elevated runner now takes the 81 leg in the supervisor for all three tasks, so the scenarios that supervised a task there assert 81.
 
 **The extension.** The render golden is read by the extension's fake and its Windows tests: its `windowsTasksState.test.ts` counted three golden answers and counts four;
 `npm ci`, `compile`, `bundle` and the whole suite ran in this worktree (1598 tests, 0 failed).

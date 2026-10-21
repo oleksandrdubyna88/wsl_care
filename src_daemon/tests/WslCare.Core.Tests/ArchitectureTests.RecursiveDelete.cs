@@ -12,12 +12,12 @@ namespace WslCare.Core.Tests;
 /// </summary>
 public sealed partial class ArchitectureTests
 {
-    /// <summary>A call of the recursive delete as a member call (<c>files.DeleteDirectory(</c>, also across lines); not <c>DeleteEmptyDirectory(</c>, not a declaration.</summary>
-    [GeneratedRegex(@"\.\s*DeleteDirectory\s*\(", RegexOptions.CultureInvariant)]
+    /// <summary>A use of the recursive delete as a member (<c>files.DeleteDirectory(</c>, across lines, or as a METHOD GROUP: <c>Remove(files.DeleteDirectory)</c>); not <c>DeleteEmptyDirectory(</c>, not a declaration.</summary>
+    [GeneratedRegex(@"\.\s*DeleteDirectory(?!\w)", RegexOptions.CultureInvariant)]
     private static partial Regex RecursiveDeleteMemberCall();
 
-    /// <summary>Any spelling of the name as a call or declaration, but never as the tail of another name (<c>DeleteEmptyDirectory(</c>).</summary>
-    [GeneratedRegex(@"(?<!\w)DeleteDirectory\s*\(", RegexOptions.CultureInvariant)]
+    /// <summary>Any spelling of the name as a call, a method group or a declaration, but never as the tail of another name (<c>DeleteEmptyDirectory(</c>).</summary>
+    [GeneratedRegex(@"(?<!\w)DeleteDirectory(?!\w)", RegexOptions.CultureInvariant)]
     private static partial Regex RecursiveDeleteAnyCall();
 
     /// <summary>The src files that call the recursive delete, and the root each deletes under (never <c>%TEMP%</c>): the closed list.</summary>
@@ -66,10 +66,10 @@ public sealed partial class ArchitectureTests
     [Fact]
     public void The_recursive_delete_scan_matches_a_planted_call_and_not_the_empty_folder_removal()
     {
-        const string planted = "var v = files.DeleteDirectory(path, scope);\nvar w = files\n    .DeleteDirectory (path, scope);\nvar ok = files.DeleteEmptyDirectory(path, scope);\n// files.DeleteDirectory(old)\npublic DeletionVerdict DeleteDirectory(string path, DeletionScope scope) => x;";
+        const string planted = "var v = files.DeleteDirectory(path, scope);\nvar w = files\n    .DeleteDirectory (path, scope);\nvar ok = files.DeleteEmptyDirectory(path, scope);\nRemove(files.DeleteDirectory);\n// files.DeleteDirectory(old)\npublic DeletionVerdict DeleteDirectory(string path, DeletionScope scope) => x;";
 
-        RecursiveDeleteMemberCall().Matches(CodeOnly(planted)).Select(m => LineOf(CodeOnly(planted), m.Index)).Should().Equal(1, 3);
-        RecursiveDeleteAnyCall().Matches(CodeOnly(planted)).Select(m => LineOf(CodeOnly(planted), m.Index)).Should().Equal(1, 3, 6);
+        RecursiveDeleteMemberCall().Matches(CodeOnly(planted)).Select(m => LineOf(CodeOnly(planted), m.Index)).Should().Equal(1, 3, 5);
+        RecursiveDeleteAnyCall().Matches(CodeOnly(planted)).Select(m => LineOf(CodeOnly(planted), m.Index)).Should().Equal(1, 3, 5, 7);
         RecursiveDeleteAnyCall().IsMatch("var ok = files.DeleteEmptyDirectory(path, scope);").Should().BeFalse("the empty-folder removal is the one A23 may use");
         RecursiveDeleteMemberCall().IsMatch("var ok = files.DeleteEmptyDirectory(path, scope);").Should().BeFalse();
         RecursiveDeleters.Keys.Should().OnlyContain(f => File.Exists(Path.Combine(Metadata("WslCare.SourceRoot"), f)), "every listed caller still exists");

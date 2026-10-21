@@ -822,7 +822,7 @@ flowchart TD
     JOB -. "deadline" .-> E84["exit 84, tree terminated; A23's checkpoint makes the kill safe"]
     P["tasks preview cleanup --json"] --> PR{"distro? elevated?"}
     PR -- "2 / 81" --> X[refused before anything is read]
-    PR -- no --> PL["Planning.Of: the same listing and plan as act A23 --preview, trigger Cli"]
+    PR -- no --> PL["Planning.OfTaskThenPerson: ONE listing, ONE budget; the Timer plan, then the Cli plan on what is left"]
     PL --> REP["TempPreviewReport: counts, groups with at most preview.maxItems paths + remainders, the cursor said, A23's week peeked; no lock, no write"]
 ```
 
@@ -853,8 +853,11 @@ message says WHY: an elevated process sees entries owned by the Administrators g
 user would be misleading); a configuration in error does not refuse it (`observeOnly` + the errors). It is faithful to what the task will do:
 the counts are those of the **Timer** plan (what the scheduled run would do: names the allow-list does not cover are not scanned), and a second
 plan under the `Cli` trigger (which does scan them) fills only the "would be eligible if allowed" groups; `wouldBeEligibleLimited` is true (and
-the text form says so) when that second scan ran out of budget, so the list is a lower bound. Both plans are read-only. It builds `Planning.Of`
-(the SAME call the engine's preview makes) and shapes it as `TempPreviewReport`: the resolved root, the
+the text form says so) when that second scan ran out of the SCAN BUDGET (`TempPlan.BudgetStopped`; reaching `temp.maxItemsPerRun` is not that and is
+not flagged), so the list is a lower bound. Both plans are read-only. **Its cost is one allowance:** ONE top-level listing (`Planning.OfTaskThenPerson`, the
+same listing code as the engine's preview) and ONE `TempBudget` (`temp.scanMaxNodes`, `temp.scanMaxSeconds`, the listing's time included) - the Timer plan
+first, the person's plan on what it left - so the extension's `windowsTempPreviewSeconds` (WR-T3) must cover one `temp.scanMaxSeconds` plus the listing,
+not twice it. It shapes the plans as `TempPreviewReport`: the resolved root, the
 refusal (a refused root answers zero counts, exit 0), the numbers in force, A23's dry state (`DryRunWindow.Peek`), the pass (the cursor ON DISK:
 `last`, `inProgress`), the counts (the `act A23 --preview` facts), the eligible bytes, the excluded reasons, and the groups with at most
 `preview.maxItems` groups per verdict and paths per group and the remainders counted. It deletes nothing, moves no cursor, starts no week, writes

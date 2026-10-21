@@ -21,7 +21,10 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
     {
     }
 
-    public ActionId Id { get; } = ActionId.Find("A23")!;
+    /// <summary>A23's id, spelt here and nowhere else: the action's own <see cref="Id"/>, its dry-week <see cref="StampName"/>, the task worker's argument and the task's stamp all read this one constant.</summary>
+    public const string IdText = "A23";
+
+    public ActionId Id { get; } = ActionId.Find(IdText)!;
 
     public string Summary => "clean the Windows TEMP folder of the user's own old scratch entries";
 
@@ -36,8 +39,8 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
     /// archive body, so it would open deletion on the first A23 run without any dry week of its own.</summary>
     public string DryWindowStamp => StampName;
 
-    /// <summary>The name of A23's own dry-run week stamp: <c>first-timer-run-A23.json</c>. Spelt here and nowhere else.</summary>
-    public const string StampName = "A23";
+    /// <summary>The name of A23's own dry-run week stamp: <c>first-timer-run-A23.json</c>. Equal to the action id (<see cref="IdText"/>).</summary>
+    public const string StampName = IdText;
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Windows];
 

@@ -875,6 +875,8 @@ message is in [module_tests.md](../research/module_tests.md)), and a break-it.
   too: `Candidate.Newest`), and a resumed candidate is also retained when anything inside was created after the checkpoint.
   `FileEntry.CreatedUtc`, `FileSizeResult.Measured.CreatedAt` and `DirectoryTimeResult.Measured.CreatedAt` carry it; each defaults to
   the far future, so a stat that does not say keeps rather than deletes.
+  **The residual (WR-T2 own review, Fable iv):** a copier that preserves the creation time as well (`robocopy /COPY:DAT /DCOPY:T`) can still place an
+  "old" file into a half-deleted candidate; nothing on the file system tells it from a file that was always there, and the plan accepts that class.
 - **M3 — "the first week is dry" is true for A23.** The common stamp `first-timer-run.json` is started by the Windows watch and by the
   archive body, so with `auto.A23` ON it would have opened deletion on the first A23 run. `ICleanupAction.DryWindowStamp` (empty for
   every action but A23) names a per-action stamp, `first-timer-run-A23.json`: `DryRunWindow.Decide` / `Peek` / `File` take the stamp
@@ -1384,3 +1386,33 @@ The four callers, and which of them can run inside an `act A23 --timer` process 
 | `Core/Actions/UserCaches/CacheFolders.cs:94` | no - the Linux user-cache actions; A23's `act` runs A23 alone | the action's own cache root passed in (`RemoveFolder(context, folder, root, action)`) |
 
 None of them touches `%TEMP%`: the one that can run in the cleanup's process deletes only the daemon's own log day folders.
+
+**WR-T2, the code round 4663beda: proceed (2026-10-21), and the last fix cycle.** The coai code round passed (`proceed`) and the Fable re-check said SHIP.
+Accepted and built: findings 1 and 8, 2, 6 and 10; the Fable minors i, ii, iii and iv. Rejected, each with its reason: **0, 3 and 5** - the closed
+task-worker binding is by design the one place that names a task's argv, and the literal is unified under finding 2; **4** - the preview is bounded by
+ONE allowance after finding 1, and no other read verb prints progress; **7** - one previewable task by plan; **9** - in-memory passes over a bounded
+plan, no measured cost.
+
+- **(1) One listing, one budget.** `tasks preview cleanup` lists the top level ONCE (`Planning.OfTaskThenPerson`; `ListEntries(root` is still at its one call
+  site, `TempPlanning.ListRoot`) and makes two plans over ONE `TempBudget`: the Timer plan first (what the task will do; it has the budget and the
+  priority), then the person's plan for `wouldBeEligible` on what is left. The cost of a preview is therefore ONE `temp.scanMaxSeconds` allowance plus
+  the listing (the listing's time is already spent from the same budget), not two. `WouldBeEligibleLimited` is `TempPlan.BudgetStopped` of the
+  second plan only: a name deferred because the SCAN BUDGET ran out; reaching `temp.maxItemsPerRun` is not that and is not flagged (it is in
+  `counts.deferred`, as it always was). **For WR-T3:** `windowsTempPreviewSeconds` must cover one `temp.scanMaxSeconds` allowance plus the top-level listing
+  (and the process start), not twice the allowance.
+  RED: `Expected _world.Listed.Count(path => PathRules.Windows.PathEquals(path, TempWorld.Root)) to be 1 because the Timer plan and the person-trigger plan read the same listing, but found 2.`;
+  `Expected report.Counts.WouldBeEligible to be less than 75L because after the task's plan the second plan has only what is left of the SAME budget, but found 150L`;
+  `Expected report.WouldBeEligibleLimited to be False because the scan budget was nowhere near exhausted: the cap is not the budget, but found True.`
+- **(2) One constant for A23's id:** `WindowsTempAction.IdText` is the action's `Id`, its `StampName`, the task worker's argv entry, `WindowsTask.Cleanup`'s
+  stamp, and the deletion scope's action name in `TempRun` and `TempCursor`. A pure refactor: the argv tests and the golden pass unchanged.
+- **(3) The triggers are explicit:** `TempPreviews.Report` sets BOTH (Timer for the task's plan, Cli for the person's) whatever its context carries, and
+  `TasksCommand.Previewed` says so; the stale "shows MORE than it would delete" comment is gone. No behaviour change.
+- **(4)** The preview's elevated refusal ends "Nothing was read." (pinned in `TasksPreviewCommandTests`).
+- **(5)** `ArchitectureTests.RecursiveDelete` catches a METHOD GROUP too: `\.\s*DeleteDirectory(?!\w)` and `(?<!\w)DeleteDirectory(?!\w)`; the planted
+  fixture gained `Remove(files.DeleteDirectory);`. No `nameof` or doc mention in src matches (doc lines are `//` comments, which the scanner drops; both
+  tests pass over the real tree). `DeleteEmptyDirectory` still does not match.
+- **Break-its** (product code, `cmp`-restored, `git diff` clean after each): M1 the person's plan with a fresh budget (1 red: the shared-budget test);
+  M2 the flag from `Deferred > 0` (1: the cap test); M3 the cap counted as a budget stop (1: the cap test); M4 the person's plan re-listing (2: the one-listing
+  and the shared-budget tests); M5 the person's plan first (2: the shared-budget test and the Timer-counts test); M6 the argv literal changed (2:
+  `TaskWorkersTests` cleanup worker, json and not); M7 the period dropped (1: `An_elevated_process_is_refused_before_anything_is_read`); M8 the OLD regexes in the
+  scanner (1: `Expected RecursiveDeleteMemberCall()... to be equal to {1, 3, 5}, but {1, 3} contains 1 item(s) less.`).

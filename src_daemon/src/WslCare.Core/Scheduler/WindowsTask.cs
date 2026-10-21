@@ -32,7 +32,7 @@ public sealed record WindowsTask
     public static readonly WindowsTask Archive = new("archive");
 
     /// <summary><c>\wsl-care\cleanup</c>: the Windows <c>%TEMP%</c> cleanup (A23, WR-T2), every <c>windowsTasks.cleanupEveryHours</c>.</summary>
-    public static readonly WindowsTask Cleanup = new("cleanup", Actions.WindowsTemp.WindowsTempAction.StampName);
+    public static readonly WindowsTask Cleanup = new("cleanup", Actions.WindowsTemp.WindowsTempAction.IdText);
 
     /// <summary>Every task, in the order a help text names them. Declared after the three on purpose: static fields initialise in
     /// textual order.</summary>

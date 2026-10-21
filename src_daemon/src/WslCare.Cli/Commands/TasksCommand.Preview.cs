@@ -36,7 +36,7 @@ internal static partial class TasksCommand
         {
             // Refused for the PREVIEW's own reason: an elevated process sees the entries the Administrators group owns, so its picture of what the
             // unelevated cleanup would delete would be misleading (the owner check is the user's SID).
-            Output.Note(stderr, $"tasks preview {request.Task}: an elevated (administrator) process is refused ({host.Privilege.Basis}): it sees entries owned by the Administrators group, so its picture of what the cleanup would delete as you would be misleading; run it from a terminal that is not elevated. Nothing was read");
+            Output.Note(stderr, $"tasks preview {request.Task}: an elevated (administrator) process is refused ({host.Privilege.Basis}): it sees entries owned by the Administrators group, so its picture of what the cleanup would delete as you would be misleading; run it from a terminal that is not elevated. Nothing was read.");
             return (int)ExitCode.NotAsRoot;
         }
 
@@ -48,8 +48,9 @@ internal static partial class TasksCommand
     {
         var config = loaded.Config;
         var now = host.Clock.GetUtcNow();
-        // The trigger of a person's preview: any non-timer trigger scans the names the allow-list does not cover (the plan's "shows MORE
-        // than it would delete"); nothing is recorded, so the trigger's other meaning does not apply.
+        // A person's preview: the context carries the Cli trigger, but TempPreviews.Report sets BOTH triggers itself - Timer for the plan the task
+        // will make (the counts), Cli for the second plan that also scans the names the allow-list does not cover (the "would be eligible" groups).
+        // Nothing is recorded, so the trigger's other meaning does not apply.
         var context = new ActionContext(paths, host.Files, host.Clock, config, RunTrigger.Cli, new TargetUserResult.None("the Windows binary has no target user")) { UserSid = host.UserSid() };
         var dry = DryRunWindow.Peek(paths, host.Files, config, now, WindowsTempAction.StampName);
         return TempPreviews.Report(context, TempSettings.From(config), dry, cancellationToken) with

@@ -36,7 +36,7 @@ public static class TaskWorkers
     [
         new(WindowsTask.Watch, static _ => ["watch", "--timer"], ConfigKeys.McpWatchdog.RunLimitMinutes),
         new(WindowsTask.Archive, static decide => ArchiveBody.ArgumentsFor(decide()), ConfigKeys.Timer.RunLimitMinutes),
-        new(WindowsTask.Cleanup, static _ => ["act", "A23", "--timer", "--confirm"], ConfigKeys.Timer.RunLimitMinutes),
+        new(WindowsTask.Cleanup, static _ => ["act", Actions.WindowsTemp.WindowsTempAction.IdText, "--timer", "--confirm"], ConfigKeys.Timer.RunLimitMinutes),
     ];
 
     /// <summary>The launch of <paramref name="task"/>'s worker, or why there is none.</summary>

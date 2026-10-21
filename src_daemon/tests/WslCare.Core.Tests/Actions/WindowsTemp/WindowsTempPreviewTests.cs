@@ -62,6 +62,61 @@ public sealed class WindowsTempPreviewTests : IDisposable
         report.Counts.WouldBeEligible.Should().BeLessThan(1000);
     }
 
+    /// <summary>Code round 4663beda, finding 1 (and the Fable minors): the preview is ONE listing and ONE budget. Two passes with a fresh
+    /// budget each would cost two top-level listings and twice <c>temp.scanMaxSeconds</c>.</summary>
+    [Fact]
+    public void The_preview_lists_the_top_level_once()
+    {
+        _world.Dir("coai-a", Old).File(@"coai-a\f", Old).Dir("sometool-old", Old).File(@"sometool-old\f", Old);
+
+        Report();
+
+        _world.Listed.Count(path => PathRules.Windows.PathEquals(path, TempWorld.Root)).Should().Be(1, "the Timer plan and the person-trigger plan read the same listing");
+    }
+
+    [Fact]
+    public void The_two_plans_of_a_preview_spend_one_scan_budget_and_the_second_gets_what_is_left()
+    {
+        for (var i = 0; i < 200; i++)
+        {
+            _world.Dir($"aaa-{i:0000}", Old).File($@"aaa-{i:0000}\f", Old);
+        }
+
+        for (var i = 0; i < 20; i++)
+        {
+            _world.Dir($"coai-{i:00}", Old).File($@"coai-{i:00}\f", Old);
+        }
+
+        var context = _world.Context();
+        var settings = TempSettings.From(context.Config) with { ScanMaxNodes = 300 };
+        var alone = Planning.Of(context with { Trigger = RunTrigger.Cli }, settings, TestContext.Current.CancellationToken).Should().BeOfType<Planning.Planned>().Subject.Plan;
+
+        var report = TempPreviews.Report(context, settings, NotStarted, TestContext.Current.CancellationToken);
+
+        report.Counts.Eligible.Should().Be(20, "the task's plan has the whole budget and priority");
+        alone.Count(TempVerdict.WouldBeEligible).Should().BeGreaterThan(100, "alone, the person-trigger plan would scan most of the uncovered names with a budget of its own");
+        report.Counts.WouldBeEligible.Should().BeLessThan(alone.Count(TempVerdict.WouldBeEligible) / 2, "after the task's plan the second plan has only what is left of the SAME budget");
+        report.WouldBeEligibleLimited.Should().BeTrue("and it says its scan ran out of that budget");
+    }
+
+    [Fact]
+    public void Reaching_the_per_run_maximum_is_not_a_budget_that_ran_out()
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            _world.Dir($"coai-{i:00}", Old).File($@"coai-{i:00}\f", Old);
+        }
+
+        var context = _world.Context();
+        var settings = TempSettings.From(context.Config) with { MaxItemsPerRun = 3 };
+
+        var report = TempPreviews.Report(context, settings, NotStarted, TestContext.Current.CancellationToken);
+
+        report.Counts.Eligible.Should().Be(3, "the run stops at temp.maxItemsPerRun");
+        report.Counts.Deferred.Should().Be(7, "the rest is counted as deferred, as it always was");
+        report.WouldBeEligibleLimited.Should().BeFalse("the scan budget was nowhere near exhausted: the cap is not the budget");
+    }
+
     [Fact]
     public void The_preview_asks_for_no_delete_and_leaves_the_cursor_where_it_was()
     {
