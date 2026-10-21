@@ -385,9 +385,11 @@ figure (E2.S3).
 
 - The clock tick and page size come from `/proc/self/auxv` (the source glibc's `sysconf` reads), so no
   native call is needed on Linux and a captured tree carries its own values (100 / 4096 here).
-- Command lines are shown cut to 200 characters with secret-looking values redacted (`--x=v`, `--x v`
-  where the name holds token, secret, password, apikey or credential) — measured on this machine: the VS
-  Code server's `--connection-token=` and an agent hub's `--csrf_token=` are in plain argv.
+- Command lines are shown cut to 200 characters after ONE redaction rule (`CommandLineRedaction`, E15.S7; both binaries,
+  [module_daemon.md](module_daemon.md) § *One redaction rule for every command line*) — measured on this machine: the VS
+  Code server's `--connection-token=` and an agent hub's `--csrf_token=` are in plain argv. The rule replaces a secret flag's
+  value, `NAME=value` with a secret word, a URL's userinfo, creds-shaped tokens, a blob with a secret word and a separator and
+  bare high-entropy tokens with the one constant `<redacted>`; what a regex cannot catch is listed in the plan's §9.
 - Families are a built-in catalogue (`ProcessFamilies`, first match wins: build servers, testhost, AI
   agents, Docker Desktop proxy, vscode-server, node, other): regex-per-family settings need the
   object-shaped configuration keys E7 brings.
@@ -1434,6 +1436,12 @@ E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `da
     rule (`HostRules`) over its OWN sample; a sampled verdict REPLACES the carried full-run verdict of the same id in its place,
     and one nothing carried (`host.vmmem`) is appended after the carried ones, so no id is listed twice. The extension's status
     bar colours on `host.*` ([module_vs_code.md](module_vs_code.md)).
+  - **E15.S7, the shown command line** ([module_daemon.md](module_daemon.md) § *One redaction rule for every command line*):
+    additive, `schemaVersion` still 1, `commandLine` stays. Every `vm.processes.top[]` / `mntWalkers[]` row gains `program`,
+    `argumentsShown` and `argumentsTotal` after `commandLine`; `mcpServers.instances[].owner` gains `program` and `argumentsShown`.
+    `commandLine`'s VALUE changes only where the widened rule bites (the golden: a bare 40-hex commit id, and a `sh -c` script
+    holding `connection-token=`). Three machine-only keys, `processes.secretMinChars`, `processes.shownSafeArgs`,
+    `processes.maxJudgedArgChars`, join `contracts/config-keys.json`.
 - **`productVersion`** — the assembly's informational version, `Program.VersionText`, the ONE expression `--version` prints
   too (`0.0.0+<sha>` before the first release). The default JSON encoder writes the `+` as `\u002B`; a reader parses.
 - The text form adds one line, `verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown`.
@@ -2160,6 +2168,7 @@ flowchart LR
     client -->|"bundled exe: stage, remove · staged copy: render"| daemon["wsl-care.exe (Windows daemon)<br/>renders the task XML, stages and removes copies"]
     flow -->|"the reader's SID, what else is in the folder"| sched["scheduler/ (the peer)<br/>schedulerHost: ONE read of \wsl-care"]
     flow -->|"installTaskScript / removeTasksScript"| reg["scheduler/registerScript<br/>the ONE home of Register-ScheduledTask and the deletes"]
+    flow -->|"run-now: runNowScript, after a read pre-check (no daemon call)"| run["scheduler/runScript<br/>the ONE home of a task's start: the task's own Run"]
     flow -->|"unelevatedRequest: engine.file, -EncodedCommand, killTree"| launch["powershell/unelevatedLauncher<br/>(+ commandLine, modulePath, engineTypes: shared, not elevated)"]
     launch --> runner["process/runner<br/>ceiling + verified tree kill by pid and creation time"]
     runner -->|"ONE PowerShell, as the user, not elevated"| ts["Task Scheduler<br/>\wsl-care\watch · \wsl-care\archive"]
@@ -2168,7 +2177,7 @@ flowchart LR
     guard["windowsTime/ (the guard)<br/>same registration scripts, run ELEVATED"] --> reg
 ```
 
-The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own.
+The boundaries this holds (asserted by `unelevatedBoundary.test.ts`, `registrationPath.test.ts` and `schedulerModule.test.ts`): the Windows tasks and the registration script import nothing of the elevated launcher or the elevated engine module — what both sides share (the encoded command, the quotable path, the module-path line, the engine vocabulary, the command-line bound) lives in `powershell/commandLine.ts`, `modulePath.ts`, `engineTypes.ts` and `engineSource.ts`; `windowsTasks/` and `windowsTime/` are peers that never import each other and both consume `scheduler/`; the extension never writes the daemon's settings and never builds an argv of its own. Since WR-E4 the same flow also STARTS a registered task now (*Run the Windows watch now*, *Archive Windows sessions now*): after a read of the task's row it asks Task Scheduler, through the same unelevated launcher and the one runner, to `Run` the registered task exactly as its next trigger would — the daemon is not called at all, and `scheduler/runScript.ts` is the one shipped source that spells a task's start (`registrationPath.test.ts`, with the tripwire's own `TASK_RUN` pattern).
 
 ## Containers — the system on one page
 

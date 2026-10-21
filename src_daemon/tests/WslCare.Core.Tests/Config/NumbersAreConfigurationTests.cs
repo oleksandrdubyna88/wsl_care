@@ -63,7 +63,7 @@ public sealed class NumbersAreConfigurationTests
         "commands.systemDriveLookupSeconds", "commands.maxTimeoutHours", "commands.drainGraceMilliseconds", "userFiles.maxSmallFileBytes",
         "userFiles.maxJsonBytes", "userFiles.maxLinkBytes", "records.maxReasonChars", "records.lockTimeoutSeconds",
         "records.maxStateFileBytes", "records.maxHistoryBytes", "logs.maxDetailsRead", "logs.maxRangeDays", "processes.killWaitSeconds",
-        "processes.shownCommandChars", "processes.signalSliceMilliseconds", "events.segmentSlackSeconds", "events.earlyEndSeconds",
+        "processes.shownCommandChars", "processes.secretMinChars", "processes.shownSafeArgs", "processes.maxJudgedArgChars", "processes.signalSliceMilliseconds", "events.segmentSlackSeconds", "events.earlyEndSeconds",
         "running.heartbeatSeconds", "running.wedgedAfterSeconds", "running.readRetries", "running.readRetryMilliseconds",
         "config.maxLayerBytes", "patterns.matchTimeoutMilliseconds", "files.renameRetryMilliseconds", "files.renameRetrySleepMilliseconds",
         "files.lockJitterMinMilliseconds", "files.lockJitterMaxMilliseconds", "agentCpu.maxEntries", "agentCpu.maxBytes", "requests.maxBytes", "events.startsRetentionDays", "timer.runLimitMinutes", "running.noProgressMinutes",

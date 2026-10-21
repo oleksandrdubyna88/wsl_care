@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -67,7 +68,7 @@ internal static class LogsCommand
             case PeriodParse.Parsed parsed:
                 return parsed.Period;
             case PeriodParse.Refused refused:
-                Output.Note(stderr, CommandLine.Printable(refused.Reason));
+                Output.Note(stderr, ShownText.Printable(refused.Reason));
                 return null;
             default:
                 throw new System.Diagnostics.UnreachableException("PeriodParse is a closed set");
@@ -124,13 +125,13 @@ internal static class LogsCommand
             text.AppendLine(Invariant($"  {cleanup.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm}Z {cleanup.Action}: {cleanup.Count} removed, {Gb(cleanup.FreedBytes)} ({cleanup.Trigger}; detail {cleanup.DetailState}){FailedBeside(cleanup)}"));
             foreach (var item in cleanup.Removed.Take(20))
             {
-                text.AppendLine(Invariant($"      {item.Kind} {CommandLine.Printable(item.Name)}{SizeOf(item)}"));
+                text.AppendLine(Invariant($"      {item.Kind} {ShownText.Printable(item.Name)}{SizeOf(item)}"));
             }
         }
     }
 
     private static string FailedBeside(CleanupDetail cleanup) =>
-        cleanup.Failure is { Length: > 0 } failure ? $" - FAILED: {CommandLine.Printable(failure)}" : string.Empty;
+        cleanup.Failure is { Length: > 0 } failure ? $" - FAILED: {ShownText.Printable(failure)}" : string.Empty;
 
     private static string SizeOf(Core.Actions.ActionItem item) => item.Bytes is { } b ? $" {Gb(b)}" : string.Empty;
 
@@ -169,17 +170,17 @@ internal static class LogsCommand
     }
 
     private static string ShowHead(RunShowReport r) =>
-        $"wsl-care runs show {r.RunId}: {r.State}{(r.Reason is { Length: > 0 } reason ? $" - {CommandLine.Printable(reason)}" : string.Empty)}";
+        $"wsl-care runs show {r.RunId}: {r.State}{(r.Reason is { Length: > 0 } reason ? $" - {ShownText.Printable(reason)}" : string.Empty)}";
 
     /// <summary>An action's line, then one line per command it ran.</summary>
     private static IEnumerable<string> ShowAction(Core.Actions.Engine.ActionOutcome action) =>
         [Invariant($"  {action.Id,-17} {action.Status,-9} {ShowOutcome(action)}"), .. (action.Run?.Commands ?? []).Select(ShowCommand)];
 
     private static string ShowOutcome(Core.Actions.Engine.ActionOutcome action) =>
-        action.Run is { } run ? Invariant($"{run.Count} removed, {run.NotRemoved.Count} not removed, freed {Gb(run.FreedBytes ?? 0)}") : CommandLine.Printable(action.Reason);
+        action.Run is { } run ? Invariant($"{run.Count} removed, {run.NotRemoved.Count} not removed, freed {Gb(run.FreedBytes ?? 0)}") : ShownText.Printable(action.Reason);
 
     private static string ShowCommand(Core.Actions.ActionCommandRecord command) =>
-        Invariant($"      {CommandLine.Printable(command.Display)} -> {command.Outcome}{(command.Exit is { } exit ? $" {exit}" : string.Empty)}");
+        Invariant($"      {ShownText.Printable(command.Display)} -> {command.Outcome}{(command.Exit is { } exit ? $" {exit}" : string.Empty)}");
 
     private static string Gb(long bytes) => Invariant($"{bytes / BytesPerGigabyte:0.00} GB");
 

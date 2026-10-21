@@ -70,6 +70,9 @@
     "topCount": 30,
     "killWaitSeconds": 5,
     "shownCommandChars": 200,
+    "secretMinChars": 20,
+    "shownSafeArgs": 2,
+    "maxJudgedArgChars": 4096,
     "signalSliceMilliseconds": 200,
     "fdScanMilliseconds": 10000
   },

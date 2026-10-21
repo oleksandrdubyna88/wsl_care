@@ -208,7 +208,12 @@ the distro) or asks Windows for its counters (`wsl-care.exe`), and nothing else.
 reports VM memory (`MemAvailable`, page cache, anonymous and inactive anonymous memory, shared memory,
 swap), free high-order blocks in zone Normal (order 4 and 7), pressure (PSI) for memory, I/O and CPU, the
 top 30 processes by `RssAnon` + `RssShmem` with their family, owner, age, CPU time, working directory and
-command line (secret-looking values redacted, 200 characters), the processes working under `/mnt/`, the
+command line (ONE redaction rule on both binaries: a secret flag's value, a `NAME=value` with a secret word, a URL's userinfo and
+secret query values, a creds-shaped token — GitHub, OpenAI / Anthropic, Stripe, Slack, AWS, Google, GitLab, npm, PyPI, DigitalOcean,
+Hugging Face, SendGrid, JWT, PEM, age, the CredsForDevs config key —, a blob holding a secret word and a separator, and a bare
+high-entropy token all become `<redacted>`, 200 characters; paths, GUIDs, npm specs and plain words stay; every row also carries
+`program`, `argumentsShown` (at most `processes.shownSafeArgs` safe arguments) and `argumentsTotal`, so a view can hide the line by
+default), the processes working under `/mnt/`, the
 containers' memory from their cgroups, the memory nobody can name (*unattributed*, or *inconsistent
 sample* when the parts exceed the whole) and `df /`. On Windows it reports host RAM, the system drive and
 the VM's `vmmemWSL` working set. Each binary names the other as the source of the side it does not read.

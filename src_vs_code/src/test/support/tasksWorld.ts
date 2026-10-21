@@ -122,7 +122,7 @@ export function tasksWorld(options: WorldOptions = {}): World {
   const pendingNow = (): string => {
     const pending = readPending(store, now);
 
-    return pending === undefined ? 'none' : pending.op === 'install' ? `install:${pending.task}` : 'remove';
+    return pending === undefined ? 'none' : pending.op === 'remove' ? 'remove' : `${pending.op}:${pending.task}`;
   };
   const ui = recordingTasksUi(recorder);
   const deps: TasksFlowDeps = {

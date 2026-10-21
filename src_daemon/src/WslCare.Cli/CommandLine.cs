@@ -1,3 +1,4 @@
+using static WslCare.Core.Processes.Redaction.ShownText;
 using System.Collections.Immutable;
 using System.Text;
 
@@ -813,18 +814,4 @@ internal static class CommandLine
     /// each, so whatever reads the distro's line (the release smoke previews from it) meets only that side's actions.</summary>
     private static string ActionsOf(bool inDistro) =>
         string.Join(", ", Core.Actions.ActionRegistry.Product.Actions.Where(a => a.Sides.Contains(Core.Hosting.HostSide.Wsl) == inDistro).Select(a => a.Id.Text));
-
-    /// <summary>
-    /// User text echoed back in an error message, with control characters replaced, so a refusal
-    /// stays ONE line on stderr whatever was typed — a newline or an escape sequence in an argument
-    /// would otherwise split or repaint the message.
-    /// </summary>
-    internal static string Printable(string text) =>
-        string.Create(text.Length, text, static (span, source) =>
-        {
-            for (var i = 0; i < source.Length; i++)
-            {
-                span[i] = char.IsControl(source[i]) ? '?' : source[i];
-            }
-        });
 }

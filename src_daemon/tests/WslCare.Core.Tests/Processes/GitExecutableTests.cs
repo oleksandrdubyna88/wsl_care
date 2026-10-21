@@ -390,33 +390,37 @@ public sealed class GitExecutableTests
     }
 
     [Fact]
-    public void Reusing_a_judgement_makes_resolving_git_at_least_twice_as_cheap_as_judging_it_afresh()
+    public void Fifty_resolves_of_the_real_install_read_its_descriptors_once_with_reuse_and_fifty_times_without()
     {
-        // The decision of E19.S4 gap 3 (measured 2026-10-21 on this machine WITHOUT the reuse: 50 resolves took 601 ms, 12 ms a call; a scan makes hundreds):
-        // the product keeps the judgement of a passed candidate for the life of the process and re-checks the identity of its program files at every call
-        // (GitExecutable reuseJudgement). A wall-clock bound is not stable on a saturated machine (5.07 ms was seen inside a full suite, under 5 ms alone), so the
-        // bound is RELATIVE: the reused resolve is at least twice as fast as the same resolve judged afresh, measured side by side.
+        // The decision of E19.S4 gap 3: judging the install afresh cost 12 ms a resolve on this machine (50 in 601 ms, measured 2026-10-21) and a scan makes
+        // hundreds, so the product keeps the judgement of a passed candidate for the life of the process. A wall-clock bound flaked on a saturated machine
+        // (5.07 ms inside a full suite, under 5 ms alone; a 2x ratio failed too), so the proof is the COUNT of descriptor reads, which is what the time was.
         Assert.SkipUnless(RealGit.Available, "this machine has no Git for Windows under Program Files");
-        var afresh = new GitExecutable(() => [RealGit.Executable], new WindowsAdminOnlyPath());
-        var reused = new GitExecutable(() => [RealGit.Executable], new WindowsAdminOnlyPath(), reuseJudgement: true);
-        afresh.Resolve().Should().BeOfType<ResolvedExecutable.Found>("warm-up, and the install is the supported one");
-        reused.Resolve().Should().BeOfType<ResolvedExecutable.Found>();
+        var afreshReads = new CountingAcl();
+        var reusedReads = new CountingAcl();
+        var afresh = new GitExecutable(() => [RealGit.Executable], afreshReads);
+        var reused = new GitExecutable(() => [RealGit.Executable], reusedReads, reuseJudgement: true);
 
-        var freshTime = Time(afresh);
-        var reusedTime = Time(reused);
-
-        reusedTime.Should().BeLessThan(freshTime / 2, $"50 afresh took {freshTime.TotalMilliseconds:0.0} ms, 50 reused {reusedTime.TotalMilliseconds:0.0} ms");
-    }
-
-    private static TimeSpan Time(GitExecutable git)
-    {
-        var watch = global::System.Diagnostics.Stopwatch.StartNew();
         for (var i = 0; i < 50; i++)
         {
-            git.Resolve();
+            afresh.Resolve().Should().BeOfType<ResolvedExecutable.Found>("the install is the supported one");
+            reused.Resolve().Should().BeOfType<ResolvedExecutable.Found>();
         }
 
-        return watch.Elapsed;
+        reusedReads.Count.Should().BeGreaterThan(0).And.Be(afreshReads.Count / 50, "the reused resolver read the descriptors of the first resolve only");
+    }
+
+    private sealed class CountingAcl : IAdminOnlyPath
+    {
+        private readonly WindowsAdminOnlyPath _real = new();
+
+        public int Count { get; private set; }
+
+        public string Problem(string path, AdminOnlyRole role)
+        {
+            Count++;
+            return _real.Problem(path, role);
+        }
     }
 
     [Fact]
