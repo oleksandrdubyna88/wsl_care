@@ -49,7 +49,20 @@
   costs about 12 ms a resolve on this machine (50 resolves in 601 ms; a second run 465 ms, 9 ms a call), against a 5 ms / 1 s budget. The product therefore keeps the
   judgement of a passed candidate for the life of the process and re-checks the identity (path, length, creation and last-write time) of every program file at each call.
 - **A timeout kills the tree.** A fake `git.exe` that starts a child and hangs is cut at `worktrees.gitTimeoutSeconds` by the shared launcher
-  (`Process.Kill(entireProcessTree: true)`); the child is gone when the call returns (`GitTimeoutTests`).
+  (`Process.Kill(entireProcessTree: true)`); the child is gone when the call returns (`GitTimeoutTests`). On the GitHub Windows runner the first version of this test
+  failed (`File.Exists(pidFile)` false): the fake started its child through PowerShell, whose cold start outlasted the test's 8 s ceiling, so the kill came before the
+  child existed. That was a race in the TEST, not a launcher gap; the child is now a direct child of the batch file and the test waits (bounded) for it before the
+  ceiling can matter, and still asserts it is dead afterwards.
+- **Two layouts of Git for Windows** (read-only, from a directory listing):
+  this machine (git 2.55.0.windows.3): root `bin, cmd, dev, etc, mingw64, tmp, usr`; `cmd` holds `aslr-manager.ps1, git-gui.exe, git-lfs.exe, git-receive-pack.exe,
+  git-upload-pack.exe, git.exe, gitk.exe, scalar.exe, start-ssh-agent.cmd, start-ssh-pageant.cmd, tig.exe`; `bin` holds `bash.exe, git.exe, sh.exe`; the real
+  program is `mingw64\bin\git.exe` (4.4 MB).
+  the GitHub `windows-latest` runner image (2026-10-21, listing taken from a refusal's own message): root `bin, cmd, dev, etc, tmp, ucrt64, usr` — NO `mingw64`; `cmd`
+  holds `aslr-manager.ps1, git-gui.exe, git-lfs.exe, git-receive-pack.exe, git-upload-pack.exe, git.exe, gitk.exe, start-ssh-agent.cmd, start-ssh-pageant.cmd, tig.exe`.
+  Newer Git for Windows keeps its programs and DLLs in `ucrt64\bin`. The admission rule therefore names `mingw64`, `mingw32`, `clangarm64` AND `ucrt64`: every one
+  of `<name>\bin` that exists is judged (the folder as a loader folder, its `git.exe` as a program file) beside `cmd\git.exe` and `cmd`; a git with NONE of them is
+  refused with the listing above in its reason (the program it starts cannot be named — never guessed), so a layout nobody has met is read from the failure and added
+  deliberately.
 
 ## Consequences recorded in the code
 

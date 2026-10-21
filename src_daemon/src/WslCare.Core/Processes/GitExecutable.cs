@@ -149,9 +149,11 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
 
     private static PathRules Windows => PathRules.Windows;
 
-    /// <summary>The folders git for Windows keeps its real <c>git.exe</c> and its DLLs in, by architecture; <c>cmd\git.exe</c> only starts the one
-    /// of them that exists.</summary>
-    private static readonly string[] DllFolderNames = ["mingw64", "mingw32", "clangarm64"];
+    /// <summary>The folders git for Windows keeps its real <c>git.exe</c> and its DLLs in, by architecture and toolchain: <c>mingw64</c>/<c>mingw32</c>
+    /// (the classic layout, this machine's), <c>clangarm64</c> (arm64) and <c>ucrt64</c> (newer releases, the GitHub windows-latest image's — measured
+    /// 2026-10-21 from a refusal's own listing: <c>bin, cmd, dev, etc, tmp, ucrt64, usr</c>). <c>cmd\git.exe</c> only starts the one that exists. EVERY one
+    /// that exists is judged; a git with none of them is refused — a program folder that cannot be named is never guessed.</summary>
+    private static readonly string[] DllFolderNames = ["mingw64", "mingw32", "clangarm64", "ucrt64"];
 
     /// <summary>The first two bytes are <c>MZ</c>. Read with an OS handle and a positioned read — two bytes of a program, not a
     /// file's contents.</summary>

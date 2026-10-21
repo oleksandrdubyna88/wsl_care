@@ -222,6 +222,38 @@ public sealed class GitExecutableTests
     }
 
     [Fact]
+    public void The_layout_of_a_newer_git_for_windows_with_only_ucrt64_bin_is_accepted_and_every_part_of_it_is_judged()
+    {
+        // Measured on the GitHub windows-latest image (2026-10-21, from a refusal's own listing): the install root holds bin, cmd, dev, etc, tmp, ucrt64, usr —
+        // NO mingw64. Git for Windows moved its programs and DLLs to ucrt64\bin.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe", withDllFolder: false);
+        folder.Write("Git/ucrt64/bin/git.exe", "MZ\0\0");
+        Directory.CreateDirectory(folder.Under("Git/bin"));
+        Directory.CreateDirectory(folder.Under("Git/usr/bin"));
+        var acl = new ScriptedAcl((_, _) => string.Empty);
+
+        new GitExecutable(() => [exe], acl).Resolve().Should().Be(new ResolvedExecutable.Found(exe));
+
+        acl.Asked.Should().Contain((folder.Under("Git/ucrt64/bin"), AdminOnlyRole.ProgramFolder));
+        acl.Asked.Should().Contain((folder.Under("Git/ucrt64/bin/git.exe"), AdminOnlyRole.ProgramFile));
+        acl.Asked.Should().Contain((folder.Under("Git/cmd"), AdminOnlyRole.ProgramFolder));
+    }
+
+    [Fact]
+    public void A_program_in_a_ucrt64_folder_a_user_could_write_to_refuses_the_candidate()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe", withDllFolder: false);
+        var started = folder.Write("Git/ucrt64/bin/git.exe", "MZ\0\0");
+        var acl = new ScriptedAcl((path, role) => path == started && role == AdminOnlyRole.ProgramFile ? "lets S-1-5-32-545 (WriteData) change it" : string.Empty);
+
+        new GitExecutable(() => [exe], acl).Resolve().Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().Contain("is not admin-only").And.Contain(started);
+    }
+
+    [Fact]
     public void A_program_in_a_dll_folder_a_user_could_write_to_refuses_the_candidate()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
@@ -246,7 +278,7 @@ public sealed class GitExecutableTests
         var reason = new GitExecutable(() => [exe], new ScriptedAcl((_, _) => string.Empty)).Resolve()
             .Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason;
 
-        reason.Should().Contain("mingw64").And.Contain("mingw32").And.Contain("clangarm64");
+        reason.Should().Contain("mingw64").And.Contain("mingw32").And.Contain("clangarm64").And.Contain("ucrt64");
         // A refusal says what it saw, so a layout nobody has met is read from the message and not guessed: the install root's folders and the program's own.
         reason.Should().Contain("the install root holds: cmd, etc, usr").And.Contain("cmd holds: git.exe, other.dll");
     }
