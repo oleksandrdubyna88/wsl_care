@@ -3512,6 +3512,32 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "windowsTasks.cleanupLogonDelayMinutes",
+      "shape": "int",
+      "min": 0,
+      "max": 720,
+      "default": 30,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "windowsTasks.cleanupEveryHours",
+      "shape": "int",
+      "min": 1,
+      "max": 168,
+      "default": 24,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "temp.olderThanDays",
       "shape": "int",
       "min": 1,

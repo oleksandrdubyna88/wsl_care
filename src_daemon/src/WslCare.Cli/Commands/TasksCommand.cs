@@ -134,8 +134,8 @@ internal static partial class TasksCommand
     {
         var identity = new TaskIdentity(host.UserSid(), host.ProcessPath());
         var staged = StagedCopies.Check(StagedCopies.Root(paths), identity.Command, Program.VersionText, host.Files, host.ArchiveFiles(), config.Int(ConfigKeys.Records.MaxStateFileBytes));
-        var dry = DryRunWindow.Peek(paths, host.Files, config, host.Clock.GetUtcNow());
-        return TasksRender.Report(task, config, identity, staged, dry);
+        var dry = DryRunWindow.Peek(paths, host.Files, config, host.Clock.GetUtcNow(), task.DryWindowStamp);
+        return TasksRender.Report(task, config, identity, staged, dry, host.Privilege.IsRoot);
     }
 
     /// <summary>What a person reads: the verdict, the task, the numbers, the dry state, the summary, then the XML itself.</summary>

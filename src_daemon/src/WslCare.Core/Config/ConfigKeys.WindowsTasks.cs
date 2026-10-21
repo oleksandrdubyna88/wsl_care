@@ -19,5 +19,12 @@ public static partial class ConfigKeys
 
         /// <summary>The <c>\wsl-care\archive</c> task repeats every this many hours after its logon start. Default 4.</summary>
         public static readonly ConfigKey.IntKey ArchiveEveryHours = new("windowsTasks.archiveEveryHours", 1, 24) { Trust = KeyTrust.Higher };
+
+        /// <summary>The <c>\wsl-care\cleanup</c> task (WR-T2, the Windows <c>%TEMP%</c> cleanup, A23) starts this many minutes after the
+        /// person logs on. Default 30.</summary>
+        public static readonly ConfigKey.IntKey CleanupLogonDelayMinutes = new("windowsTasks.cleanupLogonDelayMinutes", 0, 720) { Trust = KeyTrust.Higher };
+
+        /// <summary>The <c>\wsl-care\cleanup</c> task repeats every this many hours after its logon start. Default 24.</summary>
+        public static readonly ConfigKey.IntKey CleanupEveryHours = new("windowsTasks.cleanupEveryHours", 1, 168) { Trust = KeyTrust.Higher };
     }
 }

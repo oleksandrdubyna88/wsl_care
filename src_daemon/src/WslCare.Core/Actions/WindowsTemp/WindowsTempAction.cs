@@ -34,7 +34,10 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
 
     /// <summary>A23 keeps its own first dry week (<c>first-timer-run-A23.json</c>): the common stamp is started by the Windows watch and the
     /// archive body, so it would open deletion on the first A23 run without any dry week of its own.</summary>
-    public string DryWindowStamp => "A23";
+    public string DryWindowStamp => StampName;
+
+    /// <summary>The name of A23's own dry-run week stamp: <c>first-timer-run-A23.json</c>. Spelt here and nowhere else.</summary>
+    public const string StampName = "A23";
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Windows];
 

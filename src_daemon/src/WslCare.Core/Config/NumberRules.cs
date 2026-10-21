@@ -90,6 +90,11 @@ public static class NumberRules
         new([ConfigKeys.Timer.RunLimitMinutes, .. RunBudget.Keys],
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Timer.RunLimitMinutes)) >= RunBudget.TimerRunWorstCase(c),
             c => $"{ConfigKeys.Timer.RunLimitMinutes.Name} ({I(c, ConfigKeys.Timer.RunLimitMinutes)}) must be at least the derived worst case of a timer run ({Math.Ceiling(RunBudget.TimerRunWorstCase(c).TotalMinutes)} min: every command template once at its ceiling with its drains, the two walks, the settle step's waits, {RunMarginMinutes} min more)"),
+        // WR-T2 (RX): the cleanup task's deadline is the timer's run limit, and one A23 run scans once for its preview and once more for its
+        // re-validations before it deletes anything - a deadline inside the scans would end every cleanup before its first delete.
+        new([ConfigKeys.Timer.RunLimitMinutes, ConfigKeys.Temp.ScanMaxSeconds],
+            c => (I(c, ConfigKeys.Timer.RunLimitMinutes) * SecondsPerMinute) >= (2L * I(c, ConfigKeys.Temp.ScanMaxSeconds)) + CeilingMarginSeconds,
+            c => $"{ConfigKeys.Timer.RunLimitMinutes.Name} ({I(c, ConfigKeys.Timer.RunLimitMinutes)}) must cover twice {ConfigKeys.Temp.ScanMaxSeconds.Name} ({I(c, ConfigKeys.Temp.ScanMaxSeconds)}) and {CeilingMarginSeconds} s more: the cleanup task's deadline is the timer's run limit, and one A23 run scans once for its preview and once more for its re-validations before it deletes anything - a deadline inside the scans would end every cleanup before its first delete"),
         // Plan E14 S2b: the watch samples more often than the interval maximum, or no sample finds a baseline and A19 sees no busy server.
         new([ConfigKeys.McpWatchdog.PeriodMinutes, ConfigKeys.McpServers.CpuIntervalMaxMinutes],
             c => I(c, ConfigKeys.McpWatchdog.PeriodMinutes) < I(c, ConfigKeys.McpServers.CpuIntervalMaxMinutes),

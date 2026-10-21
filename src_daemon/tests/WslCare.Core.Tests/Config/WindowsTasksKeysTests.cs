@@ -25,6 +25,8 @@ public sealed class WindowsTasksKeysTests
     [InlineData("windowsTasks.watchLogonDelaySeconds", 0, 3600, 60)]
     [InlineData("windowsTasks.archiveLogonDelayMinutes", 0, 720, 20)]
     [InlineData("windowsTasks.archiveEveryHours", 1, 24, 4)]
+    [InlineData("windowsTasks.cleanupLogonDelayMinutes", 0, 720, 30)]
+    [InlineData("windowsTasks.cleanupEveryHours", 1, 168, 24)]
     public void A_windows_task_number_is_a_user_settable_key_with_its_range_and_default(string name, int min, int max, int fallback)
     {
         var key = ConfigKeys.Find(name);
@@ -40,12 +42,36 @@ public sealed class WindowsTasksKeysTests
     [Fact]
     public void A_user_layer_value_reaches_the_configuration()
     {
-        var loaded = Load(user: """{ "windowsTasks": { "watchLogonDelaySeconds": 120, "archiveLogonDelayMinutes": 45, "archiveEveryHours": 8 } }""");
+        var loaded = Load(user: """{ "windowsTasks": { "watchLogonDelaySeconds": 120, "archiveLogonDelayMinutes": 45, "archiveEveryHours": 8, "cleanupLogonDelayMinutes": 45, "cleanupEveryHours": 48 } }""");
 
         loaded.Notices.Should().BeEmpty();
         loaded.Config.Int(ConfigKeys.WindowsTasks.WatchLogonDelaySeconds).Should().Be(120);
         loaded.Config.Int(ConfigKeys.WindowsTasks.ArchiveLogonDelayMinutes).Should().Be(45);
         loaded.Config.Int(ConfigKeys.WindowsTasks.ArchiveEveryHours).Should().Be(8);
+        loaded.Config.Int(ConfigKeys.WindowsTasks.CleanupLogonDelayMinutes).Should().Be(45);
+        loaded.Config.Int(ConfigKeys.WindowsTasks.CleanupEveryHours).Should().Be(48);
+    }
+
+    /// <summary>WR-T2 (RX): the cleanup task's deadline is <c>timer.runLimitMinutes</c>, and the defaults leave it room over A23's scans.</summary>
+    [Fact]
+    public void The_cleanup_deadline_covers_twice_the_scan_budget_at_the_defaults()
+    {
+        var config = Load().Config;
+
+        (config.Int(ConfigKeys.Timer.RunLimitMinutes) * 60).Should().BeGreaterThanOrEqualTo(2 * config.Int(ConfigKeys.Temp.ScanMaxSeconds) + 60);
+        Load().IsObserveOnly.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_run_limit_inside_twice_the_scan_budget_breaks_the_rule()
+    {
+        var inside = Load(machine: """{ "timer": { "runLimitMinutes": 60 }, "temp": { "scanMaxSeconds": 3600 } }""");
+        var exactly = Load(machine: """{ "timer": { "runLimitMinutes": 60 }, "temp": { "scanMaxSeconds": 1770 } }""");
+
+        inside.IsObserveOnly.Should().BeTrue("a deadline inside the scans would end every cleanup before its first delete");
+        inside.Errors.Should().Contain(e => e.Message.Contains("timer.runLimitMinutes", StringComparison.Ordinal) && e.Message.Contains("temp.scanMaxSeconds", StringComparison.Ordinal));
+        // timer.runLimitMinutes 60 also breaks the older worst-case rule of a timer run, so the boundary is read off THIS rule's own error.
+        exactly.Errors.Should().NotContain(e => e.Message.Contains("temp.scanMaxSeconds", StringComparison.Ordinal), "2 x 1770 + 60 s is exactly 60 minutes");
     }
 
     /// <summary>Plan §3.6 (held, not new): the watch task repeats every <c>mcpWatchdog.periodMinutes</c>, and that period must stay
