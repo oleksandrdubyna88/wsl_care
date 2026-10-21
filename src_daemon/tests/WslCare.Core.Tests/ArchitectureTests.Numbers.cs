@@ -34,6 +34,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Actions/DockerCleanups/ImagePrune.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Actions/DockerCleanups/VolumeRemoval.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Actions/DockerCleanups/VolumeRemoval.cs: Take(5)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
+        ["WslCare.Core/Preview/CleanupPreview.cs: NamesShown"] = "a display truncation: how many names one note quotes before 'more: N' (A5's compose projects), not how much is done",
         ["WslCare.Core/Actions/Engine/IdleGate.cs: Take(3)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/Engine/IdleGate.cs: Take(4)"] = "an argv heuristic: how many leading words name the program, a property of the command line",
         ["WslCare.Core/Actions/Engine/RequestSweep.cs: TimeSpan.FromMinutes(1)"] = "a text format: an age under a minute is shown in seconds",
