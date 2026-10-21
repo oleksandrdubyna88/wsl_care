@@ -66,6 +66,7 @@ const FAILURES: { readonly [K in TasksOp['kind']]: Readonly<Record<number, Failu
     [RUN_EXIT.notRegistered]: () => 'the task is not registered (any more) — install it first',
     [RUN_EXIT.disabled]: () => 'the task is disabled in Task Scheduler — install it again to enable it',
     [RUN_EXIT.runFailed]: () => 'Task Scheduler did not start the task',
+    [RUN_EXIT.notYours]: () => 'the registered task does not run as you at the least privilege — install it again',
   },
 };
 

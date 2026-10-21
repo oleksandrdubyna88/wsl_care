@@ -4336,6 +4336,11 @@ Every test of the story was seen RED against the spec's stub (`runNow` answering
 | `.Run($null)` spelt a second time in `tasksScripts.ts` | 1 — `.Run( spelt outside scheduler/runScript.ts` |
 | a `tasks stage` call planted before the run | 3 — `a daemon call was made: tasks stage --json` |
 | the waiting line for `run` falling back to the install's words | 1 — the waiting line wrong |
+| Fable major 1 — the principal check dropped from the flow (`principalRefusal` always none) | 1 — RED before the fix: `highest available (elevated, no UAC prompt): done: {"kind":"done",…}` |
+| Fable major 1 — the principal judged after "already running" | 1 — `the principal is judged BEFORE "already running"` |
+| TOCTOU — the in-script principal check removed / the run-level comparison dropped / exit 38 not mapped | 1 each — `the script has no WindowsIdentity]::GetCurrent().User.Value`, `the script has no [int]$p.RunLevel -ne 0`, `The input did not match /the registered task does not run as you at the least privilege — install it again/` |
+| the run-wording of the not-installed sentence back to "could not start" | 1 — `the wording of a start that never began` |
+| the settle tolerance back to a minute | 1 — `installed, ran 30 s before` |
 
 What these do not prove: that the real `Run` starts the registered task and what Task Scheduler then reads back (the owner's live press, POST_DEPLOY item 9, the run-now half), that the Store `pwsh.exe` starts from the extension (UNMEASURED), and the extension-host tier (`test:host`), which was not run for this story.
 

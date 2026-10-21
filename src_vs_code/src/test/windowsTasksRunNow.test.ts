@@ -224,7 +224,10 @@ test('exit 37 names Task Scheduler\'s HRESULT and the first stderr line; exit 34
   assert.match(message(gone.w), /install it first/);
   const off = await run(WATCH, { run: () => Promise.resolve(exited(RUN_EXIT.disabled)) });
   assert.match(message(off.w), /install it again to enable it/);
-  for (const { w, outcome } of [hard, gone, off]) {
+  const foreign = await run(WATCH, { run: () => Promise.resolve(exited(RUN_EXIT.notYours, 'state=3')) });
+  assert.match(message(foreign.w), /the registered task does not run as you at the least privilege — install it again/);
+  assert.ok(!message(foreign.w).includes('exited 38'), 'the exit is mapped, not shown raw');
+  for (const { w, outcome } of [hard, gone, off, foreign]) {
     assert.equal(outcome.kind, 'failed');
     assert.equal(w.store.get(PENDING_KEY), undefined);
     assert.equal(w.recorder.reports[0]?.failed, true);

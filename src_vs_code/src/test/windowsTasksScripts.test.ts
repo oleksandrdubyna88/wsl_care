@@ -165,8 +165,13 @@ test('the run-now script names ONE folder and ONE task, reads the state before R
     precedesRun(text, "'state='", 'the state is read AFTER Run(');
     precedesRun(text, '-eq 4 -or $task.LastTaskResult -eq 267009', 'the running test comes AFTER Run(');
     precedesRun(text, '-not $task.Enabled', 'the disabled test comes AFTER Run(');
+    precedesRun(text, '$task.Definition.Principal', 'the principal is read AFTER Run(');
+    precedesRun(text, 'WindowsIdentity]::GetCurrent().User.Value', 'the reader SID is read AFTER Run(');
+    precedesRun(text, '[int]$p.LogonType -ne 3', 'the logon type is compared AFTER Run(');
+    precedesRun(text, '[int]$p.RunLevel -ne 0', 'the run level is compared AFTER Run(');
+    assert.ok(text.indexOf('exit 38') < text.indexOf('.Run('), 'the principal refusal comes AFTER Run(');
     assert.match(text, /\.Run\(\$null\)/);
-    for (const code of [34, 35, 36, 37]) {
+    for (const code of [34, 35, 36, 37, 38]) {
       assert.ok(text.includes('exit ' + code), 'exit ' + code);
     }
     assert.doesNotMatch(text, /windows-time-guard|HKLM|-Service|w32tm|Remove-Item|Register-ScheduledTask|DeleteTask|RunEx|schtasks|Import-Module/);
