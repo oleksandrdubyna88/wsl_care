@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Globalization;
 using System.Text.Json;
 
@@ -116,7 +117,7 @@ internal static class WatchCommand
         var ledger = result.Ledger.Recorded ? "ledger recorded" : $"ledger not recorded ({result.Ledger.Reason})";
         var history = result.History.Length == 0 ? "history recorded" : $"history not recorded ({result.History})";
         var tried = result.Tried.Count == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"; A19 asked to stop {string.Join(", ", result.Tried)}");
-        return CommandLine.Printable($"watch {result.Outcome.ToString().ToLowerInvariant()}: {result.Reason}; {ledger}; {history}{tried}{Retention(result.Swept)}");
+        return ShownText.Printable($"watch {result.Outcome.ToString().ToLowerInvariant()}: {result.Reason}; {ledger}; {history}{tried}{Retention(result.Swept)}");
     }
 
     /// <summary>What the run records' retention sweep did, for the one line (the coai code round on WR-D4, finding 6) — nothing when

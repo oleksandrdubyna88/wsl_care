@@ -1,3 +1,4 @@
+using static WslCare.Core.Processes.Redaction.ShownText;
 using static WslCare.Cli.CommandLine;
 
 namespace WslCare.Cli;

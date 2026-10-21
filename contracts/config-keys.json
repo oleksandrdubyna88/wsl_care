@@ -2966,6 +2966,45 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "processes.secretMinChars",
+      "shape": "int",
+      "min": 12,
+      "max": 64,
+      "default": 20,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "processes.shownSafeArgs",
+      "shape": "int",
+      "min": 0,
+      "max": 8,
+      "default": 2,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "processes.maxJudgedArgChars",
+      "shape": "int",
+      "min": 1024,
+      "max": 65536,
+      "default": 4096,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "processes.signalSliceMilliseconds",
       "shape": "int",
       "min": 50,

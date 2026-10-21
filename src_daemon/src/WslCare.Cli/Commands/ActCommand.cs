@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -199,7 +200,7 @@ internal static class ActCommand
 
         var read = StdinList.Read(host.StandardInput(), StdinList.MaxBytes, host.StdinCeiling);
         var (ids, failure) = read is FileReadResult.Content content ? ArchiveArguments.StdinEntries(Encoding.UTF8.GetString(content.Bytes)) : ([], $"the entry list on stdin {Unusable(read)}");
-        return failure.Length > 0 ? (ShownList.None, $"act: {CommandLine.Printable(failure)}; nothing was done") : (ShownList.Of(ids), string.Empty);
+        return failure.Length > 0 ? (ShownList.None, $"act: {ShownText.Printable(failure)}; nothing was done") : (ShownList.Of(ids), string.Empty);
     }
 
     /// <summary>The volumes A4's preview showed, from <c>--volume</c> and the <c>--only</c> file together — or why the file
@@ -223,7 +224,7 @@ internal static class ActCommand
         var read = request.ShownOnStdin ? StdinList.Read(host.StandardInput(), MaxOnlyFileBytes, host.StdinCeiling) : host.Files.ReadRegularFile(request.OnlyFile, MaxOnlyFileBytes);
         if (read is not FileReadResult.Content content)
         {
-            return (ShownList.None, $"act: {(request.ShownOnStdin ? "the shown list on stdin" : $"the --only file {CommandLine.Printable(request.OnlyFile)}")} {CommandLine.Printable(Unusable(read))}; nothing was done");
+            return (ShownList.None, $"act: {(request.ShownOnStdin ? "the shown list on stdin" : $"the --only file {ShownText.Printable(request.OnlyFile)}")} {ShownText.Printable(Unusable(read))}; nothing was done");
         }
 
         var (names, failure) = CommandLine.ShownVolumesFile(Encoding.UTF8.GetString(content.Bytes));

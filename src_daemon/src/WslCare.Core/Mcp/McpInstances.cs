@@ -64,7 +64,7 @@ public static class McpInstances
 
     private static McpOwner.Agent? AgentAt(ProcessEntry process) =>
         process.Family == ProcessFamilies.AiAgents && AgentProcesses.AgentOf(process) is { } entry
-            ? new McpOwner.Agent(process.Pid, entry.Name, process.CommandLine)
+            ? new McpOwner.Agent(process.Pid, entry.Name, process.CommandLine, process.Program, process.ArgumentsShown)
             : null;
 
     private static ProcessEntry? Parent(ProcessEntry process, IReadOnlyDictionary<int, ProcessEntry> byPid) =>
