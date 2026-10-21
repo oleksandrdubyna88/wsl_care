@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { test } from 'node:test';
 import * as ts from 'typescript';
 
 import { VERB_NAMES, VERBS } from '../client/verbs';
 import { fromExtensionRoot, shippedSources } from './support/paths';
-import { importsOf, isChildProcess, stringLiteralsOf } from './support/sourceScan';
+import { importsOf, isChildProcess, resolveRelative, stringLiteralsOf } from './support/sourceScan';
 
 /**
  * The structural guarantees of plan §15g m1, over the SHIPPED sources (everything under `src/` but `src/test/`), read
@@ -216,9 +215,7 @@ const NEVER_WORDS = ['--timer', '--user'];
 
 /** Every module a source imports by a RELATIVE specifier, resolved to `src/...ts` the way the structural tests name files. */
 function resolvedImports(source: Source): string[] {
-  const dir = path.posix.dirname(source.file);
-
-  return importsOf(source.text).filter((m) => m.startsWith('.')).map((m) => `${path.posix.normalize(path.posix.join(dir, m))}.ts`);
+  return importsOf(source.text).filter((m) => m.startsWith('.')).map((m) => `${resolveRelative(source.file, m)}.ts`);
 }
 
 function importersOf(all: readonly Source[], module: string): string[] {

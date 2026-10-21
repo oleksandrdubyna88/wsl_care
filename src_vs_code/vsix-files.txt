@@ -3,6 +3,8 @@ LICENSE
 README.md
 bin/wsl-care.exe
 dist/extension.js
+dist/webview/full.css
+dist/webview/full.js
 media/archive.js
 media/icon.png
 media/logs.js

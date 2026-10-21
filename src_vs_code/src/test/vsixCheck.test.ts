@@ -74,12 +74,12 @@ test('the clean archive passes every check (the positive every planted test is m
   assert.deepEqual(vsixFindings(cleanEntries(), OPTIONS), []);
 });
 
-test('the allowlist is what .vscodeignore lets in: the bundle, media, the icon, README, CHANGELOG, LICENSE, package.json — nothing of src, tests, goldens or research', () => {
+test('the allowlist is what .vscodeignore lets in: the bundle, the full view\'s script and stylesheet (W0), media, the icon, README, CHANGELOG, LICENSE, package.json — nothing of src, tests, goldens or research', () => {
   assert.ok(ALLOWLIST.includes('dist/extension.js') && ALLOWLIST.includes('media/icon.png') && ALLOWLIST.includes('package.json'));
-  for (const file of ['README.md', 'CHANGELOG.md', 'LICENSE']) {
+  for (const file of ['README.md', 'CHANGELOG.md', 'LICENSE', 'dist/webview/full.js', 'dist/webview/full.css']) {
     assert.ok(ALLOWLIST.includes(file), file);
   }
-  assert.ok(ALLOWLIST.every((f) => f === 'package.json' || f === 'README.md' || f === 'CHANGELOG.md' || f === 'LICENSE' || f === 'dist/extension.js' || f === BUNDLED_EXE_FILE || f.startsWith('media/')), ALLOWLIST.join(', '));
+  assert.ok(ALLOWLIST.every((f) => f === 'package.json' || f === 'README.md' || f === 'CHANGELOG.md' || f === 'LICENSE' || f === 'dist/extension.js' || f === 'dist/webview/full.js' || f === 'dist/webview/full.css' || f === BUNDLED_EXE_FILE || f.startsWith('media/')), ALLOWLIST.join(', '));
   const ignore = fs.readFileSync(path.join(EXTENSION_ROOT, '.vscodeignore'), 'utf8');
   assert.equal(listLines(ignore)[0], '**', '.vscodeignore starts by excluding everything — an allowlist');
 });

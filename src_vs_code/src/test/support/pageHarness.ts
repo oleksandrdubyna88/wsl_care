@@ -22,6 +22,13 @@ import { createContext, runInContext, Script, type Context } from 'node:vm';
  * reached for any of them fails here, by name, even where a browser would have obliged. `textContent` takes only a
  * string (a browser would print `undefined` — the blank row this panel must never show) and, as in a browser,
  * replaces the element's children.</p>
+ *
+ * <p><b>W0 of `todo/PLAN_disk_health_E18.md` widened it by exactly the kit's DOM port, and nothing more</b> (the kit's
+ * `research/PLAN_kit_components_storybook.md` §4.3): `setAttribute` also takes `id` and `tabindex`; an element also listens
+ * for `keydown` and `input`; an element has `focus()`, recorded as the document's `activeElement` (and as `Page.activeElement`);
+ * a dispatched event carries its `key` and a `preventDefault()` whose call is recorded (`Page.key`, `Page.type`, the result's
+ * `defaultPrevented`). `style`, `on*`, `href`, a `change` or `focus` listener and every other member stay refused —
+ * `harness.test.ts` pins both halves.</p>
  */
 
 const TIMEOUT_MS = 5000;
@@ -29,11 +36,15 @@ const TIMEOUT_MS = 5000;
 /** What a page may create: a text page's elements, nothing that loads, runs or navigates. */
 export const CREATABLE = new Set(['DIV', 'SECTION', 'HEADER', 'H1', 'H2', 'H3', 'P', 'SPAN', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'BUTTON', 'UL', 'LI', 'SMALL', 'STRONG', 'INPUT']);
 
-/** The attributes `setAttribute` takes; `data-*` and `aria-*` by prefix. `min` / `max`: the Logs page's date picker (E6.S4). */
-const ATTRIBUTES = new Set(['role', 'scope', 'title', 'type', 'colspan', 'min', 'max']);
+/**
+ * The attributes `setAttribute` takes; `data-*` and `aria-*` by prefix. `min` / `max`: the Logs page's date picker (E6.S4).
+ * `id` and `tabindex` (W0 of `todo/PLAN_disk_health_E18.md`): the kit's tabs derive an element id for every tab and panel and
+ * keep a roving tabindex — the kit's DOM port, `research/PLAN_kit_components_storybook.md` §4.3 in `dew_flow_vscode_kit`.
+ */
+const ATTRIBUTES = new Set(['role', 'scope', 'title', 'type', 'colspan', 'min', 'max', 'id', 'tabindex']);
 
-/** Event kinds a page may listen for on an element. */
-const ELEMENT_EVENTS = new Set(['click']);
+/** Event kinds a page may listen for on an element. `keydown` (the kit's tablist) and `input` (its search box): W0, the same port. */
+const ELEMENT_EVENTS = new Set(['click', 'keydown', 'input']);
 
 type Handler = (event: unknown) => void;
 
@@ -110,8 +121,21 @@ export interface Page {
   message(data: unknown): void;
   /** A click on an element of the page — its listeners, then each ancestor's — under the deadline. */
   click(element: Element): void;
+  /** A keydown on an element of the page — its listeners, then each ancestor's — under the deadline; the event as the page left it. */
+  key(element: Element, key: string): DispatchedEvent;
+  /** Types into an INPUT of the page: sets its value, then dispatches `input` the way a click bubbles. */
+  type(element: Element, text: string): DispatchedEvent;
+  /** The element the page last gave focus to — `document.activeElement` — or undefined while none has. */
+  readonly activeElement: Element | undefined;
   /** The elements the test handed in by id. */
   readonly ids: Readonly<Record<string, Element>>;
+}
+
+/** An event the test dispatched into the page, as the page left it: its type, the key it carried, whether a listener called `preventDefault()`. */
+export interface DispatchedEvent {
+  readonly type: string;
+  readonly key: string | undefined;
+  readonly defaultPrevented: boolean;
 }
 
 const SLOT = '\u0000dispatch';
@@ -130,6 +154,17 @@ function runBounded(context: Context, sandbox: Record<string, unknown>, run: () 
 class Membrane {
   private readonly toProxy = new Map<Element, object>();
   private readonly toElement = new WeakMap<object, Element>();
+  /** The element the page last gave focus to (`focus()`): what `document.activeElement` answers, and `Page.activeElement`. */
+  active: Element | undefined = undefined;
+  /** The page's <body>: what an element must be attached to before it can take focus. */
+  body: Element | undefined = undefined;
+
+  /** `element.focus()`: as in a browser, only an ATTACHED, focusable element (a button, an input, or one with a tabindex attribute) takes focus; anywhere else it is a no-op. */
+  focus(element: Element): void {
+    if (this.body !== undefined && attached(element, [this.body]) && isFocusable(element)) {
+      this.active = element;
+    }
+  }
 
   view(element: Element): object {
     const known = this.toProxy.get(element);
@@ -278,6 +313,7 @@ function elementMembers(element: Element, membrane: Membrane): Members {
     value: { get: () => element.value, set: (v) => { element.value = stringOnly(v, 'value'); } },
     dataset: { get: () => datasetView(element) },
     classList: { get: () => classListView(element) },
+    focus: { get: () => () => { membrane.focus(element); } },
     setAttribute: { get: () => (name: unknown, value: unknown) => setAttribute(element, name, value) },
     getAttribute: { get: () => (name: unknown) => element.attributes[stringOnly(name, 'getAttribute')] ?? null },
     addEventListener: {
@@ -307,6 +343,7 @@ function documentView(membrane: Membrane, ids: Readonly<Record<string, Element>>
       },
     },
     body: { get: () => membrane.view(body) },
+    activeElement: { get: () => (membrane.active === undefined ? null : membrane.view(membrane.active)) },
     querySelector: { get: () => (selector: unknown) => { const hit = body.all(stringOnly(selector, 'querySelector'))[0]; return hit === undefined ? null : membrane.view(hit); } },
   };
 
@@ -337,14 +374,38 @@ function vscodeApi(posted: unknown[]): () => object {
   };
 }
 
-/** Bubble a click: the element's own click listeners, then each ancestor's. */
-function bubble(element: Element, membrane: Membrane): void {
+/**
+ * Bubble an event: the element's own listeners of `type`, then each ancestor's. It is ONE event as far as `preventDefault()`
+ * goes — a listener anywhere on the path that calls it marks the whole dispatch, as in a browser — and the result says what
+ * the page left of it. `key` rides a keydown only.
+ */
+function bubble(element: Element, membrane: Membrane, type: string, key?: string): DispatchedEvent {
+  let prevented = false;
   for (let at: Element | undefined = element; at !== undefined; at = at.parent) {
-    const event = { type: 'click', target: membrane.view(element), currentTarget: membrane.view(at) };
-    at.handlers.filter((h) => h.kind === 'click').forEach((h) => h.run(event));
+    const event = { type, target: membrane.view(element), currentTarget: membrane.view(at), ...(key === undefined ? {} : { key }), preventDefault: () => { prevented = true; } };
+    at.handlers.filter((h) => h.kind === type).forEach((h) => h.run(event));
   }
+
+  return { type, key, defaultPrevented: prevented };
 }
 
+/** What a browser lets take focus without help: a button, an input, or any element with a `tabindex` attribute — and, unless it is disabled or hidden (itself or under a hidden ancestor), which is how the kit hides a tab panel. */
+function isFocusable(element: Element): boolean {
+  const takesFocus = element.tagName === 'BUTTON' || element.tagName === 'INPUT' || element.attributes.tabindex !== undefined;
+
+  return takesFocus && !element.disabled && !hiddenWithAncestors(element);
+}
+
+/** Whether the element, or anything above it, is `hidden`. */
+function hiddenWithAncestors(element: Element): boolean {
+  for (let at: Element | undefined = element; at !== undefined; at = at.parent) {
+    if (at.hidden) {
+      return true;
+    }
+  }
+
+  return false;
+}
 function attached(element: Element, roots: readonly Element[]): boolean {
   let top = element;
   while (top.parent !== undefined) {
@@ -363,6 +424,7 @@ export function runPageScript(script: string, ids: Readonly<Record<string, Eleme
   const listeners: Listeners = { window: [] };
   const membrane = new Membrane();
   const body = new Element('BODY');
+  membrane.body = body;
   Object.values(ids).forEach((element) => adopt(body, element));
   const sandbox: Record<string, unknown> = {
     document: documentView(membrane, ids, body),
@@ -372,13 +434,30 @@ export function runPageScript(script: string, ids: Readonly<Record<string, Eleme
   const context = createContext(sandbox);
   runInContext(script, context, { timeout: TIMEOUT_MS });
 
+  /** An event aimed at an element of the running page, under the deadline; what the page left of it. */
+  const deliver = (element: Element, type: string, key?: string): DispatchedEvent => {
+    assert.ok(attached(element, [body]), `this ${element.tagName} received a ${type} but is not in the running page`);
+    let left: DispatchedEvent = { type, key, defaultPrevented: false };
+    runBounded(context, sandbox, () => { left = bubble(element, membrane, type, key); });
+
+    return left;
+  };
+
   return {
     posted,
     ids,
     message: (data) => runBounded(context, sandbox, () => listeners.window.forEach((run) => run({ data }))),
-    click: (element) => {
-      assert.ok(attached(element, [body]), `this ${element.tagName} was clicked but is not in the running page`);
-      runBounded(context, sandbox, () => bubble(element, membrane));
+    click: (element) => { deliver(element, 'click'); },
+    key: (element, key) => deliver(element, 'keydown', key),
+    type: (element, text) => {
+      assert.ok(attached(element, [body]), `this ${element.tagName} received an input but is not in the running page`);
+      assert.equal(element.tagName, 'INPUT', `only an input can be typed into, not a ${element.tagName}`);
+      element.value = text;
+
+      return deliver(element, 'input');
+    },
+    get activeElement() {
+      return membrane.active;
     },
   };
 }

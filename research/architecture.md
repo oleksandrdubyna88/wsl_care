@@ -142,6 +142,13 @@ extension: status bar, read-only panel and polling* of [module_vs_code.md](modul
     replay ([module_vs_code.md](module_vs_code.md), plan S7b.2b).
   Since E10.S2b the Archive page's *Restore*: the selected entry ids, as text, to the cleanup host — A20 through the cleanup transaction and two
   new root ops, the ids on stdin (section *The extension: Restore from the Archive page*).
+  Since E18.W0 (2026-10-21) the build has a SECOND bundle and ONE dependency from outside the public registry: `src/webview/fullView.ts` →
+  `dist/webview/full.js` (an IIFE for the Chromium of VS Code 1.85) and `dist/webview/full.css`, with the kit's components compiled in
+  (devDependency `@oleksandrdubyna88/vscode-webview-kit`, exactly `0.2.0`). The kit comes from GitHub Packages through the committed
+  `src_vs_code/.npmrc` (the scope's registry and `${NODE_AUTH_TOKEN}`, no secret); every CI job that installs hands the job's own read-only
+  token (`packages: read`) to the install step alone, which runs `npm ci --ignore-scripts`, and `npm rebuild` follows without it. Nothing
+  opens the page yet, so the extension's behaviour is unchanged (section *The full view's webview bundle and the kit* of
+  [module_vs_code.md](module_vs_code.md)).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,

@@ -62,6 +62,14 @@ export default tseslint.config(
     },
   },
   {
+    // The full view's page code (W0 of todo/PLAN_disk_health_E18.md) is compiled by its OWN program, with the DOM
+    // (tsconfig.webview.json), and tsconfig.json excludes it — so the type-aware rules read that program, not the host's.
+    files: ['src/webview/**/*.ts', 'src/test/webview/**/*.ts'],
+    languageOptions: {
+      parserOptions: { projectService: false, project: ['./tsconfig.webview.json'], tsconfigRootDir: import.meta.dirname },
+    },
+  },
+  {
     // The panel's page script (E5.S2): plain browser JavaScript run inside the webview, outside the TypeScript
     // program — the same complexity and length limits as src/**, and only the webview's globals.
     files: ['media/**/*.js'],
