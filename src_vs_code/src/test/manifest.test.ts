@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import * as ts from 'typescript';
 
 import { MAX_REFRESH_SECONDS } from '../poll/poller';
 import { DISTRO_NAME } from '../wsl/distros';
+import { bundleEntries, webviewEntries } from './support/bundleEntries';
 import { decodePng } from './support/iconPng';
 import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
 import { NUMBER_NAMES, NUMBER_SETTINGS } from '../settings/numbers';
@@ -157,63 +157,38 @@ test('W0 item 2: .npmrc is exactly the scope registry and the token read from NO
   assert.equal(ignore.some((line) => line.startsWith('!') && line.includes('npmrc')), false, '.vscodeignore never lets .npmrc back in');
 });
 
-/** The options object of EVERY `buildSync` call in scripts/bundle.mjs, read with the TypeScript parser: name → source text, in call order. */
-function bundleCalls(): Map<string, string>[] {
-  const file = ts.createSourceFile('bundle.mjs', fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
-  const calls: Map<string, string>[] = [];
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && node.expression.getText(file) === 'buildSync' && node.arguments[0] !== undefined && ts.isObjectLiteralExpression(node.arguments[0])) {
-      const options = new Map<string, string>();
-      for (const property of node.arguments[0].properties) {
-        if (ts.isPropertyAssignment(property)) {
-          options.set(property.name.getText(file), property.initializer.getText(file));
-        }
-      }
-      calls.push(options);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(file);
+test('W0 item 4 (code round: one list): scripts/bundle.mjs loops buildSync over scripts/bundle-entries.json, the ONE list of bundles — a host bundle and a webview bundle', () => {
+  const source = fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8');
+  assert.equal((source.match(/\bbuildSync\(/g) ?? []).length, 1, 'ONE buildSync call, looped over the entries');
+  assert.match(source, /bundle-entries\.json/);
+  assert.deepEqual(bundleEntries().map((entry) => entry.kind), ['host', 'webview'], 'the extension host and the full view');
+});
 
-  return calls;
-}
-
-/** The options of the `buildSync` call that writes `outfile` — one call per bundle, found by what it writes. */
-function bundleOptions(outfile = "'dist/extension.js'"): Map<string, string> {
-  const found = bundleCalls().filter((options) => options.get('outfile') === outfile);
-  assert.equal(found.length, 1, `scripts/bundle.mjs has ${found.length} buildSync call(s) writing ${outfile}`);
-
-  return found[0] ?? new Map<string, string>();
-}
-
-test('W0 item 4: the webview is a second bundle — src/webview/fullView.ts to dist/webview/full.js, an IIFE for the browser (the Chromium of VS Code 1.85), no source map, not minified', () => {
-  assert.equal(bundleCalls().length, 2, 'two bundles: the extension host and the full view');
-  const options = bundleOptions("'dist/webview/full.js'");
-  assert.equal(options.get('entryPoints'), "['src/webview/fullView.ts']");
-  assert.equal(options.get('bundle'), 'true');
-  assert.equal(options.get('format'), "'iife'");
-  assert.equal(options.get('platform'), "'browser'");
-  assert.equal(options.get('target'), "'chrome114'", 'Electron 25 / Chromium 114 is what VS Code 1.85 ships');
-  assert.equal(options.get('sourcemap'), 'false');
-  assert.equal(options.get('minify'), 'false');
-  assert.equal(options.has('sourcesContent'), false);
-  assert.equal(options.has('external'), false, 'nothing is left external: the page has no require');
+test('W0 item 4: EVERY webview entry is an IIFE for the browser (the Chromium of VS Code 1.85), nothing external, no source map, not minified — the full view is src/webview/fullView.ts to dist/webview/full.js', () => {
+  const entries = webviewEntries();
+  assert.ok(entries.length >= 1, 'the scan sees a webview entry');
+  for (const entry of entries) {
+    assert.equal(entry.bundle, true, entry.outfile);
+    assert.equal(entry.format, 'iife', entry.outfile);
+    assert.equal(entry.platform, 'browser', entry.outfile);
+    assert.equal(entry.target, 'chrome114', `${entry.outfile}: Electron 25 / Chromium 114 is what VS Code 1.85 ships`);
+    assert.equal(entry.sourcemap, false, entry.outfile);
+    assert.equal(entry.minify, false, entry.outfile);
+    assert.equal(entry.external, undefined, `${entry.outfile}: nothing is left external: the page has no require`);
+    assert.ok(entry.entryPoints.every((file) => file.startsWith('src/webview/')), `${entry.outfile}: a webview entry lives under src/webview/`);
+    assert.ok(entry.outfile.startsWith('dist/webview/'), entry.outfile);
+  }
+  const full = entries.find((entry) => entry.outfile === 'dist/webview/full.js');
+  assert.deepEqual(full?.entryPoints, ['src/webview/fullView.ts']);
 });
 
 test('the bundle is CommonJS for node 18 with vscode left external, no source map, and the build stamp (scripts/bundle.mjs)', () => {
   assert.equal(manifest.scripts.bundle, 'node scripts/clean.mjs dist && node scripts/bundle.mjs');
-  const options = bundleOptions();
-  assert.equal(options.get('bundle'), 'true');
-  assert.equal(options.get('external'), "['vscode']");
-  assert.equal(options.get('platform'), "'node'");
-  assert.equal(options.get('target'), "'node18'");
-  assert.equal(options.get('format'), "'cjs'");
-  assert.equal(options.get('outfile'), "'dist/extension.js'");
-  assert.equal(options.get('sourcemap'), 'false');
-  assert.equal(options.has('sourcesContent'), false);
-  assert.match(options.get('define') ?? '', /WSL_CARE_BUILD_STAMP/);
+  const host = bundleEntries().find((entry) => entry.kind === 'host');
+  assert.ok(host !== undefined);
+  assert.deepEqual(host, { kind: 'host', entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js', bundle: true, external: ['vscode'], format: 'cjs', platform: 'node', target: 'node18', sourcemap: false, minify: false });
+  assert.match(fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8'), /DEFINES = \{ host: \{ WSL_CARE_BUILD_STAMP/, 'the host bundle — and only it — is stamped with the version');
 });
-
 test('the extension carries the repository\'s licence, byte for byte', () => {
   assert.deepEqual(fs.readFileSync(path.join(EXTENSION_ROOT, 'LICENSE')), fs.readFileSync(path.join(REPOSITORY_ROOT, 'LICENSE')));
 });

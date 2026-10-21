@@ -3,7 +3,7 @@
 > Status: **in progress (2026-10-20)** — the stories document of epic E18 of [PLAN_disk_health.md](PLAN_disk_health.md)
 > (§3.4–§3.6 and its E18 table). E18.K1 is done in `dew_flow_vscode_kit` (kit #9 → `655df4de`; **0.2.0 released to
 > GitHub Packages**, release PR #16, run 39481672054 green). This document holds **W0** now; W1a, W1b, W2, W4, W3 and W5
-> are added here, each before its own plan round. **W0 is built (2026-10-21), awaiting its code round and merge** — § 9 records what shipped differently.
+> are added here, each before its own plan round. **W0 is built (2026-10-21); its code round is done (gate session `e9ba8ab4`: proceed) — awaiting the pull request and merge.** § 6b is the code round, § 9 records what shipped differently.
 >
 > Related: [module_vs_code.md](../research/module_vs_code.md), [architecture.md](../research/architecture.md), the kit's
 > `research/PLAN_kit_components_storybook.md` (kit `main` @ `1d2681cc`) §4.3 (the DOM port), §4.6 / §4.6a (the DataTable, its reveal contract and the
@@ -30,7 +30,7 @@ What must be true when W0 is done:
    dependency's lifecycle script ever runs while the token is in its environment; a following step without the token
    runs `npm rebuild` for the install scripts the build needs. A prerequisite, verified by W0's first CI run: the kit's
    package grants this repository read access (public, or wsl_care added under the package's *Manage Actions access*); a
-   403 there is an owner setting, not a code fix.
+   401, 403 or 404 there (GitHub Packages answers any of them for a package the token may not read) is an owner setting, not a code fix.
 3. `npm run bundle` builds a second entry `src/webview/fullView.ts` → `dist/webview/full.js` (IIFE, `platform: 'browser'`,
    the Chromium of VS Code 1.85, no source map, not minified) and `dist/webview/full.css` (the kit's `components.css`,
    imported by the entry, emitted by esbuild). Both are in `.vscodeignore`'s allowlist and `vsix-files.txt`; the
@@ -86,8 +86,7 @@ What must be true when W0 is done:
 - **The harness widening** is the list of goal 4 and only that list, with the reason in the module's comment (the kit's
   `research/PLAN_kit_components_storybook.md` §4.3, kit `main` @ `1d2681cc`). `focus()` records `document.activeElement` (the harness
   document gains that read). `input` events read the element's `value`, which the harness already models.
-- **No Dependabot change in W0.** Dependabot reads GitHub Packages only through a Dependabot secret (a separate store
-  from Actions secrets); until the owner adds one, Dependabot cannot bump this pin, and the README says so.
+- **No Dependabot change in W0** (corrected in the code round, 2026-10-21). Dependabot authenticates to GitHub Packages through the package's *Manage Actions access* grant to this repository (GitHub changelog 2026-09-08): no `dependabot.yml` change, no secret, no `ignore` entry, no `registries:` block. Without that grant the grouped npm update job for `src_vs_code` may fail entirely, security updates included. It is the same grant CI's install needs (goal 2); the README says so.
   Recorded as an owner item, not built.
 
 ### 4. RED list (each seen failing for the real reason first)
@@ -137,10 +136,31 @@ folded in above: the package-access prerequisite, the token never beside a lifec
 both configs. The gate's "split into 2–3 epics" order does not fit: W0 is ONE story of E18's existing split
 (PLAN_disk_health.md's E18 table), so it is not split again.
 
+### 6b. The gate's code round (session e9ba8ab4, 2026-10-21)
+
+12 reviewers answered; `proceed` (9/5, as the gate printed it). Accepted (as numbered by the gate): 0, 1, 2, 3, 4, 7, 8, 9, 10, 13, 14 — folded in:
+
+- **A** the token step's `run`, trimmed, must EQUAL `npm ci --ignore-scripts` (a substring let `&&`, `;`, `||`, a second line, a comment or an `echo` of the flag pass); four chained forms and three more are fixtures that must be REJECTED.
+- **B** the README tells a contributor to run `npm ci --ignore-scripts` with the token, unset it, then `npm rebuild` — never a plain `npm ci` with the token.
+- **C** Dependabot authenticates through the package's *Manage Actions access* grant (GitHub changelog 2026-09-08): no secret, no `dependabot.yml` change, no `ignore` entry, no `registries:` block; without the grant the grouped npm update job may fail entirely, security updates included. README, `module_vs_code.md`, `module_tests.md` and this plan said "a Dependabot secret" — corrected.
+- **D** the kit page test: a `dispose()`-ALONE case, an exact reveal cell and row before the host replies (no vacuous `includes(SECRET) === false`), and keydown on the FOCUSED tab.
+- **E** `fullView.test.ts` RUNS the shipped `dist/webview/full.js` with and without a `view` mount: no throw, nothing posted, the API acquired once.
+- **F** a host module importing the kit (`…/components`, `…/components.css`, the root) is refused, with planted companions.
+- **G** the new C# test method is split into helpers (complexity ≤ 4).
+- **H** this status line and the `todo/README.md` row.
+- **I** the harness's `focus()` takes effect only on an ATTACHED button, input or element with a `tabindex`.
+- **J** one list of bundles, `scripts/bundle-entries.json`, looped over by `bundle.mjs`; `manifest.test.ts` asserts every webview entry has the browser options; the kit page test bundles its entry with the webview entry's own options.
+- **K** a missing package grant answers 401, 403 or 404, not only 403.
+- **L** the `release-extension.yml` comments say `npm ci --ignore-scripts` + `npm rebuild` without the token.
+- **M** `kitPageEntry.ts` replaces its `mode` object instead of mutating it.
+
+Rejected, with the reason: **5** — the kit has no `/dom` export (its exports are `.`, `./components`, `./components.css`), so `KIT_ENTRIES` stays the two browser entries; **6** — `manifest.test.ts` compares the option source text by design (since J it compares the parsed list instead); **11** — the exact pin makes an export-map change a deliberate re-check of the boundary; **12** — one registry, and the workflow test already covers every install step whatever the registry.
+
+The cadence consultation (c3c3a4c6) was solved by the Dependabot grant (C); the own Opus review's findings are folded into the list above.
 ### 7. What W0 does not prove
 
 That a real webview loads `full.css` under the nonce (W1b's panel, and a real VS Code); that Dependabot can bump the pin
-(an owner item); a layout — nothing is shown yet.
+(it needs the same *Manage Actions access* grant, an owner setting); a layout — nothing is shown yet.
 
 ### 8. Definition of Done
 
@@ -170,5 +190,5 @@ That a real webview loads `full.css` under the nonce (W1b's panel, and a real VS
 - **`src/test/webview/`** (the kit page test's entry) is excluded from the host's `tsconfig.json` and checked by `tsconfig.webview.json`
   with the page's own files; ESLint's type-aware rules read that program for both folders (`eslint.config.mjs`).
 - **`resolveRelative`** was extracted from `structure.test.ts` into `support/sourceScan.ts` (one resolver for the two structural tests).
-- **Not in W0:** the Dependabot secret (an owner item); the first CI run's fetch from GitHub Packages (needs the package to grant this
-  repository read access — a 403 there is an owner setting).
+- **Not in W0:** the package's *Manage Actions access* grant to this repository (an owner setting; it serves CI and Dependabot alike); the first CI run's fetch from GitHub Packages (a 401, 403 or 404 there is that grant missing).
+- **Code round (§ 6b), as built:** `dispose()` does NOT clear a revealed text (the kit's documented contract — a consumer clears it with `setRows([])` first), so the `dispose()`-alone test holds what the kit promises: the pending request is dropped, the late answer is `false`, the table stops reacting, and the revealed text stays. The list of bundles moved to `scripts/bundle-entries.json`; the harness's `focus()` is a no-op on a detached or non-focusable element.

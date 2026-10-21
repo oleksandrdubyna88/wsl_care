@@ -21,7 +21,7 @@ name: release · extension
 #                       it has — and the first public extension stays root-free: a checkout carrying the root
 #                       module is refused at or below extension-v0.1.0, or before that tag exists (plan §15j B3, §15k #7)
 #                       (.github/scripts/release-extension-guard.sh)
-#   build               npm ci, typecheck, lint, every test (unit, page, structural, bundle scans; the extension-host tier
+#   build               npm ci --ignore-scripts (the packages token on that step) + npm rebuild (without it), typecheck, lint, every test (unit, page, structural, bundle scans; the extension-host tier
 #                       under xvfb), `vsce package` ONCE, the leak checks on that .vsix (--release: the placeholder publisher
 #                       refused; --min-daemon / --min-daemon-actions: the built minima are the ones the guard verified;
 #                       --root-allowed: the guard's answer, so a bundle carrying the root module is refused when the tags
@@ -126,7 +126,8 @@ jobs:
     needs: guard
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    # Reading only: this job runs `npm ci` with dependency install scripts, every test and a downloaded VS Code — none of
+    # Reading only: this job installs with `npm ci --ignore-scripts` (the packages token on that step alone), then runs the dependency install
+    # scripts with `npm rebuild` WITHOUT the token, then every test and a downloaded VS Code — none of
     # it may sit beside a signing scope. The attestation is the attest job's (E5 code round #3). `attestations: read` lets
     # the fetch verify the bundled daemon's attestation (E7.S5a) — reading one, never making one.
     # `packages: read`: the kit is fetched from GitHub Packages (W0 of todo/PLAN_disk_health_E18.md) — reading, never publishing.

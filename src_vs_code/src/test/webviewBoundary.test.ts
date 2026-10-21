@@ -70,13 +70,17 @@ function pageFindings(all: readonly Source[]): string[] {
   }));
 }
 
-/** Every host file that imports something under `src/webview/`, as `file: imports <specifier>`. */
-function hostFindings(all: readonly Source[]): string[] {
-  return all.filter((s) => !inWebview(s.file)).flatMap((s) => importsOf(s.text)
-    .filter((specifier) => specifier.startsWith('.') && underWebview(resolveRelative(s.file, specifier)))
-    .map((specifier) => `${s.file}: imports ${specifier}`));
+/** Whether a HOST import is one the host may never make: something under `src/webview/`, or the kit's browser entries (the kit is the page's — a host that bundled it would drag a DOM-bound module into Node). */
+function refusedByHost(file: string, specifier: string): boolean {
+  return specifier.startsWith('.') ? underWebview(resolveRelative(file, specifier)) : specifier === KIT || specifier.startsWith(`${KIT}/`);
 }
 
+/** Every host file that imports something under `src/webview/` or the kit, as `file: imports <specifier>`. */
+function hostFindings(all: readonly Source[]): string[] {
+  return all.filter((s) => !inWebview(s.file)).flatMap((s) => importsOf(s.text)
+    .filter((specifier) => refusedByHost(s.file, specifier))
+    .map((specifier) => `${s.file}: imports ${specifier}`));
+}
 test('the scan reads the page entry and the host: src/webview/fullView.ts is a shipped source, and so are the host\'s own modules', () => {
   const files = sources().map((s) => s.file);
   assert.ok(files.includes(FULL_VIEW), files.filter(inWebview).join(', '));
@@ -95,7 +99,7 @@ test('the page entry does import the kit: its components and its stylesheet (the
   assert.ok(imports.includes(`${KIT}/components.css`), imports.join(', '));
 });
 
-test('no host module imports anything under src/webview/', () => {
+test('no host module imports anything under src/webview/, and none imports the kit', () => {
   assert.deepEqual(hostFindings(sources()), []);
 });
 
@@ -120,14 +124,27 @@ test('the page scan finds a planted import of vscode, a node: module, a bare bui
   ]);
 });
 
-test('the host scan finds a planted import of the page entry from a host module, in every relative spelling, and leaves a mention alone', () => {
+test('the host scan finds a planted import of the page entry or of the kit (components, stylesheet, root) from a host module, in every spelling, and leaves a mention and another package alone', () => {
   const planted: Source[] = [
     { file: 'src/extension.ts', text: "import { start } from './webview/fullView';" },
     { file: 'src/panel/x.ts', text: "import '../webview/fullView';" },
     { file: 'src/panel/y.ts', text: "const later = import('../webview/other');" },
     { file: 'src/panel/z.ts', text: "// the page is ../webview/fullView, bundled apart\nconst s = '../webview/fullView';" },
+    { file: 'src/panel/k1.ts', text: `import { createTabs } from '${KIT}/components';` },
+    { file: 'src/panel/k2.ts', text: `import '${KIT}/components.css';` },
+    { file: 'src/panel/k3.ts', text: `import { nonce } from '${KIT}';` },
+    { file: 'src/panel/k4.ts', text: `const kit = require('${KIT}/components');` },
+    { file: 'src/panel/other.ts', text: "import { x } from '@oleksandrdubyna88/other-package';" },
   ];
-  assert.deepEqual(hostFindings(planted), ['src/extension.ts: imports ./webview/fullView', 'src/panel/x.ts: imports ../webview/fullView', 'src/panel/y.ts: imports ../webview/other']);
+  assert.deepEqual(hostFindings(planted), [
+    'src/extension.ts: imports ./webview/fullView',
+    'src/panel/x.ts: imports ../webview/fullView',
+    'src/panel/y.ts: imports ../webview/other',
+    `src/panel/k1.ts: imports ${KIT}/components`,
+    `src/panel/k2.ts: imports ${KIT}/components.css`,
+    `src/panel/k3.ts: imports ${KIT}`,
+    `src/panel/k4.ts: imports ${KIT}/components`,
+  ]);
 });
 
 /** A tsconfig file (JSONC) as an object — read with the TypeScript parser, comments and all. */

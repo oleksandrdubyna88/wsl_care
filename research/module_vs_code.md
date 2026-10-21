@@ -240,7 +240,7 @@ flowchart LR
   `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`; it runs `npm ci --ignore-scripts`, so no dependency's lifecycle script runs
   while the token is in its environment. In the two jobs that build, the very next step runs `npm rebuild` without the token. The
   Marketplace job runs no script at all, as before. `ReleaseExtensionWorkflowTests` holds both halves.
-- **The bundle.** `scripts/bundle.mjs` has a second `buildSync`: `src/webview/fullView.ts` → `dist/webview/full.js`
+- **The bundle.** `scripts/bundle.mjs` loops ONE `buildSync` over `scripts/bundle-entries.json` — the one list of bundles, read by the tests too (`support/bundleEntries.ts`; the kit page test bundles its entry with the webview entry's own options, not a copy): the host's, and `src/webview/fullView.ts` → `dist/webview/full.js`
   (`iife`, `browser`, `chrome114` — the Chromium of VS Code 1.85 —, no source map, not minified); the kit's stylesheet,
   imported by the entry, is emitted by esbuild as `dist/webview/full.css`. Both are in `.vscodeignore`'s allowlist and
   `vsix-files.txt`; the `.vsix` check holds them like every other file. The webview's CSP is `default-src 'none'`, so the
@@ -249,10 +249,10 @@ flowchart LR
   `tsconfig.webview.json` (DOM, no `@types/node`, no `@types/vscode`, `moduleResolution: Bundler` so the kit's `exports` are
   read) checks them; `npm run typecheck` runs both. `webviewBoundary.test.ts` holds the boundary both ways: nothing under
   `src/webview/` imports `vscode`, a Node module or host code (only its folder and the kit's `…/components` and
-  `…/components.css`), and no host module imports `src/webview/`. `src/webview/stylesheets.d.ts` declares the one stylesheet
+  `…/components.css`), and no host module imports `src/webview/` or the kit. `fullView.test.ts` RUNS the shipped `dist/webview/full.js` in the harness, with the mount point and without: no throw, nothing posted, the API acquired once. `src/webview/stylesheets.d.ts` declares the one stylesheet
   specifier, because TypeScript 6 refuses a side-effect import it cannot resolve.
 - **The harness is the kit's port, and nothing more.** `pageHarness.ts` gained `id` and `tabindex` attributes, `keydown`
-  and `input` listeners, `focus()` (the document's `activeElement`, `Page.activeElement`) and an event with its `key` and a
+  and `input` listeners, `focus()` (taking effect only on an ATTACHED button, input or element with a `tabindex`, as in a browser — it sets the document's `activeElement`, `Page.activeElement`) and an event with its `key` and a
   recorded `preventDefault()` (`Page.key`, `Page.type`). `style`, `on*`, `href`, `change`, `focus` listeners stay refused.
 - **The mount point is `view`.** `structure.test.ts` allows the word `root` in the shipped sources only in the root-call module.
 
@@ -261,8 +261,10 @@ flowchart LR
 - **The kit's lock entry cannot be installed offline from a cache** (E18.W0, 2026-10-21). With no `resolved`, npm asks the registry
   for the packument before it looks at the cache, so `npm ci --offline` answers `ENOTCACHED` even after `npm cache add <tarball>`;
   the same entry installs from a registry (proved against a throwaway local one: the tarball is taken, and a tampered tarball
-  stops with `EINTEGRITY`). The same lock WITH a `resolved` URL installs offline. Dependabot cannot bump the pin until the owner adds
-  a Dependabot secret (a separate store from Actions secrets); recorded in the plan as an owner item.
+  stops with `EINTEGRITY`). The same lock WITH a `resolved` URL installs offline. Dependabot authenticates to GitHub Packages through the
+  package's *Manage Actions access* grant to this repository (GitHub changelog 2026-09-08) — no `dependabot.yml` change, no secret, no `ignore`
+  entry, no `registries:` block. Without that grant the grouped npm update job for `src_vs_code` may fail entirely, security updates included;
+  a missing grant answers 401, 403 or 404, for CI's install as well. It is the owner's setting, recorded in the plan.
 
 - The polling cadence's run-log churn is the owner's open decision M1
   ([2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md)); the daemon prunes its run logs after
@@ -718,7 +720,7 @@ sequenceDiagram
 flowchart TD
     tag["push: tags extension-v* — the only trigger"]
     guard["guard · contents: read<br/>release-extension-guard.sh: tag = package.json version · real publisher · on main<br/>min-daemon.json (JSON) → daemon-v&lt;MIN&gt;, daemon-v&lt;ACTIONS&gt; and daemon-v&lt;INSTALL&gt; published non-draft (gh api, read-only token)<br/>POST_DEPLOY.md on origin/main's tip (git show, never the tag's tree) 'Last verified: date · … · daemon x.y.z', x.y.z ≥ INSTALL ≥ ACTIONS ≥ MIN (lib/versions.sh)<br/>root module only above a root-free, published extension-v0.1.0<br/>outputs: version · publisher · min_daemon · min_daemon_actions · install_daemon · root_allowed"]
-    build["build · contents: read ONLY<br/>npm ci → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
+    build["build · contents: read ONLY<br/>npm ci --ignore-scripts (packages token) → npm rebuild → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
     attest["attest · contents: read + id-token: write + attestations: write<br/>sparse checkout of .github/scripts · NO npm, no node<br/>download artifact → verify the pair → attest-build-provenance(.vsix)"]
     draft["github-draft · contents: write<br/>verify set → upload only what the DRAFT lacks (never replace; nothing if public)<br/>→ download back → verify + cmp (a difference: re-run FAILED jobs only)"]
     mkt["publish-marketplace · environment: marketplace · contents: read<br/>npm ci --ignore-scripts → verify set → vsce show: served? (marketplace-served.cjs)<br/>not served → vsce publish --packagePath the attested file (VSCE_PAT)<br/>→ wait-marketplace-served.sh: 90 × 30 s ≈ 45 min, each vsce show bounded 20 s + 5 s kill,<br/>every attempt logged · job limit 100 min, above the wait's 82.5 min worst case"]
@@ -742,7 +744,7 @@ flowchart TD
   with ONE reader, `marketplace-served.cjs`.
 - **The order** puts the rollback source first: the `.vsix` is on the draft before the Marketplace serves anything, and
   the release goes public only after it does — compared once more with the attested build immediately before.
-- **The signing scope** (E5 code round #3): the build runs `npm ci` with dependency install scripts, every test and a
+- **The signing scope** (E5 code round #3): the build runs `npm ci --ignore-scripts` (the packages token on that step alone), then `npm rebuild` (the dependency install scripts, without the token), every test and a
   downloaded VS Code, so it holds `contents: read` only; the ONLY job with `id-token` / `attestations: write` is
   `attest`, which checks out `.github/scripts` alone, downloads the build's artifact, checks the pair and attests it.
 - **Re-runs** — "Re-run FAILED jobs" only: it reuses the successful build's artifact. "Re-run all jobs" rebuilds a

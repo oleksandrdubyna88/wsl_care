@@ -1054,14 +1054,23 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
 
 The extension's one dependency from outside the public registry is the webview kit, `@oleksandrdubyna88/vscode-webview-kit`
 (pinned to `0.2.0`; bundled into `dist/webview/full.js`, so it is a development dependency only), published to **GitHub
-Packages**. `src_vs_code/.npmrc` points the scope there and reads the token from the environment — it holds no secret — so
-`npm ci` needs a **classic personal access token with the `read:packages` scope in `NODE_AUTH_TOKEN`** (a `gh` login without that
-scope is refused with a 403). CI hands its own read-only token to the install step alone. Dependabot cannot bump the kit's pin
-until the owner adds a Dependabot secret for it (a separate store from Actions secrets).
+Packages**. `src_vs_code/.npmrc` points the scope there and reads the token from the environment — it holds no secret. To install
+it you need a **classic personal access token with the `read:packages` scope in `NODE_AUTH_TOKEN`** (a `gh` login without that
+scope is refused: GitHub Packages answers 401, 403 or 404 for a package you may not read). **Install with the token present and
+scripts off, then run the scripts without it** — `npm ci --ignore-scripts`, then unset `NODE_AUTH_TOKEN`, then `npm rebuild` —
+and never a plain `npm ci` with the token set, so no dependency's install script ever runs beside it. CI does exactly that: its own
+read-only token reaches the install step alone.
+
+Dependabot reaches GitHub Packages through the package's **Manage Actions access** grant to this repository (GitHub changelog
+2026-09-08) — there is no `dependabot.yml` change and no secret. Without that grant the grouped npm update job for `src_vs_code`
+may fail entirely, security updates included; the grant is the same one CI's install needs.
 
 ```bash
 cd src_vs_code
-npm ci          # with NODE_AUTH_TOKEN set (above)
+export NODE_AUTH_TOKEN=...            # a classic PAT with read:packages (PowerShell: $env:NODE_AUTH_TOKEN = '...')
+npm ci --ignore-scripts               # the kit is fetched here, and no install script runs
+unset NODE_AUTH_TOKEN                 # PowerShell: Remove-Item Env:NODE_AUTH_TOKEN
+npm rebuild                           # the install scripts the build needs (esbuild, vsce-sign), without the token
 npm run typecheck && npm run lint   # typecheck runs the host's tsconfig and the page's (tsconfig.webview.json)
 npm test        # compile, bundle (dist/extension.js, dist/webview/full.js + full.css), then every test — no test can start the real wsl.exe
 npm run test:host   # the extension in a real VS Code 1.85.0 and stable (downloads into .vscode-test/; xvfb-run on Linux)

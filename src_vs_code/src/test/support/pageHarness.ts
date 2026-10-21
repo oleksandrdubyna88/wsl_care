@@ -156,6 +156,15 @@ class Membrane {
   private readonly toElement = new WeakMap<object, Element>();
   /** The element the page last gave focus to (`focus()`): what `document.activeElement` answers, and `Page.activeElement`. */
   active: Element | undefined = undefined;
+  /** The page's <body>: what an element must be attached to before it can take focus. */
+  body: Element | undefined = undefined;
+
+  /** `element.focus()`: as in a browser, only an ATTACHED, focusable element (a button, an input, or one with a tabindex attribute) takes focus; anywhere else it is a no-op. */
+  focus(element: Element): void {
+    if (this.body !== undefined && attached(element, [this.body]) && isFocusable(element)) {
+      this.active = element;
+    }
+  }
 
   view(element: Element): object {
     const known = this.toProxy.get(element);
@@ -304,7 +313,7 @@ function elementMembers(element: Element, membrane: Membrane): Members {
     value: { get: () => element.value, set: (v) => { element.value = stringOnly(v, 'value'); } },
     dataset: { get: () => datasetView(element) },
     classList: { get: () => classListView(element) },
-    focus: { get: () => () => { membrane.active = element; } },
+    focus: { get: () => () => { membrane.focus(element); } },
     setAttribute: { get: () => (name: unknown, value: unknown) => setAttribute(element, name, value) },
     getAttribute: { get: () => (name: unknown) => element.attributes[stringOnly(name, 'getAttribute')] ?? null },
     addEventListener: {
@@ -380,6 +389,11 @@ function bubble(element: Element, membrane: Membrane, type: string, key?: string
   return { type, key, defaultPrevented: prevented };
 }
 
+/** What a browser lets take focus without help: a button, an input, or any element with a 	abindex attribute. */
+function isFocusable(element: Element): boolean {
+  return element.tagName === 'BUTTON' || element.tagName === 'INPUT' || element.attributes.tabindex !== undefined;
+}
+
 function attached(element: Element, roots: readonly Element[]): boolean {
   let top = element;
   while (top.parent !== undefined) {
@@ -398,6 +412,7 @@ export function runPageScript(script: string, ids: Readonly<Record<string, Eleme
   const listeners: Listeners = { window: [] };
   const membrane = new Membrane();
   const body = new Element('BODY');
+  membrane.body = body;
   Object.values(ids).forEach((element) => adopt(body, element));
   const sandbox: Record<string, unknown> = {
     document: documentView(membrane, ids, body),

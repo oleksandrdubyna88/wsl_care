@@ -25,7 +25,7 @@
  * because the webview's CSP is default-src 'none' (webviewBundle.test.ts).
  *
  * Run through `npm run bundle` (which cleans dist/ first) and, from vsce, through `vscode:prepublish`. manifest.test.ts
- * reads these options back with the TypeScript parser.
+ * reads the list of bundles (scripts/bundle-entries.json) back.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -58,37 +58,17 @@ function minDaemons() {
   return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), minDaemonForActions: read('MIN_DAEMON_FOR_ACTIONS'), installDaemon: read('INSTALL_DAEMON'), bundledDaemon: read('BUNDLED_DAEMON') };
 }
 
-buildSync({
-  absWorkingDir: ROOT,
-  entryPoints: ['src/extension.ts'],
-  outfile: 'dist/extension.js',
-  bundle: true,
-  external: ['vscode'],
-  format: 'cjs',
-  platform: 'node',
-  target: 'node18',
-  sourcemap: false,
-  minify: false,
-  logLevel: 'warning',
-  define: { WSL_CARE_BUILD_STAMP: JSON.stringify(`wsl-care-build ${version}`) },
-});
+// ONE list of bundles (scripts/bundle-entries.json: the extension host's, and the full view's webview page — W0 of
+// todo/PLAN_disk_health_E18.md), looped over here and READ by the tests, so the options a test bundles a page with are the options
+// that ship. The webview bundle is an IIFE for the Chromium of VS Code 1.85 (Electron 25, Chromium 114) with the kit's components
+// compiled in; the kit's stylesheet, imported by its entry, is emitted by esbuild beside it as dist/webview/full.css.
+// Only the host's bundle is stamped with the version it was built for.
+const ENTRIES = JSON.parse(readFileSync(join(ROOT, 'scripts', 'bundle-entries.json'), 'utf8'));
+const DEFINES = { host: { WSL_CARE_BUILD_STAMP: JSON.stringify(`wsl-care-build ${version}`) } };
 
-// The full view's page script (W0 of todo/PLAN_disk_health_E18.md): a SECOND bundle, for the WEBVIEW — an IIFE for the Chromium of
-// VS Code 1.85 (Electron 25, Chromium 114), the kit's components compiled in. The kit's stylesheet, imported by the entry, is emitted
-// by esbuild beside it as dist/webview/full.css. No source map and not minified, for the same reasons as above.
-buildSync({
-  absWorkingDir: ROOT,
-  entryPoints: ['src/webview/fullView.ts'],
-  outfile: 'dist/webview/full.js',
-  bundle: true,
-  format: 'iife',
-  platform: 'browser',
-  target: 'chrome114',
-  sourcemap: false,
-  minify: false,
-  logLevel: 'warning',
-});
-
+for (const { kind, ...options } of ENTRIES) {
+  buildSync({ absWorkingDir: ROOT, ...options, logLevel: 'warning', ...(DEFINES[kind] === undefined ? {} : { define: DEFINES[kind] }) });
+}
 const minima = minDaemons();
 mkdirSync(join(ROOT, 'dist'), { recursive: true });
 writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify(minima, null, 2)}\n`);

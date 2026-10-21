@@ -239,6 +239,33 @@ test('W0 item 7: focus() makes the element the document\'s active element — re
   assert.equal(page.activeElement, root.children[0]);
 });
 
+test('W0 code round: focus() takes effect only on an ATTACHED and focusable element (a button, an input, or one with a tabindex) — anywhere else it is a no-op, as in a browser', () => {
+  const { page, root } = withRoot(`
+    const vscode = acquireVsCodeApi();
+    const el = document.getElementById('root');
+    const make = (tag, attributes = {}) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attributes)) e.setAttribute(k, v); return e; };
+    const tried = (name, e) => { const before = document.activeElement; e.focus(); const now = document.activeElement; vscode.postMessage({ name, took: now !== before && now === e }); };
+
+    tried('detached button', make('button'));
+    tried('detached input', make('input'));
+    const plain = make('div'); el.appendChild(plain);
+    tried('div without tabindex', plain);
+    const span = make('span', { tabindex: '-1' }); el.appendChild(span);
+    tried('span with tabindex', span);
+    const button = make('button'); el.appendChild(button);
+    tried('attached button', button);
+    const input = make('input'); el.appendChild(input);
+    tried('attached input', input);`);
+  assert.deepEqual(page.posted, [
+    { name: 'detached button', took: false },
+    { name: 'detached input', took: false },
+    { name: 'div without tabindex', took: false },
+    { name: 'span with tabindex', took: true },
+    { name: 'attached button', took: true },
+    { name: 'attached input', took: true },
+  ]);
+  assert.equal(page.activeElement, root.children[3], 'the last element to take focus is the input');
+});
 test('W0 item 7: a dispatched keydown carries its key, and a preventDefault() the page calls is recorded', () => {
   const { page, root } = withRoot(`
     const vscode = acquireVsCodeApi();

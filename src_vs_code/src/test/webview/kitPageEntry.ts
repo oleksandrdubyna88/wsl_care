@@ -30,7 +30,8 @@ interface HostMessage {
 }
 
 const vscode = acquireVsCodeApi();
-const mode = { failReveals: false };
+// Replaced, never mutated (coding-style: new objects): the host's failReveals message swaps the whole value.
+let mode = { failReveals: false };
 
 const INITIAL_ROWS: readonly Process[] = [
   { program: 'ollama', pid: 4120, heldBytes: 6_442_450_944 },
@@ -107,8 +108,12 @@ window.addEventListener('message', (event: { data: HostMessage }) => {
       table.dispose();
       vscode.postMessage({ type: 'dismantled' });
       break;
+    case 'dispose':
+      table.dispose();
+      vscode.postMessage({ type: 'disposed' });
+      break;
     case 'failReveals':
-      mode.failReveals = message.on ?? true;
+      mode = { ...mode, failReveals: message.on ?? true };
       break;
     default:
       throw new Error(`unknown host message ${message.type}`);

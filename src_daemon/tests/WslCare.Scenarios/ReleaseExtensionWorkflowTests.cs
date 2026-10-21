@@ -212,31 +212,71 @@ public sealed partial class ReleaseExtensionWorkflowTests
     [Fact]
     public void Every_install_of_the_extensions_dependencies_reads_packages_with_the_token_on_that_step_alone_and_runs_no_script_beside_it()
     {
-        var installs = new List<string>();
         foreach (var path in ReleaseFiles.AllWorkflows)
         {
             CarriesToken(WorkflowYaml.Load(path)).Should().BeFalse($"{Path.GetFileName(path)}: never workflow-wide");
         }
 
-        foreach (var (file, id, job) in EveryJob())
-        {
-            CarriesToken(job).Should().BeFalse($"{file}/{id}: never job-wide, where every step — dependency code included — would read it");
-            foreach (var step in Steps(job))
-            {
-                if (!InstallsDependencies(step))
-                {
-                    CarriesToken(step).Should().BeFalse($"{file}/{id}: a step that installs nothing never carries the packages token ({Run(step)[..Math.Min(40, Run(step).Length)]})");
-                    continue;
-                }
+        var installs = EveryJob().SelectMany(j => CheckedInstallSteps(j.File, j.Id, j.Job)).ToList();
 
-                installs.Add($"{file}/{id}");
-                Permissions(job).Should().Contain(new KeyValuePair<string, string>("packages", "read"), $"{file}/{id} installs the kit from GitHub Packages");
-                step["env"].Map[AuthToken].Text.Should().Be(PackagesToken, $"{file}/{id}: the job's own token, through env:, never pasted into the shell");
-                Run(step).Should().Contain("--ignore-scripts", $"{file}/{id}: no lifecycle script runs while the token is in the environment");
+        installs.Should().BeEquivalentTo(["ci-extension.yml/extension", $"{Workflow}/build", $"{Workflow}/publish-marketplace"], "the three installs of src_vs_code's dependencies — a fourth is a new job to hold to the same rule");
+    }
+
+    /// <summary>Holds one job to the rule and answers <c>file/id</c> once for each install step it found.</summary>
+    private static List<string> CheckedInstallSteps(string file, string id, YamlMap job)
+    {
+        CarriesToken(job).Should().BeFalse($"{file}/{id}: never job-wide, where every step — dependency code included — would read it");
+        var found = new List<string>();
+        foreach (var step in Steps(job))
+        {
+            CheckedStep(file, id, job, step);
+            if (InstallsDependencies(step))
+            {
+                found.Add($"{file}/{id}");
             }
         }
 
-        installs.Should().BeEquivalentTo(["ci-extension.yml/extension", $"{Workflow}/build", $"{Workflow}/publish-marketplace"], "the three installs of src_vs_code's dependencies — a fourth is a new job to hold to the same rule");
+        return found;
+    }
+
+    private static void CheckedStep(string file, string id, YamlMap job, YamlMap step)
+    {
+        if (!InstallsDependencies(step))
+        {
+            CarriesToken(step).Should().BeFalse($"{file}/{id}: a step that installs nothing never carries the packages token ({Run(step)[..Math.Min(40, Run(step).Length)]})");
+            return;
+        }
+
+        Permissions(job).Should().Contain(new KeyValuePair<string, string>("packages", "read"), $"{file}/{id} installs the kit from GitHub Packages");
+        step["env"].Map[AuthToken].Text.Should().Be(PackagesToken, $"{file}/{id}: the job's own token, through env:, never pasted into the shell");
+        IsTheBareInstall(Run(step)).Should().BeTrue($"{file}/{id}: the token step is exactly `{BareInstall}` — nothing chained, no second line, no comment (it ran: {Run(step)})");
+    }
+
+    private const string BareInstall = "npm ci --ignore-scripts";
+
+    /// <summary>The token step's <c>run</c> must BE the install: a substring would let <c>npm ci --ignore-scripts &amp;&amp; npm test</c>, a
+    /// comment or an <c>echo</c> of the flag pass while a script runs beside the token.</summary>
+    private static bool IsTheBareInstall(string run) => string.Equals(run.Trim(), BareInstall, StringComparison.Ordinal);
+
+    [Fact]
+    public void The_token_step_check_rejects_a_flag_that_is_only_mentioned_or_a_command_chained_beside_the_install()
+    {
+        IsTheBareInstall("npm ci --ignore-scripts").Should().BeTrue();
+        IsTheBareInstall("  npm ci --ignore-scripts\n").Should().BeTrue("surrounding whitespace is no second command");
+        string[] rejected =
+        [
+            "npm ci # --ignore-scripts",
+            "npm ci --ignore-scripts && npm install",
+            "npm ci --ignore-scripts; npm test",
+            "echo \"npm ci --ignore-scripts\" && npm ci",
+            "npm ci --ignore-scripts || npm ci",
+            "npm ci --ignore-scripts\nnpm rebuild",
+            "npm ci",
+        ];
+        foreach (var run in rejected)
+        {
+            IsTheBareInstall(run).Should().BeFalse($"`{run}` is not the bare install");
+        }
     }
 
     /// <summary>The same plan: the jobs that BUILD and test (the pull-request leg and the release build) still need the install

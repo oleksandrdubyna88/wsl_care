@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildSync } from 'esbuild';
 
+import { esbuildOptionsOf, webviewEntries, type BundleEntry } from './support/bundleEntries';
 import { Element, runPageScript, type Page } from './support/pageHarness';
 import { EXTENSION_ROOT } from './support/paths';
 
@@ -9,7 +10,7 @@ import { EXTENSION_ROOT } from './support/paths';
  * W0 of `todo/PLAN_disk_health_E18.md`, RED item 8 (goal 5): the kit's three components — `Tabs`, `DataTable` (search, sort,
  * the reveal, `stack`) and `RecommendationCard` — RUN in the strict page harness, with wsl_care-shaped data, and are driven
  * like a person drives them. The page is `src/test/webview/kitPageEntry.ts`, bundled here by esbuild for the browser with the
- * options of the real full-view bundle (`scripts/bundle.mjs`) and imports the kit exactly as W1b will:
+ * options of the real full-view bundle (the webview entry of `scripts/bundle-entries.json`, read here, not copied) and imports the kit exactly as W1b will:
  * `…/components` and `import '…/components.css'`.
  *
  * It proves two things at once: the kit does what its contract says in a DOM that models ONLY the kit's port
@@ -30,18 +31,9 @@ let bundled: Bundled | undefined;
 /** The test page, bundled once: an IIFE for the browser, CSS emitted beside it as the real bundle's is. */
 function bundle(): Bundled {
   if (bundled === undefined) {
-    const built = buildSync({
-      absWorkingDir: EXTENSION_ROOT,
-      entryPoints: ['src/test/webview/kitPageEntry.ts'],
-      outfile: 'kitPage.js',
-      write: false,
-      bundle: true,
-      format: 'iife',
-      platform: 'browser',
-      target: 'chrome114',
-      logLevel: 'silent',
-    });
-    const text = (extension: string): string => built.outputFiles.find((file) => file.path.endsWith(extension))?.text ?? '';
+    // The options that SHIP: the first webview entry of scripts/bundle-entries.json, with this test's entry and no write.
+    const shipped = esbuildOptionsOf(webviewEntries()[0] as BundleEntry);
+    const built = buildSync({ ...shipped, absWorkingDir: EXTENSION_ROOT, entryPoints: ['src/test/webview/kitPageEntry.ts'], outfile: 'kitPage.js', write: false, logLevel: 'silent' });    const text = (extension: string): string => built.outputFiles.find((file) => file.path.endsWith(extension))?.text ?? '';
     bundled = { script: text('.js'), styles: text('.css') };
   }
 
@@ -75,29 +67,29 @@ test('the kit builds in the strict harness: the tablist\'s tabs, their roles, th
   assert.equal(panel(root, 'windows').attributes['aria-labelledby'], 'full-tab-windows');
 });
 
-test('arrow keys move the tab and focus it (wrapping), Home and End go to the ends, any other key does nothing', () => {
+test('arrow keys move the tab and focus it (wrapping), Home and End go to the ends, any other key does nothing — each key goes to the FOCUSED tab', () => {
   const { page, root } = open();
   const selected = (): string[] => ['wsl', 'windows'].filter((id) => tab(root, id).attributes['aria-selected'] === 'true');
+  const focused = (): Element => page.activeElement ?? tab(root, 'wsl');
 
-  const right = page.key(tab(root, 'wsl'), 'ArrowRight');
+  const right = page.key(focused(), 'ArrowRight');
   assert.deepEqual([selected(), right.defaultPrevented, page.activeElement === tab(root, 'windows')], [['windows'], true, true]);
   assert.deepEqual([panel(root, 'windows').hidden, panel(root, 'wsl').hidden, tab(root, 'windows').attributes.tabindex, tab(root, 'wsl').attributes.tabindex], [false, true, '0', '-1']);
   assert.deepEqual(page.posted, [{ type: 'selected', id: 'windows' }], 'onSelect heard the person\'s selection');
 
-  page.key(tab(root, 'windows'), 'ArrowRight');
-  assert.deepEqual(selected(), ['wsl'], 'wrapped to the first tab');
-  page.key(tab(root, 'wsl'), 'End');
-  assert.deepEqual(selected(), ['windows']);
-  page.key(tab(root, 'windows'), 'Home');
-  assert.deepEqual(selected(), ['wsl']);
-  page.key(tab(root, 'windows'), 'ArrowLeft');
-  assert.deepEqual(selected(), ['windows'], 'ArrowLeft from the first tab wraps to the last');
+  page.key(focused(), 'ArrowRight');
+  assert.deepEqual([selected(), page.activeElement === tab(root, 'wsl')], [['wsl'], true], 'wrapped to the first tab, which now holds focus');
+  page.key(focused(), 'End');
+  assert.deepEqual([selected(), page.activeElement === tab(root, 'windows')], [['windows'], true]);
+  page.key(focused(), 'Home');
+  assert.deepEqual([selected(), page.activeElement === tab(root, 'wsl')], [['wsl'], true]);
+  page.key(focused(), 'ArrowLeft');
+  assert.deepEqual([selected(), page.activeElement === tab(root, 'windows')], [['windows'], true], 'ArrowLeft from the first tab wraps to the last');
 
   const before = page.posted.length;
-  const other = page.key(tab(root, 'windows'), 'a');
+  const other = page.key(focused(), 'a');
   assert.deepEqual([other.defaultPrevented, selected(), page.posted.length], [false, ['windows'], before]);
 });
-
 test('a click on a tab selects it, and the status the tab was given is drawn with its word', () => {
   const { page, root } = open();
   page.click(tab(root, 'windows'));
@@ -149,24 +141,27 @@ test('stack: every body cell carries its column\'s header as data-kit-label, and
   assert.deepEqual(labels, ['Program', 'PID', 'Held', 'Command line']);
 });
 
-test('the reveal: a click hands the host an index and an opaque request — nothing hidden is in the DOM before the host replies', () => {
+const revealCell = (root: Element, index: number): Element => root.one(`tr[data-kit-row="${index}"]`).children.at(-1) as Element;
+
+test('the reveal: a click hands the host an index and an opaque request — and until the host replies the reveal cell holds only its button and the row only its shown text', () => {
   const { page, root } = open();
   const button = revealButton(root, 0);
   assert.equal(button.attributes['aria-label'], 'Show the command line of ollama', 'the label names WHAT, never the value');
-  assert.equal(root.textContent.includes(SECRET), false);
+  const row = root.one('tr[data-kit-row="0"]');
+  assert.deepEqual(revealCell(root, 0).children, [button], 'the cell holds nothing but the button');
+  assert.deepEqual([button.textContent, row.textContent], ['Show', 'ollama41206.0 GiBShow']);
 
   page.click(button);
   const asked = page.posted.at(-1) as { type: string; index: number; request: string };
   assert.deepEqual([asked.type, asked.index], ['reveal', 0]);
   assert.match(asked.request, /^\d+:\d+$/, 'an opaque id, carrying no row data');
   assert.deepEqual(Object.keys(asked).sort(), ['index', 'request', 'type'], 'the post holds an index and a request, no program, no pid');
-  assert.equal(button.textContent, 'Waiting…');
-  assert.equal(root.textContent.includes(SECRET), false, 'still nothing before the host answers');
+  assert.deepEqual(revealCell(root, 0).children, [button], 'still only the button while it waits');
+  assert.deepEqual([button.textContent, row.textContent], ['Waiting…', 'ollama41206.0 GiBWaiting…'], 'the label says it waits; nothing hidden is in the row');
 
   page.click(button);
   assert.equal(page.posted.length, 1, 'a click on a waiting button tells nobody again');
 });
-
 test('the host\'s answer lands once: reveal(index, text, request) is true for the current request and false when repeated', () => {
   const { page, root } = open();
   page.click(revealButton(root, 0));
@@ -219,6 +214,28 @@ test('setRows([]) then dispose() leave no revealed text, and a late reply after 
   assert.equal(root.textContent.includes(SECRET), false);
 });
 
+test('dispose() ALONE: the waiting request is dropped (a late answer is false), the table stops reacting, and what was already revealed stays - the kit\'s contract; setRows([]) first is how a consumer clears it', () => {
+  const { page, root } = open();
+  page.click(revealButton(root, 0));
+  page.message({ type: 'answer', index: 0, text: SECRET, request: requestOf(page) });
+  page.click(revealButton(root, 2));
+  const waiting = requestOf(page);
+  const orderBefore = rowOrder(root);
+  const sortHead = root.one('button[data-kit-sort="held"]').parent as Element;
+  assert.equal(root.one('tr[data-kit-row="0"]').textContent.includes(SECRET), true, 'revealed before the dispose');
+
+  page.message({ type: 'dispose' });
+  assert.deepEqual(page.posted.at(-1), { type: 'disposed' });
+  page.message({ type: 'answer', index: 2, text: 'late', request: waiting });
+  assert.deepEqual(page.posted.at(-1), { type: 'answered', index: 2, ok: false }, 'a pending request does not survive dispose()');
+  assert.equal(root.textContent.includes('late'), false);
+  page.click(root.one('button[data-kit-sort="held"]'));
+  assert.deepEqual([rowOrder(root), sortHead.attributes['aria-sort']], [orderBefore, 'none'], 'a header click after dispose() sorts nothing');
+  const posts = page.posted.length;
+  page.click(revealButton(root, 3));
+  assert.equal(page.posted.length, posts, 'a reveal click after dispose() tells nobody');
+  assert.equal(root.one('tr[data-kit-row="0"]').textContent.includes(SECRET), true, 'dispose() alone does not clear what is revealed');
+});
 test('an onReveal that throws leaves the row clickable again: the kit clears the request and rethrows to the click', () => {
   const { page, root } = open();
   const button = revealButton(root, 3);
