@@ -121,6 +121,13 @@ export function removePrompt(script: string, engine: Engine): TasksPrompt {
   };
 }
 
+/** What a start now changes, said precisely: no settings and no other task; the archive task may MOVE session files once its dry line says it acts. */
+function runChanges(task: TaskName): string {
+  return task === 'archive'
+    ? 'No Windows settings or other tasks are changed; the archive task may move session files when the dry line says it acts.'
+    : 'No Windows settings or other tasks are changed.';
+}
+
 /**
  * The run-now modal (WR-E4): ONE PowerShell as you asks Task Scheduler to start the task the way its next trigger would, and — since the archive task MOVES
  * files once the dry run is off — the exact script is in the detail, verbatim (the removal's shape; it is short, no read-only tab). Every line but the
@@ -137,7 +144,7 @@ export function runPrompt(task: TaskName, script: string, engine: Engine): Tasks
       '',
       script,
       '',
-      "The panel's dry line says whether the run previews or acts. Nothing else on Windows is changed.",
+      "The panel's dry line says whether the run previews or acts. " + runChanges(task),
     ].map((line) => (line === script ? line : noticeText(line))).join('\n'),
     confirm: RUN_CONFIRM,
   };

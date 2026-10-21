@@ -1,5 +1,6 @@
 import { MODULES } from '../powershell/modulePath';
 import { NOT_FOUND_HRESULT } from './queryScript';
+import { PRINCIPAL_POLICY } from './principalPolicy';
 import { taskWord } from './registerScript';
 import { SCHEDULER_RESULT } from './schedulerAnswer';
 
@@ -17,6 +18,13 @@ import { SCHEDULER_RESULT } from './schedulerAnswer';
 
 /** The run script's own exit codes — after `OP_EXIT`'s 30–33, so the two tables never alias in `FAILURES[op.kind]`. */
 export const RUN_EXIT = { notRegistered: 34, alreadyRunning: 35, disabled: 36, runFailed: 37, notYours: 38 } as const;
+
+/**
+ * The script's one way to print a refusal's HRESULT, as a PowerShell snippet for a `catch` block: the INNERMOST exception's HResult — a COM call made through
+ * PowerShell throws a method-invocation wrapper (0x80131501) around Task Scheduler's own error. `-f` with `X8` formats an Int32 as its two's-complement
+ * eight digits, so a negative HRESULT needs no cast (a `[uint32]` cast of it would throw). The shared scripts (registration, query) keep their own, unchanged.
+ */
+export const HRESULT_PRINT = "$ex = $_.Exception; while ($ex.InnerException) { $ex = $ex.InnerException }; 'hresult=0x{0:X8}' -f $ex.HResult";
 
 /** `LastTaskResult` Task Scheduler gives a task that is running (`SCHED_S_TASK_RUNNING`), the number the panel's "running" row also reads. */
 const RUNNING_RESULT = SCHEDULER_RESULT.running;
@@ -36,17 +44,17 @@ export function runTaskScript(folder: string, name: string): string {
 
   return [
     MODULES,
-    `try { $service = New-Object -ComObject Schedule.Service; $service.Connect() } catch { 'hresult=0x{0:X8}' -f $_.Exception.HResult; exit ${RUN_EXIT.runFailed} }`,
-    `try { $task = $service.GetFolder('\\${safeFolder}').GetTask('${safeName}') } catch { if ($_.Exception.HResult -eq ${NOT_FOUND_HRESULT}) { exit ${RUN_EXIT.notRegistered} }; 'hresult=0x{0:X8}' -f $_.Exception.HResult; exit ${RUN_EXIT.runFailed} }`,
+    `try { $service = New-Object -ComObject Schedule.Service; $service.Connect() } catch { ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
+    `try { $task = $service.GetFolder('\\${safeFolder}').GetTask('${safeName}') } catch { if ($_.Exception.HResult -eq ${NOT_FOUND_HRESULT}) { exit ${RUN_EXIT.notRegistered} }; ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
     "'state=' + [int]$task.State",
     `if (-not $task.Enabled) { exit ${RUN_EXIT.disabled} }`,
     // REFUSE BY DEFAULT: PowerShell goes on with the NEXT statement after a statement-terminating error, so a read or a compare that throws outside a try would
     // fall through to the running test and the Run. The verdicts start refused and only a completed, matching read lifts them.
-    "$ok = $false; try { $p = $task.Definition.Principal; $sid = [string]$p.UserId; try { $sid = (New-Object System.Security.Principal.NTAccount($p.UserId)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = [string]$p.UserId }; $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $ok = ($sid -eq $me -and [int]$p.LogonType -eq 3 -and [int]$p.RunLevel -eq 0) } catch { $ok = $false }",
+    `$ok = $false; try { $p = $task.Definition.Principal; $id = [string]$p.UserId; $sid = $id; if ($id -ne '') { try { $sid = (New-Object System.Security.Principal.NTAccount($id)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = $id } }; $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $ok = ($sid -eq $me -and [int]$p.LogonType -eq ${PRINCIPAL_POLICY.logonType} -and [int]$p.RunLevel -eq ${PRINCIPAL_POLICY.runLevel}) } catch { $ok = $false }`,
     `if (-not $ok) { exit ${RUN_EXIT.notYours} }`,
-    `$running = $true; try { $running = ([int]$task.State -eq 4 -or $task.LastTaskResult -eq ${RUNNING_RESULT}) } catch { 'hresult=0x{0:X8}' -f $_.Exception.HResult; exit ${RUN_EXIT.runFailed} }`,
+    `$running = $true; try { $running = ([int]$task.State -eq 4 -or $task.LastTaskResult -eq ${RUNNING_RESULT}) } catch { ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
     `if ($running) { exit ${RUN_EXIT.alreadyRunning} }`,
-    `try { $null = $task.Run($null) } catch { 'hresult=0x{0:X8}' -f $_.Exception.HResult; exit ${RUN_EXIT.runFailed} }`,
+    `try { $null = $task.Run($null) } catch { ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
     'exit 0',
   ].join('\n');
 }

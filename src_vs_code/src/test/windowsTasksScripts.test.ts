@@ -5,12 +5,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { TASK_NAMES } from '../client/verbs';
 import { UNELEVATED_SWITCHES, unelevatedRequest } from '../powershell/unelevatedLauncher';
 import { COMMAND_LINE_MAX, commandLineLength } from '../powershell/commandLine';
 import { NO_ENGINE } from '../powershell/elevatedEngine';
 import { HERE_END, registerTaskScript, removeTasksScript as peerRemove, terminatesHereString } from '../scheduler/registerScript';
 import { installTaskScript, removeTasksScript, runNowScript } from '../windowsTasks/tasksScripts';
-import { runTaskScript } from '../scheduler/runScript';
+import { HRESULT_PRINT, runTaskScript } from '../scheduler/runScript';
 import { REMOVE_SCRIPT } from '../windowsTime/guardScripts';
 import { fromExtensionRoot, shippedSources } from './support/paths';
 import { PS51_ENGINE, STORE_ENGINE } from './support/engines';
@@ -61,7 +62,7 @@ test('the removal deletes the two tasks, never names the guard, HKLM or a servic
   assert.ok(script.indexOf("DeleteTask('archive'") < script.indexOf('DeleteFolder('), 'the folder goes after the tasks');
   assert.match(script, /exit 31/);
   assert.match(script, /exit 32/);
-  assert.equal(script, peerRemove('wsl-care', ['watch', 'archive']));
+  assert.equal(script, peerRemove('wsl-care', TASK_NAMES));
 });
 
 test('the guard\'s removal is the peer\'s lines plus its own stamp: the two tasks\' removal shares its text', () => {
@@ -159,7 +160,7 @@ function precedesRun(text: string, needle: string, why: string): void {
 }
 
 test('the run-now script names ONE folder and ONE task, reads the state before Run, and refuses a foreign name', () => {
-  for (const task of ['watch', 'archive'] as const) {
+  for (const task of TASK_NAMES) {
     const text = runNowScript(task);
     assert.equal(text.split("GetFolder('\\wsl-care')").length, 2, 'ONE folder');
     assert.equal(text.split("GetTask('" + task + "')").length, 2, 'ONE task');
@@ -204,7 +205,7 @@ test('Fable minor 1: the order helper refuses a script where a line is absent, n
 test('Fable minor 6: PowerShell\'s parser reads the run-now script without an error (parse only — nothing is run)', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-wsl-care-runnow-'));
   try {
-    for (const task of ['watch', 'archive'] as const) {
+    for (const task of TASK_NAMES) {
       fs.writeFileSync(path.join(dir, task + '.ps1'), runNowScript(task), 'utf8');
     }
     const parse = "& { $e = $null; $t = $null; foreach ($f in 'watch.ps1','archive.ps1') { [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 } }; exit 0 }";
@@ -213,4 +214,46 @@ test('Fable minor 6: PowerShell\'s parser reads the run-now script without an er
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('coai finding 5: a foreign task name is "not a valid Windows task name" — for the install and for the run-now alike', () => {
+  assert.throws(() => runNowScript('other' as never), /"other" is not a valid Windows task name/);
+  assert.throws(() => installTaskScript('other' as never, XML), /"other" is not a valid Windows task name/);
+});
+
+// ---- coai findings 6 and 7: the script's catches unwrap the exception chain; an empty UserId is never translated ----
+
+/** The catch blocks of the run script that print an HRESULT. */
+function hresultCatches(text: string): string[] {
+  return text.split('catch {').slice(1).filter((block) => block.includes("'hresult="));
+}
+
+test('coai finding 6: every catch of the run script that prints an HRESULT unwraps InnerException first', () => {
+  for (const task of TASK_NAMES) {
+    const catches = hresultCatches(runNowScript(task));
+    assert.ok(catches.length >= 3, 'the script prints an HRESULT in at least three places: ' + catches.length);
+    for (const block of catches) {
+      const unwrap = block.indexOf('while ($ex.InnerException) { $ex = $ex.InnerException }');
+      assert.notEqual(unwrap, -1, 'a catch prints an HRESULT without unwrapping: ' + block.slice(0, 80));
+      assert.ok(unwrap < block.indexOf("'hresult="), 'the unwrap comes AFTER the print');
+      assert.ok(block.includes('-f $ex.HResult'), 'the HRESULT is formatted from the innermost exception');
+    }
+  }
+});
+
+test('coai finding 6: the HRESULT line is formatted bit-exact for a NEGATIVE HRESULT, from the innermost exception (parse and format only)', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
+  const script = "$inner = [System.Runtime.InteropServices.COMException]::new('inner', [int]-2147024894); $outer = New-Object System.InvalidOperationException('outer', $inner); try { throw $outer } catch { " + HRESULT_PRINT + " }";
+  const result = childProcess.spawnSync(PS51_ENGINE.file, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stdout.trim(), 'hresult=0x80070002');
+});
+
+test('coai finding 7: the UserId is coerced to text first and translated only when it is not empty', () => {
+  const text = runNowScript('watch');
+  const coerced = text.indexOf('$id = [string]$p.UserId');
+  assert.notEqual(coerced, -1, 'the script does not coerce the UserId');
+  assert.ok(coerced < text.indexOf('NTAccount($id)'), 'the UserId is translated before it is coerced');
+  assert.ok(text.includes("if ($id -ne '') {"), 'an empty UserId is translated');
+  assert.ok(text.indexOf("if ($id -ne '') {") < text.indexOf('NTAccount($id)'), 'the empty test comes after the translation');
+  assert.ok(!text.includes('NTAccount($p.UserId)'), 'the raw UserId reaches NTAccount');
 });

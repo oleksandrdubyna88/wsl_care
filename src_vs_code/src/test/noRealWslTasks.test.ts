@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import * as childProcess from 'node:child_process';
 import { test } from 'node:test';
 
+import { TASK_NAMES } from '../client/verbs';
 import { unelevatedRequest } from '../powershell/unelevatedLauncher';
 import { installTaskScript, removeTasksScript, runNowScript } from '../windowsTasks/tasksScripts';
 import { queryRequest } from '../windowsTime/guardScripts';
@@ -74,7 +75,7 @@ test('Fable major 1: PowerShell method names are case-insensitive — .run( , .R
 });
 
 test('the real run-now request is what the tripwire refuses — judged by the pure function, never spawned', () => {
-  for (const task of ['watch', 'archive'] as const) {
+  for (const task of TASK_NAMES) {
     const request = unelevatedRequest(PS51_ENGINE, runNowScript(task), 60_000);
     assert.ok(typeof request !== 'string', 'a request was built');
     assert.equal(refusalOf(request.file, request.args), TASK_TRIPWIRE_MESSAGE, 'the tripwire lets the run-now through');
@@ -82,7 +83,7 @@ test('the real run-now request is what the tripwire refuses — judged by the pu
 });
 
 test('the request the FLOW records for a run-now is refused by the tripwire too — both tasks, judged by the pure function', async () => {
-  for (const task of ['watch', 'archive'] as const) {
+  for (const task of TASK_NAMES) {
     const w = tasksWorld({ read: { tasks: [{ name: task, summary: registeredSummary(task) }] } });
     assert.equal((await runTasksOp({ kind: 'run', task }, w.deps)).kind, 'done');
     const request = w.ps()[0];

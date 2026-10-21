@@ -14,7 +14,7 @@ import { TASK_FOLDER } from '../scheduler/taskFolder';
 /** The install of `task` with the daemon's rendered `xml`: a foreign task name is a `RangeError`, an XML with a terminator line too. */
 export function installTaskScript(task: TaskName, xml: string): string {
   if (!TASK_NAMES.includes(task)) {
-    throw new RangeError(`"${String(task)}" is not one of the two Windows tasks`);
+    throw new RangeError(`"${String(task)}" is not a valid Windows task name`);
   }
 
   return registerTaskScript(TASK_FOLDER, task, xml);
@@ -23,7 +23,7 @@ export function installTaskScript(task: TaskName, xml: string): string {
 /** The start now of `task`: the person's own registered task, through the task's own `Run`. A foreign task name is a `RangeError`, checked against the closed list here (a cast cannot widen it). */
 export function runNowScript(task: TaskName): string {
   if (!TASK_NAMES.includes(task)) {
-    throw new RangeError(`"${String(task)}" is not one of the two Windows tasks`);
+    throw new RangeError(`"${String(task)}" is not a valid Windows task name`);
   }
 
   return runTaskScript(TASK_FOLDER, task);

@@ -6,6 +6,7 @@ import { engineProblem, type EngineSource } from '../powershell/engineSource';
 import { NO_ENGINE, type Engine } from '../powershell/engineTypes';
 import { unelevatedRequest } from '../powershell/unelevatedLauncher';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
+import { principalLine } from '../scheduler/principalPolicy';
 import { taskOf, type SchedulerRead, type TaskRead } from '../scheduler/schedulerAnswer';
 import { isFailure, stepOf, tasksOutcomeSentence, type DoneSummary, type RunStep, type TasksOp, type TasksOutcome } from './tasksOutcome';
 import { clearPending, readPending, writePending, type PendingTasksOp } from './tasksPending';
@@ -334,15 +335,11 @@ async function remove(deps: TasksFlowDeps): Promise<TasksOutcome> {
  * elevated run level, another account, a stored password): a start now would run IT, while the modal says "your account, interactive, the least
  * privilege" — so it starts nothing, the install's rule ("a problem starts nothing") applied to a task that already exists.
  */
-function ownPrincipalLine(user: string): string {
-  return 'principal=' + user + ' logon=3 level=0';
-}
-
 /** The refusal for a registered task that does not run as the reader (naming the principal line it has), or none. */
 function principalRefusal(row: Extract<TaskRead, { kind: 'present' }>, user: string): TasksOutcome | undefined {
   const line = row.summary[0];
 
-  return line === ownPrincipalLine(user) ? undefined : notStarted(`the registered task does not run as you at the least privilege (${line ?? 'no principal line'}) — install it again`);
+  return line === principalLine(user) ? undefined : notStarted(`the registered task does not run as you at the least privilege (${line ?? 'no principal line'}) — install it again`);
 }
 
 function presentBlock(task: TaskName, row: Extract<TaskRead, { kind: 'present' }>, user: string): TasksOutcome | undefined {

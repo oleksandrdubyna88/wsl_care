@@ -182,5 +182,5 @@ export function finishedBy(state: WindowsTasksState, pending: PendingTasksOp & P
 const FINISHED: { readonly [K in PendingTasksOp['op']]: (state: WindowsTasksState, pending: Extract<PendingTasksOp, { op: K }> & Partial<PendingTimes>) => boolean } = {
   install: (state, pending) => state.tasks[pending.task].kind === 'installed',
   run: (state, pending) => startedOrRan(state.tasks[pending.task], pending.startedAtUtcMs ?? Number.POSITIVE_INFINITY),
-  remove: (state) => TASK_NAMES.every((name) => state.tasks[name].kind === 'notInstalled') && state.copy.kind === 'notStaged',
+  remove: (state, _pending) => TASK_NAMES.every((name) => state.tasks[name].kind === 'notInstalled') && state.copy.kind === 'notStaged',
 };

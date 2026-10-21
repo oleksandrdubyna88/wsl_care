@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { TASK_NAMES } from '../client/verbs';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { UNELEVATED_SWITCHES } from '../powershell/unelevatedLauncher';
 import { RUN_EXIT } from '../scheduler/runScript';
@@ -23,6 +24,8 @@ import { registeredSummary } from './support/windowsTasks';
 
 const WATCH: TasksOp = { kind: 'run', task: 'watch' };
 const ARCHIVE: TasksOp = { kind: 'run', task: 'archive' };
+/** Every task the extension runs, from the closed list — never a second hand-written pair. */
+const RUN_OPS: readonly TasksOp[] = TASK_NAMES.map((task) => ({ kind: 'run', task }));
 const NOW = 1_000_000;
 
 /** A read with the task installed as the golden would install it: present, enabled, idle. */
@@ -47,7 +50,7 @@ function timedOut(treeEnded: boolean): ProcessResult {
 const SHOWN = (outcome: TasksOutcome): string => `${outcome.kind}: ${JSON.stringify(outcome)}`;
 
 test('run-now starts the person\'s own task and nothing else', async () => {
-  for (const op of [WATCH, ARCHIVE]) {
+  for (const op of RUN_OPS) {
     const task = op.kind === 'run' ? op.task : 'watch';
     const { w, outcome } = await run(op);
     assert.equal(outcome.kind, 'done', SHOWN(outcome));
@@ -63,7 +66,7 @@ test('run-now starts the person\'s own task and nothing else', async () => {
 });
 
 test('a run-now request is never elevated, one program, the fixed switches, the constant script, the tree kill and the ceiling', async () => {
-  for (const op of [WATCH, ARCHIVE]) {
+  for (const op of RUN_OPS) {
     const task = op.kind === 'run' ? op.task : 'watch';
     const { w } = await run(op);
     const request = w.ps()[0] as ProcessRequest;
@@ -81,7 +84,7 @@ test('a run-now request is never elevated, one program, the fixed switches, the 
 });
 
 test('a run-now makes no daemon call: no stage, no render, no tasks run', async () => {
-  for (const op of [WATCH, ARCHIVE]) {
+  for (const op of RUN_OPS) {
     const { w } = await run(op);
     assert.deepEqual(w.daemon(), [], 'a daemon call was made: ' + w.daemon().join(', '));
   }
@@ -266,4 +269,13 @@ test('Fable major 1: a registered task that does not run as the reader, interact
   const { w: ran, outcome: allowed } = await run(WATCH, { read: installed('watch', { summary: differs }) });
   assert.equal(allowed.kind, 'done', 'an updateNeeded row whose principal IS ours still runs: ' + SHOWN(allowed));
   assert.equal(ran.ps().length, 1);
+});
+
+test('coai finding 2: the run-now modal closes with what it really changes — the archive task may move session files when the dry line says it acts', async () => {
+  const archive = (await run({ kind: 'run', task: 'archive' })).w.recorder.prompts[0]?.detail ?? '';
+  assert.match(archive, /No Windows settings or other tasks are changed; the archive task may move session files when the dry line says it acts./);
+  assert.doesNotMatch(archive, /Nothing else on Windows is changed/);
+  const watch = (await run(WATCH)).w.recorder.prompts[0]?.detail ?? '';
+  assert.match(watch, /No Windows settings or other tasks are changed./);
+  assert.doesNotMatch(watch, /may move session files|Nothing else on Windows is changed/);
 });
