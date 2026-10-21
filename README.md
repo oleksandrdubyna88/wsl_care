@@ -514,6 +514,25 @@ whose `stage.json` agrees — never the extension folder's exe. It registers not
 run and the extension's buttons are later steps. Exit codes: 0 answered (registrable or not), 2 on the distro's binary, 78 while
 a configuration layer is in error.
 
+## Worktrees — where the space of your git worktrees went (E19.S3)
+
+```powershell
+'D:\work', 'E:\repos' | wsl-care.exe worktrees roots set --json   # the folders that HOLD your worktrees, one per line, on stdin
+wsl-care.exe worktrees scan --json                                # read-only; writes %LOCALAPPDATA%\wsl-care\worktrees.json
+wsl-care.exe worktrees roots clear
+```
+
+The Windows binary's report of the folders you choose (`worktrees.roots`, the parents of your worktrees; `config set worktrees.roots` is the same through the same
+rules). A root must be a folder on a local fixed drive, not a drive root, not behind a link, not your profile or a folder around it, not in or around an AI agent's
+folder or Claude's temporary folder, and not inside or over another root; the verb is all or nothing, and every path comes back with its own verdict. The scan starts
+no process and deletes nothing. For each direct child folder it says what it is from file reads alone — a worktree (locked or not), an orphan whose git folder is gone,
+a worktree made inside WSL (a `/mnt/<letter>/…` pointer is read as the Windows folder it is; any other pointer is left alone as made elsewhere), a main clone, not
+git — how long each worktree and orphan has been idle (`worktrees.idleDays`, 3: the newest write outside its build output, each build folder's own write and git's
+admin files), and its build output (`bin`/`obj` beside a project file, `node_modules` beside a `package.json`), kept whole when it holds a nested repository or any
+file that is not a build artifact (a database, a key, an `.env`, anything written after the build) — with that file named. A walk past `worktrees.scanMaxEntries` /
+`scanMaxSeconds`, or an unreadable folder, leaves a folder unknown, never idle. `status` shows the report with its age and the verdict `worktrees.reclaimable`, which
+stays unknown until git confirms what a cleanup may delete.
+
 ## Busy — may an agent start heavy work now?
 
 ```bash

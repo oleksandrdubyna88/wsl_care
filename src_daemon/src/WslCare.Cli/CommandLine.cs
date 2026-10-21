@@ -114,6 +114,18 @@ internal abstract record Request
     /// into <c>%LOCALAPPDATA%\wsl-care\bin\&lt;digest&gt;\</c> and sweeps the older copies; <c>--remove</c> removes every copy.</summary>
     internal sealed record TasksStage(bool Remove, bool Json) : Request;
 
+    /// <summary><c>worktrees roots set [--json]</c> (E19.S3, PLAN_disk_hygiene_windows.md §3.3): the Windows binary reads the folders to
+    /// scan from STDIN, one absolute path per line — never as words on the command line — judges each by the root rules, and writes
+    /// <c>worktrees.roots</c> only when EVERY one is accepted.</summary>
+    internal sealed record WorktreesRootsSet(bool Json) : Request;
+
+    /// <summary><c>worktrees roots clear [--json]</c> (E19.S3): <c>worktrees.roots</c> emptied (the user layer's key removed).</summary>
+    internal sealed record WorktreesRootsClear(bool Json) : Request;
+
+    /// <summary><c>worktrees scan [--json]</c> (E19.S3): the read-only worktree report over the configured roots, written to
+    /// <c>%LOCALAPPDATA%\wsl-care\worktrees.json</c> and printed.</summary>
+    internal sealed record WorktreesScan(bool Json) : Request;
+
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
 
@@ -303,6 +315,9 @@ internal static class CommandLine
         new([["tasks", "run"]], "tasks run <task> [--json]", "the Windows binary's supervisor, what each per-user task's action runs: <task> watch (this binary's own watch --timer) or archive (this binary's own archive preview while the timer's dry-run window is open, archive run once it is not), started suspended inside a kill-on-close job, resumed only inside it, and ended with its whole tree at its deadline (mcpWatchdog.runLimitMinutes, timer.runLimitMinutes; counted on the unbiased clock, so a sleep is not run time): exit 84 then, else the worker's own exit code; the worker's answer is this process's stdout", ["tasks", "run", "watch", "--json"], ParseTasksRun),
 
         new([["tasks", "stage"]], "tasks stage [--remove] [--json]", "the Windows binary's, run from the extension folder's exe: copy this exe to %LOCALAPPDATA%\\wsl-care\\bin\\<digest>\\wsl-care.exe with an exclusive create (an existing folder is reused only when its copy verifies, never written over), read it back, record stage.json, then sweep the other <digest> folders (one whose exe still runs is kept and named); --remove removes every <digest> folder and the folder itself when empty; a folder that is not a <digest> is never touched", ["tasks", "stage", "--json"], ParseTasksStage),
+        new([["worktrees", "roots", "set"]], "worktrees roots set [--json]", "the Windows binary's: choose the folders the worktree report looks at - the PARENT folders of your git worktrees - read from STDIN, one absolute path per line (never as words on the command line). Every path is judged: a drive-letter path on a local fixed drive, an existing folder that is not a drive root, no link on the way, not your profile or a folder around it, not inside or around an AI agent's folder or Claude's temporary folder, not inside or over another root, at most worktrees.maxRoots. All or nothing: if any path is refused nothing is written, and EVERY path still gets its own verdict (accepted, or refused with its rule and reason); exit 2 then, 0 when worktrees.roots was written", ["worktrees", "roots", "set"], rest => WorktreesArguments.Parse("worktrees roots set", rest, json => new Request.WorktreesRootsSet(json), WorktreesArguments.FoldersOnStdin)),
+        new([["worktrees", "roots", "clear"]], "worktrees roots clear [--json]", "the Windows binary's: empty worktrees.roots (remove it from the user layer); the worktree report then looks at nothing until folders are chosen again", ["worktrees", "roots", "clear"], rest => WorktreesArguments.Parse("worktrees roots clear", rest, json => new Request.WorktreesRootsClear(json), string.Empty)),
+        new([["worktrees", "scan"]], "worktrees scan [--json]", "the Windows binary's, read-only: for each root in worktrees.roots (judged AGAIN: a hand-edited bad root is refused with its reason) tell what every direct child folder is (a worktree, a locked one, an orphan whose git folder is gone, a worktree made inside WSL, a main clone, not git) from file reads alone, how long each worktree and orphan has been idle (newest write outside its build output, plus each build folder's own write, plus git's admin files), and how much build output (bin and obj beside a project file, node_modules beside package.json) it holds and which of that is kept whole and why; writes %LOCALAPPDATA%\\wsl-care\\worktrees.json atomically. Starts no process, deletes nothing; a walk past worktrees.scanMaxEntries or worktrees.scanMaxSeconds, or an unreadable subfolder, leaves a folder UNKNOWN, never idle. What is reclaimable stays unknown until git confirms the candidates", ["worktrees", "scan", "--json"], rest => WorktreesArguments.Parse("worktrees scan", rest, json => new Request.WorktreesScan(json), string.Empty)),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
@@ -324,9 +339,11 @@ internal static class CommandLine
             return command.ParseRest(argv.Skip(spelling.Count).ToList());
         }
 
-        var subVerbs = SubVerbsOf(argv[0]);
+        var deeper = argv.Count > 1 ? SubVerbsOf(argv[0], argv[1]) : [];
+        var subVerbs = deeper.Count > 0 ? deeper : SubVerbsOf(argv[0]);
+        var named = deeper.Count > 0 ? $"{argv[0]} {argv[1]}" : argv[0];
         return subVerbs.Count > 0
-            ? new Request.Failed($"\"{BinaryName} {Printable(argv[0])}\" needs one of: {string.Join(", ", subVerbs)}.")
+            ? new Request.Failed($"\"{BinaryName} {Printable(named)}\" needs one of: {string.Join(", ", subVerbs)}.")
             : new Request.Failed($"unknown verb or option \"{Printable(argv[0])}\". Run \"{BinaryName} --help\" to see what exists.");
     }
 
@@ -355,6 +372,13 @@ internal static class CommandLine
 
     private static bool StartsWith(IReadOnlyList<string> argv, IReadOnlyList<string> spelling) =>
         spelling.Count <= argv.Count && spelling.Zip(argv).All(pair => string.Equals(pair.First, pair.Second, StringComparison.Ordinal));
+
+    /// <summary>The third words of every three-word spelling that begins with <paramref name="verb"/> and <paramref name="second"/>.</summary>
+    private static IReadOnlyList<string> SubVerbsOf(string verb, string second) =>
+        [.. Commands.SelectMany(c => c.Spellings)
+            .Where(s => s.Count > 2 && string.Equals(s[0], verb, StringComparison.Ordinal) && string.Equals(s[1], second, StringComparison.Ordinal))
+            .Select(s => s[2])
+            .Distinct(StringComparer.Ordinal)];
 
     /// <summary>The second words of every multi-word spelling that begins with <paramref name="verb"/>.</summary>
     private static IReadOnlyList<string> SubVerbsOf(string verb) =>

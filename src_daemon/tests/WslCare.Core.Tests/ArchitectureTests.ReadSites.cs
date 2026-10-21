@@ -143,6 +143,13 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Status/FullRunVerdicts.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         // E7.S1: the agents — walks and listings of their folders (names and sizes, nothing opened), and a package.json read
         // only when not root.
+        // E19.S3: the worktree report — the unelevated Windows binary's reads of the user's own folders: the pointer files of a worktree and its
+        // admin folder (capped, no link on the way), the names of a root's children and of a build folder's siblings, the bounded walks, and its
+        // own worktrees.json.
+        ["WslCare.Core/Worktrees/FolderKinds.cs"] = new() { ["ReadUserFile"] = (2, ReadClass.OwnUnprivileged) },
+        ["WslCare.Core/Worktrees/FolderWalk.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata), ["WalkTree"] = (2, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Worktrees/WorktreeScanner.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Worktrees/WorktreeReportStore.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Agents/AgentDiscovery.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Agents/AgentWalk.cs"] = new() { ["WalkTree"] = (2, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Agents/SessionGlob.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },

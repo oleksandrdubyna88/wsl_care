@@ -130,7 +130,8 @@ public sealed class CollectFlows
         string[] sampledOnly = home.Paths.Side == Core.Hosting.HostSide.Windows ? ["host.vmmem"] : [];
         var runIds = report.Detail.Thresholds.Select(t => t.Id).ToList();
         string[] expected = [.. runIds.TakeWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal)), .. sampledOnly, .. runIds.SkipWhile(id => !id.StartsWith("mcp.", StringComparison.Ordinal))];
-        verdicts.Select(v => v.Id).Should().Equal(expected, "status answers every threshold id the run recorded, in its order (plan §15g B1)");
+        // E19.S3: the Windows binary also answers worktrees.reclaimable, its own scan's verdict, which no full run records.
+        verdicts.Select(v => v.Id).Where(id => id != Core.Worktrees.WorktreesStatus.VerdictId).Should().Equal(expected, "status answers every threshold id the run recorded, in its order (plan §15g B1)");
         var carried = verdicts.Where(v => v.Basis?.Source == Core.Thresholds.VerdictSource.FullRun).ToList();
         carried.Should().NotBeEmpty();
         carried.Select(v => v with { Basis = null }).Should().Equal(

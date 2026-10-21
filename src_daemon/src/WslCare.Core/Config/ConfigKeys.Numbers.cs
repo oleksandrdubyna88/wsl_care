@@ -226,5 +226,13 @@ public static partial class ConfigKeys
         Archive.LeaseSettleMilliseconds,
         Archive.KeptEntryDays,
         Archive.RestoredKeepDays,
+        Worktrees.MaxRoots,
+        Worktrees.IdleDays,
+        Worktrees.ArtifactSkewMinutes,
+        Worktrees.ScanMaxEntries,
+        Worktrees.ScanMaxSeconds,
+        Worktrees.ReportTop,
+        Worktrees.ReportMaxAgeDays,
+        Worktrees.ReclaimableWarnGib,
     ];
 }
