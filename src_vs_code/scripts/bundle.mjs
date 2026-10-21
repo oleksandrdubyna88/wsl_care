@@ -19,6 +19,11 @@
  * scripts/check-vsix.mjs compares it with the compiled constant and with the checked-in src_vs_code/min-daemon.json —
  * the artefact the release guard reads at the tag, with a JSON parser, instead of parsing TypeScript.
  *
+ * A SECOND bundle follows it (W0 of todo/PLAN_disk_health_E18.md): src/webview/fullView.ts -> dist/webview/full.js, an IIFE for the
+ * browser (the Chromium of VS Code 1.85) with the kit's components compiled in, and dist/webview/full.css — the kit's stylesheet,
+ * which esbuild emits beside it. Both ship in the .vsix (vsix-files.txt); the stylesheet holds no url(), @import or @font-face,
+ * because the webview's CSP is default-src 'none' (webviewBundle.test.ts).
+ *
  * Run through `npm run bundle` (which cleans dist/ first) and, from vsce, through `vscode:prepublish`. manifest.test.ts
  * reads these options back with the TypeScript parser.
  */
@@ -68,7 +73,23 @@ buildSync({
   define: { WSL_CARE_BUILD_STAMP: JSON.stringify(`wsl-care-build ${version}`) },
 });
 
+// The full view's page script (W0 of todo/PLAN_disk_health_E18.md): a SECOND bundle, for the WEBVIEW — an IIFE for the Chromium of
+// VS Code 1.85 (Electron 25, Chromium 114), the kit's components compiled in. The kit's stylesheet, imported by the entry, is emitted
+// by esbuild beside it as dist/webview/full.css. No source map and not minified, for the same reasons as above.
+buildSync({
+  absWorkingDir: ROOT,
+  entryPoints: ['src/webview/fullView.ts'],
+  outfile: 'dist/webview/full.js',
+  bundle: true,
+  format: 'iife',
+  platform: 'browser',
+  target: 'chrome114',
+  sourcemap: false,
+  minify: false,
+  logLevel: 'warning',
+});
+
 const minima = minDaemons();
 mkdirSync(join(ROOT, 'dist'), { recursive: true });
 writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify(minima, null, 2)}\n`);
-console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${minima.minDaemonForRender}, actions ${minima.minDaemonForActions}, install ${minima.installDaemon}, bundled ${minima.bundledDaemon}`);
+console.log(`bundle: dist/extension.js and dist/webview/full.js (+ full.css) built for ${version}, dist/min-daemon.json says render ${minima.minDaemonForRender}, actions ${minima.minDaemonForActions}, install ${minima.installDaemon}, bundled ${minima.bundledDaemon}`);
