@@ -2108,3 +2108,13 @@ cover them, and nothing under `src_vs_code` changed.
   (`/opt/Auth Tool/run` — arm 7 runs before the path arm) — which also reaches the R8 matchers (`AgentOrphans.Script`,
   `IdleGate.IsBuild`, `IsDotnetBuild` read the SHOWN line, so a redacted path is no script and no build); the captured tree has none,
   and `MatchersOverTheShownLineTests` holds that.
+- **The final short re-check (Fable, 2026-10-21, 9615cad5): SHIP.** It found two roads the §1 inventory did not list, both over the
+  daemon's OWN child commands from the closed template catalogue (no template takes free text), so neither blocks this story:
+  - **R9 — `ActionCommandRecord.Display` / `.Detail`** (`Actions/ActionCommands.cs:157-168`) carry a child's RAW argv and its RAW
+    first stderr line into the run detail (`runs show` prints it through `ShownText.Printable` only); `git` can echo a remote URL
+    with a userinfo token in an error. The tail: `display` through `CommandLineText.Shown(argv)` and the stderr line through the rule.
+  - **`CommandPolicy.Shown`** (`Processes/Policy/CommandPolicy.cs:105-106`) builds refusal reasons with its own printable (Cc only)
+    and a 120-character PREFIX cut per argument — a prefix of a raw argument, which §3 forbids. The tail: `CommandLineText.Shown`.
+  - Nits: four private `Printable` copies (`PackageCacheClean.cs:219`, `ExtraAgent.cs:164`, `DistroIdentity.cs:95`,
+    `Worktrees/FolderKinds.cs:113` — the last reaches `status --json` with U+202E/U+2028 kept) should call `ShownText.Printable`;
+    `SafeShapes.SingleSegment` covers `/x` and `./x` only (`~/`, `../`, a drive root and a trailing `/` are not tokens' shapes).
