@@ -90,6 +90,13 @@ public static class NumberRules
         new([ConfigKeys.Timer.RunLimitMinutes, .. RunBudget.Keys],
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Timer.RunLimitMinutes)) >= RunBudget.TimerRunWorstCase(c),
             c => $"{ConfigKeys.Timer.RunLimitMinutes.Name} ({I(c, ConfigKeys.Timer.RunLimitMinutes)}) must be at least the derived worst case of a timer run ({Math.Ceiling(RunBudget.TimerRunWorstCase(c).TotalMinutes)} min: every command template once at its ceiling with its drains, the two walks, the settle step's waits, {RunMarginMinutes} min more)"),
+        // WR-T2 (RX; reworded by its own review, major 2): the cleanup task's deadline is the timer's run limit. It must at least cover the plan
+        // scan (one allowance of temp.scanMaxSeconds, the top-level listing included) and ONE re-validation (the run's shared allowance of the same
+        // size) - the MINIMUM needed to delete anything. It is not a cap on a run: the delete walk has no time cap of its own (the supervisor's
+        // deadline ends it, and A23's checkpoint makes that safe).
+        new([ConfigKeys.Timer.RunLimitMinutes, ConfigKeys.Temp.ScanMaxSeconds],
+            c => (I(c, ConfigKeys.Timer.RunLimitMinutes) * SecondsPerMinute) >= (2L * I(c, ConfigKeys.Temp.ScanMaxSeconds)) + CeilingMarginSeconds,
+            c => $"{ConfigKeys.Timer.RunLimitMinutes.Name} ({I(c, ConfigKeys.Timer.RunLimitMinutes)}) must cover twice {ConfigKeys.Temp.ScanMaxSeconds.Name} ({I(c, ConfigKeys.Temp.ScanMaxSeconds)}) and {CeilingMarginSeconds} s more: the cleanup task's deadline is the timer's run limit, and this is the minimum it needs to delete anything: the plan scan (one allowance of {ConfigKeys.Temp.ScanMaxSeconds.Name}, the top-level listing included) plus one re-validation (the run's shared allowance of the same size) - a deadline inside them would end every cleanup before its first delete. It does not bound the delete walk, which has no time cap of its own"),
         // Plan E14 S2b: the watch samples more often than the interval maximum, or no sample finds a baseline and A19 sees no busy server.
         new([ConfigKeys.McpWatchdog.PeriodMinutes, ConfigKeys.McpServers.CpuIntervalMaxMinutes],
             c => I(c, ConfigKeys.McpWatchdog.PeriodMinutes) < I(c, ConfigKeys.McpServers.CpuIntervalMaxMinutes),

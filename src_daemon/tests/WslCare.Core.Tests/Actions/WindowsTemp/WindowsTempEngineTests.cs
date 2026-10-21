@@ -32,27 +32,7 @@ public sealed class WindowsTempEngineTests : IDisposable
 
     private string Temp => _host.Paths.TempDirectory;
 
-    private string Make(string relative, int daysOld, params (string File, int Days)[] files)
-    {
-        var folder = Path.Combine(Temp, relative);
-        Directory.CreateDirectory(folder);
-        foreach (var (file, days) in files)
-        {
-            var path = Path.Combine(folder, file);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, "scratch");
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-days));
-            File.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-days));
-        }
-
-        foreach (var dir in Directory.EnumerateDirectories(folder, "*", SearchOption.AllDirectories).Append(folder))
-        {
-            Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow.AddDays(-daysOld));
-            Directory.SetCreationTimeUtc(dir, DateTime.UtcNow.AddDays(-daysOld));
-        }
-
-        return folder;
-    }
+    private string Make(string relative, int daysOld, params (string File, int Days)[] files) => TempTrees.Make(Temp, relative, daysOld, files);
 
     /// <summary>The account that owns what this test creates: the user, or — on an elevated CI runner — the Administrators group.</summary>
     private string RealSid

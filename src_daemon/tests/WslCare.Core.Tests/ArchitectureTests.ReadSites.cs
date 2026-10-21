@@ -75,7 +75,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Actions/Engine/DryRunWindow.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/Actions/WindowsTemp/TempDeletion.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Actions/WindowsTemp/TempScanner.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
-        ["WslCare.Core/Actions/WindowsTemp/WindowsTempAction.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Actions/WindowsTemp/TempPlanning.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Actions/WindowsTemp/TempCursor.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/Actions/Engine/ProcessTable.cs"] = new() { ["ReadAllText"] = (1, ReadClass.System), ["ReadText"] = (3, ReadClass.System) },
         ["WslCare.Core/Actions/Engine/RunRequests.cs"] = new() { ["ListFiles"] = (3, ReadClass.RootState), ["ReadStateFile"] = (1, ReadClass.TrustedState) },

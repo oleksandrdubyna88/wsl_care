@@ -129,12 +129,57 @@ public sealed class WindowsTaskDefinitionsTests
     }
 
     [Fact]
-    public void The_closed_set_of_tasks_is_watch_and_archive()
+    public void The_closed_set_of_tasks_is_watch_archive_and_cleanup()
     {
-        WindowsTask.All.Select(t => t.TaskPath).Should().Equal("\\wsl-care\\watch", "\\wsl-care\\archive");
+        WindowsTask.All.Select(t => t.TaskPath).Should().Equal("\\wsl-care\\watch", "\\wsl-care\\archive", "\\wsl-care\\cleanup");
         WindowsTask.Find("watch").Should().Be(WindowsTask.Watch);
+        WindowsTask.Find("cleanup").Should().Be(WindowsTask.Cleanup);
+        WindowsTask.Find("Cleanup").Should().BeNull("a task name is matched exactly");
         WindowsTask.Find("Watch").Should().BeNull("a task name is matched exactly");
         WindowsTask.Find("collect").Should().BeNull("\\wsl-care\\collect is E11's, not this plan's");
+        WindowsTask.Find("A23").Should().BeNull("a task is a word of the closed set, never an action id");
+        WindowsTask.Cleanup.DryWindowStamp.Should().Be("A23", "the week that gates deletion is A23's own");
+        WindowsTask.Watch.DryWindowStamp.Should().BeEmpty();
+        WindowsTask.Archive.DryWindowStamp.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void The_cleanup_task_renders_with_its_own_cadence()
+    {
+        var cleanup = WindowsTaskDefinitions.Render(WindowsTask.Cleanup, Config(), new TaskIdentity(Sid, Staged));
+
+        Element(cleanup.Xml, "Delay").Value.Should().Be("PT30M");
+        Element(cleanup.Xml, "Interval").Value.Should().Be("PT24H");
+        Element(cleanup.Xml, "ExecutionTimeLimit").Value.Should().Be("PT286M", "timer.runLimitMinutes (276) plus the run margin");
+        Element(cleanup.Xml, "Arguments").Value.Should().Be("tasks run cleanup --json");
+        cleanup.Numbers.Should().Equal(new TaskNumber("windowsTasks.cleanupLogonDelayMinutes", 30), new TaskNumber("windowsTasks.cleanupEveryHours", 24), new TaskNumber("timer.runLimitMinutes", 276));
+        cleanup.Summary[1].Should().Be("trigger=logon enabled=True delay=PT30M interval=PT24H");
+        cleanup.Summary[2].Should().Be("settings limit=PT286M instances=2 whenAvailable=True battery=False enabled=True");
+        Element(cleanup.Xml, "Description").Value.Should().Contain("A23").And.Contain("never %TEMP%\\claude");
+
+        var changed = WindowsTaskDefinitions.Render(WindowsTask.Cleanup, Config(user: """{ "windowsTasks": { "cleanupLogonDelayMinutes": 0, "cleanupEveryHours": 6 } }"""), new TaskIdentity(Sid, Staged));
+        Doc(changed.Xml).Descendants(Ns + "Delay").Should().BeEmpty();
+        Element(changed.Xml, "Interval").Value.Should().Be("PT6H");
+    }
+
+    /// <summary>WR-T2 (coai plan round 4663beda, finding 0): every task runs as the reader, interactively, least privilege — and the
+    /// renderer has no input for anything else.</summary>
+    [Fact]
+    public void Every_task_runs_as_the_reader_interactive_token_least_privilege_and_never_as_system()
+    {
+        foreach (var task in WindowsTask.All)
+        {
+            var xml = WindowsTaskDefinitions.Render(task, Config(), new TaskIdentity(Sid, Staged)).Xml;
+
+            var principals = Doc(xml).Descendants(Ns + "Principal").ToList();
+            principals.Should().ContainSingle($"{task} carries exactly one principal");
+            principals[0].Elements().Select(e => e.Name.LocalName).Should().Equal("UserId", "LogonType", "RunLevel");
+            Value(principals[0], "UserId").Should().Be(Sid);
+            Value(principals[0], "LogonType").Should().Be("InteractiveToken");
+            Value(principals[0], "RunLevel").Should().Be("LeastPrivilege");
+            Element(xml, "LogonTrigger").Element(Ns + "UserId")!.Value.Should().Be(Sid);
+            xml.Should().NotContain("HighestAvailable").And.NotContain("S4U").And.NotContain("Password").And.NotContain("S-1-5-18").And.NotContain("ServiceAccount");
+        }
     }
 
     private static readonly XNamespace Ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";

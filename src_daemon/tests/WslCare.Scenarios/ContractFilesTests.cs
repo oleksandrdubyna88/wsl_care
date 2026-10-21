@@ -136,13 +136,13 @@ public sealed class ContractFilesTests
     /// one Task Scheduler document naming the SID, and the summary is the shape the extension compares — a golden derived from
     /// nothing would pass the equality test as well.</summary>
     [Fact]
-    public void The_windows_tasks_render_golden_holds_both_tasks_and_both_verdicts()
+    public void The_windows_tasks_render_golden_holds_every_task_and_both_verdicts()
     {
         var answers = JsonNode.Parse(WindowsTasksGolden.Text())!["answers"]!.AsArray().Select(a => a!["answer"]!).ToList();
 
-        answers.Select(a => (string)a["task"]!).Should().Equal("watch", "archive", "watch");
-        answers.Select(a => (bool)a["registrable"]!).Should().Equal(true, true, false);
-        ((string)answers[2]["reason"]!).Should().Contain("not a staged copy");
+        answers.Select(a => (string)a["task"]!).Should().Equal("watch", "archive", "cleanup", "watch");
+        answers.Select(a => (bool)a["registrable"]!).Should().Equal(true, true, true, false);
+        ((string)answers[3]["reason"]!).Should().Contain("not a staged copy");
         foreach (var answer in answers)
         {
             var xml = System.Xml.Linq.XDocument.Parse((string)answer["xml"]!);
@@ -153,6 +153,7 @@ public sealed class ContractFilesTests
 
         ((string)answers[0]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT60S interval=PT5M");
         ((string)answers[1]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT20M interval=PT4H");
+        ((string)answers[2]["summary"]![1]!).Should().Be("trigger=logon enabled=True delay=PT30M interval=PT24H");
     }
 
     /// <summary>The companion of the config-keys contract: it carries every key, the closed families list and the trust of the
