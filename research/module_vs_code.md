@@ -207,9 +207,68 @@ flowchart LR
 | Task Scheduler (`Schedule.Service`, `Register-ScheduledTask` from the ScheduledTasks module imported by its System32 path), the Time-Service's Operational channel and the System log | the Windows Time guard only: registered and deleted elevated, read unelevated; its stop-event trigger needs the Operational channel enabled (measured enabled; the panel says when it is not), its start-type trigger reads the System log, which is always on — [2026-10-08_windows_time_guard_trigger.md](2026-10-08_windows_time_guard_trigger.md) §2, §6 |
 | the `wsl-care` daemon ≥ `minDaemonForRender` of `src_vs_code/min-daemon.json` (*Install daemon* installs its `installDaemon`) | `status --json`, `preview --all --json`, `doctor --json`, `--version`, the run reads, and the root calls of `ROOT_OPS`; their shapes are the golden contracts in `contracts/golden/` and `contracts/*.json` (actions, exit codes, status limits). Acting needs `minDaemonForActions` and, as the authority, the capabilities `status` advertises |
 | esbuild (`scripts/bundle.mjs`), `@vscode/vsce`, `@vscode/test-electron`, TypeScript, typescript-eslint | build, package, extension-host tests, lint — dev only; the `.vsix` ships no runtime dependency |
+| `@oleksandrdubyna88/vscode-webview-kit` `0.2.0` (exact), from **GitHub Packages** through `src_vs_code/.npmrc` | the full view's components (E18.W0) — bundled by esbuild into `dist/webview/full.js` and `full.css`, so a development dependency only; `NODE_AUTH_TOKEN` reaches the install step alone (see *The full view's webview bundle and the kit*) |
 | `release-extension.yml` + `.github/scripts/release-extension-guard.sh` | the release pipeline: guard → build → attest → github-draft → publish-marketplace → github-public; the guard and `check-vsix --root-allowed` keep a root-capable bundle out of `extension-v0.1.0` and earlier (plan §15j B3, §15k #7); publish-marketplace decides "served" with `marketplace-served.cjs` and waits with `wait-marketplace-served.sh` (up to 45 minutes, every attempt logged, 2026-10-09) |
 
+## The full view's webview bundle and the kit (E18.W0, 2026-10-21)
+
+[PLAN_disk_health_E18.md](../todo/PLAN_disk_health_E18.md) § W0. The full view (W1b) is built from the components of
+`@oleksandrdubyna88/vscode-webview-kit` `0.2.0`, compiled into the extension's own webview bundle. W0 laid the road and nothing
+visible: **no panel opens the page yet**, so the extension's behaviour did not change.
+
+```mermaid
+flowchart LR
+    kit["@oleksandrdubyna88/vscode-webview-kit 0.2.0<br/>GitHub Packages (devDependency, exact pin)"]
+    npmrc[".npmrc<br/>scope registry + ${NODE_AUTH_TOKEN}"]
+    entry["src/webview/fullView.ts<br/>(tsconfig.webview.json: DOM, no Node, no vscode)"]
+    bundle["scripts/bundle.mjs<br/>2nd buildSync: iife · browser · chrome114"]
+    js["dist/webview/full.js"]
+    css["dist/webview/full.css<br/>(no url(), @import, @font-face)"]
+    vsix[".vsix<br/>(vsix-files.txt, .vscodeignore)"]
+    harness["pageHarness.ts<br/>(strict DOM = the kit's port)"]
+    kit --> entry
+    npmrc -. "resolves" .-> kit
+    entry --> bundle --> js --> vsix
+    bundle --> css --> vsix
+    js -. "run by kitPage.test.ts" .-> harness
+```
+
+- **The dependency.** Exactly `0.2.0` (no range). `src_vs_code/.npmrc` holds two lines and no secret: the scope's registry
+  `https://npm.pkg.github.com` and `//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}`. It is not in `vsix-files.txt`. The lock
+  entry carries `version`, `integrity` and no `resolved`: npm asks the scope's registry for the tarball and refuses any byte
+  that is not the published one. A contributor needs a classic PAT with `read:packages` in `NODE_AUTH_TOKEN` (README). On a
+  machine without one, the entry was written from the release run's attested artifact (see [the plan](../todo/PLAN_disk_health_E18.md) § 3 and
+  *Known limits* below).
+- **CI.** Every job that installs the extension's dependencies (`ci-extension.yml`'s matrix job; `release-extension.yml`'s
+  `build` and `publish-marketplace`) has `packages: read`, and the install step alone carries
+  `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`; it runs `npm ci --ignore-scripts`, so no dependency's lifecycle script runs
+  while the token is in its environment. In the two jobs that build, the very next step runs `npm rebuild` without the token. The
+  Marketplace job runs no script at all, as before. `ReleaseExtensionWorkflowTests` holds both halves.
+- **The bundle.** `scripts/bundle.mjs` loops ONE `buildSync` over `scripts/bundle-entries.json` — the one list of bundles, read by the tests too (`support/bundleEntries.ts`; the kit page test bundles its entry with the webview entry's own options, not a copy): the host's, and `src/webview/fullView.ts` → `dist/webview/full.js`
+  (`iife`, `browser`, `chrome114` — the Chromium of VS Code 1.85 —, no source map, not minified); the kit's stylesheet,
+  imported by the entry, is emitted by esbuild as `dist/webview/full.css`. Both are in `.vscodeignore`'s allowlist and
+  `vsix-files.txt`; the `.vsix` check holds them like every other file. The webview's CSP is `default-src 'none'`, so the
+  stylesheet may not fetch anything.
+- **Two programs, one boundary.** `tsconfig.json` (the host: no DOM) excludes `src/webview` and `src/test/webview`;
+  `tsconfig.webview.json` (DOM, no `@types/node`, no `@types/vscode`, `moduleResolution: Bundler` so the kit's `exports` are
+  read) checks them; `npm run typecheck` runs both. `webviewBoundary.test.ts` holds the boundary both ways: nothing under
+  `src/webview/` imports `vscode`, a Node module or host code (only its folder and the kit's `…/components` and
+  `…/components.css`), and no host module imports `src/webview/` or the kit. `fullView.test.ts` RUNS the shipped `dist/webview/full.js` in the harness, with the mount point and without: no throw, nothing posted, the API acquired once. `src/webview/stylesheets.d.ts` declares the one stylesheet
+  specifier, because TypeScript 6 refuses a side-effect import it cannot resolve.
+- **The harness is the kit's port, and nothing more.** `pageHarness.ts` gained `id` and `tabindex` attributes, `keydown`
+  and `input` listeners, `focus()` (taking effect only on an ATTACHED button, input or element with a `tabindex` that is neither `disabled` nor `hidden` (itself or under a hidden ancestor — the kit hides a tab panel), as in a browser — it sets the document's `activeElement`, `Page.activeElement`) and an event with its `key` and a
+  recorded `preventDefault()` (`Page.key`, `Page.type`). `style`, `on*`, `href`, `change`, `focus` listeners stay refused.
+- **The mount point is `view`.** `structure.test.ts` allows the word `root` in the shipped sources only in the root-call module.
+
 ## Known limits (owner decisions and live-gate observations)
+
+- **The kit's lock entry cannot be installed offline from a cache** (E18.W0, 2026-10-21). With no `resolved`, npm asks the registry
+  for the packument before it looks at the cache, so `npm ci --offline` answers `ENOTCACHED` even after `npm cache add <tarball>`;
+  the same entry installs from a registry (proved against a throwaway local one: the tarball is taken, and a tampered tarball
+  stops with `EINTEGRITY`). The same lock WITH a `resolved` URL installs offline. Dependabot authenticates to GitHub Packages through the
+  package's *Manage Actions access* grant to this repository ([GitHub changelog, 2026-09-08](https://github.blog/changelog/2026-09-08-automatic-dependabot-access-to-github-hosted-registries/)) — no `dependabot.yml` change, no secret, no `ignore`
+  entry, no `registries:` block. Without that grant the grouped npm update job for `src_vs_code` may fail entirely, security updates included;
+  a missing grant answers 401, 403 or 404, for CI's install as well. It is the owner's setting, recorded in the plan. The Dependabot side is confirmed only when the first Dependabot npm run on `src_vs_code` succeeds.
 
 - The polling cadence's run-log churn is the owner's open decision M1
   ([2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md)); the daemon prunes its run logs after
@@ -665,7 +724,7 @@ sequenceDiagram
 flowchart TD
     tag["push: tags extension-v* — the only trigger"]
     guard["guard · contents: read<br/>release-extension-guard.sh: tag = package.json version · real publisher · on main<br/>min-daemon.json (JSON) → daemon-v&lt;MIN&gt;, daemon-v&lt;ACTIONS&gt; and daemon-v&lt;INSTALL&gt; published non-draft (gh api, read-only token)<br/>POST_DEPLOY.md on origin/main's tip (git show, never the tag's tree) 'Last verified: date · … · daemon x.y.z', x.y.z ≥ INSTALL ≥ ACTIONS ≥ MIN (lib/versions.sh)<br/>root module only above a root-free, published extension-v0.1.0<br/>outputs: version · publisher · min_daemon · min_daemon_actions · install_daemon · root_allowed"]
-    build["build · contents: read ONLY<br/>npm ci → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
+    build["build · read scopes ONLY<br/>npm ci --ignore-scripts (packages token) → npm rebuild → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
     attest["attest · contents: read + id-token: write + attestations: write<br/>sparse checkout of .github/scripts · NO npm, no node<br/>download artifact → verify the pair → attest-build-provenance(.vsix)"]
     draft["github-draft · contents: write<br/>verify set → upload only what the DRAFT lacks (never replace; nothing if public)<br/>→ download back → verify + cmp (a difference: re-run FAILED jobs only)"]
     mkt["publish-marketplace · environment: marketplace · contents: read<br/>npm ci --ignore-scripts → verify set → vsce show: served? (marketplace-served.cjs)<br/>not served → vsce publish --packagePath the attested file (VSCE_PAT)<br/>→ wait-marketplace-served.sh: 90 × 30 s ≈ 45 min, each vsce show bounded 20 s + 5 s kill,<br/>every attempt logged · job limit 100 min, above the wait's 82.5 min worst case"]
@@ -689,7 +748,7 @@ flowchart TD
   with ONE reader, `marketplace-served.cjs`.
 - **The order** puts the rollback source first: the `.vsix` is on the draft before the Marketplace serves anything, and
   the release goes public only after it does — compared once more with the attested build immediately before.
-- **The signing scope** (E5 code round #3): the build runs `npm ci` with dependency install scripts, every test and a
+- **The signing scope** (E5 code round #3): the build runs `npm ci --ignore-scripts` (the packages token on that step alone), then `npm rebuild` (the dependency install scripts, without the token), every test and a
   downloaded VS Code, so it holds `contents: read` only; the ONLY job with `id-token` / `attestations: write` is
   `attest`, which checks out `.github/scripts` alone, downloads the build's artifact, checks the pair and attests it.
 - **Re-runs** — "Re-run FAILED jobs" only: it reuses the successful build's artifact. "Re-run all jobs" rebuilds a

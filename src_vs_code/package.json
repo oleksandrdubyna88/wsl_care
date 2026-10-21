@@ -535,7 +535,7 @@
   "scripts": {
     "clean": "node scripts/clean.mjs out dist",
     "compile": "node scripts/clean.mjs out && tsc -p ./",
-    "typecheck": "tsc -p ./ --noEmit",
+    "typecheck": "tsc -p ./ --noEmit && tsc -p tsconfig.webview.json --noEmit",
     "lint": "eslint .",
     "bundle": "node scripts/clean.mjs dist && node scripts/bundle.mjs",
     "test": "npm run compile && npm run bundle && node scripts/run-tests.mjs",
@@ -549,6 +549,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@oleksandrdubyna88/vscode-webview-kit": "0.2.0",
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
     "@vscode/test-electron": "3.1.0",

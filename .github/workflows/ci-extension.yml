@@ -50,9 +50,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     # `attestations: read`: the fetch verifies the bundled daemon's attestation (E7.S5a) — reading one, never making one.
+    # `packages: read`: the kit is fetched from GitHub Packages (W0 of todo/PLAN_disk_health_E18.md) — reading, never publishing.
     permissions:
       contents: read
       attestations: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -85,8 +87,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: npm run fetch:windows-daemon
 
-      - name: Install (the lock file, exactly)
-        run: npm ci
+      # The kit (@oleksandrdubyna88/vscode-webview-kit) comes from GitHub Packages through src_vs_code/.npmrc, which names the
+      # token's variable and holds no secret. The job's own read-only token is handed to THIS step alone, and the step runs
+      # `--ignore-scripts`: no dependency's lifecycle script ever runs while the token is in its environment. The scripts the build
+      # needs run in the next step, which has no token. (Prerequisite: the kit's package grants this repository read access.)
+      - name: Install (the lock file, exactly; no install scripts, the packages token on this step only)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm ci --ignore-scripts
+
+      - name: Run the dependencies' install scripts (no token in this step)
+        run: npm rebuild
 
       # A clean tsc FIRST and read on its own (TypeScript doctrine §4): tsc emits despite errors unless noEmitOnError is
       # set, and a suite run against a stale out/ is numbers about code that did not build.
