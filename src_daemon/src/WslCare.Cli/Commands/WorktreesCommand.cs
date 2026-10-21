@@ -125,7 +125,7 @@ internal static class WorktreesCommand
 
         var store = new WorktreeReportStore(host.Paths, host.Files);
         _ = store.SweepStaleTemp(host.Clock.GetUtcNow(), TimeSpan.FromSeconds(settings.MaxSeconds));
-        var report = WorktreeReports.From(new WorktreeScanner(host.Paths, host.Files, host.Clock, WorktreeRoots.ThisMachinesDrive).Run(roots, settings, cancellationToken, line => Output.Note(stderr, line)), settings);
+        var report = WorktreeReports.From(new WorktreeScanner(host.Paths, host.Files, host.Clock, WorktreeRoots.ThisMachinesDrive, new GitQuestions(host.Commands, GitLimits.From(loaded.Config), GitEnvironment.ThisProcess, host.Files.DirectoryExists)).Run(roots, settings, cancellationToken, line => Output.Note(stderr, line)), settings);
         var failed = store.TryWrite(report);
         if (failed.Length > 0)
         {
@@ -145,9 +145,15 @@ internal static class WorktreesCommand
             text.AppendLine(WslCare.Core.Processes.Redaction.ShownText.Printable(root.Refused is { } refused ? $"{root.Path}: refused - {refused}" : RootLine(root)));
         }
 
-        text.Append(WslCare.Core.Processes.Redaction.ShownText.Printable($"scan {(report.Complete ? "complete" : "INCOMPLETE (a budget ran out; the folders it left are unknown, never idle)")} in {report.ElapsedSeconds.ToString("0.0", CultureInfo.InvariantCulture)} s; reclaimable: unknown - {report.Reclaimable.Reason}"));
+        text.Append(WslCare.Core.Processes.Redaction.ShownText.Printable($"scan {(report.Complete ? "complete" : "INCOMPLETE (a budget ran out; the folders it left are unknown, never idle)")} in {report.ElapsedSeconds.ToString("0.0", CultureInfo.InvariantCulture)} s; {ReclaimableLine(report.Reclaimable)}"));
         return text.ToString();
     }
+
+    private static string ReclaimableLine(ReclaimableReport reclaimable) => !reclaimable.Available
+        ? $"reclaimable: unknown - {reclaimable.Reason}"
+        : string.Create(
+            CultureInfo.InvariantCulture,
+            $"reclaimable: {reclaimable.ConfirmedBytes / WorktreesStatus.BytesPerGibibyte:0.0} GiB ({reclaimable.A24?.Count ?? 0} in worktrees, {reclaimable.A24Orphans?.Count ?? 0} in orphans, git-confirmed); kept: {(reclaimable.Retained is not { Count: > 0 } kept ? "nothing" : string.Join("; ", kept.Select(r => $"{r.Reason} ({r.Count})")))}");
 
     private static string RootLine(RootReport root) => string.Create(
         CultureInfo.InvariantCulture,

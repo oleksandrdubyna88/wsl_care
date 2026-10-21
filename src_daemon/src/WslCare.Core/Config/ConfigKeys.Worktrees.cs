@@ -66,5 +66,23 @@ public static partial class ConfigKeys
 
         /// <summary>The reclaimable total (git-confirmed, E19.S4) above which the verdict warns.</summary>
         public static readonly ConfigKey.IntKey ReclaimableWarnGib = new("worktrees.reclaimableWarnGib", 1, 10240) { Trust = KeyTrust.Display };
+
+        /// <summary>An administrator's choice of <c>git.exe</c>, tried after the Program Files install and admitted only by the
+        /// same ACL rule (decision 9). Empty means "the supported install only". A path is a program to run, so only the MACHINE
+        /// layer may name it.</summary>
+        public static readonly ConfigKey.TextKey GitPath = new("worktrees.gitPath", new TextRule.AbsolutePathOrEmpty())
+        {
+            Trust = new(SafeDirection.None, MachineOnly: true),
+        };
+
+        /// <summary>One git question may run this long before its tree is killed. Default 30.</summary>
+        public static readonly ConfigKey.IntKey GitTimeoutSeconds = new("worktrees.gitTimeoutSeconds", 5, 600);
+
+        /// <summary>At most this many names ride one <c>check-ignore</c> / <c>ls-files</c> call. Default 64.</summary>
+        public static readonly ConfigKey.IntKey GitNamesPerCall = new("worktrees.gitNamesPerCall", 1, 256);
+
+        /// <summary>The whole encoded command line of one call stays under this many characters (Windows' own limit is 8 191 for
+        /// <c>cmd</c> and 32 767 for <c>CreateProcess</c>). Default 7000.</summary>
+        public static readonly ConfigKey.IntKey GitCommandLineMaxChars = new("worktrees.gitCommandLineMaxChars", 1000, 30000);
     }
 }

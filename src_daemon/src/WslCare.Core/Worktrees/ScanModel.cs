@@ -30,7 +30,31 @@ public sealed record IdleState(IdleKind Kind, string Reason, DateTimeOffset Newe
 /// <param name="Bytes">Logical bytes (file lengths) of what the walk saw.</param>
 /// <param name="Files">How many files.</param>
 /// <param name="Retained">Why it is NOT eligible (a nested repository; a file that is not a build artifact, named; its walk unfinished); empty when eligible.</param>
-public sealed record BuildCandidate(string Path, string Relative, string Name, long Bytes, long Files, string Retained);
+public sealed record BuildCandidate(string Path, string Relative, string Name, long Bytes, long Files, string Retained)
+{
+    /// <summary>What git said (E19.S4): <see cref="CandidateGit.NotAsked"/> until the scan asks — and it asks only a candidate that passed every
+    /// structural check in a folder that is otherwise eligible (idle, not locked), because the first reason a candidate stays is the one reported.</summary>
+    public CandidateGit Git { get; init; } = CandidateGit.NotAsked;
+}
+
+/// <summary>What git's three questions came to for one candidate — a closed set.</summary>
+public abstract record CandidateGit
+{
+    private CandidateGit()
+    {
+    }
+
+    /// <summary>Not asked: another check already keeps it, or the scan has no git.</summary>
+    public static readonly CandidateGit NotAsked = new NotAskedState();
+
+    /// <summary>Git confirms: ignored, and (a worktree) no tracked file inside. <paramref name="TrackedFilesChecked"/> is false for an orphan.</summary>
+    public sealed record Confirmed(bool TrackedFilesChecked) : CandidateGit;
+
+    /// <summary>Git did not confirm, or could not be asked; <paramref name="Reason"/> is one of <see cref="GitReasons"/>' sentences.</summary>
+    public sealed record Retained(string Reason) : CandidateGit;
+
+    private sealed record NotAskedState : CandidateGit;
+}
 
 /// <summary>One walked folder (a worktree or an orphan): its facts, idleness, logical size and build-output candidates.</summary>
 public sealed record FolderScan(FolderFacts Facts, IdleState Idle, long Bytes, IReadOnlyList<BuildCandidate> Candidates)
@@ -47,4 +71,11 @@ public sealed record FolderScan(FolderFacts Facts, IdleState Idle, long Bytes, I
 public sealed record RootScan(string Path, string Refused, IReadOnlyList<FolderFacts> Facts, IReadOnlyList<FolderScan> Walked);
 
 /// <summary>What one scan found, in memory; <see cref="WorktreeReports.From"/> makes the file of it.</summary>
-public sealed record WorktreeScanResult(DateTimeOffset ScannedAt, TimeSpan Elapsed, bool Complete, IReadOnlyList<RootScan> Roots);
+public sealed record WorktreeScanResult(DateTimeOffset ScannedAt, TimeSpan Elapsed, bool Complete, IReadOnlyList<RootScan> Roots)
+{
+    /// <summary>The scan had git to ask (E19.S4). Without it no candidate is confirmed and the report's reclaimable stays unavailable.</summary>
+    public bool GitAsked { get; init; }
+
+    /// <summary>Whether git could be run at all this scan, learnt once by a probe (a scan with no probe assumes nothing against git).</summary>
+    public GitProbe GitProbe { get; init; } = GitProbe.Ready;
+}

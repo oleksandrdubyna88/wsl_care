@@ -294,6 +294,64 @@ coai code round per story; the full test executables and `npm test` before the P
   `CommandPolicyTests.cs`, `Core.Tests/Worktrees/GitQuestionsTests.cs` new, `Core.Tests/Processes/GitExecutableTests.cs`
   new), docs.
 - **Fable own review** (adds git) — outside the quota.
+- **As built (2026-10-21, PR #159).** As briefed, with these deviations and additions (the measurements are in
+  [research/2026-10-15_disk_hygiene_git_probe.md](../research/2026-10-15_disk_hygiene_git_probe.md)):
+  - **`check-ignore` runs in argv form WITHOUT `-z` and WITHOUT `--literal-pathspecs`** (git 2.55.0 refuses both: exit 128). Its output is read
+    per line by the FIRST tab (`<source>:<line>:<pattern>\t<path>`, or `::\t<path>` for a non-match AND for a path whose deciding rule is a
+    negation — both read "not ignored by git"); the exit code (0 / 1 an answer, 128 a refusal) is never what judges a name. What makes a name a
+    literal is the `RelativeName` slot, which refuses `* ? [`, `:`, a backslash, a leading `-` or `/`, `..`/`.`/empty segments, control characters,
+    `" < > |`, over 260 characters, and — found by the template property — the whole names `clean`, `prune` and `worktree`, so no combination of
+    names can spell a never-command. `ls-files` keeps `--literal-pathspecs -z`.
+  - **Every git command carries `-c core.fsmonitor=false -c core.excludesFile= -c core.quotePath=false --no-optional-locks`**, runs in a clean
+    environment with NO `HOME`/`USERPROFILE`/`XDG_CONFIG_HOME` (a user excludes file and the XDG ignore file both leaked otherwise, measured), and its
+    output is decoded as UTF-8 (`CommandRequest.Utf8Output`, a small additive option: .NET otherwise decodes with the console's OEM code page and a
+    non-ASCII folder name no longer matched). `The_scan_never_changes_the_index_time` holds the index's bytes and mtime, with a `git status` control.
+  - **The orphan form's `--git-dir` is the git folder the classifier's own admin value lies in** (`<repository>\.git` from `<repository>\.git\worktrees\<name>`),
+    derived in the scanner and checked to exist by `GitQuestions`; an admin folder not shaped so, or whose repository is gone, is "not confirmed by git" and no
+    process starts. A path under `<home>\git` on that argv is refused by the never-list's protected-path rule — left intact, so such an orphan stays unconfirmed.
+  - **Git is asked only where nothing else already keeps the candidate**: a candidate that passed every structural check, in a folder that is idle and (for a
+    worktree) unlocked, within the scan's time. The first reason a candidate stays is the one reported (structural, unknown, recent, locked, then git's), so asking git
+    about a recent or locked folder would only spend processes. One `rev-parse` per folder, then `ls-files` and `check-ignore` per batch of names (64 names AND 7 000
+    characters of encoded command line; a name that cannot fit alone is retained, "too long for one git call").
+  - **`worktrees.reclaimable` is real** (`ReclaimableReport`: `a24`, `a24Orphans`, `retained[{reason, count, bytes}]`, `notAsked`; the figures are ABSENT, not zero,
+    when the scan had no git). The verdict warns above `worktrees.reclaimableWarnGib` once git confirmed; a figure below it is `unknown`, never `ok`, when the scan
+    did not finish or a candidate could not be ASKED of git (a refusal, a timeout, no `git.exe`); a stale scan is `unknown`; a complete scan that confirmed nothing is `ok`.
+  - **`git.exe`** comes from `%ProgramFiles%\Git\cmd` (and `%ProgramW6432%`'s) or the machine layer's `worktrees.gitPath`, admitted by the ACL rule of decision 9 over the
+    real security descriptors (`AdminOnlyJudge`, pure; `WindowsAdminOnlyPath`, the managed `GetAccessControl`, AOT-safe); never `PATH`. The four keys are in
+    `ConfigKeys.Worktrees` beside S3's.
+  - **The scan's tripwire moved, it was not weakened**: `The_classifier_and_the_scan_start_no_process` now allows exactly `GitQuestions.cs`, `GitReplies.cs` and `GitSupport.cs` to name the
+    runner (with companions proving they do, and that `WorktreeScanner` is handed `GitQuestions` and never a runner).
+  - **After the Fable review and the coai plan round (2026-10-21)**:
+    - `ls-files` is asked per name as `:(literal,icase)<name>` and WITHOUT `--literal-pathspecs` (git's pathspec match ignores `core.ignorecase`; its ignore match
+      does not, so index `Bin/x` with disk `bin` read "ignored, nothing tracked"; under `--literal-pathspecs` git parses no magic). The `:(literal,icase)` is a template
+      literal in front of the unchanged `RelativeName` slot. Real-git RED/GREEN: `A_tracked_file_under_a_differently_cased_index_spelling_retains_the_candidate`.
+      `check-ignore` keeps the hole (it says ignored) — the `ls-files` question is the guard.
+    - The ACL judge keeps GENERIC_ALL, GENERIC_WRITE and MAXIMUM_ALLOWED (an entry may carry them unmapped); GENERIC_READ/EXECUTE are kept and grant no write
+      (deviation from the review's wording, which would have refused the ordinary read-and-execute of `Users`).
+    - `GitExecutable` also judges the real `git.exe` of each of `mingw64\bin`, `mingw32\bin` and `clangarm64\bin` that exists as a program file, checks each of those
+      folders, and refuses a git with none. It reuses a passed judgement for the life of the process while the program files keep their path, length, creation and
+      last-write time: **measured 12 ms a resolve without it (50 in 601 ms)**, a scan makes hundreds.
+    - A tracked gitlink ABOVE a candidate retains it (`HoldsTracked`). Measured: real git prints nothing for a pathspec inside a gitlink and `check-ignore` refuses it
+      (exit 128, "is in submodule"), so git retains it by name too; the scripted test pins the gitlink-above case.
+    - `check-ignore -v` lines are split at the LAST tab (a pattern may hold a tab and a colon; a name cannot); a line for a path nobody asked about maps to no name.
+    - No admitted `git.exe` is a named state: `reclaimable.available` is false, `gitUnavailable` holds the why, `retained` counts every candidate that needed git under
+      "git unavailable", the figures are absent, and the verdict is unknown with "git could not be asked: …" — never ok, never zero.
+    - A candidate named `clean`, `prune` or `worktree` is retained with "a folder named … cannot be put to git safely", not the generic refusal. Accepted blind spot:
+      the never-list scans argv tokens, so a path that merely contains the word as a segment is not a token and is asked about normally.
+    - A git timeout kills git and its descendants: the shared launcher (`Process.Kill(entireProcessTree: true)`) already did; `GitTimeoutTests` pins it with a fake git that
+      starts a child and hangs. No change was needed there.
+    - **For E20** (also its §4c): `a24Orphans` is ignore-only by construction (a pruned worktree has no index) — E20 may act on it only under the owner's explicit
+      per-run consent, never as `a24`; "tracked" means in the index at scan time; E20's delete-time re-run uses the same `GitQuestions`.
+    - **Second pass (Fable SHIP with advisories, coai code round)**: the reused ACL judgement expires after 60 seconds (a fixed bound of a security rule, a constant pinned
+      by a test with an injected clock; the identity covers the program files, not the DLLs); `WriteAttributes` and `WriteExtendedAttributes` are forbidden on the program
+      file and its folders (not on an ancestor — `C:\` grants Authenticated Users append rights; the default Program Files install still passes, real ACLs); a POLICY
+      refusal of one question (an orphan whose repository lies under `<home>\git`) is its own group "refused by the policy" and keeps only that folder's candidates
+      out of `a24`, it is NOT "git unavailable"; git is probed once per scan with `git.exe --version` through the same launcher, so a git that is not admitted is a scan
+      fact even when no candidate needed a question, and "nothing needed git" is said instead of implying git confirmed it; the scan's time bounds the git time (no call
+      outlives what is left of it, no further folder is asked once it is spent, the scan is incomplete); the timeout message names `worktrees.gitTimeoutSeconds`.
+      **Honest note for the PR:** the DLL-folder checks (every `<arch>\bin` and its `git.exe`) had no RED before their code — only a break-it afterwards.
+    - A scan end-to-end over a REAL linked worktree is covered: `git worktree add --orphan` makes the linked worktree on an unborn branch, so no commit and no identity
+      is needed anywhere (`A_scan_over_a_real_linked_worktree_confirms_its_ignored_bin_end_to_end`).
 
 ### E19.S2b — the Windows `status` read in the extension (the narrow slice of WR-E1, decision 12)
 
