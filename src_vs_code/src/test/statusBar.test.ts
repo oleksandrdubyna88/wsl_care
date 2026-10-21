@@ -20,9 +20,13 @@ function verdict(body: Body, id: string, level: string): Body {
   return body;
 }
 
-/** The Windows binary's own `host.vmmem` verdict added to a body — the distro's status carries none (E15.S5 own review). */
+/** The golden's `host.vmmem` verdict set to `level` — since E15.S10 §B the distro's status carries it too (the full run's disk script reads
+ * vmmemWSL), `ok` in the golden. It used to be ADDED to a body, because the distro's status carried none (E15.S5 own review). */
 function withVmmem(body: Body, level: string): Body {
-  (body.verdicts as { id: string; level: string; value: string }[]).push({ id: 'host.vmmem', level, value: '30.00 GiB' });
+  const found = (body.verdicts as { id: string; level: string; value: string }[]).find((v) => v.id === 'host.vmmem');
+  assert.ok(found !== undefined, 'the golden carries host.vmmem since E15.S10');
+  found.level = level;
+  found.value = '30.00 GiB';
 
   return body;
 }
@@ -63,10 +67,23 @@ test('Windows memory pressure (E15.S5: host.commit, host.compression, host.vmmem
   assert.equal(barView(answered('status', withVmmem(calm(), 'unknown'))).level, 'none', 'unknown colours nothing');
 });
 
-test('the distro\'s status carries no host.vmmem (E15.S5 own review: the full run does not read vmmem), so the head golden\'s tooltip never lists a host.vmmem it cannot read', () => {
-  const verdicts = headBody('status').verdicts as { id: string }[];
-  assert.doesNotMatch(barView(answered('status', headBody('status'))).tooltip, /host\.vmmem: unknown/);
-  assert.ok(!verdicts.some((v) => v.id === 'host.vmmem'), 'the distro\'s status carries no host.vmmem');
+test('across the boundary (E15.S10): the HEAD GOLDEN carries host.vmmem (the full run\'s disk script reads it: ok, 12.50 GiB) and host.defenderCpu (one read, so no span: unknown), both from the full run — and neither colours the bar', () => {
+  const verdicts = headBody('status').verdicts as { id: string; level: string; value?: string; basis?: { source?: string } }[];
+  const vmmem = verdicts.find((v) => v.id === 'host.vmmem');
+  const defender = verdicts.find((v) => v.id === 'host.defenderCpu');
+  assert.equal(vmmem?.level, 'ok');
+  assert.equal(vmmem?.value, '12.50 GiB');
+  assert.equal(vmmem?.basis?.source, 'fullRun');
+  assert.equal(defender?.level, 'unknown');
+  assert.equal(defender?.basis?.source, 'fullRun');
+  assert.equal(barView(answered('status', calm())).level, 'none', 'unknown colours nothing, and ok colours nothing');
+  assert.doesNotMatch(barView(answered('status', headBody('status'))).tooltip, /host\.vmmem/, 'an ok verdict is not listed');
+});
+
+test('Defender\'s CPU (E15.S10: host.defenderCpu) colours the bar when it warns, like the other host. verdicts', () => {
+  const warn = barView(answered('status', verdict(calm(), 'host.defenderCpu', 'warn')));
+  assert.equal(warn.level, 'warn');
+  assert.match(warn.tooltip, /host\.defenderCpu: warn/);
 });
 
 test('only the verdicts about what the bar shows colour it: the head golden carries clock / systemd / collector warnings, and with its host verdict calm it stays uncoloured', () => {

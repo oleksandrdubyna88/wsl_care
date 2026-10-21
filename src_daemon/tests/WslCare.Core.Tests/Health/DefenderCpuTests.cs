@@ -74,10 +74,12 @@ public sealed class DefenderCpuTests
         between.ReasonOrEmpty.Should().Be(DefenderCpu.Restarted);
     }
 
-    [Fact]
-    public void A_decreasing_counter_gives_no_difference()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3600)]
+    public void A_decreasing_counter_gives_no_difference(long secondsDown)
     {
-        var wrapped = Second with { CpuTicks100ns = First.CpuTicks100ns - 1 };
+        var wrapped = Second with { CpuTicks100ns = First.CpuTicks100ns - (secondsDown * DefenderCpu.TicksPerSecond) };
 
         var between = DefenderCpu.Between(First, wrapped);
 

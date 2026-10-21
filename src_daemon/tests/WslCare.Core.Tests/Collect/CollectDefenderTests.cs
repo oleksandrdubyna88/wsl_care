@@ -113,6 +113,29 @@ public sealed class CollectDefenderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_counter_that_went_down_is_unknown_with_the_reason_never_a_negative_figure()
+    {
+        await RunAsync(First, Line(First, 5_000));
+
+        var second = await RunAsync(First.AddHours(4), Line(First.AddHours(4), 100));
+
+        DefenderVerdict(second).Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason.Contains("counter", StringComparison.Ordinal));
+        Defender(second).CoresAverage!.Available.Should().BeFalse();
+    }
+
+    /// <summary>The engine restarted with the SAME pid and a larger counter: a pid-only rule would report 3.4 cores and warn on a bogus figure.</summary>
+    [Fact]
+    public async Task A_restarted_engine_that_kept_its_pid_is_unknown_not_a_bogus_warning()
+    {
+        await RunAsync(First, Line(First, 1_000));
+
+        var second = await RunAsync(First.AddHours(4), Line(First.AddHours(4), 50_000, start: 134_366_100_000_000_000));
+
+        DefenderVerdict(second).Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == DefenderCpu.Restarted);
+        Defender(second).CoresAverage!.Available.Should().BeFalse("no same-process span, so no cores");
+    }
+
+    [Fact]
     public async Task A_stalled_script_leaves_the_section_unavailable_with_its_reason_and_the_run_still_completes()
     {
         var run = await RunAsync(First, string.Empty);

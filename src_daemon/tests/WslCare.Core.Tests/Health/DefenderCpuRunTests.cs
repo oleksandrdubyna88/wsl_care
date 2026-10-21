@@ -86,6 +86,38 @@ public sealed class DefenderCpuRunTests : IDisposable
         Ledger().Lines.Select(l => l.Cores).Should().Equal([null, 0.5, null, 1.0]);
     }
 
+    /// <summary>Windows reuses pids and an engine update restarts MsMpEng without a reboot: the new process may have the SAME pid and a LARGER
+    /// counter than the old one had. Only its start marker tells them apart — the ledger records a baseline, not a span.</summary>
+    [Fact]
+    public void A_pid_reused_by_a_new_process_is_a_new_baseline_in_the_ledger_too_even_with_a_larger_counter()
+    {
+        Run(Start, At(Start, 1_000));
+
+        var reused = Run(Start.AddHours(4), At(Start.AddHours(4), 90_000, pid: 6964, start: 134_366_100_000_000_000));
+
+        reused.Usage.ReasonOrEmpty.Should().Be(DefenderCpu.Restarted);
+        reused.Week.IsAvailable.Should().BeFalse("no same-process span exists");
+        Ledger().Lines.Should().HaveCount(2);
+        Ledger().Lines[1].Should().Match<DefenderLedgerLine>(l => l.From == null && l.Cores == null && l.Cpu == 90_000 * DefenderCpu.TicksPerSecond, "the new process is the baseline the next run measures against");
+    }
+
+    /// <summary>The counter of the SAME process went down (a restored snapshot, a counter reset): no negative span is invented, the reading becomes
+    /// the baseline, and the run after it measures against it.</summary>
+    [Fact]
+    public void A_decreasing_counter_of_the_same_process_is_a_new_baseline_with_no_negative_span()
+    {
+        Run(Start, At(Start, 5_000));
+
+        var down = Run(Start.AddHours(4), At(Start.AddHours(4), 100));
+        var next = Run(Start.AddHours(8), At(Start.AddHours(8), 100 + (0.25 * 4 * 3600)));
+
+        down.Usage.IsAvailable.Should().BeFalse();
+        down.Usage.ReasonOrEmpty.Should().Contain("counter");
+        down.Week.IsAvailable.Should().BeFalse("there is no span to sum");
+        Ledger().Lines.Select(l => l.Cores).Should().Equal([null, null, 0.25]);
+        next.Usage.Should().BeOfType<Reading<DefenderUsage>.Available>(next.Usage.ReasonOrEmpty).Which.Value.Cores.Should().BeApproximately(0.25, 1e-6);
+    }
+
     [Fact]
     public void A_failed_read_records_nothing_and_leaves_the_baseline_for_the_next_run_to_span()
     {

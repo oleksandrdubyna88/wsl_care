@@ -79,14 +79,29 @@ public sealed class PowerShellClosedSetTests
     }
 
     [Fact]
-    public void The_defender_script_with_something_appended_is_refused_a_prefix_of_the_real_script_is_not_the_real_script()
+    public void The_defender_script_with_a_statement_appended_is_refused_a_prefix_match_would_let_it_through()
     {
         var longer = DefenderCpuCommands.Script + "; Get-Date";
+
+        longer.Should().StartWith(DefenderCpuCommands.Script);
+        Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", longer]).Should().Be("powershell");
+        CommandPolicy.Product.Review(new CommandRequest([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", longer], Ceiling))
+            .Should().BeOfType<CommandVerdict.Refused>().Which.Reason.Should().Contain("never-list (powershell:");
+    }
+
+    [Fact]
+    public void The_defender_script_cut_short_is_refused()
+    {
         var shorter = DefenderCpuCommands.Script[..^10];
 
-        Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", longer]).Should().Be("powershell");
         Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", shorter]).Should().Be("powershell");
+    }
+
+    [Fact]
+    public void The_defender_script_with_a_trailing_argument_is_refused_a_prefix_of_the_argv_is_not_the_argv()
+    {
         Broken([.. DefenderCpuCommands.DefenderCpu.Argv, "-File", @"C:\x\defender.ps1"]).Should().Be("powershell");
+        Broken([.. DefenderCpuCommands.DefenderCpu.Argv, "extra"]).Should().Be("powershell");
     }
 
     [Fact]
