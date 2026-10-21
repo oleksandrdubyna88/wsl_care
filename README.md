@@ -378,7 +378,7 @@ next write; about 160 bytes a line, under 2 MB at the most). The run detail's `d
 carry `coresAverage`, `coreHoursPerWeek` over the last 7 days, `coveredHours` and whether the week is `extrapolated` from fewer than
 168 covered hours, with the run and its age (`basis: fullRun`) as the disk section has; the Windows binary says the distro reads it.
 The verdict `host.defenderCpu` warns above `thresholds.defenderCoresWarnPercent` (10–800, 100) of ONE core and is `unknown` with the
-reason on the first read, after a restart and on the Windows binary. On the owner's development machine one reading showed MsMpEng
+reason on the first read and after a restart (the Windows binary judges none: its `status` carries the distro's verdict). On the owner's development machine one reading showed MsMpEng
 averaging 0.76 cores over 36 h (research/2026-10-16_defender_cpu_cost.md).
 
 **Which PowerShell the daemon uses** (E15.S1b). The clock probe always runs under Windows PowerShell 5.1 (`powershell.exe`,

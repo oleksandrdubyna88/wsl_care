@@ -1448,11 +1448,10 @@ E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `da
     every full run*): additive, `schemaVersion` still 1. (1) Two new ids ride the carried list: the Windows disk script reads
     `vmmemWSL` now, so the full run judges **`host.vmmem`** (and the Windows binary's sampled one REPLACES the carried one at its
     carried position — it is no longer appended after `npm.cache`), and a third fixed script reads Defender's engine, so the full run
-    judges **`host.defenderCpu`** right behind it (`unknown` with the reason on the first read, after a restart and on the Windows
-    binary; warn above `thresholds.defenderCoresWarnPercent` of one core). (2) `status --json` gains **`defender`**, read from the SAME
-    detail file as the verdicts and carried with its `basis` exactly as `disk` is: `{available, reason, sampledAt, elapsedSeconds,
+    judges **`host.defenderCpu`** right behind it (`unknown` with the reason on the first read and after a restart; warn above `thresholds.defenderCoresWarnPercent` of one core; the Windows binary judges NO Defender verdict — `HostRules.Verdicts` is commit, compression and vmmem — so its status CARRIES the distro's). (2) `status --json` gains **`defender`**, read from the SAME
+    detail file as the verdicts and carried with its `basis` exactly as `disk` is: `{available, reason, sampledAt,
     coresAverage, coveredSeconds, coreHoursPerWeek, coveredHours, extrapolated, ledgerNote, basis}`, every figure `{available, value |
-    reason}`; the Windows binary answers `available: false` ("the distro's full run reads Windows Defender's CPU"). (3) The run detail
+    reason}` (the script's own `elapsedSeconds` is in the run detail only); the Windows binary answers `available: false` ("the distro's full run reads Windows Defender's CPU"). (3) The run detail
     gains `defender` and `health.windowsDisk.vmmemBytes`. (4) Three keys join `contracts/config-keys.json`:
     `health.defenderCpuTimeoutSeconds` (machine-only), `defender.localRetentionDays` (machine-only),
     `thresholds.defenderCoresWarnPercent` (display). The record behind the figure is `{state}/defender-cpu.jsonl`, one line per full run.

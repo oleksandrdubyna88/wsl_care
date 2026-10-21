@@ -930,8 +930,9 @@ flowchart LR
   (`ProbeSample.Side`; a distro sample that ever carried a host part keeps the carried verdicts): `StatusVerdicts.From` judges
   `HostRules.Verdicts` over its own sample with `basis: sample`. A sampled verdict REPLACES the carried full-run verdict of the same
   id, in that verdict's place — the newer, direct reading wins; `host.vmmem` is carried now, so it moved from "appended after
-  `npm.cache`" to its carried position, right behind `host.compression`, still exactly once; `host.defenderCpu` is the same
-  (sampled: `unknown`, "read by the distro's full run"). A `status` never lists an id twice. `status` reads `.wslconfig` once on
+  `npm.cache`" to its carried position, right behind `host.compression`, still exactly once; `host.defenderCpu` is NOT sampled on the
+  Windows side at all (security round: `HostRules.Verdicts` judges only commit, compression and vmmem; an unknown stub there REPLACED the carried
+  full-run verdict, so Windows showed unknown always) — it stays CARRIED from the full run, with its run and age. A `status` never lists an id twice. `status` reads `.wslconfig` once on
   Windows and hands the same audit to the advice and to the verdict.
 - **The keys** (`Config/ConfigKeys.Thresholds.cs`, display trust): `thresholds.hostCommitWarnPercent` (50–99, 80),
   `thresholds.hostCommitCriticalPercent` (51–100, 90), `thresholds.hostCompressionWarnGb` (1–256, 8). A coupled rule in
@@ -1007,8 +1008,8 @@ flowchart LR
   — the temp file is made IN `{state}`, beside the ledger, and renamed in place: never in `/tmp`, so the replace never crosses a
   filesystem (plan round, finding 6; a test holds the path and the scope). The previous reading is the NEWEST line's — a failed read
   appends nothing, so the next success spans across the missed run. A missing or malformed file is "no baseline", never an error; a
-  line that does not parse (or has a pid or start marker of 0, an instant no clock reads, a span with one member) is skipped and
-  NAMED in the run detail (`ledgerNote`); a torn last line is a write in progress, not damage. A read-only run (`mayRecord` false)
+  line that does not parse (or has a pid or start marker of 0, an instant no clock reads, a span with one member) is skipped, COUNTED
+  (`ledgerNote`: "N lines skipped") and DROPPED by the next write — they are never aged, so they would stay for ever (security round); a torn last line is a write in progress, not damage. A read-only run (`mayRecord` false)
   measures against the ledger and writes nothing, and says so. **Size, projected:** the timer starts a full run at most once an hour
   (`timer.periodHours`, 1–24) and a manual `collect` adds a few a day; a line is about 160 bytes (a test serialises the widest line:
   ≤ 200), so 30 runs a day × 400 days × 160 B ≈ 1.9 MB at the most, about 1.5 MB at one run an hour. The bound is by AGE, not by count.
@@ -1023,7 +1024,7 @@ flowchart LR
 - **The verdict** (`Thresholds/HostRules`): `host.defenderCpu`, right behind `host.vmmem` in `HostRules.FullRunVerdicts`, so it is spread
   into `ThresholdRules.FromFullRun` and carried by `status` like the others. Warn when the cores exceed `thresholds.defenderCoresWarnPercent`
   of ONE core (10–800, **100**, display key); exactly that is ok; `unknown` with the reason when there is no span (the first read, a
-  restart, a failed read, a counter that went down) and on the Windows binary (`HostMemoryFacts.DefenderReadByTheDistro`). **Deviation
+  restart, a failed read, a counter that went down); the Windows binary does not judge it, it carries the distro's. **Deviation
   from the design (recorded):** the design named `thresholds.defenderCoresWarn` (0.1–8.0, 1.0); every configuration key is a whole number, so
   the key is in percent of a core. The default stays quiet on the measured 0.76 cores averaged over 36 h on a heavy development day; a
   sustained full core is the symptom the owner reported. The extension shows nothing new: the `host.` prefix already colours its bar, and

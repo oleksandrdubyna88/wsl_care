@@ -60,5 +60,5 @@ Two reads of the same process (the same pid AND the same start instant) a full r
   budget grows by the new ceiling with no further change.
 - The script runs under Windows PowerShell 5.1 only: it needs no module (CIM is built in), and a pwsh variant would add a fourth
   member to the never-list's closed set for no measured gain.
-- `thresholds.defenderCoresWarn` default **1.0** core: 0.76 measured on a heavy development day stays quiet; a sustained full core
+- `thresholds.defenderCoresWarnPercent` default **100** (% of one core, i.e. 1.0 core; the design's decimal `thresholds.defenderCoresWarn` became a whole-number key): 0.76 measured on a heavy development day stays quiet; a sustained full core
   is the symptom the owner reported (plan §1).
