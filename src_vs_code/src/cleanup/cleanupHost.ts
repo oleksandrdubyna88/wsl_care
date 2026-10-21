@@ -7,14 +7,14 @@ import { rootFailureText } from '../root/rootFailureText';
 import { runningOf } from '../root/rootAnswers';
 import { runIdOf } from '../root/rootIds';
 import type { RootFailure, RunningBlock } from '../root/rootOutcome';
-import type { OutcomeStore } from '../state/outcomeStore';
+import type { OutcomeStore, Snapshot } from '../state/outcomeStore';
 import { statusBodyOf } from '../state/statusBody';
 import { CleanFlow, type CleanUi, type FlowOutcome } from './cleanFlow';
 import { deriveCleanup } from './cleanupView';
 import { CleanupJournal, type DurableStore } from './journal';
 import { resultNotice, type Notice } from './resultText';
 import type { RowId } from './rowIds';
-import type { DistroTarget } from '../wsl/distroTarget';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 import { noticeText, unlinked } from '../text/safeText';
 import { RunFollower, type OneShot, type RunResult } from './runFollower';
 import { runWordsOf } from './runWords';
@@ -76,8 +76,8 @@ const RESTORE_NEEDS: readonly string[] = [...new Set([...previewNeeds(['A20']), 
  * What the newest `status` does not offer of a restore (E10.S2b) — '' when it offers everything: the controller's own gate
  * (`actionGate`, the capabilities the authority) over the preview's and the confirm's needs, and A20 reported in `status.actions`.
  */
-function restoreUnoffered(outcomes: OutcomeStore): string {
-  const status = outcomes.snapshot().status;
+function restoreUnoffered(snapshot: Snapshot): string {
+  const status = snapshot.status;
   if (status?.kind !== 'answered' || status.answer.verb !== 'status') {
     return 'the daemon has not answered status yet';
   }
@@ -147,8 +147,9 @@ export class CleanupHost {
     this.follower.kick();
   }
 
-  controls(): CleanupControls {
-    return deriveCleanup(this.options.outcomes.snapshot(), this.state()).controls;
+  /** The controls derived from `aim`'s own `status` (E18.W1a review): the default's unless a PICKED distribution is named. */
+  controls(aim: DistroTarget = DEFAULT_TARGET): CleanupControls {
+    return deriveCleanup(this.snapshotOf(aim), this.state()).controls;
   }
 
   /** A row's *Clean* or *Clean selected* — never rejects: a fault is told and logged (review C11, the detached edge). */
@@ -161,7 +162,7 @@ export class CleanupHost {
    * the archive's own conditions (a folder set, no archive flow busy, A13 offered with its capabilities) are `ArchiveHost.archiveNow`'s.
    */
   archiveNow(target: DistroTarget): Promise<FlowOutcome | undefined> {
-    const controls = this.controls();
+    const controls = this.controls(target);
     if (!controls.enabled) {
       void this.ui.notify('warn', `Archive now is not available: ${controls.reason === '' ? controls.state : controls.reason}.`);
       return Promise.resolve(undefined);
@@ -182,8 +183,8 @@ export class CleanupHost {
    * and a stale page send the same bare request.
    */
   stopRelays(target: DistroTarget): Promise<FlowOutcome | undefined> {
-    const controls = this.controls();
-    const why = stopRelaysBlocker(this.options.outcomes.snapshot(), { enabled: controls.enabled, reason: controls.reason === '' ? controls.state : controls.reason });
+    const controls = this.controls(target);
+    const why = stopRelaysBlocker(this.snapshotOf(target), { enabled: controls.enabled, reason: controls.reason === '' ? controls.state : controls.reason });
     if (why !== '') {
       void this.ui.notify('warn', `Stop client-gone relays is not available: ${why}.`);
       return Promise.resolve(undefined);
@@ -197,12 +198,15 @@ export class CleanupHost {
    * preview and confirm need, or the cleanup controls are greyed (a run in flight, the journal full, no status yet). The archive page
    * greys its button by this and the host refuses by it again, whatever the page sent; the controller's gate checks again at the call.
    */
-  restoreBlocker(): string {
-    const unoffered = restoreUnoffered(this.options.outcomes);
-    if (unoffered !== '') {
-      return unoffered;
-    }
-    const controls = this.controls();
+  restoreBlocker(aim: DistroTarget = DEFAULT_TARGET): string {
+    const unoffered = restoreUnoffered(this.snapshotOf(aim));
+
+    return unoffered === '' ? this.greyedWords(aim) : unoffered;
+  }
+
+  /** Why the cleanup controls of `aim` are greyed — '' when they are not. */
+  private greyedWords(aim: DistroTarget): string {
+    const controls = this.controls(aim);
     if (controls.enabled) {
       return '';
     }
@@ -212,7 +216,7 @@ export class CleanupHost {
 
   /** *Restore* the archive page's selected entry ids (E10.S2b) — refused here, and told, while `restoreBlocker()` names a reason. */
   restore(texts: readonly string[], target: DistroTarget): Promise<FlowOutcome | undefined> {
-    const blocker = this.restoreBlocker();
+    const blocker = this.restoreBlocker(target);
     if (blocker !== '') {
       void this.ui.notify('warn', `Restore is not available: ${blocker}.`);
       return Promise.resolve(undefined);
@@ -232,7 +236,7 @@ export class CleanupHost {
 
   /** *Run full check now* — refused here when the controls grey it (review A4), whatever the page sent. */
   runFullCheck(target: DistroTarget): Promise<FlowOutcome | undefined> {
-    const controls = this.controls();
+    const controls = this.controls(target);
     if (!controls.fullCheck) {
       void this.ui.notify('warn', `Run full check now is not available: ${controls.reason === '' ? controls.state : controls.reason}.`);
       return Promise.resolve(undefined);
@@ -278,7 +282,7 @@ export class CleanupHost {
   }
 
   /** The snapshot a target's controls read: the default's, or the picked distribution's own (`OutcomeStore.snapshotOf`). */
-  private snapshotOf(aim: DistroTarget): ReturnType<OutcomeStore['snapshot']> {
+  private snapshotOf(aim: DistroTarget): Snapshot {
     return aim.kind === 'picked' ? this.options.outcomes.snapshotOf(aim.distro) : this.options.outcomes.snapshot();
   }
 

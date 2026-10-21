@@ -163,10 +163,16 @@ const NOT_BUILT: Failure = { kind: 'unparseable', detail: 'the call could not be
 
 export class CleanupController {
   private readonly inFlight = new Set<string>();
-  private readonly rootOk = new Map<string, DaemonVersion>();
+  /** The root check's answer per distribution, remembered once it answered. Replaced, never edited; pruned by `forgetUnlisted`. */
+  private rootOk: ReadonlyMap<string, DaemonVersion> = new Map();
   private readonly issued = new WeakSet<HeldPreview>();
 
   constructor(private readonly options: CleanupOptions) {}
+
+  /** WSL's list no longer holds these distributions' names: their remembered root check goes (a distribution registered again under the name is asked afresh). */
+  forgetUnlisted(listed: readonly string[]): void {
+    this.rootOk = new Map([...this.rootOk].filter(([name]) => listed.includes(name)));
+  }
 
   /** The number settings as they are now. */
   private numbers(): Numbers {
@@ -282,7 +288,7 @@ export class CleanupController {
     }
     const outcome = rootCheckOf(await callRoot(this.options.runner, target, { op: 'rootCheck' }, this.numbers()), target.distro);
     if (outcome.kind === 'rootOk') {
-      this.rootOk.set(target.distro, outcome.version);
+      this.rootOk = new Map(this.rootOk).set(target.distro, outcome.version);
     }
 
     return outcome;

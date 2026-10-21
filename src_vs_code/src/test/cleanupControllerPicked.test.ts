@@ -161,3 +161,15 @@ test('the minted name is the only road: a picked target is built from listedName
   assert.equal(listed('Debian'), 'Debian');
   assert.deepEqual(DEBIAN, { kind: 'picked', distro: 'Debian' });
 });
+
+test('forgetUnlisted drops a distribution\'s remembered root check: Debian is asked afresh after a list without it, Ubuntu is not', async () => {
+  const w = world();
+  assert.equal((await w.controller.rootCheck(DEBIAN)).kind, 'rootOk');
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'rootOk');
+  assert.equal((await w.controller.rootCheck(DEBIAN)).kind, 'rootOk', 'remembered');
+  assert.equal(w.runner.argvs().length, 2, 'one --version each');
+  w.controller.forgetUnlisted(['Ubuntu']);
+  assert.equal((await w.controller.rootCheck(DEBIAN)).kind, 'rootOk');
+  assert.equal((await w.controller.rootCheck(DEFAULT_TARGET)).kind, 'rootOk');
+  assert.deepEqual(w.runner.argvs().slice(2), [`${ROOT_FOR('Debian')} --version`], 'Debian asked again, Ubuntu still remembered');
+});

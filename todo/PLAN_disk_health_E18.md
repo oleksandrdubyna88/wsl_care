@@ -650,19 +650,29 @@ enumeration + host scenario. Every extension caller passes `DEFAULT_TARGET`; the
 - **`installDaemon(deps)` kept its one-parameter signature** (its test pins "no parameter a page value could reach"): the extension's `installer(parts, target)`
   binds the `DistroTarget` into `deps.target`, instead of `InstallDeps.target` taking it.
 - **The follower asks per entry.** A journal entry's `targetKind: 'picked'` + `distro` build its target (`entryTarget`); `RunFollower` asks `status` once per
-  DISTINCT target its entries follow and reads `runs show` / `runs` from the entry's distribution. The default is asked unless EVERY entry is a picked one
-  (so a picked-only journal never touches the default distro — which is what makes RED 20(a) hold through the real follower); the observing poll stays the default's.
-- **`ArchiveHost` does not re-read its (default) view after a picked write** — the view is the default's; a per-distro card is W1b's.
-- **A picked full check or stop** is written for the picked name and needs no default `status`; `CleanupHost.stop(index, target)` reads the stoppable run from that
-  target's snapshot (`snapshotOf`). `HeldPreview` and `PreviewContext` carry `target`.
-- **RED 20(c) is a classification plus a scan, not 12 driven commands.** The enumeration drives the seven `distro` commands' flows (`refresh` as `verb:status`); the
-  `windowsSide` / `opener` commands are classified in the test (a 20th command fails it) and the modules of the windowsSide ones are scanned to import
-  — as values — no WSL client, root controller, cleanup flow or poller. Nothing executes them in a node test (they need VS Code); the host suite does not drive them either.
-- **RED 21 lives in `test/host/suite.ts`** (`test:host`), not in `scenarios/clientFlows.test.ts` (a node test, which has no test API): three scenarios — a running Debian
-  (`-l -v`, the running list, exactly three `-d Debian` calls, preview / doctor in either order, bar and rendered rows unchanged), a stopped one (no `-d`), a version-1 one (no
-  `-d`, no running question of its own). "No `wouldStart` refusal in the fake's log" is asserted as the absence of any `-d` call (the call log holds argv, not exit codes).
-- **Not red-first, said plainly:** `installDaemonPicked.test.ts` was green on arrival (the client road is W1a-1's; it pins it for the installer); the enumeration (RED 20) and the
-  host scenarios (RED 21) were written after their product slice, their teeth are the break-its below; `statusBar` / `poller` wsl1 cases and the structure scan were red-first.
+  DISTINCT target its entries follow — the DEFAULT always, and first (review round: the default's observation must not stall because every entry is a picked one),
+  the picked ones at most `settleAtOnce` at a time — and reads `runs show` / `runs` from the entry's distribution; a picked entry whose status answers `distroRefused`
+  (the distribution was unregistered) is resolved as `unreadable` ("state unknown — the record could not be read (distroRefused)") and followed no more. The observing poll stays the default's.
+  The enumeration (RED 20) never ticks the follower; these rules are held by `runFollowerPicked.test.ts`.
+- **`ArchiveHost` does not re-read its (default) view after a picked write** — the view is the default's; a per-distro card is W1b's. `archiveNow(picked)` is judged on the picked
+  distribution's own `status` (capabilities, A13, a failed status) and on its OWN `archive status` read once for the folder (review round, B).
+- **A picked full check or stop** is written for the picked name and needs no default `status`; `CleanupHost.controls(aim)`, `restoreBlocker(aim)`, `runFullCheck`, `archiveNow`, `stopRelays` and `stop`
+  gate on THE AIM'S snapshot (`snapshotOf`), never the default's (review round, B). `HeldPreview` and `PreviewContext` carry `target`.
+- **What RED 20(c) proves, after the review round.** The 19 commands are classified (`distro` — a flow the enumeration drives; `opener`; `windowsSide`; and `startWindowsTime` as `defaultOnly`, because its `afterDone`
+  runs *Run full check now* for `DEFAULT_TARGET` — pinned by a match on `extension.ts`). An AST scan of `extension.ts` proves every call it makes on a WSL road (`host`, `archive`, `client`, `poller` members)
+  names `DEFAULT_TARGET` or forwards a `target` — nothing in the extension can name a distribution from the setting — with a planted-violation companion. It does NOT run the windows-side commands (they need
+  VS Code) and does not prove at runtime that they never reach `wsl.exe`; the earlier import scan of the windows-side modules was dropped as proving less than it claimed.
+- **What RED 20(a)/(b) prove, after the review round.** (a) every recorded call is `-l -v`, `--list --running --quiet` or starts with `-d Debian ` (a call to the default road's `--list --quiet` fails); (b) the SET of
+  daemon-call shapes (root/user, tail with values replaced) EQUALS the set the registers build — `VERBS`, `runReadTail` over every read, `rootRequest` over every root op plus the confirm's plain and A21 shapes,
+  `configRequest` over both ops — both directions; every flow's outcome is asserted (`handedOff:accepted`, `written`, `typed`, `answered` …), so a flow that ended in a fake refusal does not count as reached. The host-flow list is
+  `HOST_FLOWS`, a typed table: a flow added without a row does not compile. The plan §5 break-it "a root op routed through the default" is made concrete and proved (below). Running the strengthened test found that a Debian run left in the
+  journal correctly greys the next Debian flow (the old gating read the DEFAULT's snapshot and missed it), so the test ends each handed-off run by hand.
+- **RED 21 lives in `test/host/suite.ts`** (`test:host`), not in `scenarios/clientFlows.test.ts` (a node test, which has no test API): three scenarios assert the WHOLE call log with the window unfocused (no scheduled tick) —
+  a running Debian is the list round (`-l -v`, `--list --running --quiet`), then status, then preview and doctor, EACH behind the picked road's own two questions (11 calls; preview / doctor interleave); a stopped Debian
+  is two list rounds and nothing else, run against a `startable` fake and followed by a read of the fake's scenario file proving Debian is still `running: false`; a version-1 Debian is the list round and the picked `-l -v` alone.
+- **Not red-first, said plainly:** `installDaemonPicked.test.ts` was green on arrival and pins the CLIENT's picked terminal road through the same `InstallDeps` shape — NOT the extension's `installer(parts, target)` binding,
+  which needs VS Code and is held only by the road scan above (the installer's `terminalTarget(target)` call forwards its `target`); the enumeration (RED 20) and the host scenarios (RED 21) were written after their product slice,
+  their teeth are the break-its below; `statusBar` / `poller` wsl1 cases and the structure scan were red-first.
 - Test support added: `support/manualClock.ts` (the clock `poller.test.ts` had inline), `support/distroNames.ts` (`listed` / `pick`), `NO_DISTRO_LIST` in `support/outcomes.ts`;
   `Poller` has a required `listDistros` option and the test API `listDistros()` / `readPicked(name, options?)` (the list first, an unlisted name throws).
 
@@ -671,10 +681,43 @@ enumeration + host scenario. Every extension caller passes `DEFAULT_TARGET`; the
 the structure test red; `wsl1` out of `TARGET_FAILURES` → the poller test red; `readPicked` writing through `set` → 9 red; `clear()` emptying the picked map → 3 red; the poller not calling
 `dropUnlisted` → 10 red; the store accepting an unlisted name → 3 red; the confirm resolved through the default instead of the preview's target → the controller test red (the
 enumeration stays green there: the `distroChanged` guard refuses the call, so nothing wrong is SENT); `rootTarget(picked)` routed through the default → the enumeration + 2 client tests red;
-the archive flows ignoring the target → 3 red, the enumeration among them; the journal dropping `targetKind` → 8 red; the follower always asking the default → 1 red; a verb added to
+the archive flows ignoring the target → 3 red, the enumeration among them; the journal dropping `targetKind` → 8 red; (the first design's "follower always asks the default" break-it is obsolete — the review round reversed that rule); a verb added to
 `VERB_NAMES` or an op to `ROOT_OPS` without its row → the compile fails (`VERBS`, `TAILS`, the enumeration's typed tables); `askPicked` through `DEFAULT_TARGET` → all 3 host scenarios red.
 
-**Final counts (extension):** typecheck and lint clean; `npm test` 1736 tests, 1735 pass, 0 fail, 1 skipped (the `clientFlows` / kill-tree timing tests flake under load and pass alone — they did
-once in three full runs); `test:host` green on VS Code 1.85.0 and stable, fake and closed; `check:vsix` OK. Daemon classes that read `src_vs_code` (Release build, 0 errors): `ReleaseExtension` 74,
-`Architecture` 1 + 26, `InteropModulePath` 8, `FullCheckLine` 22, `FixturePrivacy` 58, `ExtensionPackageName` 2, `ReleaseConfig` 11 — all pass. Family checks clean. The WSL 1 row shape is still Microsoft's documented
-layout, not measured here (§ 7).
+**Final counts (extension, after the review round):** typecheck and lint clean; `npm test` 1751 tests, 1750 pass, 0 fail, 1 skipped (a first full run under heavy machine load — Docker Desktop and others — timed out 26 fake-spawning tests; all 133 of them
+pass alone, and the quiet re-run of the whole suite is the count above); `test:host` green on VS Code 1.85.0 and stable, fake and closed; `check:vsix` OK. Daemon classes that read `src_vs_code` (Release build, 0 errors; main merged): Scenarios 146 total / 0 failed / 55 skipped (the environment's), Core 34 / 0, Cli 22 / 0 over
+`ReleaseExtension`, `Architecture`, `InteropModulePath`, `FullCheckLine`, `FixturePrivacy`, `ExtensionPackageName`, `ReleaseConfig`. Family checks clean. The WSL 1 row shape is still Microsoft's documented layout, not measured here (§ 7).
+
+### 10a. The review round (2026-10-21)
+
+The coai code round (session d18198b1, 12 reviewers, verdict `good_enough`, 14 findings of which 5 not accepted) and an Opus review of the built branch (no defect on a shipped road; the cornerstone's PROOF was too weak).
+`origin/main` (daemon 0.6.0, #163 — daemon only) was merged into the branch before the round. All work is in one more commit.
+
+**Accepted from the code round — 0, 1, 2, 3, 4, 5, 6, 8, 12, 13, 14, 15 (grouped as A–E of the round's brief):**
+
+- **A. Immutability.** `WslCareClient`'s `knownVersion`, `knownContainers` and `versionsInFlight` are replaced, never edited (`withEntry` / `withoutEntry` / `onlyListed`), and so are `CleanupController.rootOk`.
+- **B. Picked host flows gate on the PICKED distribution's snapshot.** `CleanupHost.controls(aim)`, `restoreBlocker(aim)`, `runFullCheck`, `archiveNow`, `stopRelays`, `stop` read `snapshotOf(distro)`; `ArchiveHost.archiveNow(picked)` is judged on
+  the picked `status` and its own `archive status`. RED (`hostGatingPicked.test.ts`, the two distributions holding opposite facts): `Expected values to be strictly deep-equal` — the controller was reached, or not, by the DEFAULT's state — in 5 of 7.
+- **C. The follower.** (1) it always asks the default's `status`, even when every entry is picked — RED `Expected values to be strictly deep-equal` (the default was missing); (2) its per-target asks run at most `settleAtOnce` at a time — RED `the default and the
+  five picked distributions were all asked: 5 !== 6` (the bound is asserted as peak concurrency ≤ 2); (3) a picked entry whose status answers `distroRefused` is resolved as
+  `unreadable` and followed no more — RED `0 !== 1` shown results; a default entry's refusal is not resolved by it.
+- **D. Types.** `DistroInfo.name` and `dropUnlisted`'s argument were already `DistroName`, minted through `listedNameOf` (the only cast into the brand is in `distroTarget.ts`, held by the structure scan); the test fixtures use `listedNameOf`. Verified, nothing to change.
+  The client's `knownVersion` / `knownContainers` stay keyed by `string` (rejected finding 7 below).
+- **E. `distroList.ts`'s default** already reuses `parseDefaultDistro` (two `*` rows → no default, neither row `isDefault`); a test now pins it (`clientDistros.test.ts`, green on arrival).
+
+**Rejected, with reasons:**
+
+- **7** — the maps serve the default road too, where the key is the name WSL printed (and may fail `DISTRO_NAME`): `string` is the honest key.
+- **9 and 10** — copying a `Map` copies references, not the answers; N is the machine's distro count, and the repository's immutability rule is about the map binding, which is now replaced (A).
+- **11** — the version is judged before the running question, as the picked run road does (spec §3.1; RED 6).
+
+**From the Opus review (F–H):**
+
+- **F. RED 20 strengthened** (see the corrected bullets of § 10): (a) every call is a picked-road list question or `-d Debian …`; (b) SET equality of daemon-call shapes with the registers' union, both ways; every flow's outcome asserted; `HOST_FLOWS` typed; (c) `startWindowsTime` reclassified
+  `defaultOnly` (its `afterDone` runs `runFullCheck(DEFAULT_TARGET)`), the import scan replaced by an AST scan of `extension.ts`'s road calls. The plan § 5 break-it is proved: `controller.stop` routed through the default → the enumeration red; so is `previewRestore`.
+- **G. RED 21** asserts the whole call log (§ 10), with a `startable` fake and a read of the fake's scenario file for the "was it started" check; the break-it `targetOf(…, true)` in the picked resolution turns the stopped host scenario and three `clientDistros` tests (RED 5 among them) red.
+- **H.** `CleanupController.forgetUnlisted` prunes `rootOk` on every answered list (wired in `extension.ts`); a late `remember` / `rememberVersion` after `forgetUnlisted` re-inserts nothing (`mayRemember`, guarded by the last listed set; before the first list everything is remembered, so the
+  default road is unchanged — after one, a distribution WSL listed under a name `parseVerboseTable` drops, e.g. one with a space, is simply not cached and its `--version` is asked again); § 10's follower sentence and its `installDaemonPicked` claim are corrected above.
+
+**Break-its of the round** (restored byte for byte, SHA-256 compared): the `mayRemember` guard removed → the late-answer test red; `forgetUnlisted` of `rootOk` removed → its test red; `controller.stop` via the default → the enumeration red; `previewRestore` via the default → the enumeration red;
+`targetOf(…, true)` in the picked resolution → 3 `clientDistros` tests (RED 5, the failed running question, `rootTarget(picked stopped)`) and the stopped `test:host` scenario red.

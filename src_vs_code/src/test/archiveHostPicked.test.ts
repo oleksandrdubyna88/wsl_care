@@ -6,7 +6,7 @@ import { newArchiveRecorder, recordingArchiveUi } from '../archive/archiveRecord
 import type { ReadOutcome } from '../client/outcome';
 import { OutcomeStore } from '../state/outcomeStore';
 import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
-import { pick } from './support/distroNames';
+import { listed, pick } from './support/distroNames';
 import { goldenOutcomes } from './support/outcomes';
 import { goldenFile } from './support/paths';
 import { exited } from './support/recordingRunner';
@@ -32,6 +32,8 @@ function host() {
   const store = new OutcomeStore();
   const status = goldenOutcomes().status;
   store.set('status', status);
+  store.dropUnlisted([listed('Ubuntu'), listed('Debian')]);
+  store.setPicked(listed('Debian'), 'status', status);
   const recorder = newArchiveRecorder();
   const reads: string[] = [];
   const targets: string[] = [];

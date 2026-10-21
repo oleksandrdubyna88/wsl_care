@@ -134,11 +134,16 @@ export class WslCareClient {
   /** The run reads in flight, by their tail — two asks for one run share one call. */
   private readonly readsInFlight = new Map<string, Promise<ReadOutcome>>();
   /** The `--version` call in flight per distribution — `preview` and `doctor` asked at once share it (E5 code round). */
-  private readonly versionsInFlight = new Map<string, Promise<DaemonVersion>>();
-  /** The daemon version last read, per RESOLVED distribution name; pruned by `listDistros` to the names WSL reports. */
-  private readonly knownVersion = new Map<string, DaemonVersion>();
-  /** The running-container count of the newest `status` answer, per distribution — what a timed-out `preview` is judged against. */
-  private readonly knownContainers = new Map<string, number>();
+  private versionsInFlight: ReadonlyMap<string, Promise<DaemonVersion>> = new Map();
+  /** The daemon version last read, per RESOLVED distribution name; pruned by `listDistros` to the names WSL reports. Replaced, never edited. */
+  private knownVersion: ReadonlyMap<string, DaemonVersion> = new Map();
+  /** The running-container count of the newest `status` answer, per distribution — what a timed-out `preview` is judged against. Replaced, never edited. */
+  private knownContainers: ReadonlyMap<string, number> = new Map();
+  /**
+   * The names of the last `listDistros` answer — `undefined` until one answered. After it, an answer that comes back late for a name it did not
+   * hold (a distribution unregistered while a call was in flight) remembers nothing, so no entry is re-inserted after the prune.
+   */
+  private listed: ReadonlySet<string> | undefined;
 
   constructor(private readonly options: ClientOptions) {}
 
@@ -272,8 +277,8 @@ export class WslCareClient {
   /** Keeps the running-container count a `status` answered, for `explained`. */
   private remember(distro: string, answer: Answer): void {
     const count = answer.verb === 'status' ? containerCount(answer.body) : undefined;
-    if (count !== undefined) {
-      this.knownContainers.set(distro, count);
+    if (count !== undefined && this.mayRemember(distro)) {
+      this.knownContainers = withEntry(this.knownContainers, distro, count);
     }
   }
 
@@ -293,9 +298,15 @@ export class WslCareClient {
 
   /** Drops every per-distribution entry whose name `listDistros` did not report. */
   private forgetUnlisted(listed: ReadonlySet<string>): void {
-    dropUnlisted(this.knownVersion, listed);
-    dropUnlisted(this.knownContainers, listed);
-    dropUnlisted(this.versionsInFlight, listed);
+    this.listed = listed;
+    this.knownVersion = onlyListed(this.knownVersion, listed);
+    this.knownContainers = onlyListed(this.knownContainers, listed);
+    this.versionsInFlight = onlyListed(this.versionsInFlight, listed);
+  }
+
+  /** Whether an answer for `distro` may be remembered: always before the first list, afterwards only for a name that list held. */
+  private mayRemember(distro: string): boolean {
+    return this.listed === undefined || this.listed.has(distro);
   }
 
   /**
@@ -464,9 +475,9 @@ export class WslCareClient {
 
   private rememberVersion(distro: string, version: DaemonVersion): void {
     if (version.kind === 'notRead') {
-      this.knownVersion.delete(distro);
-    } else {
-      this.knownVersion.set(distro, version);
+      this.knownVersion = withoutEntry(this.knownVersion, distro);
+    } else if (this.mayRemember(distro)) {
+      this.knownVersion = withEntry(this.knownVersion, distro, version);
     }
   }
 
@@ -477,8 +488,8 @@ export class WslCareClient {
     if (running !== undefined) {
       return running;
     }
-    const started = this.readVersion(wsl, distro).finally(() => this.versionsInFlight.delete(distro));
-    this.versionsInFlight.set(distro, started);
+    const started = this.readVersion(wsl, distro).finally(() => { this.versionsInFlight = withoutEntry(this.versionsInFlight, distro); });
+    this.versionsInFlight = withEntry(this.versionsInFlight, distro, started);
 
     return started;
   }
@@ -547,13 +558,18 @@ function terminalOf(wsl: string, distro: string): TerminalTarget {
   return { kind: 'terminal', shellPath: wsl, shellArgs: ['-d', distro, '--cd', '~'], distro };
 }
 
-/** Removes every key of `entries` that `listed` does not hold. */
-function dropUnlisted(entries: Map<string, unknown>, listed: ReadonlySet<string>): void {
-  for (const name of [...entries.keys()]) {
-    if (!listed.has(name)) {
-      entries.delete(name);
-    }
-  }
+/** A copy of `entries` with `key` set — the maps are replaced, never edited (the repository's immutability rule). */
+function withEntry<V>(entries: ReadonlyMap<string, V>, key: string, value: V): ReadonlyMap<string, V> {
+  return new Map(entries).set(key, value);
+}
+
+function withoutEntry<V>(entries: ReadonlyMap<string, V>, key: string): ReadonlyMap<string, V> {
+  return new Map([...entries].filter(([name]) => name !== key));
+}
+
+/** A copy of `entries` holding only the keys `listed` holds. */
+function onlyListed<V>(entries: ReadonlyMap<string, V>, listed: ReadonlySet<string>): ReadonlyMap<string, V> {
+  return new Map([...entries].filter(([name]) => listed.has(name)));
 }
 
 /** `status`'s `vm.containers.count`, when it answered one. */

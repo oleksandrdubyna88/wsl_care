@@ -382,3 +382,41 @@ test('after a listDistros() that no longer lists Ubuntu, its container count is 
   table = UBUNTU_AND_DEBIAN;
   assert.equal((await c.run('preview', pick('Ubuntu'))).kind, 'timedOut', 'the count of a distro the list dropped is not remembered');
 });
+
+// ---- review round: a late answer never re-inserts a name the last list dropped ----
+
+test('a status that answers AFTER a list without its distro remembers neither its container count nor its version', async () => {
+  let table: readonly Machine[] = UBUNTU_AND_DEBIAN;
+  const unversioned = { ...(JSON.parse(crowdedStatus(PREVIEW_CONTAINER_ASSUMPTION + 40)) as Record<string, unknown>), productVersion: undefined };
+  const held = gate(exited(0, JSON.stringify(unversioned)));
+  const { c, rec } = clientOf({
+    ...wsl(UBUNTU_AND_DEBIAN), ...daemons(['Ubuntu', 'Debian']),
+    [LIST_VERBOSE]: () => exitedUtf16(0, verboseTable(table, 'Ubuntu')),
+    [LIST_RUNNING]: () => exitedUtf16(0, table.filter((r) => r.running).map((r) => r.name + String.fromCharCode(13, 10)).join('')),
+    [daemonArgv('Debian', VERBS.status)]: () => held.promise,
+    [daemonArgv('Debian', VERBS.preview)]: PREVIEW_TIMEOUT,
+    [daemonArgv('Debian', VERBS.doctor)]: exited(0, JSON.stringify(golden('head', 'doctor'))),
+  });
+  const inFlight = c.run('status', pick('Debian'));
+  for (let i = 0; i < 50; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  table = [{ name: 'Ubuntu', running: true }];
+  await c.listDistros();
+  held.open();
+  assert.equal((await inFlight).kind, 'answered', 'the answer itself is still delivered');
+  table = UBUNTU_AND_DEBIAN;
+  assert.equal((await c.run('preview', pick('Debian'))).kind, 'timedOut', 'the unlisted distro count was not re-inserted after the list dropped it');
+  assert.equal(versionAsks(rec, 'Debian'), 1, 'the status asked --version once (it carried no productVersion)');
+  await c.run('doctor', pick('Debian'));
+  assert.equal(versionAsks(rec, 'Debian'), 2, 'its version was not re-inserted after the list dropped it: asked again');
+});
+
+test('two * rows are no default: neither row is isDefault and default is undefined (the exact parseDefaultDistro rule)', async () => {
+  const text = `  ${'NAME'.padEnd(18)}${'STATE'.padEnd(16)}VERSION\r\n* ${'Ubuntu'.padEnd(18)}${'Running'.padEnd(16)}2\r\n* ${'Debian'.padEnd(18)}${'Running'.padEnd(16)}2\r\n`;
+  const { c } = clientOf({ [LIST_VERBOSE]: exitedUtf16(0, text), [LIST_RUNNING]: exitedUtf16(0, 'Ubuntu\r\nDebian\r\n') });
+  const list = await c.listDistros();
+  assert.ok('distros' in list, JSON.stringify(list));
+  assert.deepEqual(list.distros.map((d) => d.isDefault), [false, false]);
+  assert.equal(list.default, undefined);
+});

@@ -62,6 +62,9 @@ function daemonCalls(api: WslCareTestApi): string[] {
 }
 
 const RUNNING = { distros: [{ name: 'Ubuntu', running: true }], startable: false };
+/** The two questions of a list round (`listDistros`) — also the picked road's own two. */
+const LIST_ROUND = ['-l -v', '--list --running --quiet'];
+const DEBIAN = '-d Debian --cd / --exec /opt/wsl-care/bin/wsl-care';
 const TWO = { distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: true }], defaultDistro: 'Ubuntu', startable: false };
 const STOPPED = { distros: [{ name: 'Ubuntu', running: false }], startable: false };
 
@@ -241,8 +244,8 @@ const WINDOWS_FAKE: readonly Scenario[] = [
     },
   },
   {
-    // E18.W1a-3 (RED 21): a PICKED distribution is read with no UI — and the default's views do not move.
-    name: "E18.W1a: readPicked(Debian) asks -l -v, the running list and exactly three -d Debian daemon calls; the bar and the rendered rows stay the default's",
+    // E18.W1a-3 (RED 21): a PICKED distribution is read with no UI — the WHOLE call log is asserted, and the default's views do not move.
+    name: "E18.W1a: readPicked(Debian) sends exactly the list round, then status, preview and doctor to Debian — each behind the picked road's own two questions; the bar and the rendered rows stay the default's",
     run: async (api) => {
       scenario(TWO);
       api.setFocused(false);
@@ -254,37 +257,39 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       api.resetCalls();
       await api.readPicked('Debian');
       await api.settled();
-      // status first; preview and doctor run at once, so their order in the log is the race of two processes
-      const calls = daemonCalls(api);
-      assert.equal(calls[0], '-d Debian --cd / --exec /opt/wsl-care/bin/wsl-care status --json');
-      assert.deepEqual([...calls].sort(), ['status', 'preview --all', 'doctor'].map((t) => `-d Debian --cd / --exec /opt/wsl-care/bin/wsl-care ${t} --json`).sort());
-      const asked = new Set(api.calls().filter((c) => !c.startsWith('-d ')));
-      assert.deepEqual([...asked].sort(), ['--list --running --quiet', '-l -v']);
-      assert.equal(api.calls().includes('--list --quiet'), false, 'a picked road never asks the setting list');
+      const calls = api.calls();
+      assert.deepEqual(calls.slice(0, 5), [...LIST_ROUND, ...LIST_ROUND, `${DEBIAN} status --json`]);
+      // preview and doctor run at once and each resolves its own target (the picked road's two questions, then its -d), so their six calls interleave
+      assert.deepEqual(calls.slice(5).sort(), [...LIST_ROUND, ...LIST_ROUND, `${DEBIAN} doctor --json`, `${DEBIAN} preview --all --json`].sort());
+      assert.equal(calls.length, 11);
       assert.deepEqual(api.statusBar(), bar, 'the status bar still shows the default distribution');
       assert.equal(api.lastRendered(), rendered, 'the panel was not re-rendered by a picked read');
     },
   },
   {
-    name: 'E18.W1a: readPicked(Debian) while Debian is stopped makes no -d call — nothing starts it',
+    name: 'E18.W1a: readPicked(Debian) while Debian is stopped sends the two list rounds and NOTHING else — and even a startable fake still has Debian stopped afterwards',
     run: async (api) => {
-      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: false }] });
+      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: false }], startable: true });
+      api.setFocused(false);
+      await api.settled();
       api.resetCalls();
       await api.readPicked('Debian');
       await api.settled();
-      assert.deepEqual(daemonCalls(api), []);
-      assert.ok(api.calls().includes('--list --running --quiet'), 'the running question was asked');
+      assert.deepEqual(api.calls(), [...LIST_ROUND, ...LIST_ROUND]);
+      const fake = JSON.parse(fs.readFileSync(SCENARIO_FILE, 'utf8')) as { distros: { name: string; running: boolean }[] };
+      assert.deepEqual(fake.distros.find((d) => d.name === 'Debian'), { name: 'Debian', running: false }, 'the fake never started it: a read is not a start');
     },
   },
   {
-    name: 'E18.W1a: readPicked(Debian) with Debian at WSL version 1 makes no -d call and no running question of its own',
+    name: 'E18.W1a: readPicked(Debian) with Debian at WSL version 1 sends the list round, then the picked -l -v alone — no running question, no -d',
     run: async (api) => {
-      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: true, version: 1 }] });
+      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: true, version: 1 }], startable: false });
+      api.setFocused(false);
+      await api.settled();
       api.resetCalls();
       await api.readPicked('Debian');
       await api.settled();
-      assert.deepEqual(daemonCalls(api), []);
-      assert.equal(api.calls().filter((c) => c === '--list --running --quiet').length, 1, 'only the list own question; the picked road stopped at the version');
+      assert.deepEqual(api.calls(), [...LIST_ROUND, '-l -v']);
       scenario(RUNNING);
     },
   },

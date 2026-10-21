@@ -4,7 +4,7 @@ import type { Runner } from '../process/runner';
 import { failureText } from '../failureText';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
-import type { OutcomeStore } from '../state/outcomeStore';
+import type { OutcomeStore, Snapshot } from '../state/outcomeStore';
 import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 import { advertisedOf, offersAction } from '../state/statusBody';
 import { noticeText, unlinked } from '../text/safeText';
@@ -50,7 +50,11 @@ export function offersA13(outcomes: OutcomeStore): boolean {
 
 /** The short label of the panel's own `status` failure, or '' — what the archive line says instead of a lasting "checking…" (own review #1). */
 export function statusFailureOf(outcomes: OutcomeStore): string {
-  const status = outcomes.snapshot().status;
+  return failureLabelOf(outcomes.snapshot());
+}
+
+function failureLabelOf(snapshot: Snapshot): string {
+  const status = snapshot.status;
 
   return status === undefined || status.kind === 'answered' ? '' : failureText(status).label;
 }
@@ -106,6 +110,22 @@ export class ArchiveHost {
     this.unsubscribe();
   }
 
+  /**
+   * The state *Archive now* is judged on. The default's is the host's own view; a PICKED distribution's is built from ITS `status` (the
+   * capabilities, A13 in `status.actions`, a failed status) and its OWN `archive status` for the folder — read here, once, only when it
+   * advertises the read (the host's view is the default's; a per-distro archive card is W1b's).
+   */
+  private async stateFor(target: DistroTarget): Promise<ArchiveState> {
+    if (target.kind === 'default') {
+      return this.state();
+    }
+    const snapshot = this.options.outcomes.snapshotOf(target.distro);
+    const capabilities = advertisedOf(snapshot);
+    const status = capabilities?.includes(READS[0].capability) === true ? await this.options.read(READS[0].request, target) : undefined;
+
+    return { ...this.state(), status, capabilities, a13Offered: offersAction(snapshot, 'A13'), unavailable: failureLabelOf(snapshot) };
+  }
+
   private state(): ArchiveState {
     const outcomes = this.options.outcomes;
 
@@ -146,7 +166,7 @@ export class ArchiveHost {
    * palette's command and a stale page send the same bare request the button does. The cleanup host refuses its own side.
    */
   async archiveNow(target: DistroTarget): Promise<void> {
-    const blocker = archiveNowBlocker(this.state());
+    const blocker = archiveNowBlocker(await this.stateFor(target));
     if (blocker !== '') {
       await this.ui.notify('warn', `Archive now is not available: ${blocker}.`);
       return;

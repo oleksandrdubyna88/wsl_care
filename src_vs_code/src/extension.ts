@@ -161,7 +161,7 @@ function build(context: vscode.ExtensionContext): Parts {
   const store = new OutcomeStore();
   const focus: { override: boolean | undefined } = { override: undefined };
   const windowsClient = windowsClientOf(context, runner);
-  const poller = pollerOf(client, windowsClient, store, focus);
+  const poller = pollerOf(client, cleanup, windowsClient, store, focus);
 
   const cleanRecorder = newCleanRecorder();
   // The extension's log (review C11): a fault at a button's detached edge is written here as well as told.
@@ -209,11 +209,21 @@ function windowsPanelActions(bundled: BundledHost, windowsTasks: TasksHost): Pic
   };
 }
 
+/** WSL's list; on an answer the controller forgets the root check of every distribution it no longer holds (the client prunes its own maps). */
+async function listedDistros(client: WslCareClient, cleanup: CleanupController): ReturnType<WslCareClient['listDistros']> {
+  const list = await client.listDistros();
+  if ('distros' in list) {
+    cleanup.forgetUnlisted(list.distros.map((info) => info.name));
+  }
+
+  return list;
+}
+
 /** The poller: the distribution's client, and — E19.S2b — the bundled Windows daemon's `status` on the same tick, only where its client can start the exe. */
-function pollerOf(client: WslCareClient, windowsClient: WindowsCareClient, store: OutcomeStore, focus: { readonly override: boolean | undefined }): Poller {
+function pollerOf(client: WslCareClient, cleanup: CleanupController, windowsClient: WindowsCareClient, store: OutcomeStore, focus: { readonly override: boolean | undefined }): Poller {
   return new Poller({
     run: (verb, target, options) => client.run(verb, target, options),
-    listDistros: () => client.listDistros(),
+    listDistros: () => listedDistros(client, cleanup),
     store,
     focused: () => focus.override ?? vscode.window.state.focused,
     refreshSeconds: () => settings().get<unknown>('refreshSeconds'),

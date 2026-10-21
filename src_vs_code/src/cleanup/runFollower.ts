@@ -129,14 +129,26 @@ function keyOf(target: DistroTarget): string {
 }
 
 /**
- * The targets whose `status` a poll asks: each distinct PICKED distribution an entry follows, and the default — unless every entry is a
- * picked one (then the default distribution is left alone).
+ * The targets whose `status` a poll asks: the default — always, and first — and each distinct PICKED distribution an entry follows.
  */
 function askedTargets(entries: readonly JournalEntry[]): readonly DistroTarget[] {
-  const targets = [...new Map(entries.map((e) => entryTarget(e)).map((t) => [keyOf(t), t] as const)).values()];
-  const picked = targets.filter((t) => t.kind === 'picked');
+  const picked = [...new Map(entries.map((e) => entryTarget(e)).filter((t) => t.kind === 'picked').map((t) => [keyOf(t), t] as const)).values()];
 
-  return entries.length > 0 && picked.length === targets.length ? picked : [DEFAULT_TARGET, ...picked];
+  return [DEFAULT_TARGET, ...picked];
+}
+
+function seenOfKey(answers: ReadonlyMap<string, VerbOutcome>, key: string): Seen | undefined {
+  const answer = answers.get(key);
+
+  return answer === undefined ? undefined : seenOf(answer);
+}
+
+/**
+ * A PICKED entry whose distribution WSL's list no longer holds (its `status` answers `distroRefused`): it was unregistered, nothing will
+ * ever answer for it, and it is resolved as unknown instead of being followed forever. A DEFAULT entry's refusal is the setting's problem.
+ */
+function unregistered(entry: JournalEntry, answer: VerbOutcome | undefined): boolean {
+  return entry.targetKind === 'picked' && answer !== undefined && answer.kind === 'distroRefused';
 }
 
 function newTrack(): Track {
@@ -232,10 +244,11 @@ export class RunFollower {
   private async pollOnce(): Promise<void> {
     const focused = this.options.focused();
     const entries = this.options.journal.entries().filter((e) => this.mayFollow(e, focused));
-    const seen = await this.statuses(entries);
-    const own = seen.get(DEFAULT_KEY);
+    const answers = await this.statuses(entries);
+    const own = seenOfKey(answers, DEFAULT_KEY);
+    this.lastRunning = own?.running;
     this.endedThisTick = 0;
-    await eachAtMost(this.numbers().settleAtOnce, entries, (entry) => this.guarded(() => this.settle(entry, seen.get(keyOf(entryTarget(entry))))));
+    await eachAtMost(this.numbers().settleAtOnce, entries, (entry) => this.guarded(() => this.settle(entry, answers.get(keyOf(entryTarget(entry))))));
     await this.guarded(() => this.observe(own, focused));
     if (this.endedThisTick > 0 && !this.disposed) {
       await this.options.afterTerminal();
@@ -244,19 +257,17 @@ export class RunFollower {
 
   /**
    * One `status` per DISTINCT target the entries follow (E18.W1a): a run for a picked distribution is followed with that distribution's
-   * status, a default run (every entry written before W1a) with the default's, as ever. The default is asked unless EVERY entry is a
-   * picked one — so a picked-only journal never touches the default distribution — and always when no entry is followed (the observing poll).
+   * status, a default run (every entry written before W1a) with the default's, as ever. The default is ALWAYS asked, first — the observed
+   * runs and the store's running block come from it, and its observation must not stall because every entry is a picked one. The asks run
+   * at most `settleAtOnce` at a time, the same ceiling the settling below honours: a journal is never one `wsl.exe` round per distribution at once.
    */
-  private async statuses(entries: readonly JournalEntry[]): Promise<ReadonlyMap<string, Seen | undefined>> {
-    const asked = askedTargets(entries);
-    const answers = await Promise.all(asked.map(async (target) => [keyOf(target), seenOf(await this.options.status(target))] as const));
+  private async statuses(entries: readonly JournalEntry[]): Promise<ReadonlyMap<string, VerbOutcome>> {
+    const answers = new Map<string, VerbOutcome>();
+    await eachAtMost(this.numbers().settleAtOnce, askedTargets(entries), async (target) => {
+      answers.set(keyOf(target), await this.options.status(target));
+    });
 
-    const seen = new Map(answers);
-    if (seen.has(DEFAULT_KEY)) {
-      this.lastRunning = seen.get(DEFAULT_KEY)?.running;
-    }
-
-    return seen;
+    return answers;
   }
 
   /** Review A5: one entry's fault is reported and the others go on. */
@@ -280,10 +291,18 @@ export class RunFollower {
   }
 
   /** Only a status that answered for the entry's distribution is evidence; past the ceiling only once its record was read (B1). */
-  private async settle(entry: JournalEntry, seen: Seen | undefined): Promise<void> {
-    if (!answeredFor(seen, entry.distro)) {
+  private async settle(entry: JournalEntry, answer: VerbOutcome | undefined): Promise<void> {
+    if (unregistered(entry, answer)) {
+      await this.end({ kind: 'unreadable', entry, reason: 'distroRefused' });
       return;
     }
+    const seen = answer === undefined ? undefined : seenOf(answer);
+    if (answeredFor(seen, entry.distro)) {
+      await this.settleSeen(entry, seen);
+    }
+  }
+
+  private async settleSeen(entry: JournalEntry, seen: Seen): Promise<void> {
     const track = this.trackOf(entry.id);
     const ended = await this.evaluated(entry, seen.running, track);
     if (!ended && this.mayEndOnCeiling(entry, track)) {
