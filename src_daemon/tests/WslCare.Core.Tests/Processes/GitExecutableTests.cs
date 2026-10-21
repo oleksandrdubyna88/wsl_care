@@ -242,6 +242,30 @@ public sealed class GitExecutableTests
     }
 
     [Fact]
+    public void A_relative_candidate_is_a_named_refusal_not_an_exception_even_when_an_mz_file_lies_where_it_points()
+    {
+        // A relative ProgramFiles (or worktrees.gitPath) plus a program file under the current folder: the path rules split only absolute paths and threw
+        // out of Resolve().
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        var top = "testsToDelete-relgit-" + Guid.NewGuid().ToString("N");
+        var relative = Path.Combine(top, "Git", "cmd", "git.exe");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(Environment.CurrentDirectory, top, "Git", "cmd"));
+            Directory.CreateDirectory(Path.Combine(Environment.CurrentDirectory, top, "Git", "mingw64", "bin"));
+            File.WriteAllText(Path.Combine(Environment.CurrentDirectory, relative), "MZ\0\0 only a header");
+
+            var resolved = FluentActions.Invoking(() => new GitExecutable(() => [relative], new ScriptedAcl((_, _) => string.Empty)).Resolve()).Should().NotThrow().Subject;
+
+            resolved.Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().Contain("is not an absolute path").And.Contain(relative);
+        }
+        finally
+        {
+            Directory.Delete(Path.Combine(Environment.CurrentDirectory, top), recursive: true);
+        }
+    }
+
+    [Fact]
     public void A_program_in_a_ucrt64_folder_a_user_could_write_to_refuses_the_candidate()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");

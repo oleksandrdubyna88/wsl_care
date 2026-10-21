@@ -115,6 +115,7 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
 
     private static string FileProblem(string path) => path switch
     {
+        _ when !Windows.IsAbsolute(path) => "is not an absolute path",
         _ when !OperatingSystem.IsWindows() => "can be started on Windows only",
         _ when !File.Exists(path) => "is not a file",
         _ when !HasPeHeader(path) => "is not a Windows program (no MZ header)",
