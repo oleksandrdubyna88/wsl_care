@@ -19,6 +19,7 @@ public sealed class WindowsTasksRenderFlows
     [Theory]
     [InlineData("watch", "mcpWatchdog.periodMinutes")]
     [InlineData("archive", "windowsTasks.archiveEveryHours")]
+    [InlineData("cleanup", "windowsTasks.cleanupEveryHours")]
     public async Task The_built_binary_renders_a_task_answers_not_registrable_from_its_build_folder_and_writes_nothing(string task, string cadenceKey)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "the Windows binary's verb: the Windows legs (the refusal is the other test)");
@@ -35,7 +36,7 @@ public sealed class WindowsTasksRenderFlows
         answer["xml"]!.GetValue<string>().Should().Contain($"<Arguments>tasks run {task} --json</Arguments>")
             .And.Contain("<LogonType>InteractiveToken</LogonType>").And.Contain("<RunLevel>LeastPrivilege</RunLevel>");
         answer["numbers"]!.AsArray().Select(n => (string)n!["key"]!).Should().Contain(cadenceKey);
-        Directory.EnumerateFiles(home.SandboxRoot, DryRunWindow.FileName, SearchOption.AllDirectories).Should().BeEmpty("a render peeks at the dry week and never starts it");
+        Directory.EnumerateFiles(home.SandboxRoot, "first-timer-run*.json", SearchOption.AllDirectories).Should().BeEmpty("a render peeks at the dry week (the common one and A23's) and never starts either");
     }
 
     [Fact]

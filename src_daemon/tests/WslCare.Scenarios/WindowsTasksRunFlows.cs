@@ -3,6 +3,7 @@ using System.Text.Json;
 using FluentAssertions;
 
 using WslCare.Cli;
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Json;
 using WslCare.TestSupport;
 
@@ -52,11 +53,12 @@ public sealed class WindowsTasksRunFlows
         ElevatedWorkerRefused(home, await home.RunAsync("tasks", "run", "watch", "--json"));
     }
 
-    /// <summary>The supervisor started the worker and passed its refusal through: 81, the worker's own line, nothing written.</summary>
+    /// <summary>The supervisor itself refuses an elevated process (WR-T2 own review, minor 2): 81 before the staging sweep and before any
+    /// worker, its own line, nothing written.</summary>
     private static void ElevatedWorkerRefused(ScenarioHome home, ChildResult result)
     {
-        result.Exit.Should().Be((int)ExitCode.NotAsRoot, "the elevated worker refuses itself and the supervisor passes its code through; {0}", result.Stderr);
-        result.Stderr.Should().Contain("tasks run watch: the worker exited 81").And.Contain("NOT elevated");
+        result.Exit.Should().Be((int)ExitCode.NotAsRoot, "the supervisor refuses an elevated process before it starts anything; {0}", result.Stderr);
+        result.Stderr.Should().Contain("tasks run watch").And.Contain("elevated").And.Contain("Nothing was started");
         result.Stdout.Should().BeEmpty();
         File.Exists(home.Paths.Rules.Join(home.Paths.StateDirectory, Core.Mcp.McpCpuLedger.FileName)).Should().BeFalse("the refused worker sampled nothing");
         File.Exists(Core.Records.RunHistory.File(home.Paths)).Should().BeFalse();
@@ -75,22 +77,18 @@ public sealed class WindowsTasksRunFlows
 
         var result = await home.RunAsync("tasks", "run", "archive", "--json");
 
-        result.Stderr.Should().Contain("tasks run archive: a dry run").And.Contain("starting").And.Contain("archive preview --json");
-        if (!Environment.IsPrivilegedProcess)
-        {
-            File.Exists(Core.Actions.Engine.DryRunWindow.File(home.Paths)).Should().BeTrue("the first task run starts the dry-run week, inside the sandbox");
-        }
-
         File.ReadAllText(session).Should().Be("the transcript", "a dry body moves nothing");
         Directory.GetFileSystemEntries(baseFolder).Should().BeEmpty("a preview writes nothing to the base");
         if (Environment.IsPrivilegedProcess)
         {
             result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
-            result.Stderr.Should().Contain("tasks run archive: the worker exited 81");
+            result.Stderr.Should().Contain("tasks run archive").And.Contain("Nothing was started");
             File.Exists(Core.Actions.Engine.DryRunWindow.File(home.Paths)).Should().BeFalse("an elevated supervisor starts no dry-run week");
             return;
         }
 
+        result.Stderr.Should().Contain("tasks run archive: a dry run").And.Contain("starting").And.Contain("archive preview --json");
+        File.Exists(Core.Actions.Engine.DryRunWindow.File(home.Paths)).Should().BeTrue("the first task run starts the dry-run week, inside the sandbox");
         result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
         result.Stderr.Should().Contain("tasks run archive: the worker exited 0").And.Contain("would move 1 session(s), 14 bytes");
         var preview = JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.ArchivePreviewReport)!;
@@ -114,9 +112,9 @@ public sealed class WindowsTasksRunFlows
 
         if (Environment.IsPrivilegedProcess)
         {
-            // An elevated supervisor previews whatever the window says and touches no stamp (own review m1); its worker then refuses with 81.
+            // An elevated supervisor is refused before it starts anything or touches a stamp.
             result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
-            result.Stderr.Should().Contain("archive preview --json").And.Contain("an elevated process");
+            result.Stderr.Should().Contain("tasks run archive").And.Contain("Nothing was started");
             return;
         }
 
@@ -141,6 +139,65 @@ public sealed class WindowsTasksRunFlows
         Directory.CreateDirectory(Path.GetDirectoryName(home.Paths.UserConfigFile)!);
         File.WriteAllText(home.Paths.UserConfigFile, new System.Text.Json.Nodes.JsonObject { ["archive"] = new System.Text.Json.Nodes.JsonObject { ["baseFolder"] = baseFolder } }.ToJsonString());
         return (session, baseFolder);
+    }
+
+    /// <summary>WR-T2 over the BUILT CLI in a sandbox <c>%TEMP%</c>: the real supervisor starts the built binary's <c>act A23 --timer --confirm
+    /// --json</c> inside a kill-on-close job. In A23's first (dry) week it previews and deletes nothing, and starts A23's own week, never the
+    /// common one. On an elevated account the supervisor itself is refused with 81.</summary>
+    [Fact]
+    public async Task The_built_binary_supervises_a_dry_cleanup_which_previews_and_deletes_nothing()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the Windows binary's verb: the Windows legs");
+        using var home = new ScenarioHome("tasks-run-cleanup-dry");
+        home.Paths.TempDirectory.Should().StartWith(home.SandboxRoot, "the scenario's %TEMP% is a sandbox folder, never the real one");
+        var old = TempTrees.Make(home.Paths.TempDirectory, "coai-old", 30, ("a.txt", 30));
+
+        var result = await home.RunAsync("tasks", "run", "cleanup", "--json");
+
+        Directory.Exists(old).Should().BeTrue("a dry week deletes nothing");
+        if (Environment.IsPrivilegedProcess)
+        {
+            result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
+            result.Stderr.Should().Contain("tasks run cleanup").And.Contain("Nothing was started");
+            File.Exists(DryRunWindow.File(home.Paths, "A23")).Should().BeFalse();
+            return;
+        }
+
+        result.Stderr.Should().Contain("starting").And.Contain("act A23 --timer --confirm --json").And.Contain("A23's dry-run window");
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        result.Stderr.Should().Contain("the worker exited 0");
+        File.Exists(DryRunWindow.File(home.Paths, "A23")).Should().BeTrue();
+        File.Exists(DryRunWindow.File(home.Paths)).Should().BeFalse("never the common stamp");
+    }
+
+    [Fact]
+    public async Task The_built_binary_supervises_a_real_cleanup_which_deletes_the_old_allowed_tree()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the Windows binary's verb: the Windows legs");
+        using var home = new ScenarioHome("tasks-run-cleanup-real");
+        home.Paths.TempDirectory.Should().StartWith(home.SandboxRoot);
+        var temp = home.Paths.TempDirectory;
+        var old = TempTrees.Make(temp, "coai-old", 30, ("a.txt", 30));
+        var other = TempTrees.Make(temp, "sometool-old", 30, ("x.txt", 30));
+        var claude = TempTrees.Make(temp, "claude", 30, ("log.txt", 30));
+        Directory.CreateDirectory(Path.GetDirectoryName(home.Paths.MachineConfigFile)!);
+        File.WriteAllText(home.Paths.MachineConfigFile, """{ "dryRun": false }""");
+        Directory.CreateDirectory(home.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(home.Paths, "A23"), $$"""{ "schemaVersion": 1, "at": "{{DateTimeOffset.UtcNow.AddDays(-8):O}}" }""");
+
+        var result = await home.RunAsync("tasks", "run", "cleanup", "--json");
+
+        if (Environment.IsPrivilegedProcess)
+        {
+            result.Exit.Should().Be((int)ExitCode.NotAsRoot, result.Stderr);
+            Directory.Exists(old).Should().BeTrue();
+            return;
+        }
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        Directory.Exists(old).Should().BeFalse();
+        Directory.Exists(other).Should().BeTrue("not on the allow-list");
+        Directory.Exists(claude).Should().BeTrue("claude is never touched");
     }
 
     [Fact]

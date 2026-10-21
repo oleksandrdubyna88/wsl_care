@@ -28,6 +28,10 @@ public sealed class TasksRunCommandTests
         { ["tasks", "run", "watch", "--json", "--json"] },
         { ["tasks", "run", "watch", "act", "A19"] },
         { ["tasks", "run", "--json", "watch"] },
+        { ["tasks", "run", "cleanup", "--timer"] },
+        { ["tasks", "run", "A23"] },
+        { ["tasks", "run", "cleanup", "--confirm"] },
+        { ["tasks", "run", "act A23 --timer"] },
     };
 
     [Theory]
@@ -41,6 +45,8 @@ public sealed class TasksRunCommandTests
     [InlineData(new[] { "tasks", "run", "watch" }, "watch", false)]
     [InlineData(new[] { "tasks", "run", "watch", "--json" }, "watch", true)]
     [InlineData(new[] { "tasks", "run", "archive", "--json" }, "archive", true)]
+    [InlineData(new[] { "tasks", "run", "cleanup" }, "cleanup", false)]
+    [InlineData(new[] { "tasks", "run", "cleanup", "--json" }, "cleanup", true)]
     public void A_task_of_the_closed_set_parses(string[] argv, string task, bool json)
     {
         var request = CommandLine.Parse(argv).Should().BeOfType<Request.TasksRun>().Subject;
@@ -93,20 +99,22 @@ public sealed class TasksRunCommandTests
             "wsl-care: tasks run watch: the worker exited 75");
     }
 
-    [Fact]
-    public void A_worker_past_its_deadline_exits_84_with_one_stderr_line_naming_the_deadline()
+    [Theory]
+    [InlineData("watch", "mcpWatchdog.runLimitMinutes", 10)]
+    [InlineData("cleanup", "timer.runLimitMinutes", 276)]
+    public void A_worker_past_its_deadline_exits_84_with_one_stderr_line_naming_the_deadline(string task, string key, int minutes)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         using var world = new World("tasks-run-deadline");
 
-        var (exit, stdout, stderr) = CliRun.Over(world.Host(new RecordingSupervisor(new WorkerOutcome.DeadlinePassed(TimeSpan.FromMinutes(10)))), "tasks", "run", "watch");
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(new RecordingSupervisor(new WorkerOutcome.DeadlinePassed(TimeSpan.FromMinutes(minutes)))), "tasks", "run", task);
 
         exit.Should().Be((int)ExitCode.TaskEnded).And.Be(84);
         stdout.Should().BeEmpty();
-        var lines = stderr.TrimEnd().Split('\n');
-        lines.Should().HaveCount(2, "the start line and ONE terminal line");
-        lines[0].Should().Contain("starting").And.Contain("(mcpWatchdog.runLimitMinutes)");
-        lines[1].Should().StartWith("wsl-care: tasks run watch:").And.Contain("10 min").And.Contain("mcpWatchdog.runLimitMinutes").And.Contain("whole tree");
+        var lines = stderr.TrimEnd().Split('\n').Where(l => !l.Contains("A23's dry-run window", StringComparison.Ordinal)).ToArray();
+        lines.Should().HaveCount(2, "the start line and ONE terminal line (the cleanup task's read-only dry-window line aside)");
+        lines[0].Should().Contain("starting").And.Contain($"({key})");
+        lines[1].Should().StartWith($"wsl-care: tasks run {task}:").And.Contain($"{minutes} min").And.Contain(key).And.Contain("whole tree");
     }
 
     [Fact]
@@ -199,6 +207,29 @@ public sealed class TasksRunCommandTests
         Directory.Exists(newest).Should().BeTrue("the newest verified copy is kept: the tasks may be registered to it already");
     }
 
+    /// <summary>WR-T2 own review (minor 2): an elevated supervisor refuses BEFORE the run-start sweep and starts no worker - for every
+    /// task. The sweep retires folders and the worker would refuse itself anyway; neither should happen from a process the tasks never run as.</summary>
+    [Theory]
+    [InlineData("watch")]
+    [InlineData("archive")]
+    [InlineData("cleanup")]
+    public void An_elevated_supervisor_refuses_with_81_before_the_sweep_and_starts_no_worker(string task)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        using var world = new World("tasks-run-elevated");
+        var older = world.PlantVerified("an older copy", TimeSpan.FromDays(3));
+        var running = world.PlantVerified("the copy this run comes from", TimeSpan.FromDays(1));
+        var supervisor = new RecordingSupervisor(new WorkerOutcome.Exited(0));
+
+        var (exit, stdout, stderr) = CliRun.Over(world.Host(supervisor, Path.Combine(running, Core.Scheduler.StagedCopies.ExeName), elevated: true), "tasks", "run", task, "--json");
+
+        exit.Should().Be((int)ExitCode.NotAsRoot);
+        stdout.Should().BeEmpty();
+        stderr.Should().Contain($"tasks run {task}").And.Contain("elevated").And.Contain("Nothing was started");
+        supervisor.Launches.Should().BeEmpty("no worker was started");
+        Directory.Exists(older).Should().BeTrue("the staging sweep did not run: it would have retired the older copy");
+    }
+
     /// <summary>The coai code round on WR-D2, finding 3: a run-start sweep skipped because the run lock is held is said in ONE stderr
     /// line naming why; the run goes on.</summary>
     [Fact]
@@ -270,7 +301,7 @@ public sealed class TasksRunCommandTests
 
         private WindowsHostPaths Paths => new(WindowsEnvironment.Sandboxed(_root.Path));
 
-        public CliHost Host(IWorkerSupervisor supervisor, string self = Self)
+        public CliHost Host(IWorkerSupervisor supervisor, string self = Self, bool elevated = false)
         {
             var paths = Paths;
             return new CliHost(paths, new Core.Files.PhysicalFileSystem(paths) { OwnersAreThisProcess = true }, _clock, new RecordingCommandRunner())
@@ -278,6 +309,7 @@ public sealed class TasksRunCommandTests
                 Probe = new FakeProbe(HostSide.Windows, _clock),
                 ProcessPath = () => self,
                 Supervisor = supervisor,
+                Privilege = new ProcessPrivilege(elevated, elevated ? "this process is elevated" : "this process is not elevated"),
             };
         }
 

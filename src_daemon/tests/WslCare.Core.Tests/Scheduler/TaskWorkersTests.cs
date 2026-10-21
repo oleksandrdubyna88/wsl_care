@@ -53,6 +53,32 @@ public sealed class TaskWorkersTests
         TaskWorkers.DeadlineKey(WindowsTask.Archive).Should().Be(ConfigKeys.Timer.RunLimitMinutes);
     }
 
+    /// <summary>WR-T2 (I2): the cleanup worker is exactly <c>&lt;self&gt; act A23 --timer --confirm [--json]</c> - the timer mark so A23's own dry
+    /// week and its auto switch gate the run, <c>--confirm</c> because the parser refuses an <c>act</c> without a mode - bounded by the timer's
+    /// run limit. The id in the table is the action's own.</summary>
+    [Theory]
+    [InlineData(false, new[] { "act", "A23", "--timer", "--confirm" })]
+    [InlineData(true, new[] { "act", "A23", "--timer", "--confirm", "--json" })]
+    public void The_cleanup_worker_is_this_binary_s_own_act_a23_timer_confirm_bounded_by_the_timer_s_run_limit(bool json, string[] arguments)
+    {
+        var launch = TaskWorkers.For(WindowsTask.Cleanup, Self, json, Defaults, NeverAsked).Should().BeOfType<Reading<WorkerLaunch>.Available>().Subject.Value;
+
+        launch.Executable.Should().Be(Self);
+        launch.Arguments.Should().Equal(arguments);
+        launch.Deadline.Should().Be(TimeSpan.FromMinutes(Defaults.Int(ConfigKeys.Timer.RunLimitMinutes)));
+        launch.DeadlineKey.Should().Be(ConfigKeys.Timer.RunLimitMinutes.Name);
+        TaskWorkers.DeadlineKey(WindowsTask.Cleanup).Should().Be(ConfigKeys.Timer.RunLimitMinutes);
+        arguments[1].Should().Be(new WslCare.Core.Actions.WindowsTemp.WindowsTempAction().Id.Text, "the table spells the action id literally; this holds the two together");
+    }
+
+    [Fact]
+    public void The_cleanup_entry_never_asks_for_the_archive_body_s_decision()
+    {
+        var launch = TaskWorkers.For(WindowsTask.Cleanup, Self, json: true, Defaults, NeverAsked);
+
+        launch.Should().BeOfType<Reading<WorkerLaunch>.Available>("a cleanup takes no archive decision: that would write the COMMON dry-run stamp");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("wsl-care.exe")]

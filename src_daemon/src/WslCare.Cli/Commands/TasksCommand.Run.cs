@@ -10,7 +10,7 @@ using WslCare.Core.Scheduler;
 namespace WslCare.Cli.Commands;
 
 /// <summary>
-/// <c>tasks run &lt;watch|archive&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): what each per-user task's action runs —
+/// <c>tasks run &lt;watch|archive|cleanup&gt; [--json]</c> (WR-D3 of PLAN_windows_runner.md §3.2, §3.3): what each per-user task's action runs —
 /// the supervisor. It names the worker from the CLOSED table (<see cref="TaskWorkers"/>: this binary's own path, the arguments spelt
 /// there), and hands it to <see cref="CliHost.Supervisor"/>: created suspended inside a kill-on-close job, resumed only inside it,
 /// ended with its whole tree at its deadline. The worker's stdout and stderr ARE this process's (inherited), so the worker's answer is
@@ -32,11 +32,19 @@ internal static partial class TasksCommand
             return (int)ExitCode.Usage;
         }
 
+        if (host.Privilege.IsRoot)
+        {
+            // WR-T2 own review (minor 2): refused BEFORE the sweep - for every task. The sweep retires folders, and a worker started from a
+            // process the tasks never run as would only refuse itself.
+            Output.Note(stderr, $"tasks run {request.Task}: the per-user tasks run as the user and never elevated, and this process is elevated ({host.Privilege.Basis}); run it from a terminal that is not elevated. Nothing was started");
+            return (int)ExitCode.NotAsRoot;
+        }
+
         SweepStagingAtRunStart(host, windows, loaded.Config, stderr);
         var archive = new Lazy<DryRunDecision>(() => ArchiveBody.Decide(loaded, host.Privilege.IsRoot, windows, host.Files, host.Clock.GetUtcNow()));
         return TaskWorkers.For(request.Task, host.ProcessPath(), request.Json, loaded.Config, () => archive.Value) switch
         {
-            Reading<WorkerLaunch>.Available launch => Started(request.Task, launch.Value, host.Supervisor, archive, stderr, cancellationToken),
+            Reading<WorkerLaunch>.Available launch => Started(request.Task, launch.Value, host.Supervisor, archive, () => DryRunWindow.Peek(windows, host.Files, loaded.Config, host.Clock.GetUtcNow(), request.Task.DryWindowStamp), stderr, cancellationToken),
             Reading<WorkerLaunch>.Unavailable refused => Refused(request.Task, refused.Reason, stderr),
             _ => throw new System.Diagnostics.UnreachableException("Reading is a closed set"),
         };
@@ -87,11 +95,17 @@ internal static partial class TasksCommand
     /// <summary>The start of a launch that exists: the archive body's window said first (WR-D5, §3.5: why it is a preview, or why it is
     /// a real run — the decision the table already took for this launch), then the supervised run. Explicit per task, never inferred from
     /// the decision's own state (the coai code round on WR-D5, finding 0); the watch takes no decision and says none.</summary>
-    private static int Started(WindowsTask task, WorkerLaunch launch, IWorkerSupervisor supervisor, Lazy<DryRunDecision> archive, TextWriter stderr, CancellationToken cancellationToken)
+    private static int Started(WindowsTask task, WorkerLaunch launch, IWorkerSupervisor supervisor, Lazy<DryRunDecision> archive, Func<DryRunPeek> cleanupWindow, TextWriter stderr, CancellationToken cancellationToken)
     {
         if (task == WindowsTask.Archive)
         {
             Output.Note(stderr, $"tasks run {WindowsTask.Archive}: {ArchiveBody.Note(archive.Value)}");
+        }
+
+        if (task == WindowsTask.Cleanup)
+        {
+            // A PEEK, never Decide: the worker's engine decides on A23's stamp; a supervisor that wrote it would start the week for a run the worker may refuse.
+            Output.Note(stderr, $"tasks run {WindowsTask.Cleanup}: A23's dry-run window: {cleanupWindow().Reason}");
         }
 
         return Supervised(task, launch, supervisor, stderr, cancellationToken);

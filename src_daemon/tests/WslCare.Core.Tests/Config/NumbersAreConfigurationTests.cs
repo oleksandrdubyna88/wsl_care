@@ -38,7 +38,7 @@ public sealed class NumbersAreConfigurationTests
         "archive.copyBufferKib", "disk.eventsSinceDays", "disk.vhdxGapWarnGib", "disk.vhdxGrowthWarnGibPerDay", "disk.hostFreeWarnGib",
         "disk.growthMinHours", "thresholds.hostCommitWarnPercent", "thresholds.hostCommitCriticalPercent", "thresholds.hostCompressionWarnGb",
         "disk.volumeFreeWarnGib", "disk.volumeFreeCriticalGib", "disk.volumeFreeWarnPercent", "disk.volumeFreeCriticalPercent",
-        "disk.volumeFreeMinSizeGib", "disk.volumeFreeAbsoluteMinSizeGib", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours",
+        "disk.volumeFreeMinSizeGib", "disk.volumeFreeAbsoluteMinSizeGib", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours", "windowsTasks.cleanupLogonDelayMinutes", "windowsTasks.cleanupEveryHours",
         "worktrees.idleDays", "worktrees.artifactSkewMinutes", "worktrees.scanMaxEntries", "worktrees.scanMaxSeconds", "worktrees.reportTop", "worktrees.reportMaxAgeDays", "worktrees.reclaimableWarnGib",
         "worktrees.gitTimeoutSeconds", "worktrees.gitNamesPerCall", "worktrees.gitCommandLineMaxChars",
     ];
