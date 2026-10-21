@@ -27,9 +27,6 @@ public sealed record HostMemoryFacts(
     /// road says the distro reads it (<see cref="DefenderReadByTheDistro"/>).</summary>
     public Reading<DefenderUsage> Defender { get; init; } = Reading.Missing<DefenderUsage>(DefenderReadByTheDistro);
 
-    /// <summary>Why the full run has no vmmem figure: the disk script does not read it (E15.S1b may add it).</summary>
-    public const string VmmemReadByWindows = "vmmemWSL is read by the Windows binary's status";
-
     /// <summary>Why the full run has no host RAM figure.</summary>
     public const string HostTotalReadByWindows = "the host's RAM is read by the Windows binary's status";
 
@@ -46,14 +43,14 @@ public sealed record HostMemoryFacts(
             host.Memory.Map(m => m.TotalBytes),
             wslConfig);
 
-    /// <summary>The distro's full-run road: the Windows disk script's <c>commit=</c> and <c>compression=</c> lines. Its vmmem is unknown,
-    /// so the full run's rule (<c>HostRules.FullRunVerdicts</c>) judges no <c>host.vmmem</c> at all.</summary>
+    /// <summary>The distro's full-run road: the Windows disk script's <c>commit=</c>, <c>compression=</c> and — since E15.S10 §B — <c>vmmem=</c>
+    /// lines. Only the host's RAM stays unread (the vmmem advice then names no total).</summary>
     public static HostMemoryFacts FromWindowsDisk(WindowsDiskSample disk, Reading<WslConfigAudit> wslConfig) =>
         new(
             disk.Facts.Bind(f => f.CommitBytes),
             disk.Facts.Bind(f => f.CommitLimitBytes),
             disk.Facts.Bind(f => f.CompressionBytes),
-            Reading.Missing<long>(VmmemReadByWindows),
+            disk.Facts.Bind(f => f.VmmemBytes),
             Reading.Missing<long>(HostTotalReadByWindows),
             wslConfig);
 }

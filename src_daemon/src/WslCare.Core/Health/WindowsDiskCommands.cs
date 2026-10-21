@@ -134,7 +134,7 @@ public static class WindowsDiskCommands
         var groups = Math.Clamp(groupsMax, ConfigKeys.Disk.EventGroupsMax.Min, ConfigKeys.Disk.EventGroupsMax.Max).ToString(CultureInfo.InvariantCulture);
         var days = Math.Clamp(sinceDays, ConfigKeys.Disk.EventsSinceDays.Min, ConfigKeys.Disk.EventsSinceDays.Max).ToString(CultureInfo.InvariantCulture);
         var max = Math.Clamp(maxRead, ConfigKeys.Disk.EventsMaxRead.Min, ConfigKeys.Disk.EventsMaxRead.Max).ToString(CultureInfo.InvariantCulture);
-        return string.Join("; ", [Prelude, Distros, Docker, Volumes, Disks, Reliability, .. Events(days, max, groups), Commit, Compression, Identity, Machine, Adapters, Print]);
+        return string.Join("; ", [Prelude, Distros, Docker, Volumes, Disks, Reliability, .. Events(days, max, groups), Commit, Compression, Vmmem, Identity, Machine, Adapters, Print]);
     }
 
     private static int Clamped(ConfigKey.IntKey key) => (int)Math.Clamp(Tuning.Current.Int(key), key.Min, key.Max);
@@ -202,6 +202,13 @@ public static class WindowsDiskCommands
     /// <summary>The Memory Compression process's working set, in bytes.</summary>
     private static readonly string Compression =
         $$"""try { $o.Add('{{CompressionTag}}'+@(Get-Process -Name 'Memory Compression')[0].WorkingSet64) } catch { $o.Add('{{CompressionErrorTag}}'+$_.Exception.GetType().Name) }""";
+
+    /// <summary>E15.S10 §B (E15.S5's open tail): the WSL VM's working set as Windows sees it — the working sets of every process named
+    /// <c>vmmemWSL</c>, summed, from the kernel's process snapshot (no handle opened: the same reading the Windows binary's own status takes). No
+    /// such process throws <c>ProcessCommandException</c> under <c>-ErrorAction Stop</c>, and the error line is the answer — never a 0. The
+    /// legacy <c>vmmem</c> name is not read: one rule with the Windows binary's <c>vmmemWSL</c>, and plain <c>vmmem</c> is also other Hyper-V VMs' worker.</summary>
+    private static readonly string Vmmem =
+        $$"""try { $p=@(Get-Process -Name 'vmmemWSL' -ErrorAction Stop); $o.Add('{{VmmemTag}}'+[string](($p | Measure-Object WorkingSet64 -Sum).Sum)) } catch { $o.Add('{{VmmemErrorTag}}'+$_.Exception.GetType().Name) }""";
 
     /// <summary>The edition, the display version, the build with its update revision, the install date (unix seconds) and the
     /// account the script runs as (its SID) — interop runs it as the Windows user who started the VM, whose hive HKCU is.</summary>

@@ -26,7 +26,7 @@ public static class WindowsDiskParsers
     {
         C.DistroTag, C.DistrosErrorTag, C.DockerTag, C.DockerErrorTag, C.VolumeTag, C.VolumesErrorTag, C.DiskTag, C.DisksErrorTag,
         C.ReliabilityTag, C.ReliabilityReadTag, C.ReliabilityRefusedTag, C.EventsReadTag, C.EventGroupsTag, C.EventsErrorTag, C.EventTag,
-        C.CommitTag, C.CommitErrorTag, C.CompressionTag, C.CompressionErrorTag, C.EditionTag, C.VersionTag, C.BuildTag,
+        C.CommitTag, C.CommitErrorTag, C.CompressionTag, C.CompressionErrorTag, C.VmmemTag, C.VmmemErrorTag, C.EditionTag, C.VersionTag, C.BuildTag,
         C.InstallDateTag, C.AccountTag, C.WindowsErrorTag, C.MachineGuidTag, C.MachineErrorTag, C.AdapterTag, C.AdaptersErrorTag,
     };
 
@@ -55,8 +55,9 @@ public static class WindowsDiskParsers
         var (commit, limit, badCommit) = Commit(a);
         var (identity, badIdentity) = Identity(a);
         var compression = Single(a, C.CompressionTag, C.CompressionErrorTag, "Memory Compression's working set").Bind(v => Long(v, "Memory Compression's working set"));
-        var malformed = a.Unread + distros.Bad + volumes.Bad + disks.Bad + adapters.Bad + badReliability + badEvents + docker.Bad + badCommit + badIdentity + Bad(compression, a, C.CompressionTag);
-        return new WindowsDiskFacts(distros.Items, docker.Disk, volumes.Items, disks.Items, reliability, events, commit, limit, compression, Reading.Missing<long>(HostMemoryFacts.VmmemReadByWindows), identity, adapters.Items, malformed);
+        var vmmem = Single(a, C.VmmemTag, C.VmmemErrorTag, "the vmmemWSL working set").Bind(v => Long(v, "the vmmemWSL working set"));
+        var malformed = a.Unread + distros.Bad + volumes.Bad + disks.Bad + adapters.Bad + badReliability + badEvents + docker.Bad + badCommit + badIdentity + Bad(compression, a, C.CompressionTag) + Bad(vmmem, a, C.VmmemTag);
+        return new WindowsDiskFacts(distros.Items, docker.Disk, volumes.Items, disks.Items, reliability, events, commit, limit, compression, vmmem, identity, adapters.Items, malformed);
     }
 
     /// <summary>The lines of one tag as a list, or — when the script printed its error tag — why the section could not be read.

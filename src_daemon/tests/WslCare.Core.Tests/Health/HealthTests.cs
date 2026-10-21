@@ -220,7 +220,8 @@ public sealed class HealthTests : IDisposable
         engine.Kind.Should().Be(InteropEngineKind.WindowsPowerShell);
         engine.Reason.Should().Contain("could not be started").And.Contain("virtiofs");
         // Final code round (finding 4): the command RUN on fallback is the command whose answer is READ — Under(the engine kept).
-        var diskRuns = argv.Where(a => a[0] is HealthCommands.Pwsh or HealthCommands.PowerShell && !a.SequenceEqual(HealthCommands.WindowsClock.Argv)).ToList();
+        // E15.S10: the Defender script runs after the disk script, so it is not one of the disk script's runs either.
+        var diskRuns = argv.Where(a => a[0] is HealthCommands.Pwsh or HealthCommands.PowerShell && !a.SequenceEqual(HealthCommands.WindowsClock.Argv) && !a.SequenceEqual(DefenderCpuCommands.DefenderCpu.Argv)).ToList();
         diskRuns[^1].Should().Equal(WindowsDiskCommands.Under(engine).Argv, "the executed and the parsed command come from one expression");
     }
 

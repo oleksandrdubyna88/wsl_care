@@ -144,8 +144,8 @@ public sealed class HostRulesTests : IDisposable
     public void Vmmem_at_the_advice_key_is_ok_and_unread_vmmem_is_unknown_with_its_reason()
     {
         Judge(Facts(vmmem: Reading.Of(24 * Gib)), "host.vmmem").Level.Should().Be(Level.Ok);
-        Judge(Facts(vmmem: Reading.Missing<long>(HostMemoryFacts.VmmemReadByWindows)), "host.vmmem")
-            .Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason == HostMemoryFacts.VmmemReadByWindows);
+        Judge(Facts(vmmem: Reading.Missing<long>("the Windows disk script could not read the vmmemWSL working set: ProcessCommandException")), "host.vmmem")
+            .Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason.Contains("ProcessCommandException", StringComparison.Ordinal));
     }
 
     [Fact]
