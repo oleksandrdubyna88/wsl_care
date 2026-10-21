@@ -109,9 +109,10 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
         Directory.GetFileSystemEntries(baseFolder).Should().BeEmpty();
     }
 
-    /// <summary>WR-D5 own review m1: an elevated supervisor writes nothing — its worker refuses itself, and the week is not started.</summary>
+    /// <summary>WR-D5 own review m1 (since WR-T2's own review, minor 2): an elevated supervisor writes nothing and starts nothing - it is refused
+    /// before the sweep and before any worker, and the week is not started.</summary>
     [Fact]
-    public void An_elevated_supervisor_previews_and_does_not_start_the_dry_run_week()
+    public void An_elevated_supervisor_is_refused_before_any_worker_and_does_not_start_the_dry_run_week()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         _ = Session();
@@ -121,10 +122,9 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
 
         var (_, _, stderr) = CliRun.Over(_host, "tasks", "run", "archive", "--json");
 
-        supervisor.Launches.Should().ContainSingle().Which.Arguments.Should().Equal("archive", "preview", "--json");
-        Lines(stderr).Should().Contain(l => l.Contains("an elevated process", StringComparison.Ordinal));
+        supervisor.Launches.Should().BeEmpty("no worker is started from an elevated process");
+        Lines(stderr).Should().Contain(l => l.Contains("this process is elevated", StringComparison.Ordinal));
         File.Exists(DryRunWindow.File(_sandbox.Paths)).Should().BeFalse("no stamp: the week is not started by a process that cannot run the archive");
-        supervisor.Workers.Should().ContainSingle().Which.Exit.Should().Be((int)ExitCode.NotAsRoot);
     }
 
     /// <summary>WR-D5 own review M3: a real second archive meets the side's LOCK before the lease; its busy answer names the holder
@@ -272,24 +272,6 @@ public sealed class TasksRunArchiveBodyTests : IDisposable
         File.WriteAllBytes(LeaseFile(baseFolder), JsonSerializer.SerializeToUtf8Bytes(holder, WslCareJsonContext.Compact.LeaseRecord));
     }
 
-    /// <summary>Records the launch, then runs its argv through the same program over the same host — what the real worker would do.</summary>
-    private sealed class RunningSupervisor(Func<CliHost> host) : IWorkerSupervisor
-    {
-        public List<WorkerLaunch> Launches { get; } = [];
-
-        public List<(int Exit, string Stdout, string Stderr)> Workers { get; } = [];
-
-        public Action WhileRunning { get; init; } = static () => { };
-
-        public WorkerOutcome Run(WorkerLaunch launch, CancellationToken cancellationToken)
-        {
-            Launches.Add(launch);
-            WhileRunning();
-            var worker = CliRun.Over(host(), Serilog.Core.Logger.None, cancellationToken, [.. launch.Arguments]);
-            Workers.Add(worker);
-            return new WorkerOutcome.Exited(worker.Exit);
-        }
-    }
 
     private sealed class NoClaude : IWindowsProcessTable
     {

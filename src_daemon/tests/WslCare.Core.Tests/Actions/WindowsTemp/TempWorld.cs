@@ -33,6 +33,7 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
 
     private readonly SandboxHost _host;
     private readonly Dictionary<string, Node> _nodes = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, List<Node>>? _children;
     private readonly Dictionary<string, byte[]> _files = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _held = new(StringComparer.OrdinalIgnoreCase);
 
@@ -93,6 +94,7 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
     {
         EnsureParent(path, written, owner);
         _nodes[Rules.Normalize(path)] = new Node(Rules.Normalize(path), kind, length, written, created ?? written, owner);
+        _children = null;
     }
 
     private void EnsureParent(string path, DateTimeOffset written, string owner)
@@ -173,12 +175,18 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
         BeforeList(path);
         Listed.Add(Rules.Normalize(path));
         var parent = Rules.Normalize(path);
-        IReadOnlyList<FileEntry> taken = [.. _nodes.Values
-            .Where(n => !Rules.PathEquals(n.Path, parent) && Rules.PathEquals(Rules.Parent(n.Path), parent))
+        IReadOnlyList<FileEntry> taken = [.. ChildrenOf(parent)
             .OrderBy(n => Rules.Segments(n.Path)[^1], StringComparer.Ordinal)
             .Select(n => new FileEntry(Rules.Segments(n.Path)[^1], n.Kind, n.Length, n.Written) { CreatedUtc = n.Created })];
         AfterList(path);
         return taken;
+    }
+
+    /// <summary>The direct children of a folder, from an index rebuilt after a change (a listing of a big fake tree would otherwise scan every node).</summary>
+    private List<Node> ChildrenOf(string parent)
+    {
+        _children ??= _nodes.Values.Where(n => !Rules.PathEquals(n.Path, Rules.Parent(n.Path))).GroupBy(n => Rules.Normalize(Rules.Parent(n.Path)), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        return _children.TryGetValue(parent, out var list) ? list : [];
     }
 
     public override LinkReadResult ReadLink(string path) =>
@@ -197,13 +205,21 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
     public override RealPathResult ResolvePath(string path) =>
         new RealPathResult.Resolved(Redirected.TryGetValue(Rules.Normalize(path), out var elsewhere) ? elsewhere : Rules.Normalize(path));
 
-    public override void CreateDirectory(string path) => Add(path, EntryKind.Directory, Now, Sid);
+    public override void CreateDirectory(string path)
+    {
+        Writes.Add(Rules.Normalize(path));
+        Add(path, EntryKind.Directory, Now, Sid);
+    }
 
     public override FileReadResult ReadFile(string path) =>
         _files.TryGetValue(Rules.Normalize(path), out var bytes) ? new FileReadResult.Content(bytes) : new FileReadResult.Missing();
 
+    /// <summary>Every file written through the seam, in order - a read-only verb writes none.</summary>
+    public List<string> Writes { get; } = [];
+
     public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope)
     {
+        Writes.Add(Rules.Normalize(path));
         _files[Rules.Normalize(path)] = content.ToArray();
         return DeletionVerdict.Allowed;
     }
@@ -244,6 +260,7 @@ internal sealed class TempWorld : DelegatingFileSystem, IDisposable
         foreach (var gone in _nodes.Keys.Where(k => k == key || (folder && Rules.IsStrictlyUnder(k, key))).ToList())
         {
             _nodes.Remove(gone);
+            _children = null;
         }
 
         AfterDelete(path);
