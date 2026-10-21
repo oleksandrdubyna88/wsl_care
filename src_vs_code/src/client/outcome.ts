@@ -85,6 +85,8 @@ export type Failure =
   | { readonly kind: 'needsNewerExtension'; readonly schemaVersion: number }
   /** A released daemon older than `MIN_DAEMON_FOR_RENDER`. */
   | { readonly kind: 'daemonTooOld'; readonly version: string; readonly minimum: string }
+  /** The distribution runs under WSL 1: the daemon needs systemd in the WSL 2 VM, so no `-d` call is made and no VM figure is read from it (E18.W1a). */
+  | { readonly kind: 'wsl1'; readonly distro: string }
   /** A run read (E6.S3) whose value is not one the daemon writes — a run id or an instant of another shape; nothing was started. */
   | { readonly kind: 'readRefused'; readonly detail: string };
 

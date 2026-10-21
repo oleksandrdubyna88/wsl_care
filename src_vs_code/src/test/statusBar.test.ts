@@ -162,7 +162,7 @@ const SAMPLES: readonly Failure[] = [
   { kind: 'internalDefect', messages: [] }, { kind: 'interrupted' }, { kind: 'timedOut', timeoutMs: 1 },
   { kind: 'unknownFailure', code: 9, messages: [] }, { kind: 'unparseable', detail: 'd' }, { kind: 'needsNewerExtension', schemaVersion: 2 },
   { kind: 'daemonTooOld', version: '0.0.9', minimum: '0.1.0' }, { kind: 'previewTooManyContainers', containers: 140, timeoutMs: 330_000 }, { kind: 'readRefused', detail: 'that run id is not one the daemon writes' },
-  { kind: 'notAsRoot', distro: 'x', messages: [] },
+  { kind: 'notAsRoot', distro: 'x', messages: [] }, { kind: 'wsl1', distro: 'x' },
 ];
 
 test('every failure kind has a short label and a sentence, and the kind list is complete', () => {
@@ -183,4 +183,11 @@ test('an unavailable PARENT (vm.memory, vm) gives "?" and ITS reason in the tool
   assert.equal(vm.text, 'WSL RAM ?% · swap ?G · ? containers');
   assert.match(vm.tooltip, /Not read: no procfs to read/);
   assert.doesNotMatch(vm.tooltip, /not reported/);
+});
+
+test('E18.W1a-1: wsl1 reads like unsupportedDistro — a short state in the bar, and a sentence that says AI OS Care needs WSL 2', () => {
+  assert.equal(barView(failed('status', { kind: 'wsl1', distro: 'Legacy' })).text, 'AI OS Care: needs WSL 2');
+  const words = failureText({ kind: 'wsl1', distro: 'Legacy' });
+  assert.match(words.sentence, /AI OS Care needs WSL 2/);
+  assert.match(words.sentence, /"Legacy"/);
 });

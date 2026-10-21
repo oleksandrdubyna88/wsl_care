@@ -38,6 +38,7 @@ const WORDS: Words = {
   unparseable: (f) => ({ label: 'unreadable answer', sentence: `The daemon's answer could not be read: ${f.detail}.` }),
   needsNewerExtension: (f) => ({ label: 'needs a newer extension', sentence: `The daemon answers in schema ${f.schemaVersion}, which this extension does not know — update the extension.` }),
   daemonTooOld: (f) => ({ label: 'daemon too old', sentence: `The daemon is ${f.version}; this extension needs ${f.minimum} or newer — update the daemon.` }),
+  wsl1: (f) => ({ label: 'needs WSL 2', sentence: `"${f.distro}" is a WSL 1 distribution — AI OS Care needs WSL 2 (the daemon runs under systemd in the WSL 2 VM), so nothing is asked of it.` }),
   readRefused: (f) => ({ label: 'not asked', sentence: `The daemon was not asked: ${f.detail}.` }),
 };
 

@@ -3,6 +3,7 @@ import { classifyExit, launchFailure } from '../client/failures';
 import { parseDaemonVersion } from '../client/handshake';
 import type { DaemonVersion, Failure, JsonObject, VerbOutcome } from '../client/outcome';
 import { DAEMON_PATH } from '../client/WslCareClient';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 import type { ProcessResult, Runner } from '../process/runner';
 import { actionGate, pickIds, type GateOpen } from './actionGate';
 import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult, type PreviewContext } from './rootAnswers';
@@ -57,8 +58,8 @@ import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, Rest
  */
 
 export interface CleanupClient {
-  rootTarget(): Promise<RootTarget | Failure>;
-  run(verb: 'status'): Promise<VerbOutcome>;
+  rootTarget(target: DistroTarget): Promise<RootTarget | Failure>;
+  run(verb: 'status', target: DistroTarget): Promise<VerbOutcome>;
 }
 
 export interface CleanupOptions {
@@ -232,7 +233,7 @@ export class CleanupController {
 
   /** Steps 1 and 2: the target, and this distribution's one slot. */
   private async transaction<T>(body: (target: RootTarget) => Promise<T | RootFailure>): Promise<T | RootFailure> {
-    const target = await this.options.client.rootTarget();
+    const target = await this.options.client.rootTarget(DEFAULT_TARGET);
     if ('kind' in target) {
       return target;
     }
@@ -263,7 +264,7 @@ export class CleanupController {
   }
 
   private async gated(target: RootTarget, required: readonly string[]): Promise<GateOpen | RootFailure> {
-    const outcome = await this.options.client.run('status');
+    const outcome = await this.options.client.run('status', DEFAULT_TARGET);
     if (outcome.kind !== 'answered') {
       return withoutVerb(outcome);
     }
@@ -387,7 +388,7 @@ export class CleanupController {
 
   /** One status read — counted only when it answered for THIS distribution (review L3). */
   private async poll(distro: string): Promise<Poll> {
-    const outcome = await this.options.client.run('status');
+    const outcome = await this.options.client.run('status', DEFAULT_TARGET);
 
     return outcome.kind === 'answered' && outcome.distro === distro ? { answered: true, running: runningOf(statusBody(outcome)) } : { answered: false };
   }

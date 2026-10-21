@@ -44,6 +44,7 @@ import { guardUiFor, newGuardRecorder, recordingQuery, type GuardRecorder } from
 import { startWindowsTime } from './windowsTime/windowsTimeFix';
 import { newWindowsTimeRecorder, windowsTimeUiFor, type WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import { distroSettingText } from './wsl/distros';
+import { DEFAULT_TARGET } from './wsl/distroTarget';
 
 /**
  * AI OS Care — the extension over the `wsl-care` daemon (plan §7, E5–E6). It runs on the Windows side
@@ -167,7 +168,7 @@ function build(context: vscode.ExtensionContext): Parts {
   const log = vscode.window.createOutputChannel('AI OS Care', { log: true });
   context.subscriptions.push(log);
   const host = new CleanupHost({
-    durable: context.globalState, controller: cleanup, read: (request) => client.read(request), outcomes: store,
+    durable: context.globalState, controller: cleanup, read: (request) => client.read(request, DEFAULT_TARGET), outcomes: store,
     askStatus: () => poller.askStatus(), refreshPanel: () => poller.refreshPanel(), focused: () => focus.override ?? vscode.window.state.focused,
     ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(), log: (line) => log.error(line), numbers,
   });
@@ -211,7 +212,7 @@ function windowsPanelActions(bundled: BundledHost, windowsTasks: TasksHost): Pic
 /** The poller: the distribution's client, and — E19.S2b — the bundled Windows daemon's `status` on the same tick, only where its client can start the exe. */
 function pollerOf(client: WslCareClient, windowsClient: WindowsCareClient, store: OutcomeStore, focus: { readonly override: boolean | undefined }): Poller {
   return new Poller({
-    run: (verb, options) => client.run(verb, options),
+    run: (verb, target, options) => client.run(verb, target, options),
     store,
     focused: () => focus.override ?? vscode.window.state.focused,
     refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
@@ -286,7 +287,7 @@ function tasksHostOf(context: vscode.ExtensionContext, parts: TasksParts): Tasks
  */
 function archiveHostOf(testMode: boolean, client: WslCareClient, runner: ReturnType<typeof clientRunner>, store: OutcomeStore, host: CleanupHost, recorder: ArchiveRecorder, log: vscode.LogOutputChannel): ArchiveHost {
   return new ArchiveHost({
-    read: (request) => client.read(request), target: () => client.rootTarget(), runner, outcomes: store, ui: archiveUiFor(testMode, recorder),
+    read: (request) => client.read(request, DEFAULT_TARGET), target: () => client.rootTarget(DEFAULT_TARGET), runner, outcomes: store, ui: archiveUiFor(testMode, recorder),
     log: (line) => log.error(line), numbers, limits: () => limitsOf(store),
     cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: () => host.archiveNow(),
   });
@@ -377,7 +378,7 @@ function tasksFlowsOf(parts: Parts): TasksFlows {
 function installer(parts: Parts): () => void {
   const ui = installUiFor(parts.testMode, parts.install);
 
-  return () => { void installDaemon({ target: () => parts.client.terminalTarget(), ...ui }); };
+  return () => { void installDaemon({ target: () => parts.client.terminalTarget(DEFAULT_TARGET), ...ui }); };
 }
 
 /**
@@ -410,7 +411,7 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
   const { client, store, log } = parts;
 
   return new LogsPanel(context.extensionUri, {
-    durable: context.globalState, read: (request) => client.read(request), status: () => store.snapshot().status, wallNow: () => Date.now(), numbers,
+    durable: context.globalState, read: (request) => client.read(request, DEFAULT_TARGET), status: () => store.snapshot().status, wallNow: () => Date.now(), numbers,
   }, (line) => log.error(line));
 }
 
@@ -488,7 +489,7 @@ function archivePanel(context: vscode.ExtensionContext, parts: Parts): ArchivePa
   // E10.S2b: *Restore* is the cleanup host's — the page hands it entry ids as text and reads its facts; it never touches root/.
   const restore = { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids: readonly string[]) => host.restore(ids) };
 
-  return new ArchivePanel(context.extensionUri, { read: (request) => client.read(request), status: () => store.snapshot().status, restore }, (line) => log.error(line));
+  return new ArchivePanel(context.extensionUri, { read: (request) => client.read(request, DEFAULT_TARGET), status: () => store.snapshot().status, restore }, (line) => log.error(line));
 }
 
 /** The Archive page (E10.S2a): itself, its command (also the archive section's *Open archive…*), the status and the restore (E10.S2b) it follows, its serializer. */

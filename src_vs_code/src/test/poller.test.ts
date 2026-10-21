@@ -5,8 +5,9 @@ import type { VerbOutcome } from '../client/outcome';
 import { WINDOWS_SIDE } from '../client/windowsStatus';
 import type { Verb } from '../client/verbs';
 import type { RunOptions } from '../client/WslCareClient';
-import { DEFAULT_REFRESH_SECONDS, effectiveSeconds, MIN_REFRESH_SECONDS, Poller, type Timers } from '../poll/poller';
+import { DEFAULT_REFRESH_SECONDS, effectiveSeconds, MIN_REFRESH_SECONDS, Poller } from '../poll/poller';
 import { OutcomeStore } from '../state/outcomeStore';
+import { ManualClock } from './support/manualClock';
 import { answered, failed, headBody } from './support/outcomes';
 
 /**
@@ -15,38 +16,6 @@ import { answered, failed, headBody } from './support/outcomes';
  * `doctor` only when the panel opens or Refresh is pressed; a stopped distribution leaves them unasked. The run-log
  * churn the owner decides on (M1) is MEASURED here by running the real policy over a simulated day.
  */
-
-/** A clock the test advances by hand; `every` registers a repeating timer like `setInterval`. */
-class ManualClock implements Timers {
-  now = 0;
-  readonly nowMs = (): number => this.now;
-  private timers: { at: number; ms: number; run: () => void; live: boolean }[] = [];
-
-  every(ms: number, run: () => void): () => void {
-    const timer = { at: this.now + ms, ms, run, live: true };
-    this.timers.push(timer);
-    return () => { timer.live = false; };
-  }
-
-  armed(): number[] {
-    return this.timers.filter((t) => t.live).map((t) => t.ms);
-  }
-
-  /** Move time forward, firing every due timer in order. */
-  advance(ms: number): void {
-    const end = this.now + ms;
-    for (;;) {
-      const due = this.timers.filter((t) => t.live && t.at <= end).sort((a, b) => a.at - b.at)[0];
-      if (due === undefined) {
-        break;
-      }
-      this.now = due.at;
-      due.at += due.ms;
-      due.run();
-    }
-    this.now = end;
-  }
-}
 
 interface World {
   readonly poller: Poller;
@@ -63,7 +32,7 @@ function world(answer: (verb: Verb) => VerbOutcome = okAnswer): World {
   const calls: { verb: Verb; options: RunOptions }[] = [];
   const w: { focused: boolean; seconds: unknown } = { focused: true, seconds: undefined };
   const poller = new Poller({
-    run: (verb, options = {}) => { calls.push({ verb, options }); return Promise.resolve(answer(verb)); },
+    run: (verb, _target, options = {}) => { calls.push({ verb, options }); return Promise.resolve(answer(verb)); },
     store,
     focused: () => w.focused,
     refreshSeconds: () => w.seconds,
@@ -181,6 +150,14 @@ test('a stopped distribution: the panel asks status only — preview and doctor 
   assert.deepEqual(w.store.snapshot().doctor, { kind: 'stopped', distro: 'Ubuntu', verb: 'doctor' });
 });
 
+test('E18.W1a-1: a status that met WSL 1 stops the others like a stopped distribution — status only is asked, preview and doctor show the same words', async () => {
+  const w = world((verb) => failed(verb, { kind: 'wsl1', distro: 'Legacy' }));
+  await w.poller.refreshPanel();
+  assert.deepEqual(verbs(w), ['status']);
+  assert.deepEqual(w.store.snapshot().preview, { kind: 'wsl1', distro: 'Legacy', verb: 'preview' });
+  assert.deepEqual(w.store.snapshot().doctor, { kind: 'wsl1', distro: 'Legacy', verb: 'doctor' });
+});
+
 test('"Start WSL and check" passes startIfStopped to status ONLY', async () => {
   const w = world();
   await w.poller.refreshPanel({ startIfStopped: true });
@@ -255,7 +232,7 @@ function windowsWorld(distro: (verb: Verb) => VerbOutcome = okAnswer, windows: (
   const order: string[] = [];
   const w: { focused: boolean; seconds: unknown; usable: boolean } = { focused: true, seconds: undefined, usable: true };
   const poller = new Poller({
-    run: (verb, options = {}) => { calls.push({ verb, options }); order.push(verb); return Promise.resolve(distro(verb)); },
+    run: (verb, _target, options = {}) => { calls.push({ verb, options }); order.push(verb); return Promise.resolve(distro(verb)); },
     store,
     focused: () => w.focused,
     refreshSeconds: () => w.seconds,

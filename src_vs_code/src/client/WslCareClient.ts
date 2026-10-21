@@ -1,5 +1,7 @@
 import type { ProcessResult, Runner } from '../process/runner';
-import { DISTRO_NAME, distroSettingText, isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
+import { DISTRO_NAME, defaultRow, distroSettingText, isDistroName, parseQuietList, parseVerboseTable } from '../wsl/distros';
+import { distroListOf, namesOf } from '../wsl/distroList';
+import { targetKey, type DistroList, type DistroName, type DistroTarget } from '../wsl/distroTarget';
 import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText } from '../wsl/wslText';
 import { DAEMON_EXIT } from './exitCodes';
@@ -17,7 +19,8 @@ import { PREVIEW_CONTAINER_ASSUMPTION, RUN_READ_CALLS, runReadTail, VERBS, type 
  * (`structure.test.ts`). Every call it makes is one of:
  *
  * - `wsl.exe --list --quiet` — is the configured distribution one WSL reports?
- * - `wsl.exe -l -v` — which is the default (the `*` row), when none is configured?
+ * - `wsl.exe -l -v` — which is the default (the `*` row), when none is configured? And, for a PICKED distribution (E18.W1a), is it
+ *   listed, and under which WSL version? (The one table answers both.)
  * - `wsl.exe --list --running --quiet` — is it running? When it is NOT, the client stops there: no `-d` call at all,
  *   because a `-d` would start the VM (plan §15f #8, §15g m3).
  * - `wsl.exe -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <one of the four closed verbs>` — never `--`
@@ -29,6 +32,15 @@ import { PREVIEW_CONTAINER_ASSUMPTION, RUN_READ_CALLS, runReadTail, VERBS, type 
  * <p>It also builds the one other `wsl.exe` argv the extension has: `-d <distro> --cd ~` for the terminal *Install daemon*
  * opens (`terminalTarget`, E5.S3) — built here so this stays the only module that spells a `wsl.exe` argument; the
  * client never starts that terminal itself.</p>
+ *
+ * <p><b>Which distribution (E18.W1a).</b> Every public road — `run`, `read`, `terminalTarget`, `rootTarget` — takes a
+ * {@link DistroTarget}, required: the DEFAULT (the `wslCare.distro` setting, resolved here exactly as it always was) or a PICKED
+ * `DistroName` that only WSL's own listing can mint (`listDistros`). A picked target is NOT checked against the setting's pattern (the
+ * name came from WSL's list, §15h #4); it is one `-l -v` — which is both the listed check and the version read: a WSL 1 distribution
+ * answers `wsl1` before any running check, because the daemon needs systemd in the WSL 2 VM — then the running question, then the
+ * `-d`. A read never starts a distribution: a picked distro that is not running (or whose running question failed) answers `stopped`.
+ * `listDistros` answers every distribution with its version and running state, and prunes the per-distribution maps to the names it
+ * reported, so a machine's distro count bounds them.</p>
  *
  * <p>The distribution SETTING is validated against a strict pattern BEFORE anything starts; every distribution is
  * checked against `--list` before any `-d`, and a name WSL lists is taken as it is (only a leading `-` is refused —
@@ -70,6 +82,8 @@ export interface TerminalTarget {
   readonly shellPath: string;
   readonly shellArgs: readonly string[];
   readonly distro: string;
+  /** Only for a PICKED target: whether the distribution is running — the install modal says it "will be started" when it is not. */
+  readonly running?: boolean;
 }
 
 /** The DEFAULT ceiling of each of the three WSL questions (`wslCare.timeouts.wslListSeconds`; measured: each answers in about 50 ms). */
@@ -92,6 +106,15 @@ function fail<T>(failure: Failure): Step<T> {
   return { ok: false, failure };
 }
 
+/** The launcher and the distribution a call may go to. */
+type Resolved = { readonly wsl: string; readonly distro: string };
+
+/** One call's subject: the target the caller named, and the `wslCare.distro` setting as it read ONCE for this call. */
+interface Scope {
+  readonly target: DistroTarget;
+  readonly setting: string;
+}
+
 /**
  * A daemon call's `wsl.exe` argv — the one place it is built: `-d <distro> [<as user>] --cd / --exec <daemon> <tail>`.
  * The read-only verbs pass no user; `root/rootCall.ts` — the ONE module that spells a root argv word (plan §15j M1) —
@@ -112,84 +135,115 @@ export class WslCareClient {
   private readonly readsInFlight = new Map<string, Promise<ReadOutcome>>();
   /** The `--version` call in flight per distribution — `preview` and `doctor` asked at once share it (E5 code round). */
   private readonly versionsInFlight = new Map<string, Promise<DaemonVersion>>();
-  private knownVersion: { readonly distro: string; readonly version: DaemonVersion } | undefined;
-  /** The running-container count of the newest `status` answer — what a timed-out `preview` is judged against. */
-  private knownContainers: { readonly distro: string; readonly count: number } | undefined;
+  /** The daemon version last read, per RESOLVED distribution name; pruned by `listDistros` to the names WSL reports. */
+  private readonly knownVersion = new Map<string, DaemonVersion>();
+  /** The running-container count of the newest `status` answer, per distribution — what a timed-out `preview` is judged against. */
+  private readonly knownContainers = new Map<string, number>();
 
   constructor(private readonly options: ClientOptions) {}
 
   /**
-   * Run `verb`; a run of the same verb for the same `wslCare.distro` value already in flight is shared, never doubled —
-   * except that a run the user asked to START a stopped distribution is never folded into a poll (which would answer
-   * "stopped"), so the two are keyed apart. The setting is read ONCE, here, and is part of the key: a call made after
-   * the setting changed never shares the call still running for the previous distribution, whose answer would be shown
-   * under the new one (retro review of PR #9, `distroSwitch.test.ts`).
+   * Run `verb` in the distribution `target` names; a run of the same verb for the same target already in flight is shared, never
+   * doubled — except that a run the user asked to START a stopped distribution is never folded into a poll (which would answer
+   * "stopped"), so the two are keyed apart. The setting is read ONCE, here, and for the DEFAULT target it is part of the key: a call
+   * made after the setting changed never shares the call still running for the previous distribution, whose answer would be shown
+   * under the new one (retro review of PR #9, `distroSwitch.test.ts`). A PICKED target's key is its name, so a default call and a
+   * picked call for the same distribution are two calls: sharing would couple the setting's generation to a picked read.
    */
-  run(verb: Verb, options: RunOptions = {}): Promise<VerbOutcome> {
+  run(verb: Verb, target: DistroTarget, options: RunOptions = {}): Promise<VerbOutcome> {
     const startIfStopped = options.startIfStopped === true;
-    const setting = distroSettingText(this.options.distroSetting());
-    const key = `${setting}|${verb}${startIfStopped ? '+start' : ''}`;
+    const scope = this.scopeOf(target);
+    const key = `${targetKey(target, scope.setting)}|${verb}${startIfStopped ? '+start' : ''}`;
     const running = this.inFlight.get(key);
     if (running !== undefined) {
       return running;
     }
-    const started = this.runOnce(verb, startIfStopped, setting).finally(() => this.inFlight.delete(key));
+    const started = this.runOnce(verb, startIfStopped, scope).finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, started);
 
     return started;
   }
 
   /**
-   * The terminal *Install daemon* may open, or why not — the distribution validated by its shape BEFORE anything starts
-   * and checked against `wsl.exe --list` (which starts no VM) before the terminal exists. Not asked whether it runs: the
-   * person confirmed opening a shell there, which starts it.
+   * Every distribution `wsl.exe` reports, with its version and whether it runs (E18.W1a): `-l -v` (names, the `*`, the version
+   * column) then `--list --running --quiet` (the unlocalised running signal — the state column is localised and is only shown).
+   * A failed running question is NOT a failure of the list: every distribution then reads `running: undefined`, "state not known" —
+   * never "stopped". A failed `-l -v` is the whole answer, and prunes nothing. On an answer the per-distribution maps drop every
+   * name the list does not hold (a machine's distro count bounds them; there is no LRU).
    */
-  async terminalTarget(): Promise<TerminalTarget | Failure> {
+  async listDistros(): Promise<DistroList | Failure> {
     const wsl = this.launcher();
     if (!wsl.ok) {
       return wsl.failure;
     }
-    const distro = await this.listedDistro(wsl.value, distroSettingText(this.options.distroSetting()));
+    const table = await this.wslText(wsl.value, LIST_VERBOSE);
+    if (!table.ok) {
+      return table.failure;
+    }
+    const list = distroListOf(table.value, await this.runningNames(wsl.value));
+    this.forgetUnlisted(namesOf(list));
 
-    return distro.ok ? { kind: 'terminal', shellPath: wsl.value, shellArgs: ['-d', distro.value, '--cd', '~'], distro: distro.value } : distro.failure;
+    return list;
+  }
+
+  /**
+   * The terminal *Install daemon* may open, or why not. The DEFAULT: the distribution validated by its shape BEFORE anything starts
+   * and checked against `wsl.exe --list` (which starts no VM) before the terminal exists; not asked whether it runs — the person
+   * confirmed opening a shell there, which starts it. A PICKED distribution applies the listed and version checks (a WSL 1 one answers
+   * `wsl1`: no terminal) and answers whether it runs, so the modal can say "<distro> is stopped and will be started" — the user's
+   * explicit act, as *Start … and check* is.
+   */
+  async terminalTarget(target: DistroTarget): Promise<TerminalTarget | Failure> {
+    const wsl = this.launcher();
+    if (!wsl.ok) {
+      return wsl.failure;
+    }
+
+    return target.kind === 'picked' ? this.pickedTerminal(wsl.value, target.distro) : this.defaultTerminal(wsl.value);
   }
 
   /**
    * Where a ROOT call may go (E6.S2): the launcher and a validated, listed, RUNNING distribution — exactly the checks of
-   * every read-only verb, and never `startIfStopped`: no root call starts a stopped distribution.
+   * every read-only verb, and never `startIfStopped`: no root call starts a stopped distribution. For a PICKED target the full
+   * picked resolution (listed, version, running) applies: a stopped distribution answers `stopped`, a WSL 1 one `wsl1`, and NO
+   * target is handed out — so no root op or config write can build a `-d` for it.
    */
-  async rootTarget(): Promise<{ readonly wsl: string; readonly distro: string } | Failure> {
-    const target = await this.target(false, distroSettingText(this.options.distroSetting()));
+  async rootTarget(target: DistroTarget): Promise<Resolved | Failure> {
+    const resolved = await this.target(false, this.scopeOf(target));
 
-    return target.ok ? target.value : target.failure;
+    return resolved.ok ? resolved.value : resolved.failure;
   }
 
   /**
    * A run read (E6.S3): `runs show <runId>` or `runs --from <instant> --to <instant>`, unprivileged, with the checks of every
    * read-only verb and never `startIfStopped`. The values are checked BEFORE anything starts — a run id of the daemon's one
    * spelling, instants of exactly `yyyy-MM-ddTHH:mm:ssZ` — so nothing a caller holds reaches argv unvalidated. One read of
-   * the same tail FOR THE SAME DISTRIBUTION SETTING in flight is shared, as `run` shares a verb (the setting is part of the
-   * key, as #23 made it for the verbs: a read asked after a switch never joins the previous distribution's).
+   * the same tail FOR THE SAME TARGET in flight is shared, as `run` shares a verb (the target is part of the key, as #23 made the
+   * setting for the verbs: a read asked after a switch never joins the previous distribution's).
    */
-  read(request: RunRead): Promise<ReadOutcome> {
+  read(request: RunRead, target: DistroTarget): Promise<ReadOutcome> {
     const refusal = readRefusal(request);
     if (refusal !== undefined) {
       return Promise.resolve({ kind: 'readRefused', detail: refusal, read: request.read });
     }
-    const setting = distroSettingText(this.options.distroSetting());
-    const key = `${setting}|${runReadTail(request).join(' ')}`;
+    const scope = this.scopeOf(target);
+    const key = `${targetKey(target, scope.setting)}|${runReadTail(request).join(' ')}`;
     const running = this.readsInFlight.get(key);
     if (running !== undefined) {
       return running;
     }
-    const started = this.readOnce(request, setting).finally(() => this.readsInFlight.delete(key));
+    const started = this.readOnce(request, scope).finally(() => this.readsInFlight.delete(key));
     this.readsInFlight.set(key, started);
 
     return started;
   }
 
-  private async readOnce(request: RunRead, setting: string): Promise<ReadOutcome> {
-    const target = await this.target(false, setting);
+  private scopeOf(target: DistroTarget): Scope {
+    return { target, setting: distroSettingText(this.options.distroSetting()) };
+  }
+
+  private async readOnce(request: RunRead, scope: Scope): Promise<ReadOutcome> {
+    const target = await this.target(false, scope);
     if (!target.ok) {
       return { ...target.failure, read: request.read };
     }
@@ -201,8 +255,8 @@ export class WslCareClient {
     return 'body' in read ? { kind: 'read', read: request.read, distro, body: read.body } : { ...read, read: request.read };
   }
 
-  private async runOnce(verb: Verb, startIfStopped: boolean, setting: string): Promise<VerbOutcome> {
-    const target = await this.target(startIfStopped, setting);
+  private async runOnce(verb: Verb, startIfStopped: boolean, scope: Scope): Promise<VerbOutcome> {
+    const target = await this.target(startIfStopped, scope);
     if (!target.ok) {
       return { ...target.failure, verb };
     }
@@ -218,7 +272,9 @@ export class WslCareClient {
   /** Keeps the running-container count a `status` answered, for `explained`. */
   private remember(distro: string, answer: Answer): void {
     const count = answer.verb === 'status' ? containerCount(answer.body) : undefined;
-    this.knownContainers = count === undefined ? this.knownContainers : { distro, count };
+    if (count !== undefined) {
+      this.knownContainers.set(distro, count);
+    }
   }
 
   /**
@@ -232,7 +288,14 @@ export class WslCareClient {
   }
 
   private containersIn(distro: string): number {
-    return this.knownContainers?.distro === distro ? this.knownContainers.count : 0;
+    return this.knownContainers.get(distro) ?? 0;
+  }
+
+  /** Drops every per-distribution entry whose name `listDistros` did not report. */
+  private forgetUnlisted(listed: ReadonlySet<string>): void {
+    dropUnlisted(this.knownVersion, listed);
+    dropUnlisted(this.knownContainers, listed);
+    dropUnlisted(this.versionsInFlight, listed);
   }
 
   /**
@@ -240,18 +303,64 @@ export class WslCareClient {
    * user's "Start WSL and check") a listed distribution that is not running is still the target: the `-d` call that
    * follows starts it, because the user asked for exactly that. Every other check stands.
    */
-  private async target(startIfStopped: boolean, setting: string): Promise<Step<{ wsl: string; distro: string }>> {
+  private async target(startIfStopped: boolean, scope: Scope): Promise<Step<Resolved>> {
     const wsl = this.launcher();
     if (!wsl.ok) {
       return wsl;
     }
-    const distro = await this.listedDistro(wsl.value, setting);
+    const { target, setting } = scope;
+
+    return target.kind === 'picked' ? this.pickedResolution(wsl.value, target.distro, startIfStopped) : this.defaultResolution(wsl.value, setting, startIfStopped);
+  }
+
+  /** The DEFAULT target: today's road, byte for byte — the setting's pattern, `--list --quiet`, `-l -v` when empty, then the running check. */
+  private async defaultResolution(wsl: string, setting: string, startIfStopped: boolean): Promise<Step<Resolved>> {
+    const distro = await this.listedDistro(wsl, setting);
     if (!distro.ok) {
       return distro;
     }
-    const running = await this.isRunning(wsl.value, distro.value);
+    const running = await this.isRunning(wsl, distro.value);
 
-    return targetOf(wsl.value, distro.value, running || startIfStopped);
+    return targetOf(wsl, distro.value, running || startIfStopped);
+  }
+
+  /**
+   * A PICKED target: ONE `-l -v` that is both the listed check and the version read (WSL 1 stops here, before any running check),
+   * then `--list --running --quiet`. Two `wsl.exe` starts, the count a SET setting's road has today. No pattern check: the name came
+   * from WSL's own listing.
+   */
+  private async pickedResolution(wsl: string, picked: DistroName, startIfStopped: boolean): Promise<Step<Resolved>> {
+    const distro = await this.pickedListed(wsl, picked);
+    if (!distro.ok) {
+      return distro;
+    }
+    const running = await this.isRunning(wsl, distro.value);
+
+    return targetOf(wsl, distro.value, running || startIfStopped);
+  }
+
+  /** `picked` is in the `-l -v` table (`checkListed`) and is not a WSL 1 distribution. */
+  private async pickedListed(wsl: string, picked: DistroName): Promise<Step<string>> {
+    const table = await this.wslText(wsl, LIST_VERBOSE);
+    if (!table.ok) {
+      return table;
+    }
+    const rows = parseVerboseTable(table.value);
+    const listed = checkListed(picked, rows.map((row) => row.name));
+
+    return listed.ok && rows.some((row) => row.name === picked && row.version === 1) ? fail({ kind: 'wsl1', distro: picked }) : listed;
+  }
+
+  private async defaultTerminal(wsl: string): Promise<TerminalTarget | Failure> {
+    const distro = await this.listedDistro(wsl, distroSettingText(this.options.distroSetting()));
+
+    return distro.ok ? terminalOf(wsl, distro.value) : distro.failure;
+  }
+
+  private async pickedTerminal(wsl: string, picked: DistroName): Promise<TerminalTarget | Failure> {
+    const distro = await this.pickedListed(wsl, picked);
+
+    return distro.ok ? { ...terminalOf(wsl, distro.value), running: await this.isRunning(wsl, distro.value) } : distro.failure;
   }
 
   private launcher(): Step<string> {
@@ -280,21 +389,30 @@ export class WslCareClient {
     return chosen.ok ? checkListed(chosen.value, listed) : chosen;
   }
 
+  /** WSL's default (the `*` row of `-l -v`); a WSL 1 default answers `wsl1` — the table was read anyway, so the check costs no call. */
   private async defaultDistro(wsl: string): Promise<Step<string>> {
     const verbose = await this.wslText(wsl, LIST_VERBOSE);
     if (!verbose.ok) {
       return verbose;
     }
-    const marked = parseDefaultDistro(verbose.value);
+    const marked = defaultRow(verbose.value);
+    if (marked === undefined) {
+      return fail({ kind: 'noDefaultDistro', detail: 'wsl.exe -l -v marks no single distribution with *' });
+    }
 
-    return marked === undefined ? fail({ kind: 'noDefaultDistro', detail: 'wsl.exe -l -v marks no single distribution with *' }) : ok(marked);
+    return marked.version === 1 ? fail({ kind: 'wsl1', distro: marked.name }) : ok(marked.name);
   }
 
   /** Running, as `--list --running --quiet` says. Any failure of that question reads as "not running": no `-d`. */
   private async isRunning(wsl: string, distro: string): Promise<boolean> {
+    return (await this.runningNames(wsl))?.includes(distro) === true;
+  }
+
+  /** The names `--list --running --quiet` printed — `undefined` when the question failed (it did not answer, so nothing is known). */
+  private async runningNames(wsl: string): Promise<string[] | undefined> {
     const running = await this.wslText(wsl, LIST_RUNNING);
 
-    return running.ok && parseQuietList(running.value).includes(distro);
+    return running.ok ? parseQuietList(running.value) : undefined;
   }
 
   /** One of `wsl.exe`'s own questions, decoded; a failure is a WSL failure. */
@@ -338,14 +456,18 @@ export class WslCareClient {
    * again. */
   private async versionFor(wsl: string, distro: string, answer: Answer): Promise<DaemonVersion> {
     const own = ownVersion(answer);
-    const version = own ?? this.cachedVersion(distro) ?? (await this.askVersion(wsl, distro));
-    this.knownVersion = version.kind === 'notRead' ? undefined : { distro, version };
+    const version = own ?? this.knownVersion.get(distro) ?? (await this.askVersion(wsl, distro));
+    this.rememberVersion(distro, version);
 
     return version;
   }
 
-  private cachedVersion(distro: string): DaemonVersion | undefined {
-    return this.knownVersion?.distro === distro ? this.knownVersion.version : undefined;
+  private rememberVersion(distro: string, version: DaemonVersion): void {
+    if (version.kind === 'notRead') {
+      this.knownVersion.delete(distro);
+    } else {
+      this.knownVersion.set(distro, version);
+    }
   }
 
   /** One `--version` per distribution at a time: a second asker (the other of `preview` / `doctor`) shares the call in
@@ -416,8 +538,22 @@ function unanswered(result: Extract<ProcessResult, { kind: 'exited' }>, checked:
 }
 
 /** The target when the distribution may be asked (running, or the user asked to start it); "stopped" otherwise. */
-function targetOf(wsl: string, distro: string, mayAsk: boolean): Step<{ wsl: string; distro: string }> {
+function targetOf(wsl: string, distro: string, mayAsk: boolean): Step<Resolved> {
   return mayAsk ? ok({ wsl, distro }) : fail({ kind: 'stopped', distro });
+}
+
+/** The terminal *Install daemon* opens in `distro`: the person's own login shell in their home folder. */
+function terminalOf(wsl: string, distro: string): TerminalTarget {
+  return { kind: 'terminal', shellPath: wsl, shellArgs: ['-d', distro, '--cd', '~'], distro };
+}
+
+/** Removes every key of `entries` that `listed` does not hold. */
+function dropUnlisted(entries: Map<string, unknown>, listed: ReadonlySet<string>): void {
+  for (const name of [...entries.keys()]) {
+    if (!listed.has(name)) {
+      entries.delete(name);
+    }
+  }
 }
 
 /** `status`'s `vm.containers.count`, when it answered one. */

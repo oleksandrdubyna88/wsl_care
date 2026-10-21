@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
+import { isDistroName, parseDefaultDistro, parseQuietList, parseVerboseTable } from '../wsl/distros';
 import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText, stripAnsi, textLines } from '../wsl/wslText';
 import { verboseTable } from './support/recordingRunner';
@@ -79,4 +79,62 @@ test('a distribution name is letters, digits, dot, dash and underscore, never st
   for (const bad of ['', '-u', '--user', '-d', 'Ubuntu 24', 'a;b', 'a&b', '$(id)', 'Ubuntu\n', 'Ubu/ntu', '.hidden', 'A'.repeat(65), 'Убунту']) {
     assert.equal(isDistroName(bad), false, JSON.stringify(bad));
   }
+});
+
+// ---- E18.W1a-1 (RED 1): the verbose table, one parser ----
+
+/**
+ * The WSL 1 row shape is Microsoft's documented layout, NOT measured on this machine (no WSL 1 distro here): the same columns with the
+ * version digit `1`. If a real WSL 1 machine prints otherwise, this fixture is corrected and the deviation recorded (plan W1a §7).
+ */
+const MIXED = [
+  '  NAME              STATE           VERSION',
+  '* Ubuntu            Running         2',
+  '  Legacy            Stopped         1',
+  '  My Distro         Running         2',
+  '  Future            Running         3',
+  '  -x                Running         2',
+  '  Debian            Wird ausgeführt 2',
+  '',
+].join('\r\n');
+
+test('parseVerboseTable over the measured table: three rows, Ubuntu marked, every version 2, the state word kept', () => {
+  const measured = verboseTable([{ name: 'Ubuntu', running: true }, { name: 'docker-desktop', running: true }, { name: 'Ubuntu-26.04', running: false }], 'Ubuntu');
+  assert.deepEqual(parseVerboseTable(measured), [
+    { name: 'Ubuntu', marked: true, stateText: 'Running', version: 2 },
+    { name: 'docker-desktop', marked: false, stateText: 'Running', version: 2 },
+    { name: 'Ubuntu-26.04', marked: false, stateText: 'Stopped', version: 2 },
+  ]);
+});
+
+test('parseVerboseTable over the localised table: the two-word state is ONE row\'s stateText; the header is skipped', () => {
+  const localised = '  NAME              ZUSTAND         VERSION\r\n  Ubuntu            Wird ausgeführt 2\r\n* Debian            Beendet         2\r\n';
+  assert.deepEqual(parseVerboseTable(localised), [
+    { name: 'Ubuntu', marked: false, stateText: 'Wird ausgeführt', version: 2 },
+    { name: 'Debian', marked: true, stateText: 'Beendet', version: 2 },
+  ]);
+});
+
+test('parseVerboseTable over the mixed fixture: a WSL 1 row reads version 1, a 3 reads undefined, "-x" and a spaced name are dropped, neighbours parse', () => {
+  assert.deepEqual(parseVerboseTable(MIXED), [
+    { name: 'Ubuntu', marked: true, stateText: 'Running', version: 2 },
+    { name: 'Legacy', marked: false, stateText: 'Stopped', version: 1 },
+    { name: 'Future', marked: false, stateText: 'Running', version: undefined },
+    { name: 'Debian', marked: false, stateText: 'Wird ausgeführt', version: 2 },
+  ]);
+});
+
+test('parseVerboseTable: an empty answer is no rows; a table with only a header is no rows', () => {
+  assert.deepEqual(parseVerboseTable(''), []);
+  assert.deepEqual(parseVerboseTable('  NAME              STATE           VERSION\r\n'), []);
+});
+
+test('parseVerboseTable drops a spaced name only when the header tells the state column — without a header the first token is the name, as parseDefaultDistro has always read it', () => {
+  assert.deepEqual(parseVerboseTable('* Ubuntu  Running  2\r\n  Debian  Stopped  2\r\n').map((r) => r.name), ['Ubuntu', 'Debian']);
+});
+
+test('parseDefaultDistro runs over the same parser and keeps its answers: the marked row of the mixed table, even for a name a DistroName cannot be minted from', () => {
+  assert.equal(parseDefaultDistro(MIXED), 'Ubuntu');
+  assert.equal(parseDefaultDistro('  NAME              STATE           VERSION\r\n  Ubuntu            Running         2\r\n* -x                Running         2\r\n'), '-x', 'the default road refuses it itself, naming the option rule');
+  assert.equal(parseDefaultDistro('  NAME  STATE  VERSION\r\n* Ubuntu+Dev~2  Running  2\r\n'), 'Ubuntu+Dev~2');
 });

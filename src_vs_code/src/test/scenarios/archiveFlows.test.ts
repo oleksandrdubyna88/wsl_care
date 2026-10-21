@@ -6,6 +6,7 @@ import { newArchiveRecorder, recordingArchiveUi, type ArchiveRecorder } from '..
 import { WslCareClient } from '../../client/WslCareClient';
 import { OutcomeStore } from '../../state/outcomeStore';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from '../support/fakeWorld';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * The extension's scenario harness, ARCHIVE tier (E10.S1a; research/module_tests.md § The extension; the coai code round's finding
@@ -42,10 +43,10 @@ async function scene(input: ScenarioInput, body: (s: Scene) => Promise<void>): P
   try {
     const client = new WslCareClient({ runner: world.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '' });
     const store = new OutcomeStore();
-    store.set('status', await client.run('status'));
+    store.set('status', await client.run('status', DEFAULT_TARGET));
     const before = world.calls().length;
     const recorder = newArchiveRecorder();
-    const host = new ArchiveHost({ read: (r) => client.read(r), target: () => client.rootTarget(), runner: world.runner, outcomes: store, ui: recordingArchiveUi(recorder), log: () => undefined });
+    const host = new ArchiveHost({ read: (r) => client.read(r, DEFAULT_TARGET), target: () => client.rootTarget(DEFAULT_TARGET), runner: world.runner, outcomes: store, ui: recordingArchiveUi(recorder), log: () => undefined });
     await body({ world, host, recorder, archiveCalls: () => ordered(world.calls().slice(before).filter((c) => c.startsWith('-d '))) });
   } finally {
     world.dispose();

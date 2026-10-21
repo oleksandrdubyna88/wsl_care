@@ -14,6 +14,7 @@ import { bodyAt, bodyOf } from '../support/body';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld } from '../support/fakeWorld';
 import { ManualTimers, MapStore } from '../support/memento';
 import { GOLDEN_ROOT, goldenFile } from '../support/paths';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S2b: *Restore* end to end — the REAL Archive page host (`ArchiveController`) wired to the REAL cleanup host as
@@ -76,17 +77,17 @@ function openWindow(world: FakeWorld, durable: MapStore): Window {
   const recorder = newCleanRecorder();
   recorder.answer = true;
   const askStatus = async () => {
-    const outcome = await client.run('status');
+    const outcome = await client.run('status', DEFAULT_TARGET);
     outcomes.set('status', outcome);
     return outcome;
   };
   const host = new CleanupHost({
-    durable, controller, read: (request) => client.read(request), outcomes, askStatus, refreshPanel: async () => { await askStatus(); },
+    durable, controller, read: (request) => client.read(request, DEFAULT_TARGET), outcomes, askStatus, refreshPanel: async () => { await askStatus(); },
     focused: () => true, ui: recordingCleanUi(recorder), timers: new ManualTimers(), now: () => mono, wallNow: () => Date.parse('2026-10-11T10:00:00.000Z'), log: () => undefined,
   });
   const views: ArchivePageView[] = [];
   const page = new ArchiveController({
-    read: (request) => client.read(request), status: () => outcomes.snapshot().status, post: (view) => { views.push(view); },
+    read: (request) => client.read(request, DEFAULT_TARGET), status: () => outcomes.snapshot().status, post: (view) => { views.push(view); },
     restore: { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids) => host.restore(ids) },
   });
   const pending: Promise<void>[] = [];

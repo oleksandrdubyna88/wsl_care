@@ -11,6 +11,7 @@ import { TEST_ENV } from './support/fakeWorld';
 import { answered, headBody } from './support/outcomes';
 import { golden } from './support/paths';
 import { daemonArgv, exited, exitedUtf16, LIST_QUIET, LIST_RUNNING, recordingRunner, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 
 /**
  * Switching `wslCare.distro` while a call for the previous distribution is still in flight (retro review of PR #9,
@@ -77,10 +78,10 @@ test('a preview asked for another distribution is not joined to the one still in
   const rec = recordingRunner(script);
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
 
-  const first = client.run('preview');
+  const first = client.run('preview', DEFAULT_TARGET);
   await asked.promise;
   distro = 'Debian';
-  const second = client.run('preview');
+  const second = client.run('preview', DEFAULT_TARGET);
   held.resolve(exited(0, JSON.stringify(golden('head', 'preview'))));
 
   assert.equal(distroOf(await first), 'Ubuntu');
@@ -95,7 +96,7 @@ test('the panel never shows the previous distribution\'s preview under the new o
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
   const store = new OutcomeStore();
   const options = {
-    run: (verb: Verb, runOptions?: RunOptions) => client.run(verb, runOptions),
+    run: (verb: Verb, target: DistroTarget, runOptions?: RunOptions) => client.run(verb, target, runOptions),
     store,
     focused: () => true,
     refreshSeconds: () => undefined,
@@ -280,7 +281,7 @@ test('a non-string wslCare.distro (a number, null, an object in settings.json) i
     const rec = recordingRunner({});
     const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => raw });
     let outcome: VerbOutcome | undefined;
-    assert.doesNotThrow(() => { void client.run('status').then((o) => { outcome = o; }); }, `run() threw for ${JSON.stringify(raw)}`);
+    assert.doesNotThrow(() => { void client.run('status', DEFAULT_TARGET).then((o) => { outcome = o; }); }, `run() threw for ${JSON.stringify(raw)}`);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(outcome?.kind, 'distroRefused', `${JSON.stringify(raw)}: ${JSON.stringify(outcome)}`);
     assert.equal(rec.requests.length, 0, 'nothing may be started for a setting that is not a name');
@@ -308,10 +309,10 @@ test('a run read asked for another distribution is not joined to the one still i
   const rec = recordingRunner(script);
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
 
-  const first = client.read(read);
+  const first = client.read(read, DEFAULT_TARGET);
   await asked.promise;
   distro = 'Debian';
-  const second = client.read(read);
+  const second = client.read(read, DEFAULT_TARGET);
   held.resolve(exited(0, answer));
 
   const [ubuntu, debian] = [await first, await second];

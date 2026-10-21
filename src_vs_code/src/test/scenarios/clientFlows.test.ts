@@ -8,6 +8,7 @@ import { RUN_READ_NAMES, VERB_NAMES, VERB_TIMEOUT_MS, VERBS, type RunRead, type 
 import { WslCareClient } from '../../client/WslCareClient';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from '../support/fakeWorld';
 import { golden, GOLDEN_ROOT, goldenSets } from '../support/paths';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * The extension's scenario harness, client tier (plan §15g m6; research/module_tests.md § The extension): the REAL
@@ -58,7 +59,7 @@ for (const set of goldenSets()) {
   for (const verb of VERB_NAMES) {
     test(`flow · ${verb} over the ${set} goldens: answered through the fake, exactly the daemon calls it needs, the System32 launcher`, async () => {
       await flow({ ...UBUNTU_RUNNING, answers: path.join(GOLDEN_ROOT, set), version: '0.1.0' }, '', async (client, world) => {
-        const outcome = await client.run(verb);
+        const outcome = await client.run(verb, DEFAULT_TARGET);
         assert.equal(outcome.kind, 'answered', JSON.stringify(outcome));
         assert.deepEqual(daemonCalls(world), expectedDaemonCalls(verb), 'the verb itself, plus ONE --version only for preview / doctor with no status read (status carries productVersion)');
         assert.ok(world.files().every((f) => f === 'C:\\Windows\\System32\\wsl.exe'));
@@ -70,7 +71,7 @@ for (const set of goldenSets()) {
 for (const verb of VERB_NAMES) {
   test(`flow · ${verb} with the distribution stopped: "stopped", and the fake saw no -d call`, async () => {
     await flow({ distros: [{ name: 'Ubuntu', running: false }], defaultDistro: 'Ubuntu', binary: 'present' }, '', async (client, world) => {
-      const outcome: VerbOutcome = await client.run(verb);
+      const outcome: VerbOutcome = await client.run(verb, DEFAULT_TARGET);
       assert.deepEqual(outcome, { kind: 'stopped', verb, distro: 'Ubuntu' });
       assert.deepEqual(daemonCalls(world), []);
     });
@@ -78,13 +79,13 @@ for (const verb of VERB_NAMES) {
 
   test(`flow · ${verb} with the daemon not installed: the measured signature reads as "not installed"`, async () => {
     await flow({ ...UBUNTU_RUNNING, binary: 'missing' }, 'Ubuntu', async (client) => {
-      assert.deepEqual(await client.run(verb), { kind: 'notInstalled', verb, distro: 'Ubuntu' });
+      assert.deepEqual(await client.run(verb, DEFAULT_TARGET), { kind: 'notInstalled', verb, distro: 'Ubuntu' });
     });
   });
 
   test(`flow · ${verb} on a distribution with an old glibc: "unsupported distribution"`, async () => {
     await flow({ ...UBUNTU_RUNNING, binary: 'oldGlibc' }, 'Ubuntu', async (client) => {
-      const outcome = await client.run(verb);
+      const outcome = await client.run(verb, DEFAULT_TARGET);
       assert.equal(outcome.kind, 'unsupportedDistro', JSON.stringify(outcome));
     });
   });
@@ -92,14 +93,14 @@ for (const verb of VERB_NAMES) {
 
 test('flow · a configured distribution that WSL does not list: refused, and the fake saw only the list question', async () => {
   await flow(UBUNTU_RUNNING, 'Debian', async (client, world) => {
-    assert.equal((await client.run('status')).kind, 'distroRefused');
+    assert.equal((await client.run('status', DEFAULT_TARGET)).kind, 'distroRefused');
     assert.deepEqual(world.calls(), ['--list --quiet']);
   });
 });
 
 test('flow · an out-of-pattern distribution: refused, and the fake was never started', async () => {
   await flow(UBUNTU_RUNNING, '-u', async (client, world) => {
-    assert.equal((await client.run('status')).kind, 'distroRefused');
+    assert.equal((await client.run('status', DEFAULT_TARGET)).kind, 'distroRefused');
     assert.deepEqual(world.calls(), []);
   });
 });
@@ -107,7 +108,7 @@ test('flow · an out-of-pattern distribution: refused, and the fake was never st
 test('flow · a daemon refusal under Serilog noise and colour: only the wsl-care: line reaches the caller', async () => {
   const stderr = '\u001b[90m[19:02:11 \u001b[33mINF\u001b[0m] WslCare.Cli: request doctor --json\n\u001b[31mwsl-care: the configuration could not be read\u001b[0m\n';
   await flow({ ...UBUNTU_RUNNING, daemonExit: { code: 2, stderr } }, 'Ubuntu', async (client) => {
-    assert.deepEqual(await client.run('doctor'), { kind: 'refused', verb: 'doctor', messages: ['wsl-care: the configuration could not be read'] });
+    assert.deepEqual(await client.run('doctor', DEFAULT_TARGET), { kind: 'refused', verb: 'doctor', messages: ['wsl-care: the configuration could not be read'] });
   });
 });
 
@@ -116,8 +117,8 @@ test('flow · an unknown schemaVersion in preview blanks preview only — status
   try {
     const answers = editedAnswers(world, 'preview', (b) => { b.schemaVersion = 3; });
     await flow({ ...UBUNTU_RUNNING, answers, version: '0.1.0' }, 'Ubuntu', async (client) => {
-      assert.deepEqual(await client.run('preview'), { kind: 'needsNewerExtension', verb: 'preview', schemaVersion: 3 });
-      assert.equal((await client.run('status')).kind, 'answered');
+      assert.deepEqual(await client.run('preview', DEFAULT_TARGET), { kind: 'needsNewerExtension', verb: 'preview', schemaVersion: 3 });
+      assert.equal((await client.run('status', DEFAULT_TARGET)).kind, 'answered');
     });
   } finally {
     world.dispose();
@@ -131,7 +132,7 @@ test('flow · a hung daemon: the runner kills wsl.exe at the ceiling and the cal
   try {
     const short = new WslCareClient({ runner: (r) => world.runner({ ...r, timeoutMs: Math.min(r.timeoutMs, 900) }), platform: 'win32', env: TEST_ENV, distroSetting: () => 'Ubuntu' });
     const started = Date.now();
-    const outcome = await short.run('status');
+    const outcome = await short.run('status', DEFAULT_TARGET);
     assert.deepEqual(outcome, { kind: 'timedOut', verb: 'status', timeoutMs: VERB_TIMEOUT_MS.status });
     assert.ok(Date.now() - started < 10_000);
   } finally {
@@ -193,7 +194,7 @@ for (const name of RUN_READ_NAMES) {
   test(`flow · run read ${name}: answered through the fake, ONE unprivileged daemon call, the System32 launcher`, async () => {
     const read = RUN_READS[name];
     await flow({ ...UBUNTU_RUNNING, ...read.scenario }, '', async (client, world) => {
-      const outcome = await client.read(read.request);
+      const outcome = await client.read(read.request, DEFAULT_TARGET);
       assert.equal(outcome.kind, 'read', JSON.stringify(outcome).slice(0, 300));
       assert.ok(outcome.kind === 'read');
       read.check(outcome.body);

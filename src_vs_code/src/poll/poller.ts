@@ -2,6 +2,7 @@ import type { Failure, VerbOutcome } from '../client/outcome';
 import type { Verb } from '../client/verbs';
 import type { RunOptions } from '../client/WslCareClient';
 import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 
 /**
  * WHEN the daemon is asked (plan §15f #8, §15g M1, m3) — the one place that decides it:
@@ -55,7 +56,7 @@ export interface Timers {
 }
 
 export interface PollerOptions {
-  readonly run: (verb: Verb, options?: RunOptions) => Promise<VerbOutcome>;
+  readonly run: (verb: Verb, target: DistroTarget, options?: RunOptions) => Promise<VerbOutcome>;
   readonly store: OutcomeStore;
   readonly focused: () => boolean;
   readonly refreshSeconds: () => unknown;
@@ -86,7 +87,7 @@ export function effectiveSeconds(raw: unknown): number {
 
 /** Failures that say where the daemon is (or is not) — `preview` / `doctor` would end the same way, so they are not asked. */
 const TARGET_FAILURES: ReadonlySet<Failure['kind']> = new Set<Failure['kind']>([
-  'stopped', 'notWindows', 'wslMissing', 'distroRefused', 'noDefaultDistro', 'wslFailed', 'notInstalled', 'unsupportedDistro',
+  'stopped', 'notWindows', 'wslMissing', 'distroRefused', 'noDefaultDistro', 'wslFailed', 'notInstalled', 'unsupportedDistro', 'wsl1',
 ]);
 
 function stopsTheOthers(outcome: VerbOutcome): boolean {
@@ -210,7 +211,7 @@ export class Poller {
   }
 
   private async ask(round: number, verb: PanelVerb, options: RunOptions = {}): Promise<VerbOutcome> {
-    const outcome = await this.options.run(verb, options).catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb }));
+    const outcome = await this.options.run(verb, DEFAULT_TARGET, options).catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb }));
     this.settle(round, () => this.options.store.set(verb, outcome));
 
     return outcome;
