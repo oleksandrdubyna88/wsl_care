@@ -1416,3 +1416,11 @@ plan, no measured cost.
   and the shared-budget tests); M5 the person's plan first (2: the shared-budget test and the Timer-counts test); M6 the argv literal changed (2:
   `TaskWorkersTests` cleanup worker, json and not); M7 the period dropped (1: `An_elevated_process_is_refused_before_anything_is_read`); M8 the OLD regexes in the
   scanner (1: `Expected RecursiveDeleteMemberCall()... to be equal to {1, 3, 5}, but {1, 3} contains 1 item(s) less.`).
+
+**WR-T2, the CI lesson (2026-10-21, PR #172).** The Windows CI runner is ELEVATED, and the render tests in `TasksCommandTests` built their host with the real
+process privilege, so 11 of them (the registrable cases, the SID-reason cases and the text answer) read "an elevated process" and failed there while passing on an
+unelevated machine. Reproduced locally first by making `CliHost.Privilege`'s default elevated (the same 11 red, `Expected answer["registrable"]!.GetValue<bool>()
+to be True because an elevated process: the tasks run as the user and are registered unelevated; ... but found False.`); fixed in the TEST (`WindowsWorld.Host`
+pins `ProcessPrivilege(false, ...)`; the elevated render test overrides it), no product change. Re-run under the same simulation: Cli.Tests 521, 0 failed.
+Core.Tests read no process privilege (fake SIDs, `TempWorld`), and the Scenarios branch on `Environment.IsPrivilegedProcess` (skip or the 81 leg). **A render test
+must pin its privilege, because the Windows CI runner is elevated.**

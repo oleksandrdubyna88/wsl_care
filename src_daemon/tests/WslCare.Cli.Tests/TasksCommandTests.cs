@@ -273,6 +273,8 @@ public sealed class TasksCommandTests
                 Probe = new FakeProbe(HostSide.Windows, clock),
                 UserSid = () => Sid,
                 ProcessPath = () => processPath,
+                // The Windows CI runner is ELEVATED: a render test pins its privilege and never inherits the runner's (the guard is the product's).
+                Privilege = new ProcessPrivilege(false, "a test says this process is not elevated"),
             };
         }
 

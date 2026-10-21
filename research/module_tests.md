@@ -3448,6 +3448,8 @@ after the sweep (5).
 
 **The code round 4663beda (2026-10-21), the last cycle.** Rows added to `WindowsTempPreviewTests` (red first, each failure named in plan §14): the preview lists the top level once (`The_preview_lists_the_top_level_once`, 2 listings before); the two plans spend ONE budget and the second gets what is left (`The_two_plans_of_a_preview_spend_one_scan_budget_and_the_second_gets_what_is_left`); reaching `temp.maxItemsPerRun` does not set `wouldBeEligibleLimited` (`Reaching_the_per_run_maximum_is_not_a_budget_that_ran_out`). The recursive-delete scanner now catches a method group (fixture line `Remove(files.DeleteDirectory);`); `TasksPreviewCommandTests` pins the refusal's closing "Nothing was read.". Break-its M1-M8 are in plan §14. **Consequence for CI (earlier cycle):** an elevated runner now takes the 81 leg in the supervisor for all three tasks, so the scenarios that supervised a task there assert 81.
 
+**CI lesson (PR #172).** A render test must pin its privilege (`WindowsWorld.Host` in `TasksCommandTests` gives `ProcessPrivilege(false, ...)`), because the Windows CI runner is ELEVATED: a host that inherits the real elevation answers "an elevated process" and not-registrable. Reproduce such a failure locally by making `CliHost.Privilege`'s default elevated; the 11 render tests went red with the CI message and green after the pin.
+
 **The extension.** The render golden is read by the extension's fake and its Windows tests: its `windowsTasksState.test.ts` counted three golden answers and counts four;
 `npm ci`, `compile`, `bundle` and the whole suite ran in this worktree (1598 tests, 0 failed).
 
