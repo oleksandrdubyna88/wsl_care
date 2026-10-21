@@ -221,6 +221,7 @@ What must be true when W1a is done:
 4. **The poller** reads the default on its schedule as today, and a picked distro ONLY when asked (`readPicked`: on pick,
    *Refresh*, becoming visible — W1b's calls; no timer ever fires for a picked distro). A read never starts a distro: a picked
    distro that is stopped, or stops mid-session, answers the existing `stopped` outcome with no `-d` call. A WSL 1 distro
+   — picked, or the EMPTY setting's default (a set setting naming one keeps today's road, § 7) —
    answers the new `wsl1` outcome ("WSL 1 — AI OS Care needs WSL 2") with no `-d` call, so no VM figure is ever read from it.
 5. **Every action** — the seven root ops, the two config writes, the seven run reads, the install terminal, the explicit
    start — is reachable with an explicit distro; the modals and the journal already name theirs and go on doing so; the
@@ -600,3 +601,37 @@ sequentially, each pull request leaving `main` behaving as today** (every caller
 
 One plan round for the three (this section is the plan), one code round each. W1b starts after W1a-3 is merged — the full
 view's buttons need the host flows' target, and its picker needs `listDistros()` and `readPicked`. **Recommendation: split.**
+
+### 9a. The gate's plan round (session `d18198b1`, 2026-10-21)
+
+Two of three reviewers answered (kimi unparseable); `proceed` at 5 of 6. All six findings accepted and folded in here — they
+bind the build as much as §§ 3–4 do:
+
+1. **A failed running question is not "stopped".** `DistroInfo.running` is `boolean | undefined`: `undefined` when
+   `--list --running --quiet` failed (the picker shows "state not known", never "stopped"). The PICKED resolution keeps
+   today's safe direction — a failed running question answers `stopped` with no `-d` (a read never starts a distro) — and
+   RED 2 / RED 5 pin both halves.
+2. **Goal 4 narrowed** to the picked target and the EMPTY setting's default (a set setting naming a WSL 1 distro keeps today's
+   road, § 7).
+3. **`rootTarget(picked)` and `terminalTarget(picked)` never start a distro behind the user's back.** `rootTarget(picked)`
+   goes through the full picked resolution (listed, version, running): a stopped distro answers `stopped`, a WSL 1 one
+   `wsl1`, and NO target is handed out — so no root op or config write can build a `-d` for it. `terminalTarget(picked)`
+   applies the listed and version checks (`wsl1` refused, no terminal) and answers whether the distro is running; the install
+   modal (W1b's for a picked distro; today's for the default, unchanged) says "<distro> is stopped and will be started" when it
+   is — the user's explicit act, as *Start … and check* is. RED 4b: `rootTarget(picked stopped)` and `rootTarget(picked WSL 1)`
+   answer the Failure and the recording runner holds no `-d`; `terminalTarget(picked WSL 1)` answers `wsl1`.
+4. **No write for a distro the list dropped.** The store keeps the names of the last `dropUnlisted(listed)`; `setPicked` /
+   `setPickedChecking` for a name not in that set are ignored (a `readPicked` that resolves after its distro was unregistered
+   re-inserts nothing). A pick always comes from a list, so a fresh store's first `readPicked` follows a `listDistros()`;
+   W1a-2's test API calls `listDistros()` first. RED 17b: a `readPicked('Debian')` whose `preview` resolves after a list
+   without Debian leaves no Debian snapshot.
+5. **`stopsTheOthers` is extended explicitly** (`poller.ts`, beside `TARGET_FAILURES` `:88-90`) to stop on `wsl1`; RED 16 asserts
+   `readPicked` of a WSL 1 distro asks no `preview` / `doctor` and mirrors `wsl1` into both.
+6. **A row whose name fails `DISTRO_NAME` (`src/wsl/distros.ts:14`) is dropped** by `parseVerboseTable` and never minted (a
+   name with a space, as a side-loaded distro might carry, cannot be a `-d` value the client accepts anyway); RED 1 gains a
+   fixture row with a spaced name that is dropped while its neighbours parse.
+
+The gate's operator order "this plan is a piece of a split already under way — build it as one unit" is applied: W1a is
+built on ONE branch and goes through ONE code round and ONE pull request, as three commits in the order of § 9
+(W1a-1 client + list, W1a-2 store + poller, W1a-3 actions + enumeration), so a reader can still take it a slice at a time.
+§ 9's three-PR recommendation is recorded as what this would have been cut into.
