@@ -87,7 +87,7 @@ public static class ReadCommandTemplates
             () => DockerCommands.Version, () => DockerCommands.SystemDf, () => DockerCommands.SystemDfVerbose, () => DockerCommands.DanglingVolumes,
             () => DockerCommands.VolumeList, () => DockerCommands.ContainerList, () => DockerCommands.Stats, () => DockerCommands.EngineStart,
             () => SystemdCommands.JournalDiskUsage, () => SystemdCommands.ListBoots, () => SystemdCommands.FailedUnits, () => SystemdCommands.Version,
-            () => SystemdCommands.TimeSync, () => HealthCommands.WindowsClock, () => HealthCommands.SnapList,
+            () => SystemdCommands.TimeSync, () => HealthCommands.WindowsClock, () => DefenderCpuCommands.DefenderCpu, () => HealthCommands.SnapList,
         }.Select(CommandTemplate.Fixed),
         ClockReference,
         TimesyncStatus,

@@ -46,10 +46,6 @@ public static class DefenderCpu
     /// <summary>The definition of the figure "per week" — a unit, not a tuning.</summary>
     private const int DaysPerWeek = 7;
 
-    private const int HoursPerDay = 24;
-
-    private const int HoursPerWeek = HoursPerDay * DaysPerWeek;
-
     /// <summary>The cores <paramref name="now"/> used since <paramref name="previous"/>, or why no figure is given.</summary>
     public static Reading<DefenderUsage> Between(DefenderReading previous, DefenderReading now) =>
         SameProcess(previous, now) ? Counted(previous, now) : Reading.Missing<DefenderUsage>(Restarted);
@@ -58,10 +54,11 @@ public static class DefenderCpu
     /// it adds no covered hours. The week is EXTRAPOLATED — core-hours per covered hour, times 168 — when the spans cover fewer hours.</summary>
     public static Reading<DefenderWeek> Week(IReadOnlyList<DefenderSpan> spans, DateTimeOffset now)
     {
-        var inside = spans.Select(s => Clipped(s, now - TimeSpan.FromDays(DaysPerWeek), now)).Where(c => c.Hours > 0).ToList();
+        var week = TimeSpan.FromDays(DaysPerWeek);
+        var inside = spans.Select(s => Clipped(s, now - week, now)).Where(c => c.Hours > 0).ToList();
         var covered = inside.Sum(c => c.Hours);
         return covered > 0
-            ? Reading.Of(new DefenderWeek(inside.Sum(c => c.Hours * c.Cores) / covered * HoursPerWeek, covered, covered < HoursPerWeek))
+            ? Reading.Of(new DefenderWeek(inside.Sum(c => c.Hours * c.Cores) / covered * week.TotalHours, covered, covered < week.TotalHours))
             : Reading.Missing<DefenderWeek>(NoSpan);
     }
 

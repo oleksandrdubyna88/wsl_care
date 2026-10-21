@@ -60,7 +60,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     private static Task<CommandOutcome> RunUnderAsync(ICommandRunner runner, InteropEngine engine, CancellationToken cancellationToken) =>
         runner.RunAsync(WindowsDiskCommands.Under(engine).ToRequest(), cancellationToken);
 
-    private static Reading<TimeSpan> Elapsed(CommandOutcome outcome, Reading<WindowsDiskFacts> facts) =>
+    private static Reading<TimeSpan> Elapsed<T>(CommandOutcome outcome, Reading<T> facts) =>
         outcome is CommandOutcome.Exited exited && facts.IsAvailable ? Reading.Of(exited.Elapsed) : Reading.Missing<TimeSpan>(facts.ReasonOrEmpty);
 
     /// <summary>Why the Windows binary has no Defender sample (E15.S10): the full run in the distro reads it.</summary>
@@ -71,8 +71,14 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// runner — parsed by tag. A script that could not start, timed out, exited non-zero or printed no reading leaves THIS sample
     /// unavailable with that reason and touches nothing else: the disk script has already answered.
     /// </summary>
-    public static Task<DefenderSample> MeasureDefenderAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken) =>
-        Task.FromResult(DefenderSample.Unavailable(clock.GetUtcNow(), "not measured"));
+    public static async Task<DefenderSample> MeasureDefenderAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var at = clock.GetUtcNow();
+        var command = DefenderCpuCommands.DefenderCpu;
+        var outcome = await runner.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false);
+        var reading = ToolAnswers.Read(command, outcome).Bind(DefenderParsers.Parse);
+        return new DefenderSample(at, Elapsed(outcome, reading), reading);
+    }
 
     private const string ClockChange = "Clock change detected";
     /// <summary>The kernel's words for a failed allocation (plan §4.1) — also A2's event (E3.S3).</summary>

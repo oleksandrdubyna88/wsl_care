@@ -7,7 +7,8 @@ namespace WslCare.Core.Health;
 /// The health commands that are neither systemd's nor Docker's, in ONE place — read-only, each with its ceiling:
 /// the Windows clock probe (a SLOW process, so only <c>collect</c> starts it — plan §15b #5), <c>snap list --all</c>
 /// for A9's disabled revisions, the clock reference's HEAD, and the closed set of fixed PowerShell scripts
-/// (<see cref="FixedScripts"/>: the clock probe and, since E15.S1, <see cref="WindowsDiskCommands.WindowsDisk"/>).
+/// (<see cref="FixedScripts"/>: the clock probe, since E15.S1 <see cref="WindowsDiskCommands.WindowsDisk"/> and since E15.S10
+/// <see cref="DefenderCpuCommands.DefenderCpu"/>).
 /// </summary>
 public static class HealthCommands
 {
@@ -147,12 +148,12 @@ public static class HealthCommands
     /// <summary>
     /// The CLOSED set of PowerShell commands the product starts (PLAN_disk_health.md §3.1, E15.S1; E15.S1b): the clock probe
     /// (always Windows PowerShell 5.1), the Windows disk script under 5.1, and the SAME disk script under the bare
-    /// <see cref="Pwsh"/> (the MSI PowerShell 7) — each a fixed argv with no slot. The never-list refuses every PowerShell argv
-    /// that is not EXACTLY one of these (program and arguments), so a third script, a variant of one of these, the clock probe
-    /// under pwsh, pwsh by another spelling or path, or <c>-File</c> never runs. Built from the configuration in force, as the
-    /// commands themselves are.
+    /// <see cref="Pwsh"/> (the MSI PowerShell 7), and — E15.S10 — the Defender CPU script under 5.1 only — each a fixed argv with no slot.
+    /// The never-list refuses every PowerShell argv that is not EXACTLY one of these (program and arguments), so a fifth script, a variant
+    /// of one of these, the clock probe or the Defender script under pwsh, pwsh by another spelling or path, or <c>-File</c> never runs.
+    /// Built from the configuration in force, as the commands themselves are.
     /// </summary>
-    public static IReadOnlyList<ToolCommand> FixedScripts => [WindowsClock, WindowsDiskCommands.WindowsDisk, WindowsDiskCommands.WindowsDiskUnderPwsh];
+    public static IReadOnlyList<ToolCommand> FixedScripts => [WindowsClock, WindowsDiskCommands.WindowsDisk, WindowsDiskCommands.WindowsDiskUnderPwsh, DefenderCpuCommands.DefenderCpu];
 
     public static ToolCommand SnapList => new(Snap, "snap-list-all", ["list", "--all"], SnapCeiling, Cap);
 
