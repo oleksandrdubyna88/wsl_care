@@ -199,9 +199,11 @@ public static class CleanupPreviews
         return figures with { Bytes = figures.Bytes + volumeBytes, Unsized = figures.Unsized + targets.AnonymousVolumes.Count(v => !v.Bytes.IsAvailable) };
     }
 
-    /// <summary>At most <see cref="NamesShown"/> names, then <c>more: N</c> for the rest — a long list never grows the report.</summary>
+    /// <summary>At most <see cref="NamesShown"/> names, then <c>more: N</c> for the rest — a long list never grows the report. Each name is a label anyone
+    /// can put on a container, so it is shown printable (<see cref="Processes.Redaction.ShownText.Printable"/>): no newline forges a preview row, no escape
+    /// drives the terminal (coai code round, E21.S1).</summary>
     internal static IReadOnlyList<string> NamesOf(IReadOnlyList<string> names) =>
-        names.Count <= NamesShown ? names : [.. names.Take(NamesShown), Invariant($"more: {names.Count - NamesShown}")];
+        [.. names.Take(NamesShown).Select(Processes.Redaction.ShownText.Printable), .. names.Count > NamesShown ? [Invariant($"more: {names.Count - NamesShown}")] : Array.Empty<string>()];
 
     private static RowFigures ImageFigures(ImageTargets targets, bool withNote) =>
         Figures([.. targets.Selected.Select(t => t.Bytes)], withNote ? [Note("created more recently than the limit", targets.Younger.Select(t => t.Bytes))] : []);

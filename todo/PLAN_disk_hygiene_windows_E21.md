@@ -64,6 +64,16 @@ manual squash-merge on all-green.
   `Docker/CleanupPreviewTests.cs`, `Docker/DockerCollectorTests.cs`, `research/diagnostics/docker_fixture_redact.mjs`,
   fixtures (M4), `contracts/golden/head/preview.json` (regenerated on the Linux leg, the WSL recipe), README (A5's row),
   `research/module_daemon.md`, `research/module_tests.md`.
+- **As built (2026-10-22, PR #160).** As briefed, with these deviations and additions:
+  - **One fixture line, not two.** M4 measured two real stopped compose containers, but ONE recaptured line (project mapped
+    to `project-1`) is all the fixture needs; the second capture added nothing a test reads. The capture is recorded in
+    `research/2026-10-15_disk_hygiene_measurements.md`.
+  - **Only the project name is read.** The template reads `com.docker.compose.project` and no other compose label: the
+    config-file and working-directory labels carry host paths.
+  - **The names are shown printable** (coai code round): a project name is a label anyone can set, so each listed name
+    passes through `ShownText.Printable` and a newline or an escape can never forge a preview row or drive the terminal.
+  - **The golden moved as expected:** the fixture's compose container and the named volume it holds left A5's
+    figures (count 13 → 12, named volumes 6 → 5) and appear in the new note.
 
 ### E21.S2 = DH-8 — this repository's test leftovers take the prefix
 

@@ -202,6 +202,22 @@ public sealed class CleanupPreviewTests
         note.Names.Should().Equal("p1", "p2", "p3", "p4", "p5", "more: 3");
     }
 
+    /// <summary>coai code round (E21.S1): a compose project name is a label anyone can set on a container, so the names the preview shows can
+    /// never carry a control character — a newline cannot forge a preview row, an escape cannot drive the terminal.</summary>
+    [Fact]
+    public async Task A_project_name_with_control_characters_is_shown_printable()
+    {
+        var snapshot = await CapturedAsync();
+        var details = snapshot.Details.ValueOr([]);
+        var plain = details.First(d => d.Stopped && d.ComposeProject.Length == 0);
+        var hostile = snapshot with { Details = Reading.Of<IReadOnlyList<ContainerDetail>>([.. details.Select(d => d.Id == plain.Id ? d with { ComposeProject = "evil\nA6 fake row\u001b[31m" } : d)]) };
+
+        var note = ComposeNote(Row(CleanupPreviews.Build(hostile, VolumeSeenRecord.Empty, Config(AllAges), Now), "A5"));
+
+        note.Names.Should().Contain("evil?A6 fake row?[31m");
+        note.Names.Should().NotContain(n => n.Any(char.IsControl));
+    }
+
     [Fact]
     public async Task A5Testcontainers_still_takes_a_labelled_compose_module_container()
     {
