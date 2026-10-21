@@ -249,10 +249,45 @@ public sealed partial class ReleaseExtensionWorkflowTests
 
         Permissions(job).Should().Contain(new KeyValuePair<string, string>("packages", "read"), $"{file}/{id} installs the kit from GitHub Packages");
         step["env"].Map[AuthToken].Text.Should().Be(PackagesToken, $"{file}/{id}: the job's own token, through env:, never pasted into the shell");
+        TokenStepOddities(step).Should().BeEmpty($"{file}/{id}: the token step carries the token and NOTHING that changes how npm runs");
         IsTheBareInstall(Run(step)).Should().BeTrue($"{file}/{id}: the token step is exactly `{BareInstall}` — nothing chained, no second line, no comment (it ran: {Run(step)})");
     }
 
     private const string BareInstall = "npm ci --ignore-scripts";
+
+    /// <summary>What else on the token step could change how npm runs while the token is in its environment: any env key beside the
+    /// token (<c>NODE_OPTIONS</c>, <c>npm_config_script_shell</c>, ...) or a <c>shell:</c> override. Empty when the step is clean.</summary>
+    private static List<string> TokenStepOddities(YamlMap step)
+    {
+        var odd = new List<string>();
+        var keys = step.Find("env") is YamlMap env ? env.Keys : [];
+        odd.AddRange(keys.Where(key => key != AuthToken).Select(key => $"the env key {key}"));
+        if (step.Has("shell"))
+        {
+            odd.Add("a shell: override");
+        }
+
+        return odd;
+    }
+
+    [Fact]
+    public void The_token_step_check_rejects_an_extra_env_key_and_a_shell_override()
+    {
+        TokenStepOddities(OneStep("run: npm ci --ignore-scripts\n        env:\n          NODE_AUTH_TOKEN: x")).Should().BeEmpty("the clean step");
+        string[] rejected =
+        [
+            "run: npm ci --ignore-scripts\n        env:\n          NODE_AUTH_TOKEN: x\n          NODE_OPTIONS: --require ./evil.js",
+            "run: npm ci --ignore-scripts\n        env:\n          NODE_AUTH_TOKEN: x\n          npm_config_script_shell: ./evil.sh",
+            "run: npm ci --ignore-scripts\n        shell: bash -e {0}\n        env:\n          NODE_AUTH_TOKEN: x",
+        ];
+        foreach (var step in rejected)
+        {
+            TokenStepOddities(OneStep(step)).Should().NotBeEmpty($"{step.Replace("\n", " | ", StringComparison.Ordinal)} must be rejected");
+        }
+    }
+
+    private static YamlMap OneStep(string body) =>
+        Steps(WorkflowYaml.Parse($"on:\n  push:\njobs:\n  j:\n    steps:\n      - {body}\n", "fixture.yml").Map["jobs"].Map["j"].Map)[0];
 
     /// <summary>The token step's <c>run</c> must BE the install: a substring would let <c>npm ci --ignore-scripts &amp;&amp; npm test</c>, a
     /// comment or an <c>echo</c> of the flag pass while a script runs beside the token.</summary>

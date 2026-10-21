@@ -266,6 +266,37 @@ test('W0 code round: focus() takes effect only on an ATTACHED and focusable elem
   ]);
   assert.equal(page.activeElement, root.children[3], 'the last element to take focus is the input');
 });
+
+test('W0 code round: focus() is also a no-op on a DISABLED element, a HIDDEN one, and one under a hidden ancestor — the kit hides a panel and the tab inside it cannot take focus', () => {
+  const { page } = withRoot(`
+    const vscode = acquireVsCodeApi();
+    const el = document.getElementById('root');
+    const tried = (name, e) => { const before = document.activeElement; e.focus(); const now = document.activeElement; vscode.postMessage({ name, took: now !== before && now === e }); };
+
+    const disabled = document.createElement('button'); disabled.disabled = true; el.appendChild(disabled);
+    tried('disabled button', disabled);
+    const hidden = document.createElement('button'); hidden.hidden = true; el.appendChild(hidden);
+    tried('hidden button', hidden);
+    const panel = document.createElement('div'); panel.hidden = true; el.appendChild(panel);
+    const inside = document.createElement('button'); panel.appendChild(inside);
+    tried('button in a hidden panel', inside);
+    const deeper = document.createElement('div'); panel.appendChild(deeper);
+    const input = document.createElement('input'); deeper.appendChild(input);
+    tried('input two levels under a hidden panel', input);
+    panel.hidden = false;
+    tried('the same button once the panel is shown', inside);
+    const ok = document.createElement('button'); el.appendChild(ok);
+    tried('a plain button', ok);`);
+  assert.deepEqual(page.posted, [
+    { name: 'disabled button', took: false },
+    { name: 'hidden button', took: false },
+    { name: 'button in a hidden panel', took: false },
+    { name: 'input two levels under a hidden panel', took: false },
+    { name: 'the same button once the panel is shown', took: true },
+    { name: 'a plain button', took: true },
+  ]);
+});
+
 test('W0 item 7: a dispatched keydown carries its key, and a preventDefault() the page calls is recorded', () => {
   const { page, root } = withRoot(`
     const vscode = acquireVsCodeApi();

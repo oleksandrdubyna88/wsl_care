@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import * as ts from 'typescript';
 
 import { MAX_REFRESH_SECONDS } from '../poll/poller';
 import { DISTRO_NAME } from '../wsl/distros';
@@ -187,8 +188,31 @@ test('the bundle is CommonJS for node 18 with vscode left external, no source ma
   const host = bundleEntries().find((entry) => entry.kind === 'host');
   assert.ok(host !== undefined);
   assert.deepEqual(host, { kind: 'host', entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js', bundle: true, external: ['vscode'], format: 'cjs', platform: 'node', target: 'node18', sourcemap: false, minify: false });
-  assert.match(fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8'), /DEFINES = \{ host: \{ WSL_CARE_BUILD_STAMP/, 'the host bundle — and only it — is stamped with the version');
+  assert.deepEqual(definedKeys(), ['host'], 'the build stamp is defined for the host bundle ONLY');
+  assert.match(fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8'), /DEFINES = \{ host: \{ WSL_CARE_BUILD_STAMP/, 'and that definition is the stamp');
 });
+
+test('the build stamp is in the host bundle only: the webview bundle carries no "wsl-care-build"', () => {
+  const webview = fs.readFileSync(path.join(EXTENSION_ROOT, 'dist', 'webview', 'full.js'), 'utf8');
+  assert.equal(webview.includes('wsl-care-build'), false, 'dist/webview/full.js is not stamped');
+  assert.ok(fs.readFileSync(path.join(EXTENSION_ROOT, 'dist', 'extension.js'), 'utf8').includes('wsl-care-build'), 'the scan is alive: the host bundle is');
+});
+
+/** The keys of the `DEFINES` object in scripts/bundle.mjs — one key per bundle kind that is stamped — read with the TypeScript parser. */
+function definedKeys(): string[] {
+  const file = ts.createSourceFile('bundle.mjs', fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
+  const keys: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(file) === 'DEFINES' && node.initializer !== undefined && ts.isObjectLiteralExpression(node.initializer)) {
+      keys.push(...node.initializer.properties.map((property) => property.name?.getText(file) ?? ''));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+
+  return keys;
+}
+
 test('the extension carries the repository\'s licence, byte for byte', () => {
   assert.deepEqual(fs.readFileSync(path.join(EXTENSION_ROOT, 'LICENSE')), fs.readFileSync(path.join(REPOSITORY_ROOT, 'LICENSE')));
 });

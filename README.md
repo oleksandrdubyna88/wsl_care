@@ -1066,9 +1066,8 @@ scripts off, then run the scripts without it** — `npm ci --ignore-scripts`, th
 and never a plain `npm ci` with the token set, so no dependency's install script ever runs beside it. CI does exactly that: its own
 read-only token reaches the install step alone.
 
-Dependabot reaches GitHub Packages through the package's **Manage Actions access** grant to this repository (GitHub changelog
-2026-09-08) — there is no `dependabot.yml` change and no secret. Without that grant the grouped npm update job for `src_vs_code`
-may fail entirely, security updates included; the grant is the same one CI's install needs.
+Dependabot reaches GitHub Packages through the package's **Manage Actions access** grant to this repository ([GitHub changelog, 2026-09-08](https://github.blog/changelog/2026-09-08-automatic-dependabot-access-to-github-hosted-registries/)) — there is no `dependabot.yml` change and no secret. Without that grant the grouped npm update job for `src_vs_code`
+may fail entirely, security updates included; the grant is the same one CI's install needs. This is confirmed only when the first Dependabot npm run on `src_vs_code` succeeds.
 
 ```bash
 cd src_vs_code

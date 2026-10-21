@@ -3,7 +3,7 @@
 > Status: **in progress (2026-10-20)** — the stories document of epic E18 of [PLAN_disk_health.md](PLAN_disk_health.md)
 > (§3.4–§3.6 and its E18 table). E18.K1 is done in `dew_flow_vscode_kit` (kit #9 → `655df4de`; **0.2.0 released to
 > GitHub Packages**, release PR #16, run 39481672054 green). This document holds **W0** now; W1a, W1b, W2, W4, W3 and W5
-> are added here, each before its own plan round. **W0 is built (2026-10-21); its code round is done (gate session `e9ba8ab4`: proceed) — awaiting the pull request and merge.** § 6b is the code round, § 9 records what shipped differently.
+> are added here, each before its own plan round. **W0 is built (2026-10-21), code round proceed (gate session `e9ba8ab4`), PR #171 awaiting merge.** § 6b is the code round, § 9 records what shipped differently.
 >
 > Related: [module_vs_code.md](../research/module_vs_code.md), [architecture.md](../research/architecture.md), the kit's
 > `research/PLAN_kit_components_storybook.md` (kit `main` @ `1d2681cc`) §4.3 (the DOM port), §4.6 / §4.6a (the DataTable, its reveal contract and the
@@ -86,7 +86,7 @@ What must be true when W0 is done:
 - **The harness widening** is the list of goal 4 and only that list, with the reason in the module's comment (the kit's
   `research/PLAN_kit_components_storybook.md` §4.3, kit `main` @ `1d2681cc`). `focus()` records `document.activeElement` (the harness
   document gains that read). `input` events read the element's `value`, which the harness already models.
-- **No Dependabot change in W0** (corrected in the code round, 2026-10-21). Dependabot authenticates to GitHub Packages through the package's *Manage Actions access* grant to this repository (GitHub changelog 2026-09-08): no `dependabot.yml` change, no secret, no `ignore` entry, no `registries:` block. Without that grant the grouped npm update job for `src_vs_code` may fail entirely, security updates included. It is the same grant CI's install needs (goal 2); the README says so.
+- **No Dependabot change in W0** (corrected in the code round, 2026-10-21). Dependabot authenticates to GitHub Packages through the package's *Manage Actions access* grant to this repository ([GitHub changelog, 2026-09-08](https://github.blog/changelog/2026-09-08-automatic-dependabot-access-to-github-hosted-registries/)): no `dependabot.yml` change, no secret, no `ignore` entry, no `registries:` block. Without that grant the grouped npm update job for `src_vs_code` may fail entirely, security updates included. It is the same grant CI's install needs (goal 2); the README says so. Confirmed only when the first Dependabot npm run on `src_vs_code` succeeds.
   Recorded as an owner item, not built.
 
 ### 4. RED list (each seen failing for the real reason first)
@@ -142,7 +142,7 @@ both configs. The gate's "split into 2–3 epics" order does not fit: W0 is ONE 
 
 - **A** the token step's `run`, trimmed, must EQUAL `npm ci --ignore-scripts` (a substring let `&&`, `;`, `||`, a second line, a comment or an `echo` of the flag pass); four chained forms and three more are fixtures that must be REJECTED.
 - **B** the README tells a contributor to run `npm ci --ignore-scripts` with the token, unset it, then `npm rebuild` — never a plain `npm ci` with the token.
-- **C** Dependabot authenticates through the package's *Manage Actions access* grant (GitHub changelog 2026-09-08): no secret, no `dependabot.yml` change, no `ignore` entry, no `registries:` block; without the grant the grouped npm update job may fail entirely, security updates included. README, `module_vs_code.md`, `module_tests.md` and this plan said "a Dependabot secret" — corrected.
+- **C** Dependabot authenticates through the package's *Manage Actions access* grant ([GitHub changelog, 2026-09-08](https://github.blog/changelog/2026-09-08-automatic-dependabot-access-to-github-hosted-registries/)): no secret, no `dependabot.yml` change, no `ignore` entry, no `registries:` block; without the grant the grouped npm update job may fail entirely, security updates included. README, `module_vs_code.md`, `module_tests.md` and this plan said "a Dependabot secret" — corrected.
 - **D** the kit page test: a `dispose()`-ALONE case, an exact reveal cell and row before the host replies (no vacuous `includes(SECRET) === false`), and keydown on the FOCUSED tab.
 - **E** `fullView.test.ts` RUNS the shipped `dist/webview/full.js` with and without a `view` mount: no throw, nothing posted, the API acquired once.
 - **F** a host module importing the kit (`…/components`, `…/components.css`, the root) is refused, with planted companions.

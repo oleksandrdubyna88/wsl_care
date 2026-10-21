@@ -389,11 +389,23 @@ function bubble(element: Element, membrane: Membrane, type: string, key?: string
   return { type, key, defaultPrevented: prevented };
 }
 
-/** What a browser lets take focus without help: a button, an input, or any element with a 	abindex attribute. */
+/** What a browser lets take focus without help: a button, an input, or any element with a `tabindex` attribute — and, unless it is disabled or hidden (itself or under a hidden ancestor), which is how the kit hides a tab panel. */
 function isFocusable(element: Element): boolean {
-  return element.tagName === 'BUTTON' || element.tagName === 'INPUT' || element.attributes.tabindex !== undefined;
+  const takesFocus = element.tagName === 'BUTTON' || element.tagName === 'INPUT' || element.attributes.tabindex !== undefined;
+
+  return takesFocus && !element.disabled && !hiddenWithAncestors(element);
 }
 
+/** Whether the element, or anything above it, is `hidden`. */
+function hiddenWithAncestors(element: Element): boolean {
+  for (let at: Element | undefined = element; at !== undefined; at = at.parent) {
+    if (at.hidden) {
+      return true;
+    }
+  }
+
+  return false;
+}
 function attached(element: Element, roots: readonly Element[]): boolean {
   let top = element;
   while (top.parent !== undefined) {

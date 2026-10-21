@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildSync } from 'esbuild';
 
-import { esbuildOptionsOf, webviewEntries, type BundleEntry } from './support/bundleEntries';
+import { esbuildOptionsOf, webviewEntries } from './support/bundleEntries';
 import { Element, runPageScript, type Page } from './support/pageHarness';
 import { EXTENSION_ROOT } from './support/paths';
 
@@ -31,9 +31,11 @@ let bundled: Bundled | undefined;
 /** The test page, bundled once: an IIFE for the browser, CSS emitted beside it as the real bundle's is. */
 function bundle(): Bundled {
   if (bundled === undefined) {
-    // The options that SHIP: the first webview entry of scripts/bundle-entries.json, with this test's entry and no write.
-    const shipped = esbuildOptionsOf(webviewEntries()[0] as BundleEntry);
-    const built = buildSync({ ...shipped, absWorkingDir: EXTENSION_ROOT, entryPoints: ['src/test/webview/kitPageEntry.ts'], outfile: 'kitPage.js', write: false, logLevel: 'silent' });    const text = (extension: string): string => built.outputFiles.find((file) => file.path.endsWith(extension))?.text ?? '';
+    // The options that SHIP: the webview entry that writes dist/webview/full.js (scripts/bundle-entries.json), with this test's entry and no write.
+    const full = webviewEntries().find((entry) => entry.outfile === 'dist/webview/full.js');
+    assert.ok(full !== undefined, 'scripts/bundle-entries.json has the webview entry for dist/webview/full.js');
+    const built = buildSync({ ...esbuildOptionsOf(full), absWorkingDir: EXTENSION_ROOT, entryPoints: ['src/test/webview/kitPageEntry.ts'], outfile: 'kitPage.js', write: false, logLevel: 'silent' });
+    const text = (extension: string): string => built.outputFiles.find((file) => file.path.endsWith(extension))?.text ?? '';
     bundled = { script: text('.js'), styles: text('.css') };
   }
 
@@ -90,6 +92,7 @@ test('arrow keys move the tab and focus it (wrapping), Home and End go to the en
   const other = page.key(focused(), 'a');
   assert.deepEqual([other.defaultPrevented, selected(), page.posted.length], [false, ['windows'], before]);
 });
+
 test('a click on a tab selects it, and the status the tab was given is drawn with its word', () => {
   const { page, root } = open();
   page.click(tab(root, 'windows'));
@@ -162,6 +165,7 @@ test('the reveal: a click hands the host an index and an opaque request — and 
   page.click(button);
   assert.equal(page.posted.length, 1, 'a click on a waiting button tells nobody again');
 });
+
 test('the host\'s answer lands once: reveal(index, text, request) is true for the current request and false when repeated', () => {
   const { page, root } = open();
   page.click(revealButton(root, 0));
@@ -236,6 +240,7 @@ test('dispose() ALONE: the waiting request is dropped (a late answer is false), 
   assert.equal(page.posted.length, posts, 'a reveal click after dispose() tells nobody');
   assert.equal(root.one('tr[data-kit-row="0"]').textContent.includes(SECRET), true, 'dispose() alone does not clear what is revealed');
 });
+
 test('an onReveal that throws leaves the row clickable again: the kit clears the request and rethrows to the click', () => {
   const { page, root } = open();
   const button = revealButton(root, 3);
