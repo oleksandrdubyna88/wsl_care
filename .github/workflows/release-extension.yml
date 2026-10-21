@@ -21,13 +21,15 @@ name: release · extension
 #                       it has — and the first public extension stays root-free: a checkout carrying the root
 #                       module is refused at or below extension-v0.1.0, or before that tag exists (plan §15j B3, §15k #7)
 #                       (.github/scripts/release-extension-guard.sh)
-#   build               npm ci, typecheck, lint, every test (unit, page, structural, bundle scans; the extension-host tier
+#   build               npm ci --ignore-scripts (the packages token on that step) + npm rebuild (without it), typecheck, lint, every test (unit, page, structural, bundle scans; the extension-host tier
 #                       under xvfb), `vsce package` ONCE, the leak checks on that .vsix (--release: the placeholder publisher
 #                       refused; --min-daemon / --min-daemon-actions: the built minima are the ones the guard verified;
 #                       --root-allowed: the guard's answer, so a bundle carrying the root module is refused when the tags
 #                       do not allow it), its .sha256, a workflow
-#                       artifact. `contents: read` ONLY: it runs dependency install scripts and a downloaded VS Code, so it
-#                       holds no signing scope (E5 code round #3).
+#                       artifact. Read scopes ONLY (contents, attestations, and since W0 of todo/PLAN_disk_health_E18.md
+#                       packages — the kit is fetched from GitHub Packages, the token on the install step alone, which
+#                       runs `--ignore-scripts`; `npm rebuild` follows without it): it runs dependency install scripts and
+#                       a downloaded VS Code, so it holds no signing scope (E5 code round #3).
 #   attest              the ONLY job with `id-token: write` + `attestations: write`: it checks out .github/scripts and nothing
 #                       else, downloads the build's artifact, checks the .vsix against its .sha256 and attests THAT file. No
 #                       npm, no node, no dependency — nothing beside the signing scope but the verification script.
@@ -124,12 +126,15 @@ jobs:
     needs: guard
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    # Reading only: this job runs `npm ci` with dependency install scripts, every test and a downloaded VS Code — none of
+    # Reading only: this job installs with `npm ci --ignore-scripts` (the packages token on that step alone), then runs the dependency install
+    # scripts with `npm rebuild` WITHOUT the token, then every test and a downloaded VS Code — none of
     # it may sit beside a signing scope. The attestation is the attest job's (E5 code round #3). `attestations: read` lets
     # the fetch verify the bundled daemon's attestation (E7.S5a) — reading one, never making one.
+    # `packages: read`: the kit is fetched from GitHub Packages (W0 of todo/PLAN_disk_health_E18.md) — reading, never publishing.
     permissions:
       contents: read
       attestations: read
+      packages: read
     defaults:
       run:
         shell: bash
@@ -166,8 +171,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash ../.github/scripts/fetch-windows-daemon.sh "$BUNDLED_DAEMON" .
 
-      - name: Install (the lock file, exactly)
-        run: npm ci
+      # The kit comes from GitHub Packages through src_vs_code/.npmrc (no secret in it). The job's read-only token is handed to THIS
+      # step alone, and the step runs `--ignore-scripts`, so no dependency's lifecycle script runs while it is in the environment;
+      # the scripts the build needs run in the next step, without it. (Prerequisite: the kit's package grants this repository read access.)
+      - name: Install (the lock file, exactly; no install scripts, the packages token on this step only)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm ci --ignore-scripts
+
+      - name: Run the dependencies' install scripts (no token in this step)
+        run: npm rebuild
 
       - name: Typecheck
         run: npm run typecheck
@@ -335,8 +348,10 @@ jobs:
     # The protected Environment: a required reviewer approves, and only extension-v* tags may deploy to it. VSCE_PAT is
     # an Environment secret, so no other job — and no daemon job — can read it.
     environment: marketplace
+    # `packages: read`: `npm ci` installs the kit too, from GitHub Packages (W0 of todo/PLAN_disk_health_E18.md) — reading only.
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         shell: bash
@@ -356,8 +371,12 @@ jobs:
 
       # vsce from the lock file, and NO install scripts: this job holds the Marketplace secret, and a dependency's
       # postinstall has no business running beside it.
+      # The one dependency that is not on the public registry, the kit, needs the job's read-only packages token — on THIS step alone,
+      # which runs no script. VSCE_PAT stays on the publish step; the two never share a step.
       - name: vsce from the lock file, without install scripts
         working-directory: src_vs_code
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm ci --ignore-scripts
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

@@ -1,0 +1,25 @@
+[
+  {
+    "kind": "host",
+    "entryPoints": ["src/extension.ts"],
+    "outfile": "dist/extension.js",
+    "bundle": true,
+    "external": ["vscode"],
+    "format": "cjs",
+    "platform": "node",
+    "target": "node18",
+    "sourcemap": false,
+    "minify": false
+  },
+  {
+    "kind": "webview",
+    "entryPoints": ["src/webview/fullView.ts"],
+    "outfile": "dist/webview/full.js",
+    "bundle": true,
+    "format": "iife",
+    "platform": "browser",
+    "target": "chrome114",
+    "sourcemap": false,
+    "minify": false
+  }
+]
