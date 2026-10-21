@@ -28,7 +28,7 @@ internal static class WindowsTasksGolden
     /// <summary>A digest of the staged folder's shape — no real build's.</summary>
     public const string Digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-    public const string Release = "0.4.0";
+    public const string Release = "0.6.0";
 
     /// <summary>Under the profile name <c>user</c>, the one name a committed golden may carry (<c>FixturePrivacyTests</c>).</summary>
     public const string StagingRoot = "C:\\Users\\user\\AppData\\Local\\wsl-care\\bin";

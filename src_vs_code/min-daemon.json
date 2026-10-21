@@ -2,5 +2,5 @@
   "minDaemonForRender": "0.1.0",
   "minDaemonForActions": "0.1.0",
   "installDaemon": "0.1.2",
-  "bundledDaemon": "0.4.0"
+  "bundledDaemon": "0.6.0"
 }
