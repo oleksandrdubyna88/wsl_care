@@ -1638,7 +1638,9 @@ judged twice and a value is never partly redacted):
    `<redacted>`. A detector that runs out of time answers "unknown" and the argument is `<redacted>` (fail closed).
 5. A creds shape anywhere in the text (§2.3) → `<redacted>`.
 6. *(Amended 2026-10-18, security review C: this arm now comes AFTER arm 7 — a Windows `/password:value` and a script holding a
-   secret word look like paths.)* A PATH → shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
+   secret word look like paths; and, from 2026-10-19, a path of exactly ONE segment — `/x` or `./x` — whose segment is a creds shape
+   or high-entropy is a token with a slash in front and is `<redacted>`; `pass` joined the secret words as a BOUNDED word.)* A PATH →
+   shown whole. A path is: starts with `/`, `./`, `../`, `~/`, `\\`, or `[A-Za-z]:[\\/]`, AND every character is in
    letters and digits of ANY script (`\p{L}`, `\p{N}`) plus space and `._~+@%:/\-()[],'&` (so `C:\Program Files (x86)\…`,
    `/mnt/c/Users/Фёдор Иванов/…` and `D:\dev\a&b` are paths; `/TelemetrySession:{"CollectorApiKey":…}` is NOT — it holds `{`
    and `"`) (plan round, finding 2; a RED case for each of the three paths). Paths carry
@@ -2056,6 +2058,23 @@ whole-argument compare and the unbounded word `key`; B3 first did not compile an
 names a value the golden diff changed, and the new fields are additive (read by key), so the claim "green without a change" rests on
 that reading until the extension suite is run by someone who may install.
 
+**The re-check (Fable, 2026-10-19): SHIP.** A–E are closed by mechanism, not by case, and the judge found no new hole; it strongly
+recommended two small fixes before the merge and the second coai round (proceed) added three findings. All are in the final round,
+each with a RED test and a break-it (restored byte for byte):
+1. **`pass` as a BOUNDED secret word** — `cmdkey /add:srv /user:alice /pass:Hunter2Invented` was shown whole on both binaries (`/pass:`
+   is cmdkey's real syntax). RED: *Expected Shown("cmdkey","/add:srv","/user:alice","/pass:Hunter2Invented") to be the same string, but
+   they differ*; the guards `--bypass`, `--passthrough`, `--passes`. Break-its: P1 (pass out of the blob arm) 2 red, P2 (out of
+   `NamesASecret`) 4 red, P3 (unbounded substring) 6 red.
+2. **A single-segment "path" that is a token** — `/<std base64>` and `./<blob>` passed into `commandLine` and `argumentsShown`. RED:
+   *Expected Shown(argv) to be the same string, but they differ at index 5* (×2). Break-it P4 (stays a path) 2 red; multi-segment paths
+   stay as decided (`.vscode-server/bin/<hex40>/node`).
+3. **coai 9** — the CLI's own invocation was logged with `Printable` only. RED: *Expected line "Help: wsl-care "status --password=Hunter2Invented
+   --json"" to contain "status --password=<redacted> --json"*. Break-it: the call put back — the same red, restored.
+4. **coai 8** — the creds-family catalogue is ONE list (`RedactionCases.CredsFamilyList`) and every top-level alternative of
+   `SecretShapes.Families` must have an invented token in it. Break-it P5 (a family added without a case) 1 red: *Expected uncovered
+   to be empty because each family of SecretShapes.Families needs an invented token …*.
+5. **coai 4** — the timeout direction is written on `SecretShapes.Hits` (true: a hit) and `SafeShapes.Match` (false: not safe).
+
 **Final totals after the security review and the code round (2026-10-20, on `origin/main` 5d7d193d, the fixes in place).** Windows:
 Core 3280 (3191 passed, 89 skipped, 0 failed), CLI 443 (440 passed, 3 skipped, 0 failed), Scenarios 635 (347 passed, 288 skipped,
 0 failed). Linux (WSL, a NEW `/tmp/testsToDelete-wc-e15s7-20261020T182754Z`, script files only): the goldens regenerated with
@@ -2075,5 +2094,17 @@ cover them, and nothing under `src_vs_code` changed.
 - Kernel ring lines (`health.kernelLinesKept`) can echo a command line; routing them through `Shown` is a follow-up.
 - History already written keeps what the old rule showed; `runs.historyRetentionDays` retires it (the PR body says so).
 - E15.S6 is the first wire consumer of `WindowsCommandLine.Shown`.
-- The two golden entries above wait for the security judge; if the 40-hex exemption is to return, it is one `IsGuid`-style shape in
-  `HighEntropy`.
+- A quoting-aware tokenizer for the argument of `sh -c` / `bash -lc`, so only the token goes and not the whole script (the judge's
+  verdict 2 above).
+- **Program-specific flags inside a blob** — `sh -c "curl -u a:b …"`, `"mysql -pX"`, `"tool -p x"`: arm 2 judges ARGUMENTS, and a flag
+  inside one argument is not seen; only a secret WORD in the blob (or `sshpass`) redacts it. The tail: split the blob, detect the
+  program's flag, redact the blob whole.
+- **A URL segment with an extension** (`…/<token>.json`) is not judged by the entropy test (the dot is outside the credential alphabet),
+  and **`;` matrix parameters** (`/a;jsessionid=<token>`) are read as part of a path segment.
+- **`/rp` and `/P:`** — Windows tools' short switches that carry a password (`runas /savecred`, `net use /user: … /P:`) are not
+  secret names; their value is judged only by shape.
+- **Over-redaction costs, accepted (deny by default):** a long CamelCase flag name with a digit (three classes, entropy above 3.5); an
+  UPPERCASE-and-digit environment name of 20 characters or more; a path whose segment holds a space after a secret word
+  (`/opt/Auth Tool/run` — arm 7 runs before the path arm) — which also reaches the R8 matchers (`AgentOrphans.Script`,
+  `IdleGate.IsBuild`, `IsDotnetBuild` read the SHOWN line, so a redacted path is no script and no build); the captured tree has none,
+  and `MatchersOverTheShownLineTests` holds that.

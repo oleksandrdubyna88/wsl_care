@@ -4791,7 +4791,13 @@ but found … Split*), then fourteen more break-its N1–N15 (N3 was not planned
 not judged (5), N7 `pass` not a secret name (1), N8 whitespace no separator (4), N9 `sshpass` no secret word (1), N10 U+2028 / U+2029
 pass (1), N11 the URL detector fails open (1: *Expected offenders to be empty because a match that ran out of time must redact …
 {"UrlRedaction.cs"}*), N12 `Split` public (1), N13 no attached `-u` (2), N14 the total skips whitespace-only arguments (1), N15 the
-Telegram shape removed (3). The plan's *E15.S7 as built* has the table.
+Telegram shape removed (3). The re-check round (2026-10-19, Fable SHIP) added five more: P1 `pass` out of the blob arm (2 red: *Expected
+Shown("cmdkey","/add:srv","/user:alice","/pass:Hunter2Invented") to be the same string, but they differ*), P2 out of `NamesASecret` (4), P3
+`pass` unbounded (6: `--bypass`, `--passthrough`, `--passes` redacted), P4 a one-segment token stays a path (2: *Expected Shown(argv) to be
+the same string, but they differ at index 5*), P5 a family added without a catalogue case (1: *Expected uncovered to be empty because
+each family of SecretShapes.Families needs an invented token …*), and the CLI's own log call put back to `Printable` (red: *Expected line
+"Help: wsl-care "status --password=Hunter2Invented --json"" to contain "status --password=<redacted> --json"*). The plan's *E15.S7 as built*
+has the table.
 
 **Totals** (rebased on `origin/main` a672ae74, 2026-10-18). Windows: Core 3202 (3113 passed, 89 skipped, 0 failed), CLI 443 (440
 passed, 3 skipped, 0 failed), Scenarios 635 (344 passed, 288 skipped, 3 failed: `FixtureAnonymisationTests` was REAL — the identity
