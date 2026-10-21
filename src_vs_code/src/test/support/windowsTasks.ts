@@ -138,3 +138,8 @@ export function renderAnswerOf(name: string, task: TaskName): RenderAnswer {
     dry: { dryRun: flagAt(dry, 'dryRun'), setting: flagAt(dry, 'setting'), week: textAt(dry, 'week'), reason: textAt(dry, 'reason') },
   };
 }
+
+/** What Task Scheduler reads back of a REGISTERED task: the render's summary, the delay as Task Scheduler spells it (PT60S becomes PT1M). */
+export function registeredSummary(task: TaskName): readonly string[] {
+  return renderAnswerOf(task + ' from the staged copy', task).summary.map((line) => line.replaceAll('delay=PT60S', 'delay=PT1M'));
+}

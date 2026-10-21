@@ -6,7 +6,8 @@ import { UNELEVATED_SWITCHES, unelevatedRequest } from '../powershell/unelevated
 import { COMMAND_LINE_MAX, commandLineLength } from '../powershell/commandLine';
 import { NO_ENGINE } from '../powershell/elevatedEngine';
 import { HERE_END, registerTaskScript, removeTasksScript as peerRemove, terminatesHereString } from '../scheduler/registerScript';
-import { installTaskScript, removeTasksScript } from '../windowsTasks/tasksScripts';
+import { installTaskScript, removeTasksScript, runNowScript } from '../windowsTasks/tasksScripts';
+import { runTaskScript } from '../scheduler/runScript';
 import { REMOVE_SCRIPT } from '../windowsTime/guardScripts';
 import { fromExtensionRoot, shippedSources } from './support/paths';
 import { PS51_ENGINE, STORE_ENGINE } from './support/engines';
@@ -143,4 +144,29 @@ test('no module under windowsTasks/ imports src/config/, child_process or the el
 
 test('coai finding 4: the registration module\'s refusal of a terminator line names the terminator', () => {
   assert.throws(() => registerTaskScript('wsl-care', 'watch', `${XML}\n'@\nx`), /'@/);
+});
+
+// ---- WR-E4: the run-now script ----
+
+test('the run-now script names ONE folder and ONE task, reads the state before Run, and refuses a foreign name', () => {
+  for (const task of ['watch', 'archive'] as const) {
+    const text = runNowScript(task);
+    assert.equal(text.split("GetFolder('\\wsl-care')").length, 2, 'ONE folder');
+    assert.equal(text.split("GetTask('" + task + "')").length, 2, 'ONE task');
+    assert.equal(text.split('.Run(').length, 2, 'ONE start');
+    assert.ok(text.startsWith('$env:PSModulePath'), 'the module path is pinned first');
+    assert.ok(text.indexOf("'state='") < text.indexOf('.Run('), 'the state is read AFTER Run(');
+    assert.ok(text.indexOf('-eq 4 -or $task.LastTaskResult -eq 267009') < text.indexOf('.Run('), 'the running test comes AFTER Run(');
+    assert.ok(text.indexOf('-not $task.Enabled') < text.indexOf('.Run('), 'the disabled test comes AFTER Run(');
+    assert.match(text, /\.Run\(\$null\)/);
+    for (const code of [34, 35, 36, 37]) {
+      assert.ok(text.includes('exit ' + code), 'exit ' + code);
+    }
+    assert.doesNotMatch(text, /windows-time-guard|HKLM|-Service|w32tm|Remove-Item|Register-ScheduledTask|DeleteTask|RunEx|schtasks|Import-Module/);
+    assert.doesNotMatch(text, /--timer|\bact\b|wsl-care\.exe|\btasks\b/, 'no daemon word');
+  }
+  assert.throws(() => runNowScript('other' as never), RangeError);
+  assert.throws(() => runNowScript('windows-time-guard' as never), RangeError, 'the guard\'s name is not one of the two tasks');
+  assert.throws(() => runTaskScript("wsl-care'; evil", 'watch'), RangeError);
+  assert.throws(() => runTaskScript('wsl-care', "x'; Remove-Item /"), RangeError);
 });

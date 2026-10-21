@@ -1,5 +1,6 @@
 import { TASK_NAMES, type TaskName } from '../client/verbs';
 import { registerTaskScript, removeTasksScript as removeScriptOf } from '../scheduler/registerScript';
+import { runTaskScript } from '../scheduler/runScript';
 import { TASK_FOLDER } from '../scheduler/taskFolder';
 
 /**
@@ -17,6 +18,15 @@ export function installTaskScript(task: TaskName, xml: string): string {
   }
 
   return registerTaskScript(TASK_FOLDER, task, xml);
+}
+
+/** The start now of `task`: the person's own registered task, through the task's own `Run`. A foreign task name is a `RangeError`, checked against the closed list here (a cast cannot widen it). */
+export function runNowScript(task: TaskName): string {
+  if (!TASK_NAMES.includes(task)) {
+    throw new RangeError(`"${String(task)}" is not one of the two Windows tasks`);
+  }
+
+  return runTaskScript(TASK_FOLDER, task);
 }
 
 /** The removal of both Windows tasks, and of their folder when it is then empty. */

@@ -23,6 +23,7 @@ export interface TasksPrompt {
 
 export const INSTALL_CONFIRM = 'Install it (one PowerShell, not elevated)';
 export const REMOVE_CONFIRM = 'Remove them (one PowerShell, not elevated)';
+export const RUN_CONFIRM = 'Start it now (one PowerShell, not elevated)';
 
 /** The numbers the daemon's render reports, by key — what the task's triggers and deadlines are. A missing key is said so, never guessed. */
 const NOT_REPORTED = '(not reported)';
@@ -117,5 +118,27 @@ export function removePrompt(script: string, engine: Engine): TasksPrompt {
       'A task run in progress is not waited for; Task Scheduler may stop it. Nothing else on Windows is changed.',
     ].map((line) => (line === script ? line : noticeText(line))).join('\n'),
     confirm: REMOVE_CONFIRM,
+  };
+}
+
+/**
+ * The run-now modal (WR-E4): ONE PowerShell as you asks Task Scheduler to start the task the way its next trigger would, and — since the archive task MOVES
+ * files once the dry run is off — the exact script is in the detail, verbatim (the removal's shape; it is short, no read-only tab). Every line but the
+ * script passes `noticeText`.
+ */
+export function runPrompt(task: TaskName, script: string, engine: Engine): TasksPrompt {
+  return {
+    message: `Start the Windows ${task} task now — as you, not elevated?`,
+    detail: [
+      `One PowerShell runs AS YOU — not elevated, no UAC prompt — and asks Task Scheduler to start \\${TASK_FOLDER}\\${task} exactly as its next trigger would: the registered copy, your account, an interactive token, the least privilege.`,
+      `What it does: ${whatOf(task)}.`,
+      'If the task is already running nothing new is started, and the panel says so.',
+      programLine(engine),
+      '',
+      script,
+      '',
+      "The panel's dry line says whether the run previews or acts. Nothing else on Windows is changed.",
+    ].map((line) => (line === script ? line : noticeText(line))).join('\n'),
+    confirm: RUN_CONFIRM,
   };
 }

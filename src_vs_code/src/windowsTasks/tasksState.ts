@@ -2,6 +2,7 @@ import { TASK_NAMES, type TaskName } from '../client/verbs';
 import type { RenderAnswer, RenderResult } from '../client/windowsTasks';
 import { summariesMatch } from '../scheduler/taskSummary';
 import type { PendingTasksOp } from './tasksPending';
+import type { PendingTimes } from '../state/pendingRun';
 import { SCHEDULER_RESULT, taskOf, type LastRun, type SchedulerRead, type TaskRead } from '../scheduler/schedulerAnswer';
 
 /**
@@ -155,16 +156,31 @@ export function windowsTasksState(read: SchedulerRead, copy: CopyState): Windows
   return { copy, tasks, dry: dryOf(copy) };
 }
 
+/** One minute of tolerance for Task Scheduler's last-run instant (its resolution is a second, and a start takes one). */
+const RUN_TOLERANCE_MS = 60_000;
+
+/** A start-now record is over when the task is running, or ran at or after the record started (less the tolerance) — the read's evidence, never a flow's word. */
+function startedOrRan(row: TaskRow, startedAtUtcMs: number): boolean {
+  if (row.kind === 'running') {
+    return true;
+  }
+
+  return row.kind === 'installed' && row.lastRun.kind === 'ran' && Date.parse(row.lastRun.utc) + RUN_TOLERANCE_MS >= startedAtUtcMs;
+}
+
 /**
  * Whether Task Scheduler's read and the copy's probe already show a pending run FINISHED (WR-E3): an install of one task is finished when
  * THAT task's row is `installed` — registered, enabled, idle and its summary equal to the one the staged copy's render of THAT task gives
  * (`summariesMatch`, in `stagedRow`); a removal when both tasks are `notInstalled` and the copy probe found no staged copy. A task that is
  * running, disabled, unreadable or different is not finished — the record then stands to its deadline, the conservative end.
  */
-export function finishedBy(state: WindowsTasksState, pending: PendingTasksOp): boolean {
-  if (pending.op === 'install') {
-    return state.tasks[pending.task].kind === 'installed';
-  }
-
-  return TASK_NAMES.every((name) => state.tasks[name].kind === 'notInstalled') && state.copy.kind === 'notStaged';
+export function finishedBy(state: WindowsTasksState, pending: PendingTasksOp & Partial<PendingTimes>): boolean {
+  return (FINISHED[pending.op] as (s: WindowsTasksState, p: PendingTasksOp & Partial<PendingTimes>) => boolean)(state, pending);
 }
+
+/** The evidence each op's end leaves in the read: an install's row is `installed`, a start's task is running (or ran since), a removal's tasks are gone and its copy too. */
+const FINISHED: { readonly [K in PendingTasksOp['op']]: (state: WindowsTasksState, pending: Extract<PendingTasksOp, { op: K }> & Partial<PendingTimes>) => boolean } = {
+  install: (state, pending) => state.tasks[pending.task].kind === 'installed',
+  run: (state, pending) => startedOrRan(state.tasks[pending.task], pending.startedAtUtcMs ?? Number.POSITIVE_INFINITY),
+  remove: (state) => TASK_NAMES.every((name) => state.tasks[name].kind === 'notInstalled') && state.copy.kind === 'notStaged',
+};

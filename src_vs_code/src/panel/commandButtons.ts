@@ -31,6 +31,8 @@ export const COMMAND_BUTTONS: Readonly<Record<string, CommandButton>> = {
   'wslCare.installWindowsWatchTask': { where: 'page', action: 'installWindowsWatchTask' },
   'wslCare.installWindowsArchiveTask': { where: 'page', action: 'installWindowsArchiveTask' },
   'wslCare.removeWindowsTasks': { where: 'page', action: 'removeWindowsTasks' },
+  'wslCare.runWindowsWatchTask': { where: 'page', action: 'runWindowsWatchTask' },
+  'wslCare.runWindowsArchiveTask': { where: 'page', action: 'runWindowsArchiveTask' },
   'wslCare.chooseArchiveFolder': { where: 'page', action: 'chooseArchiveFolder' },
   'wslCare.stopArchiving': { where: 'page', action: 'stopArchiving' },
   'wslCare.archiveNow': { where: 'page', action: 'archiveNow' },

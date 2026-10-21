@@ -3,7 +3,7 @@ import * as childProcess from 'node:child_process';
 import { test } from 'node:test';
 
 import { unelevatedRequest } from '../powershell/unelevatedLauncher';
-import { installTaskScript, removeTasksScript } from '../windowsTasks/tasksScripts';
+import { installTaskScript, removeTasksScript, runNowScript } from '../windowsTasks/tasksScripts';
 import { queryRequest } from '../windowsTime/guardScripts';
 import { PS51_ENGINE } from './support/engines';
 import { isMachineChange, refusalOf, TASK_RUN, TASK_TRIPWIRE_MESSAGE } from './support/noRealWsl';
@@ -68,5 +68,13 @@ test('Fable major 1: PowerShell method names are case-insensitive — .run( , .R
   }
   for (const read of ['$x.runtime(1)', '$x.RunspaceId', 'Get-ScheduledTask -TaskName run']) {
     assert.equal(isMachineChange(POWERSHELL, ['-NoProfile', '-Command', read]), false, read);
+  }
+});
+
+test('the real run-now request is what the tripwire refuses — judged by the pure function, never spawned', () => {
+  for (const task of ['watch', 'archive'] as const) {
+    const request = unelevatedRequest(PS51_ENGINE, runNowScript(task), 60_000);
+    assert.ok(typeof request !== 'string', 'a request was built');
+    assert.equal(refusalOf(request.file, request.args), TASK_TRIPWIRE_MESSAGE, 'the tripwire lets the run-now through');
   }
 });

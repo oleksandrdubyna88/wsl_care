@@ -7,7 +7,7 @@ import { schedulerReadOf } from '../scheduler/schedulerAnswer';
 import { SchedulerHost } from '../scheduler/schedulerHost';
 import { PENDING_KEY, readPending, sweepPending } from '../windowsTasks/tasksPending';
 import { TasksHost, type TasksHostDeps } from '../windowsTasks/tasksHost';
-import { finishedBy, windowsTasksState, type CopyState, type TaskRow } from '../windowsTasks/tasksState';
+import { finishedBy, windowsTasksState, type CopyState, type TaskRow, type WindowsTasksState } from '../windowsTasks/tasksState';
 import { windowsTasksView } from '../windowsTasks/tasksView';
 import { QUERY_SCRIPT } from '../windowsTime/guardScripts';
 import { exited } from './support/recordingRunner';
@@ -32,7 +32,7 @@ function registered(task: 'watch' | 'archive'): readonly string[] {
 }
 
 interface Options {
-  readonly read?: SchedulerFixture;
+  readonly read?: SchedulerFixture | (() => SchedulerFixture);
   readonly store?: MapStore;
   readonly now?: () => number;
   readonly world?: WorldOptions;
@@ -42,7 +42,8 @@ interface Options {
 function hostOf(options: Options = {}) {
   const world = tasksWorld(options.world);
   const queries: ProcessRequest[] = [];
-  const answer = (): ProcessResult => exited(0, schedulerStdout(options.read ?? { tasks: [] }));
+  const readNow = (): SchedulerFixture => (typeof options.read === 'function' ? options.read() : options.read ?? { tasks: [] });
+  const answer = (): ProcessResult => exited(0, schedulerStdout(readNow()));
   const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query: (request) => { queries.push(request); return Promise.resolve(answer()); } });
   const quiet = quietTasks(undefined, options.now ?? (() => NOW));
   quiet.recorder.answer = true;
@@ -72,8 +73,8 @@ test('a pending run holds every button across a reload — and past its deadline
   const reloaded = hostOf({ store });
   await ready(reloaded);
   const view = reloaded.host.view();
-  assert.deepEqual(view.buttons.map((b) => b.id), ['installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks']);
-  assert.deepEqual(ENABLED(reloaded), [false, false, false], 'expected false, got true');
+  assert.deepEqual(view.buttons.map((b) => b.id), ['installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks', 'runWindowsWatchTask', 'runWindowsArchiveTask']);
+  assert.deepEqual(ENABLED(reloaded), [false, false, false, false, false], 'expected false, got true');
   assert.equal(view.copy.line, 'Waiting for the PowerShell that installs the Windows archive task…');
   assert.equal(await reloaded.host.run({ kind: 'remove' }).then((o) => o?.kind), 'busy');
   assert.deepEqual(reloaded.world.ps(), []);
@@ -82,9 +83,9 @@ test('a pending run holds every button across a reload — and past its deadline
   let now = NOW;
   const later = hostOf({ store, now: () => now });
   await ready(later);
-  assert.deepEqual(ENABLED(later), [false, false, false]);
+  assert.deepEqual(ENABLED(later), [false, false, false, false, false]);
   now = NOW + 120_000;
-  assert.deepEqual(ENABLED(later), [true, true, true], 'past the deadline the record holds nothing');
+  assert.deepEqual(ENABLED(later), [true, true, true, true, true], 'past the deadline the record holds nothing');
   const removal = new MapStore();
   await removal.update(PENDING_KEY, { op: 'remove', startedAtUtcMs: NOW - 10, deadlineUtcMs: NOW + 1 });
   const removing = hostOf({ store: removal });
@@ -98,20 +99,20 @@ test('the buttons by state: install needs a known copy, remove needs something t
   const installed: TaskRow = { kind: 'installed', lastRun: { kind: 'never' } };
   const table: readonly (readonly [string, CopyState, Record<'watch' | 'archive', TaskRow>, boolean[]])[] = [
     ['off Windows: no part at all', { kind: 'unavailable' }, none, []],
-    ['probing the copy', { kind: 'checking' }, none, [false, false, false]],
-    ['the digest is unknown', { kind: 'digestUnreadable', reason: 'x' }, none, [false, false, false]],
-    ['nothing staged, nothing registered', { kind: 'notStaged', digest: STAGED_DIGEST }, none, [true, true, false]],
-    ['a staged copy, nothing registered: its removal deletes the copy', staged, none, [true, true, true]],
-    ['an unreadable copy may be there to remove', { kind: 'unreadable', digest: STAGED_DIGEST, reason: 'x' }, none, [true, true, true]],
-    ['a registered task', { kind: 'notStaged', digest: STAGED_DIGEST }, { watch: installed, archive: { kind: 'notInstalled' } }, [true, true, true]],
-    ['a registered task whose read is unknown does not count', { kind: 'notStaged', digest: STAGED_DIGEST }, { watch: { kind: 'unknown', reason: 'x' }, archive: { kind: 'checking' } }, [true, true, false]],
+    ['probing the copy', { kind: 'checking' }, none, [false, false, false, true, true]],
+    ['the digest is unknown', { kind: 'digestUnreadable', reason: 'x' }, none, [false, false, false, true, true]],
+    ['nothing staged, nothing registered', { kind: 'notStaged', digest: STAGED_DIGEST }, none, [true, true, false, true, true]],
+    ['a staged copy, nothing registered: its removal deletes the copy', staged, none, [true, true, true, true, true]],
+    ['an unreadable copy may be there to remove', { kind: 'unreadable', digest: STAGED_DIGEST, reason: 'x' }, none, [true, true, true, true, true]],
+    ['a registered task', { kind: 'notStaged', digest: STAGED_DIGEST }, { watch: installed, archive: { kind: 'notInstalled' } }, [true, true, true, true, true]],
+    ['a registered task whose read is unknown does not count', { kind: 'notStaged', digest: STAGED_DIGEST }, { watch: { kind: 'unknown', reason: 'x' }, archive: { kind: 'checking' } }, [true, true, false, false, false]],
   ];
   for (const [name, copy, tasks, expected] of table) {
     const view = windowsTasksView({ copy, tasks, dry: '' }, '0.4.0', (iso) => iso);
     assert.deepEqual(view.buttons.map((b) => b.enabled), expected, name);
   }
   const held = windowsTasksView({ copy: staged, tasks: none, dry: '' }, '0.4.0', (iso) => iso, { busy: true });
-  assert.deepEqual(held.buttons.map((b) => b.enabled), [false, false, false], 'a flow running in this window holds them too');
+  assert.deepEqual(held.buttons.map((b) => b.enabled), [false, false, false, false, false], 'a flow running in this window holds them too');
 });
 
 test('the host runs one op at a time, greys the buttons while it runs, and re-reads AND re-probes afterwards', async () => {
@@ -120,15 +121,15 @@ test('the host runs one op at a time, greys the buttons while it runs, and re-re
   const quiet = quietTasks();
   const h = hostOf({ over: { ui: { ...quiet.deps.ui, confirm: async () => gate } } });
   await ready(h);
-  assert.deepEqual(ENABLED(h), [true, true, true]);
+  assert.deepEqual(ENABLED(h), [true, true, true, true, true]);
   const first = h.host.run({ kind: 'install', task: 'watch' });
   await settle();
-  assert.deepEqual(ENABLED(h), [false, false, false], 'greyed while the modal is open');
+  assert.deepEqual(ENABLED(h), [false, false, false, false, false], 'greyed while the modal is open');
   assert.equal(await h.host.run({ kind: 'install', task: 'archive' }), undefined, 'a second press while one runs starts nothing');
   release(false);
   assert.equal((await first)?.kind, 'declined');
   await settle();
-  assert.deepEqual(ENABLED(h), [true, true, true]);
+  assert.deepEqual(ENABLED(h), [true, true, true, true, true]);
 
   const done = hostOf();
   await ready(done);
@@ -168,7 +169,7 @@ test('a pending install Task Scheduler already shows finished is settled on the 
   const finished = hostOf({ store, read: { tasks: [{ name: 'watch', summary: registered('watch') }] } });
   await ready(finished);
   assert.equal(store.get(PENDING_KEY), undefined, 'the record Task Scheduler shows finished was waited out');
-  assert.deepEqual(ENABLED(finished), [true, true, true]);
+  assert.deepEqual(ENABLED(finished), [true, true, true, true, true]);
 
   const removal = new MapStore();
   await removal.update(PENDING_KEY, { op: 'remove', startedAtUtcMs: NOW - 10, deadlineUtcMs: NOW + 120_000 });
@@ -221,7 +222,7 @@ test('Fable major 2: a record another window\'s live PowerShell holds is NOT set
   const b = hostOf({ store, now: () => now, read: { tasks: [{ name: 'watch', summary: registered('watch') }] } });
   await ready(b);
   assert.equal(readPending(store, now)?.op, 'install', 'window B settled window A\'s live record');
-  assert.deepEqual(ENABLED(b), [false, false, false], 'window B\'s buttons are enabled while A\'s PowerShell may still run');
+  assert.deepEqual(ENABLED(b), [false, false, false, false, false], 'window B\'s buttons are enabled while A\'s PowerShell may still run');
   assert.equal(await b.host.run({ kind: 'remove' }).then((o) => o?.kind), 'busy', 'B\'s Remove could run beside A\'s Register');
   now = NOW + 59_999;
   await b.scheduler.refresh();
@@ -231,5 +232,136 @@ test('Fable major 2: a record another window\'s live PowerShell holds is NOT set
   await b.scheduler.refresh();
   await settle();
   assert.equal(store.get(PENDING_KEY), undefined, 'past the ceiling the read settles it');
-  assert.deepEqual(ENABLED(b), [true, true, true]);
+  assert.deepEqual(ENABLED(b), [true, true, true, true, true]);
+});
+
+// ---- WR-E4: the running state, the held buttons and the settle of a run-now ----
+
+const RUN_IDS = ['runWindowsWatchTask', 'runWindowsArchiveTask'];
+
+test('a running task reads running in every window — the truth is the read, not a flag — and the run buttons say "already running" on a press', async () => {
+  const running: SchedulerFixture = { tasks: [{ name: 'watch', summary: registered('watch'), state: '4', lastResult: '267009' }] };
+  let current: SchedulerFixture = running;
+  const hosts = [hostOf({ read: () => current }), hostOf({ read: () => current }), hostOf({ read: () => current, store: new MapStore() })];
+  for (const h of hosts) {
+    await ready(h);
+    assert.equal(h.host.view().tasks[0]?.line, 'Windows watch task: installed, running (0x41301)');
+    assert.deepEqual(h.host.view().buttons.filter((b) => RUN_IDS.includes(b.id)).map((b) => b.enabled), [true, true]);
+  }
+  const pressed = await hosts[0]?.host.run({ kind: 'run', task: 'watch' });
+  assert.equal(pressed?.kind, 'alreadyRunning');
+  assert.equal(hosts[0]?.quiet.recorder.requests.length, 0, 'no request');
+  current = { tasks: [{ name: 'watch', summary: registered('watch'), state: '3', lastResult: '0', lastRunUtc: '2026-10-18T09:00:00.0000000Z' }] };
+  for (const h of hosts) {
+    await h.scheduler.refresh();
+    await settle();
+    assert.match(h.host.view().tasks[0]?.line ?? '', /^Windows watch task: installed, last run .*: succeeded$/);
+  }
+});
+
+test('a pending run-now holds every button across a reload and shows the waiting line', async () => {
+  const store = new MapStore();
+  await store.update(PENDING_KEY, { op: 'run', task: 'watch', startedAtUtcMs: NOW - 10, deadlineUtcMs: NOW + 120_000 });
+  let now = NOW;
+  const reloaded = hostOf({ store, now: () => now, read: { tasks: [{ name: 'watch', summary: registered('watch') }] } });
+  await ready(reloaded);
+  assert.deepEqual(ENABLED(reloaded), [false, false, false, false, false], 'expected false, got true');
+  assert.equal(reloaded.host.view().copy.line, 'Waiting for the PowerShell that starts the Windows watch task…');
+  assert.equal(await reloaded.host.run({ kind: 'install', task: 'archive' }).then((o) => o?.kind), 'busy');
+  assert.equal(await reloaded.host.run({ kind: 'run', task: 'archive' }).then((o) => o?.kind), 'busy');
+  now = NOW + 120_000;
+  assert.deepEqual(ENABLED(reloaded), [true, true, true, true, true], 'past the deadline they are enabled again');
+});
+
+test('a run record is settled from the read only past its ceiling, and only when the task is running or ran after the record started', async () => {
+  const store = new MapStore();
+  await store.update(PENDING_KEY, { op: 'run', task: 'watch', startedAtUtcMs: NOW, deadlineUtcMs: NOW + 120_000 });
+  let now = NOW + 1_000;
+  const b = hostOf({ store, now: () => now, read: { tasks: [{ name: 'watch', summary: registered('watch'), state: '4', lastResult: '267009' }] } });
+  await ready(b);
+  assert.equal(readPending(store, now)?.op, 'run', 'window B settled window A\'s live run');
+  assert.deepEqual(ENABLED(b), [false, false, false, false, false]);
+  now = NOW + 60_000;
+  await b.scheduler.refresh();
+  await settle();
+  assert.equal(store.get(PENDING_KEY), undefined, 'past the ceiling the read settles it');
+});
+
+test('finishedBy for a run record: running, or ran since the record started — nothing else, and never the other task\'s row', () => {
+  const never: TaskRow = { kind: 'installed', lastRun: { kind: 'never' } };
+  const ranAt = (ms: number): TaskRow => ({ kind: 'installed', lastRun: { kind: 'ran', utc: new Date(ms).toISOString(), result: 0 } });
+  const rows: readonly (readonly [string, TaskRow, boolean])[] = [
+    ['running', { kind: 'running', byCode: true }, true],
+    ['installed, ran after the start', ranAt(NOW + 5_000), true],
+    ['installed, ran within the minute before', ranAt(NOW - 30_000), true],
+    ['installed, ran long before', ranAt(NOW - 120_000), false],
+    ['installed, never run', never, false],
+    ['not installed', { kind: 'notInstalled' }, false],
+    ['disabled', { kind: 'disabled' }, false],
+    ['unknown', { kind: 'unknown', reason: 'x' }, false],
+    ['checking', { kind: 'checking' }, false],
+    ['update needed', { kind: 'updateNeeded', why: 'differs', detail: '' }, false],
+    ['unreadable', { kind: 'unreadable', reason: 'x' }, false],
+  ];
+  const copy: CopyState = { kind: 'notStaged', digest: STAGED_DIGEST };
+  for (const [name, row, expected] of rows) {
+    assert.equal(finishedBy({ copy, tasks: { watch: row, archive: { kind: 'notInstalled' } }, dry: '' }, { op: 'run', task: 'watch', startedAtUtcMs: NOW, deadlineUtcMs: NOW + 120_000 }), expected, name);
+  }
+  assert.equal(finishedBy({ copy, tasks: { watch: { kind: 'notInstalled' }, archive: { kind: 'running', byCode: false } }, dry: '' }, { op: 'run', task: 'watch', startedAtUtcMs: NOW, deadlineUtcMs: NOW + 120_000 }), false, 'the other task\'s row settles nothing');
+});
+
+test('activation sweeps a stale or malformed run record and leaves a standing one', async () => {
+  for (const bad of [{ op: 'run', task: 'guard', startedAtUtcMs: 1, deadlineUtcMs: NOW + 5 }, { op: 'run', task: 'watch', startedAtUtcMs: 1, deadlineUtcMs: NOW - 1 }, { op: 'run', startedAtUtcMs: 1, deadlineUtcMs: NOW + 5 }]) {
+    const store = new MapStore();
+    await store.update(PENDING_KEY, bad);
+    await sweepPending(store, NOW);
+    assert.equal(store.get(PENDING_KEY), undefined, JSON.stringify(bad));
+  }
+  const standing = new MapStore();
+  const record = { op: 'run', task: 'archive', startedAtUtcMs: NOW - 1, deadlineUtcMs: NOW + 5 };
+  await standing.update(PENDING_KEY, record);
+  await sweepPending(standing, NOW);
+  assert.deepEqual(standing.get(PENDING_KEY), record);
+});
+
+test('the run buttons by the task\'s row: enabled for every row that is known, held by a record or a running flow', () => {
+  const staged: CopyState = { kind: 'staged', digest: STAGED_DIGEST, renders: {} };
+  const rows: readonly (readonly [string, TaskRow, boolean])[] = [
+    ['not installed', { kind: 'notInstalled' }, true],
+    ['disabled', { kind: 'disabled' }, true],
+    ['running', { kind: 'running', byCode: true }, true],
+    ['update needed', { kind: 'updateNeeded', why: 'differs', detail: '' }, true],
+    ['installed', { kind: 'installed', lastRun: { kind: 'never' } }, true],
+    ['unreadable', { kind: 'unreadable', reason: 'x' }, true],
+    ['checking', { kind: 'checking' }, false],
+    ['unknown', { kind: 'unknown', reason: 'x' }, false],
+  ];
+  for (const [name, row, enabled] of rows) {
+    const view = windowsTasksView({ copy: staged, tasks: { watch: row, archive: row }, dry: '' }, '0.4.0', (iso) => iso);
+    assert.deepEqual(view.buttons.filter((b) => RUN_IDS.includes(b.id)).map((b) => b.enabled), [enabled, enabled], name);
+    assert.deepEqual(view.buttons.filter((b) => RUN_IDS.includes(b.id)).map((b) => b.label), ['Run the Windows watch now', 'Archive Windows sessions now']);
+  }
+  const free: WindowsTasksState = { copy: staged, tasks: { watch: { kind: 'notInstalled' }, archive: { kind: 'notInstalled' } }, dry: '' };
+  assert.deepEqual(windowsTasksView(free, '0.4.0', (iso) => iso, { busy: true }).buttons.map((b) => b.enabled), [false, false, false, false, false]);
+  assert.deepEqual(windowsTasksView(free, '0.4.0', (iso) => iso, { pending: { op: 'run', task: 'archive' } }).buttons.map((b) => b.enabled), [false, false, false, false, false]);
+  assert.equal(windowsTasksView({ copy: { kind: 'unavailable' }, tasks: free.tasks, dry: '' }, '0.4.0', (iso) => iso).buttons.length, 0, 'off Windows: no buttons');
+});
+
+test('the host re-reads AND re-probes after a run-now: one read, the probe\'s two renders — no render of its own', async () => {
+  const h = hostOf({ read: { tasks: [{ name: 'watch', summary: registered('watch') }] } });
+  await ready(h);
+  const reads = h.queries.length;
+  const renders = h.world.daemon().filter((x) => x.includes('render')).length;
+  assert.equal((await h.host.run({ kind: 'run', task: 'watch' }))?.kind, 'done');
+  await settle();
+  assert.equal(h.queries.length, reads + 1, 'expected reads + 1');
+  assert.equal(h.world.daemon().filter((x) => x.includes('render')).length, renders + 2, 'the probe\'s two renders (watch, archive); the run-now makes none');
+});
+
+test('the page sends the two run buttons as BARE ids: a value beside the type is dropped', () => {
+  for (const type of ['runWindowsWatchTask', 'runWindowsArchiveTask']) {
+    assert.deepEqual(parsePageMessage({ type }), { type });
+    assert.equal(parsePageMessage({ type, task: 'archive' }), undefined);
+    assert.equal(parsePageMessage({ type, script: 'x' }), undefined);
+  }
 });
