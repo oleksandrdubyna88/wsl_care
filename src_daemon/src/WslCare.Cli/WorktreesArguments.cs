@@ -11,7 +11,7 @@ internal static class WorktreesArguments
     {
         [] => make(false),
         [CommandLine.JsonFlag] => make(true),
-        _ => new Request.Failed($"\"{CommandLine.BinaryName} {verb}\" takes only {CommandLine.JsonFlag}, once{hint}; got \"{CommandLine.Printable(string.Join(' ', rest))}\"."),
+        _ => new Request.Failed($"\"{CommandLine.BinaryName} {verb}\" takes only {CommandLine.JsonFlag}, once{hint}; got \"{WslCare.Core.Processes.Redaction.ShownText.Printable(string.Join(' ', rest))}\"."),
     };
 
     internal const string FoldersOnStdin = "; the folders come on stdin, one absolute path per line";

@@ -87,7 +87,7 @@ internal static class WorktreesCommand
     }
 
     private static string VerdictLines(IReadOnlyList<RootVerdict> verdicts) =>
-        string.Join(Environment.NewLine, verdicts.Select(v => CommandLine.Printable(v.Accepted ? $"accepted {v.Path}" : $"refused {v.Given}: {v.Reason} ({v.Rule})")));
+        string.Join(Environment.NewLine, verdicts.Select(v => WslCare.Core.Processes.Redaction.ShownText.Printable(v.Accepted ? $"accepted {v.Path}" : $"refused {v.Given}: {v.Reason} ({v.Rule})")));
 
     public static int RootsClear(Request.WorktreesRootsClear request, CliHost host, TextWriter stdout, TextWriter stderr)
     {
@@ -142,10 +142,10 @@ internal static class WorktreesCommand
         var text = new StringBuilder();
         foreach (var root in report.Roots)
         {
-            text.AppendLine(CommandLine.Printable(root.Refused is { } refused ? $"{root.Path}: refused - {refused}" : RootLine(root)));
+            text.AppendLine(WslCare.Core.Processes.Redaction.ShownText.Printable(root.Refused is { } refused ? $"{root.Path}: refused - {refused}" : RootLine(root)));
         }
 
-        text.Append(CommandLine.Printable($"scan {(report.Complete ? "complete" : "INCOMPLETE (a budget ran out; the folders it left are unknown, never idle)")} in {report.ElapsedSeconds.ToString("0.0", CultureInfo.InvariantCulture)} s; reclaimable: unknown - {report.Reclaimable.Reason}"));
+        text.Append(WslCare.Core.Processes.Redaction.ShownText.Printable($"scan {(report.Complete ? "complete" : "INCOMPLETE (a budget ran out; the folders it left are unknown, never idle)")} in {report.ElapsedSeconds.ToString("0.0", CultureInfo.InvariantCulture)} s; reclaimable: unknown - {report.Reclaimable.Reason}"));
         return text.ToString();
     }
 

@@ -71,12 +71,12 @@ public sealed record McpServerReport(string Name, int Count, NumberFigure Starts
 public sealed record McpStartReport(DateTimeOffset At, int Pid, DateTimeOffset LastWriteAt, bool Running);
 
 /// <summary>Who owns an instance: the agent session above it, or none (<paramref name="Orphaned"/>).</summary>
-public sealed record McpOwnerReport(bool Orphaned, int? Pid, string? Agent, string? CommandLine)
+public sealed record McpOwnerReport(bool Orphaned, int? Pid, string? Agent, string? CommandLine, string? Program, IReadOnlyList<string>? ArgumentsShown)
 {
     public static McpOwnerReport From(McpOwner owner) => owner switch
     {
-        McpOwner.Agent a => new(false, a.Pid, a.Name, a.CommandLine),
-        _ => new(true, null, null, null),
+        McpOwner.Agent a => new(false, a.Pid, a.Name, a.CommandLine, a.Program, a.ArgumentsShown),
+        _ => new(true, null, null, null, null, null),
     };
 }
 

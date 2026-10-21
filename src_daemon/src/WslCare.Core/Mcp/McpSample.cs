@@ -31,7 +31,7 @@ public abstract record McpOwner
     }
 
     /// <summary>The first ancestor that is a catalogue agent: its pid, the agent's name, its shown (redacted, cut) command line.</summary>
-    public sealed record Agent(int Pid, string Name, string CommandLine) : McpOwner;
+    public sealed record Agent(int Pid, string Name, string CommandLine, string Program, IReadOnlyList<string> ArgumentsShown) : McpOwner;
 
     /// <summary>Re-parented to init (or the user's systemd manager) with no agent above it: an MCP server whose agent died — kept,
     /// because that is a leak this metric exists to show (plan §15q E7.S2d, Decided 1).</summary>

@@ -1,3 +1,4 @@
+using WslCare.Core.Processes.Redaction;
 using Serilog.Core;
 using Serilog.Events;
 using Serilog.Formatting.Display;
@@ -19,7 +20,7 @@ namespace WslCare.Cli.Logging;
 /// Serilog's own formatter with <c>:lj</c> — never <c>RenderMessage()</c>, which quotes every string
 /// property. One write per event, built before the lock is taken.</para>
 /// <para>This writes to stderr, so the rendered message goes through
-/// <see cref="CommandLine.Printable"/> as every <see cref="Output"/> message does: a logged value
+/// <see cref="ShownText.Printable"/> as every <see cref="Output"/> message does: a logged value
 /// never carries a raw control character to the terminal.</para>
 /// </remarks>
 internal sealed class AnsiConsoleSink(TextWriter output) : ILogEventSink
@@ -54,7 +55,7 @@ internal sealed class AnsiConsoleSink(TextWriter output) : ILogEventSink
             line.Write($"{Context}{source}{Reset}{Dim}:{Reset} ");
         }
 
-        line.Write(CommandLine.Printable(Message(logEvent)));
+        line.Write(ShownText.Printable(Message(logEvent)));
         line.Write(Environment.NewLine);
         if (logEvent.Exception is not null)
         {
@@ -76,7 +77,7 @@ internal sealed class AnsiConsoleSink(TextWriter output) : ILogEventSink
 
     /// <summary>An exception keeps its lines (a stack trace is many); each line is made printable.</summary>
     private static string PrintableLines(string text) =>
-        string.Join(Environment.NewLine, text.Split('\n').Select(l => CommandLine.Printable(l.TrimEnd('\r'))));
+        string.Join(Environment.NewLine, text.Split('\n').Select(l => ShownText.Printable(l.TrimEnd('\r'))));
 
     internal static string LevelColour(LogEventLevel level) => level switch
     {

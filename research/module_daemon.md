@@ -859,6 +859,58 @@ flowchart LR
 - **Not built here**: a vmmem line in the distro's disk script. With it the full run can judge `host.vmmem` again
   (`FullRunVerdicts` gains it); it waits for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
 
+## One redaction rule for every command line (E15.S7, 2026-10-17)
+
+> Plan: `todo/PLAN_disk_health.md`, *E15.S7 design* and *E15.S7 as built*. Read-only: nothing
+> is acted on, no wire field is removed.
+
+**Purpose.** Every command line the product shows or stores — `status --json`'s process rows and MCP owners, the action previews and
+run details, the golden contracts, and from E15.S6 the Windows binary's own — is judged by ONE pure function,
+`WslCare.Core/Processes/Redaction/CommandLineRedaction`, on both binaries. The old rule (eight words, `--name=value` and
+`--name value` only) missed a creds config key given positionally, `GITHUB_TOKEN=…` without a dash, a URL's userinfo, a bearer
+header behind an innocent flag and a blob like VS Code's `/TelemetrySession:{"CollectorApiKey":…}`.
+
+```mermaid
+flowchart LR
+    argv["raw argv<br/>(/proc cmdline · Windows Split)"] --> judge["ArgumentJudge<br/>per argument, first arm wins"]
+    judge --> shown["Redact → Printable → Shown<br/>cut AFTER the rule, on a rune boundary"]
+    judge --> view["ShownArguments<br/>program · safe prefix · total"]
+    shown --> wire["commandLine<br/>status · previews · run details · golden"]
+    view --> wire2["program · argumentsShown · argumentsTotal"]
+    win["Windows line"] --> split["WindowsArgv.Split<br/>CommandLineToArgvW rules"] --> judge
+    shown --> back["RawLineBackstop<br/>whole-argument compare on the raw line"]
+```
+
+**Order of judgement** (`ArgumentJudge`, per argument; the first arm that decides wins; a value is never partly redacted):
+over `processes.maxJudgedArgChars` → `<redacted>` unjudged · (1) the previous argument is a secret FLAG (a name with no value in it, or a
+Windows switch `/name`) · (2) the program's own password flag (`sshpass -p`, `mysql -pSECRET`, `curl -u user:pass`, and the attached
+`-pSECRET` / `-uuser:pass`, which keep their option) · (3) `name=value` with a non-empty value: a name that is a token goes whole, a
+secret name loses its value, otherwise the value is judged as a positional and a value that fails gives `name=<redacted>` (a blob
+gives the whole argument) · (4) a URL — userinfo and secret query / fragment values cut, then EACH path segment and kept value
+judged by the creds shapes and the entropy test and replaced alone (a detector timeout redacts) · (5) a creds shape ·
+(6) a secret word followed by a separator or by whitespace and a word, inside a blob (this arm runs BEFORE the path arm) ·
+(7) a path (shown whole) · (8) high entropy (length, alphabet, classes, Shannon bits, on the token without its leading dashes and
+trailing padding; a GUID is exempt, a digest is NOT). `ShownText.Printable` (moved here from the CLI) then replaces control, format,
+unpaired-surrogate and U+2028 / U+2029 characters with `?`. The numbering of the plan's §2.1 keeps the old order (path = 6, blob = 7):
+its amendments say so. `WindowsCommandLine.Shown` is the ONLY Windows entry (`Split` is internal); an architecture test holds it.
+
+| Entity | Role |
+|---|---|
+| `CommandLineRedaction` | `Redact`, `Shown`, `Line`; `RedactionLimits(SecretMinChars, MaxJudgedArgChars, ShownChars)` arrive as arguments |
+| `ArgumentJudge`, `UrlRedaction` | the order above; the URL arm runs before the creds shape (judge's review, 2026-10-16) |
+| `SecretShapes`, `HighEntropy`, `SafeShapes` | the closed lists, the entropy test, the path / GUID / npm-spec / flag / plain-word shapes |
+| `ShownArguments` | `program`, the longest SAFE PREFIX (at most `processes.shownSafeArgs`), `argumentsTotal` |
+| `WindowsArgv`, `WindowsCommandLine.Split` / `.Shown`, `RawLineBackstop` | the Windows entry: split as `CommandLineToArgvW` does, the same rule, then the backstop |
+| `CommandLineText` | `Shown` / `Redact` delegate with the limits read from the three keys; `FileNameOf`, `ProgramNames`, `ScriptOf` stay on the RAW argv |
+
+**Keys** (machine layer only, `Lower` is the safe direction): `processes.secretMinChars` 12–64 (20), `processes.shownSafeArgs` 0–8 (2),
+`processes.maxJudgedArgChars` 1024–65536 (4096). The word lists and shapes are closed in code (no user-widenable list: that needs a
+"superset is safer" direction `SafeDirection` does not have).
+
+**Wire** (additive, `schemaVersion` 1): `program`, `argumentsShown`, `argumentsTotal` on every process row; `program`,
+`argumentsShown` on an MCP owner; `commandLine` stays. Residuals — free text, short secrets, passphrases of words, bare hex digests
+(lost on purpose), a secret as a file name, kernel ring lines, history already written — are the plan's §9.
+
 ## The worktree report (E19.S3 of PLAN_disk_hygiene_windows_E19.md, 2026-10-15) — read-only, no git
 
 The Windows binary's `worktrees roots set | roots clear | scan`: where the space of a developer's git worktrees went, without starting git and without deleting

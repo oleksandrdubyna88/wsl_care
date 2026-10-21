@@ -1,3 +1,5 @@
+using static WslCare.Core.Processes.Redaction.ShownText;
+using WslCare.Core.Processes.Redaction;
 using System.Text;
 using System.Text.Json;
 
@@ -29,11 +31,11 @@ internal static class DoctorCommand
         {
             // E7.S0 review S4: a detail can quote a user layer (an unknown key, a refused value): no terminal control reaches the
             // admin's terminal — an OSC 52 sequence would write their clipboard.
-            text.AppendLine(CommandLine.Printable($"  {check.State,-10} {check.Id}: {check.Detail}"));
+            text.AppendLine(ShownText.Printable($"  {check.State,-10} {check.Id}: {check.Detail}"));
         }
 
         // Retro gate over PR #17: a version is what a tool ANSWERED (docker's daemon, systemd) — Printable like the checks above.
-        text.Append(CommandLine.Printable("versions: " + string.Join(", ", report.Versions.Select(v => v.Available ? $"{v.Component} {v.Version}" : $"{v.Component} unknown"))));
+        text.Append(ShownText.Printable("versions: " + string.Join(", ", report.Versions.Select(v => v.Available ? $"{v.Component} {v.Version}" : $"{v.Component} unknown"))));
         return text.ToString();
     }
 }

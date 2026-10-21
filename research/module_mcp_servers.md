@@ -373,3 +373,11 @@ flowchart LR
 - **Pre-existing, outside A21** (the S7b.2 own code review): an interop relay of a Windows AI CLI (`/init …/claude.exe`) matches
   the `ai-agents` family, so the button-only A18 can SIGTERM and then SIGKILL such a relay. It is no catalogued MCP relay, and A21
   never reaches it.
+
+## The owner's shown command line (E15.S7, 2026-10-17)
+
+`mcpServers.instances[].owner` (`McpOwnerReport`) keeps `commandLine` (now the output of the ONE redaction rule, see
+[module_daemon.md](module_daemon.md) § *One redaction rule for every command line*) and gains `program` (the agent's file name,
+`claude`) and `argumentsShown` (at most `processes.shownSafeArgs` safe leading arguments, never `<redacted>`); an orphaned owner
+carries `null` for both. `McpOwner.Agent` carries them from the collector's single judgement of the argv, so the owner never judges
+a line twice. The captured tree's two live owners show `["--output-format", "stream-json"]`.
