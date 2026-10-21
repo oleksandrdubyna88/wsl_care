@@ -33,7 +33,20 @@ public abstract record GitFolder
 /// <param name="Root">The configured worktree root the folder is under; it is also git's discovery ceiling, so git can never answer for a
 /// repository above it.</param>
 /// <param name="Kind">A working tree (or submodule) with the top level it must be, or an orphan with its admin folder.</param>
-public sealed record GitQuestion(string Folder, IReadOnlyList<string> Names, string Root, GitFolder Kind);
+public sealed record GitQuestion(string Folder, IReadOnlyList<string> Names, string Root, GitFolder Kind)
+{
+    /// <summary>How much of the scan's time is left: no call of this question may run longer (the call's ceiling is the smaller of this and
+    /// <c>worktrees.gitTimeoutSeconds</c>). Unbounded unless the scan says otherwise.</summary>
+    public TimeSpan Remaining { get; init; } = TimeSpan.MaxValue;
+}
+
+/// <summary>Whether git can be asked at all this scan, learnt once by running its cheapest command through the same launcher the questions use —
+/// so a git that is not admitted, not installed or refused is a scan FACT even when no candidate needed a question.</summary>
+public sealed record GitProbe(bool Usable, string Why)
+{
+    /// <summary>Git answered the probe, or nobody probed it (a scan without a probe assumes nothing about git).</summary>
+    public static GitProbe Ready { get; } = new(true, string.Empty);
+}
 
 /// <summary>What git said about one name — a closed set.</summary>
 public abstract record GitVerdict
@@ -70,6 +83,9 @@ public static class GitReasons
     public const string OrphanIgnoreOnly = "ignore rules confirmed; tracked files NOT checked";
     public const string Cut = "git's answer was cut at the output cap";
 
+    /// <summary>No call is made once the scan's own time is spent: a git question may take the configured time, never more than the scan has left.</summary>
+    public const string ScanTimeUp = "not asked: the scan's time budget ran out";
+
     /// <summary>The group a candidate is counted under when no git could be run for it (none admitted, not started, refused by the policy).</summary>
     public const string Unavailable = "git unavailable";
 
@@ -82,9 +98,16 @@ public static class GitReasons
 
     public static string Refused(string firstLine) => $"git refused: {firstLine}";
 
-    public static string TimedOut(TimeSpan timeout) => string.Create(CultureInfo.InvariantCulture, $"git did not answer within {timeout.TotalSeconds:0.###} s");
+    public static string TimedOut(TimeSpan timeout) =>
+        string.Create(CultureInfo.InvariantCulture, $"git did not answer within {timeout.TotalSeconds:0.###} s ({ConfigKeys.Worktrees.GitTimeoutSeconds.Name})");
 
     public static string NotRun(string why) => $"git could not be run: {why}";
+
+    /// <summary>The group of a candidate whose question the command policy refused (an argv the never-list or no template allows — for example an orphan
+    /// whose repository lies under <c>&lt;home&gt;\git</c>). Not "git unavailable": the refusal is that folder's, and git can still be asked about the others.</summary>
+    public const string PolicyRefusal = "refused by the policy";
+
+    public static string PolicyRefused(string why) => $"{PolicyRefusal}: {why}";
 
     private const string NotRunPrefix = "git could not be run: ";
 
@@ -94,14 +117,16 @@ public static class GitReasons
         _ when reason.StartsWith("git refused:", StringComparison.Ordinal) => "git refused the question",
         _ when reason.StartsWith("git did not answer", StringComparison.Ordinal) => "git did not answer in time",
         _ when reason.StartsWith(NotRunPrefix, StringComparison.Ordinal) => Unavailable,
+        _ when reason.StartsWith(PolicyRefusal + ":", StringComparison.Ordinal) => PolicyRefusal,
         _ when reason.StartsWith("a folder named ", StringComparison.Ordinal) && reason.EndsWith(" cannot be put to git safely", StringComparison.Ordinal) => UnsafeName,
         _ => reason,
     };
 
     /// <summary>Whether a retained reason says git could not be ASKED (as against git answering no): the verdict then cannot be trusted as "none".</summary>
-    public static bool IsAFailureToAsk(string reason) => GroupOf(reason) is "git refused the question" or "git did not answer in time" or Unavailable or Cut or NoAnswer;
+    public static bool IsAFailureToAsk(string reason) => GroupOf(reason) is "git refused the question" or "git did not answer in time" or Unavailable or PolicyRefusal or Cut or NoAnswer or ScanTimeUp;
 
-    /// <summary>Whether no git could be run for the candidate at all (none admitted, not started, refused by the policy) — as against git failing a question.</summary>
+    /// <summary>Whether no git could be run for the candidate at all (none admitted, not started) — as against git failing a question, or the policy
+    /// refusing this one question (<see cref="PolicyRefusal"/>).</summary>
     public static bool IsGitUnavailable(string reason) => reason.StartsWith(NotRunPrefix, StringComparison.Ordinal);
 
     /// <summary>The why of an unavailable git: <paramref name="reason"/> without the sentence it was wrapped in.</summary>

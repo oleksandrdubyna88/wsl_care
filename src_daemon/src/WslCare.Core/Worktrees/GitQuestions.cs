@@ -163,13 +163,36 @@ public sealed class GitQuestions(ICommandRunner runner, GitLimits limits, Func<s
 
     private async Task<GitReply> RunAsync(GitQuestion question, IReadOnlyList<string> argv, CancellationToken cancellationToken)
     {
-        var request = new CommandRequest(argv, limits.Timeout, question.Folder)
+        // A call may run for the configured timeout, but never past the time the scan has left.
+        var ceiling = question.Remaining < limits.Timeout ? question.Remaining : limits.Timeout;
+        if (ceiling <= TimeSpan.Zero)
+        {
+            return new GitReply.Failed(GitReasons.ScanTimeUp);
+        }
+
+        var request = new CommandRequest(argv, ceiling, question.Folder)
         {
             Environment = GitEnvironment.For(parentEnvironment, question.Root),
             StdinClosed = true,
             Utf8Output = true,
         };
-        return GitReply.Of(await runner.RunAsync(request, cancellationToken).ConfigureAwait(false), limits.Timeout);
+        return GitReply.Of(await runner.RunAsync(request, cancellationToken).ConfigureAwait(false), ceiling);
+    }
+
+    /// <summary>Whether git can be run at all: <c>git.exe --version</c> through the same launcher (so the same resolver, policy and environment) as every
+    /// question. A git that is not admitted, not installed or refused reads as unusable with the reason — a scan fact, even when no candidate needed a question.</summary>
+    public GitProbe Probe(CancellationToken cancellationToken) => ProbeAsync(cancellationToken).GetAwaiter().GetResult();
+
+    private async Task<GitProbe> ProbeAsync(CancellationToken cancellationToken)
+    {
+        var request = new CommandRequest(GitCommands.Version(), limits.Timeout)
+        {
+            Environment = GitEnvironment.For(parentEnvironment, string.Empty),
+            StdinClosed = true,
+            Utf8Output = true,
+        };
+        var reply = GitReply.Of(await runner.RunAsync(request, cancellationToken).ConfigureAwait(false), limits.Timeout).Expect(OkExits);
+        return reply is GitReply.Failed failed ? new GitProbe(false, GitReasons.UnavailableWhy(failed.Reason)) : GitProbe.Ready;
     }
 
     /// <summary>The longest command line a call with exactly these names would have, over every command it would run.</summary>

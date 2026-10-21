@@ -75,4 +75,7 @@ public sealed record WorktreeScanResult(DateTimeOffset ScannedAt, TimeSpan Elaps
 {
     /// <summary>The scan had git to ask (E19.S4). Without it no candidate is confirmed and the report's reclaimable stays unavailable.</summary>
     public bool GitAsked { get; init; }
+
+    /// <summary>Whether git could be run at all this scan, learnt once by a probe (a scan with no probe assumes nothing against git).</summary>
+    public GitProbe GitProbe { get; init; } = GitProbe.Ready;
 }

@@ -16,14 +16,19 @@ public enum AdminOnlyRole
     Ancestor,
 }
 
-/// <summary>The access rights the rule looks at, with the values of Windows' <c>FileSystemRights</c> (the enum is Windows-flagged,
-/// the judge is pure and runs on every platform).</summary>
+/// <summary>The access rights the rule looks at. The values are Windows' own security-descriptor access-mask bits (the same numbers as
+/// <c>FileSystemRights</c>, whose enum is flagged Windows-only); the judge over them is "pure" in the sense that it makes no operating-system
+/// call, so it runs — and is tested — on every platform.</summary>
 [Flags]
 public enum AclRight
 {
     None = 0,
     WriteData = 0x2,
     AppendData = 0x4,
+
+    /// <summary>FILE_WRITE_EA: extended attributes (and, on a file, alternate data).</summary>
+    WriteExtendedAttributes = 0x10,
+    WriteAttributes = 0x100,
     DeleteSubdirectoriesAndFiles = 0x40,
     Delete = 0x10000,
     ChangePermissions = 0x40000,
@@ -73,10 +78,14 @@ public static class AdminOnlyJudge
 
     private static readonly AclRight AncestorRights = AclRight.Delete | AclRight.DeleteSubdirectoriesAndFiles | AclRight.ChangePermissions | AclRight.TakeOwnership;
 
+    /// <summary>Changing a program's attributes moves its timestamps (the identity a reused judgement is checked by) and extended attributes carry alternate
+    /// data; neither is forbidden on an ANCESTOR, where <c>C:\</c> grants Authenticated Users append rights by default.</summary>
+    private static readonly AclRight Attributes = AclRight.WriteAttributes | AclRight.WriteExtendedAttributes;
+
     private static AclRight Forbidden(AdminOnlyRole role) => role switch
     {
-        AdminOnlyRole.ProgramFile => AclRight.WriteData | AclRight.AppendData | AclRight.Delete | AclRight.ChangePermissions | AclRight.TakeOwnership,
-        AdminOnlyRole.ProgramFolder => AclRight.WriteData | AncestorRights,
+        AdminOnlyRole.ProgramFile => AclRight.WriteData | AclRight.AppendData | AclRight.Delete | AclRight.ChangePermissions | AclRight.TakeOwnership | Attributes,
+        AdminOnlyRole.ProgramFolder => AclRight.WriteData | AncestorRights | Attributes,
         _ => AncestorRights,
     };
 
@@ -86,7 +95,8 @@ public static class AdminOnlyJudge
             ? $"is owned by {facts.OwnerSid}, who can change its permissions"
             : facts.Entries.Where(e => Grants(e, Forbidden(role))).Select(e => Describe(e, Forbidden(role))).FirstOrDefault() ?? string.Empty;
 
-    private const AclRight Looked = AclRight.WriteData | AclRight.AppendData | AclRight.DeleteSubdirectoriesAndFiles | AclRight.Delete | AclRight.ChangePermissions | AclRight.TakeOwnership;
+    private const AclRight Looked = AclRight.WriteData | AclRight.AppendData | AclRight.DeleteSubdirectoriesAndFiles | AclRight.Delete | AclRight.ChangePermissions | AclRight.TakeOwnership
+        | AclRight.WriteAttributes | AclRight.WriteExtendedAttributes;
 
     /// <summary>GENERIC_ALL, GENERIC_WRITE and MAXIMUM_ALLOWED each include every right the rule forbids to others.</summary>
     private const AclRight GrantsWrite = AclRight.GenericAll | AclRight.GenericWrite | AclRight.MaximumAllowed;

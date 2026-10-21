@@ -275,7 +275,8 @@ public sealed class WorktreesCommandTests
         var file = Path.Combine(world.Paths.StateDirectory, "worktrees.json");
         File.Exists(file).Should().BeTrue("the scan writes its report");
         Json(File.ReadAllText(file))["scannedAt"]!.GetValue<string>().Should().Be(report["scannedAt"]!.GetValue<string>());
-        world.Runner.Requests.Should().BeEmpty("a recent folder's candidates are kept by that reason alone: git is not asked");
+        report["reclaimable"]!["nothingNeededGit"]!.GetValue<bool>().Should().BeTrue("every candidate is kept by another check: git confirmed nothing because it was asked nothing");
+        world.Runner.Requests.Select(r => r.Display).Should().Equal("git.exe --version");
     }
 
     [Fact]

@@ -323,7 +323,7 @@ public sealed class GitQuestionsTests
         var notStarted = new FakeRepository { RevParse = new CommandOutcome.FailedToStart("git.exe is not started: it is never looked up on PATH") };
         var cut = new FakeRepository { LsFiles = new CommandOutcome.Exited(0, new CapturedText("bin/a\0", Truncated: true), CapturedText.Empty, TimeSpan.Zero) };
 
-        Of(await Asker(timedOut.Runner()).AskAsync(Repo("bin"), CancellationToken.None), "bin").Should().Be(Retained("git did not answer within 30 s"));
+        Of(await Asker(timedOut.Runner()).AskAsync(Repo("bin"), CancellationToken.None), "bin").Should().Be(Retained("git did not answer within 30 s (worktrees.gitTimeoutSeconds)"));
         Of(await Asker(notStarted.Runner()).AskAsync(Repo("bin"), CancellationToken.None), "bin").Should().Be(Retained("git could not be run: git.exe is not started: it is never looked up on PATH"));
         Of(await Asker(cut.Runner()).AskAsync(Repo("bin"), CancellationToken.None), "bin").Should().Be(Retained(GitReasons.Cut));
     }
@@ -363,7 +363,36 @@ public sealed class GitQuestionsTests
 
         var answers = await Asker(runner).AskAsync(Repo("bin"), CancellationToken.None);
 
-        ((GitVerdict.Retained)Of(answers, "bin")).Reason.Should().StartWith("git could not be run: refused: no declared command template matches");
+        var reason = ((GitVerdict.Retained)Of(answers, "bin")).Reason;
+        reason.Should().StartWith("refused by the policy: refused: no declared command template matches");
+        GitReasons.GroupOf(reason).Should().Be(GitReasons.PolicyRefusal);
+        GitReasons.IsGitUnavailable(reason).Should().BeFalse("a refusal of one question is not the absence of git");
+    }
+
+    [Fact]
+    public void The_probe_runs_git_version_once_and_reads_a_zero_exit_as_usable_and_anything_else_as_the_reason()
+    {
+        var ok = new RecordingCommandRunner { Policy = CommandPolicy.Product };
+        var gone = new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("git.exe is not started: it is never looked up on PATH"), Policy = CommandPolicy.Product };
+        var broken = new RecordingCommandRunner { Default = RecordingCommandRunner.Exited(3, stderr: "boom\n"), Policy = CommandPolicy.Product };
+
+        Asker(ok).Probe(CancellationToken.None).Should().Be(GitProbe.Ready);
+        ok.Commands.Should().Equal("git.exe --version");
+        Asker(gone).Probe(CancellationToken.None).Should().Be(new GitProbe(false, "git.exe is not started: it is never looked up on PATH"));
+        Asker(broken).Probe(CancellationToken.None).Usable.Should().BeFalse();
+        Asker(broken).Probe(CancellationToken.None).Why.Should().Contain("boom");
+    }
+
+    [Fact]
+    public async Task A_calls_ceiling_is_the_smaller_of_the_configured_timeout_and_the_time_the_scan_has_left()
+    {
+        var runner = new FakeRepository { Ignored = { "bin" } }.Runner();
+
+        await Asker(runner).AskAsync(Repo("bin") with { Remaining = TimeSpan.FromSeconds(3) }, CancellationToken.None);
+        await Asker(runner).AskAsync(Repo("bin") with { Remaining = TimeSpan.FromMinutes(5) }, CancellationToken.None);
+
+        runner.Requests.Take(3).Should().OnlyContain(r => r.Timeout == TimeSpan.FromSeconds(3));
+        runner.Requests.Skip(3).Should().OnlyContain(r => r.Timeout == TimeSpan.FromSeconds(30), "the configured 30 s when the scan has more time than that");
     }
 
     [Fact]

@@ -1508,6 +1508,11 @@ flowchart LR
   of the process while the program files keep their path, length, creation and last-write time (12 ms a resolve measured without it).
 - **The `ls-files` question** is asked per name as `:(literal,icase)<name>` (`GitCommands.TrackedNameMagic`), without `--literal-pathspecs`: git's pathspec match ignores
   `core.ignorecase`, its ignore match does not (index `Bin/x`, disk `bin`). A tracked gitlink above a candidate retains it. `check-ignore -v` lines are split at the LAST tab.
+- **The probe and the time** (second pass, 2026-10-21): `GitQuestions.Probe` runs `git.exe --version` ONCE per scan through the same launcher (template `git-version`), so a
+  git that is not admitted is a scan fact (`gitUnavailable`) even when no candidate needed a question, and `nothingNeededGit` says git was asked nothing. The scan's time bounds
+  the git time: each question carries `Remaining` and no call outlives it, once the time is spent no further folder is asked and the scan is incomplete. A POLICY refusal of one
+  question ("refused by the policy: …", e.g. an orphan under `<home>\git`) is that folder's and NOT "git unavailable". The reused `git.exe` judgement expires after 60 s; attribute
+  writes (`WriteAttributes`, `WriteExtendedAttributes`) are forbidden on the program file and its folders.
 - **No admitted git** is a named state: `reclaimable.available` false, `gitUnavailable` the why, `retained` counting those candidates under "git unavailable", the verdict
   unknown with "git could not be asked: …". A candidate named `clean`/`prune`/`worktree` says so in its own reason (`GitReasons.UnsafeNameOf`; the never-list scans argv
   tokens, so a path merely containing the word is an accepted blind spot). `a24Orphans` is ignore-only by construction — see `todo/PLAN_disk_hygiene_windows_E20.md` §4c.

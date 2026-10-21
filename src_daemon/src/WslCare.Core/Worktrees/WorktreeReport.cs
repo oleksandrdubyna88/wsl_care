@@ -72,6 +72,11 @@ public sealed record ReclaimableReport(bool Available, string Reason)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? GitUnavailable { get; init; }
 
+    /// <summary>Git could be asked, but no candidate needed it: every candidate was kept by another check (structural, recent, locked, unknown). Written only
+    /// when true — "git confirmed nothing" and "nothing was put to git" are different facts.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool NothingNeededGit { get; init; }
+
     /// <summary>The confirmed bytes, worktrees and orphans together; 0 when nothing was confirmed or git was not asked (check <see cref="Available"/>).</summary>
     [JsonIgnore]
     public long ConfirmedBytes => (A24?.Bytes ?? 0) + (A24Orphans?.Bytes ?? 0);

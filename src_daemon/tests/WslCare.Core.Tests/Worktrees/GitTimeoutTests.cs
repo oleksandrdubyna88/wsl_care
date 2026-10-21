@@ -38,7 +38,7 @@ public sealed class GitTimeoutTests
         var answers = await questions.AskAsync(question, CancellationToken.None);
         watch.Stop();
 
-        answers.Single().Verdict.Should().Be(new GitVerdict.Retained("git did not answer within 8 s"));
+        answers.Single().Verdict.Should().Be(new GitVerdict.Retained("git did not answer within 8 s (worktrees.gitTimeoutSeconds)"));
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "the call ended at its ceiling, not at the child's own 90 s");
         File.Exists(pidFile).Should().BeTrue("the fake git started its child before it hung");
         var child = int.Parse(File.ReadAllText(pidFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);

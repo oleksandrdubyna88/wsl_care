@@ -342,6 +342,14 @@ coai code round per story; the full test executables and `npm test` before the P
       starts a child and hangs. No change was needed there.
     - **For E20** (also its §4c): `a24Orphans` is ignore-only by construction (a pruned worktree has no index) — E20 may act on it only under the owner's explicit
       per-run consent, never as `a24`; "tracked" means in the index at scan time; E20's delete-time re-run uses the same `GitQuestions`.
+    - **Second pass (Fable SHIP with advisories, coai code round)**: the reused ACL judgement expires after 60 seconds (a fixed bound of a security rule, a constant pinned
+      by a test with an injected clock; the identity covers the program files, not the DLLs); `WriteAttributes` and `WriteExtendedAttributes` are forbidden on the program
+      file and its folders (not on an ancestor — `C:\` grants Authenticated Users append rights; the default Program Files install still passes, real ACLs); a POLICY
+      refusal of one question (an orphan whose repository lies under `<home>\git`) is its own group "refused by the policy" and keeps only that folder's candidates
+      out of `a24`, it is NOT "git unavailable"; git is probed once per scan with `git.exe --version` through the same launcher, so a git that is not admitted is a scan
+      fact even when no candidate needed a question, and "nothing needed git" is said instead of implying git confirmed it; the scan's time bounds the git time (no call
+      outlives what is left of it, no further folder is asked once it is spent, the scan is incomplete); the timeout message names `worktrees.gitTimeoutSeconds`.
+      **Honest note for the PR:** the DLL-folder checks (every `<arch>\bin` and its `git.exe`) had no RED before their code — only a break-it afterwards.
     - A scan end-to-end over a REAL linked worktree is covered: `git worktree add --orphan` makes the linked worktree on an unborn branch, so no commit and no identity
       is needed anywhere (`A_scan_over_a_real_linked_worktree_confirms_its_ignored_bin_end_to_end`).
 

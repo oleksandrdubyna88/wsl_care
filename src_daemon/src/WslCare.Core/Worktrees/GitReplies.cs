@@ -21,7 +21,7 @@ public abstract record GitReply
         CommandOutcome.Exited e => new Done(e.ExitCode, e.Stdout.Text, e.Stderr.Text, e.Stdout.Truncated),
         CommandOutcome.TimedOut => new Failed(GitReasons.TimedOut(timeout)),
         CommandOutcome.FailedToStart f => new Failed(GitReasons.NotRun(f.Reason)),
-        CommandOutcome.Refused r => new Failed(GitReasons.NotRun(r.Reason)),
+        CommandOutcome.Refused r => new Failed(GitReasons.PolicyRefused(r.Reason)),
         _ => throw new System.Diagnostics.UnreachableException("CommandOutcome is a closed set"),
     };
 

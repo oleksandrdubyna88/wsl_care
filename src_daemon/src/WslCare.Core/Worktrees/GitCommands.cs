@@ -26,6 +26,9 @@ public static class GitCommands
     /// <summary>The word before an orphan's admin folder.</summary>
     public const string GitDirPrefix = "--git-dir=";
 
+    /// <summary><c>--version</c>: the cheapest command there is — whether git can be run at all (the probe of a scan).</summary>
+    public static IReadOnlyList<string> Version() => [Executable, "--version"];
+
     /// <summary><c>rev-parse --show-toplevel</c>: which working tree git believes the working directory is in.</summary>
     public static IReadOnlyList<string> TopLevel() => [Executable, .. Options, "rev-parse", "--show-toplevel"];
 

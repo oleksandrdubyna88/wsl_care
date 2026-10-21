@@ -21,7 +21,7 @@ public static class WorktreeReports
 
     public const string UnknownReason = "its folder could not be established (a budget ran out or an entry could not be read)";
 
-    public const string GitNotAskedReason = "git was not asked (the scan's time ran out first)";
+    public const string GitNotAskedReason = GitReasons.ScanTimeUp;
 
     public static WorktreeReport From(WorktreeScanResult result, WorktreeSettings settings) =>
         new(
@@ -45,11 +45,13 @@ public static class WorktreeReports
         var placed = result.Roots.SelectMany(r => r.Walked).SelectMany(f => f.Candidates.Select(c => (Folder: f, Candidate: c, Place: PlaceOf(f, c)))).ToList();
         var retained = placed.Where(p => p.Place.Reason.Length > 0).GroupBy(p => p.Place.Reason).OrderByDescending(g => g.Sum(p => p.Candidate.Bytes)).ThenBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => new RetainedGroup(g.Key, g.Count(), g.Sum(p => p.Candidate.Bytes))).ToList();
-        var unavailable = placed.Select(p => p.Candidate.Git).OfType<CandidateGit.Retained>().Where(r => GitReasons.IsGitUnavailable(r.Reason)).Select(r => GitReasons.UnavailableWhy(r.Reason)).Distinct(StringComparer.Ordinal).ToList();
+        var unavailable = placed.Select(p => p.Candidate.Git).OfType<CandidateGit.Retained>().Where(r => GitReasons.IsGitUnavailable(r.Reason)).Select(r => GitReasons.UnavailableWhy(r.Reason))
+            .Concat(result.GitProbe.Usable ? Array.Empty<string>() : new[] { result.GitProbe.Why }).Distinct(StringComparer.Ordinal).ToList();
         if (unavailable.Count > 0)
         {
-            // No admitted git.exe (or the policy refused it) is a NAMED state: every candidate that needed git carries the reason, the figures are absent
-            // — never an empty list that reads as zero — and status says "git could not be asked".
+            // No admitted git.exe (not installed, not admitted, not started) is a NAMED state, learnt by the probe even when no candidate needed a question:
+            // every candidate that needed git carries the reason, the figures are absent — never an empty list that reads as zero — and status says
+            // "git could not be asked". A policy refusal of ONE question is not this: it is that folder's, and the others are still asked.
             var why = string.Join("; ", unavailable);
             return new ReclaimableReport(false, $"git could not be asked: {why}") { Retained = retained, NotAsked = placed.Count(p => p.Place.NotAsked), GitUnavailable = why };
         }
@@ -60,11 +62,13 @@ public static class WorktreeReports
             A24Orphans = Tally(placed.Where(p => p.Place.Kind == FolderKind.Orphan).Select(p => p.Candidate)),
             Retained = retained,
             NotAsked = placed.Count(p => p.Place.NotAsked),
+            NothingNeededGit = placed.All(p => !p.Place.NeededGit),
         };
     }
 
-    /// <summary>Where one candidate lands: <c>Kind</c> set when confirmed (empty reason), else the reason it stays.</summary>
-    private readonly record struct Placement(FolderKind? Kind, string Reason, bool NotAsked);
+    /// <summary>Where one candidate lands: <c>Kind</c> set when confirmed (empty reason), else the reason it stays; <c>NeededGit</c> when every other check
+    /// passed, so git's word was the one still wanted.</summary>
+    private readonly record struct Placement(FolderKind? Kind, string Reason, bool NotAsked, bool NeededGit = false);
 
     private static Placement PlaceOf(FolderScan folder, BuildCandidate candidate) => candidate switch
     {
@@ -72,9 +76,9 @@ public static class WorktreeReports
         _ when folder.Idle.Kind == IdleKind.Unknown => Stays(UnknownReason),
         _ when folder.Idle.Kind == IdleKind.Active => Stays(RecentReason),
         _ when folder.Facts.Locked => Stays(LockedReason),
-        { Git: CandidateGit.Confirmed } => new Placement(folder.Facts.Kind, string.Empty, false),
-        { Git: CandidateGit.Retained retained } => new Placement(null, GitReasons.GroupOf(retained.Reason), GitReasons.IsAFailureToAsk(retained.Reason)),
-        _ => new Placement(null, GitNotAskedReason, true),
+        { Git: CandidateGit.Confirmed } => new Placement(folder.Facts.Kind, string.Empty, false, NeededGit: true),
+        { Git: CandidateGit.Retained retained } => new Placement(null, GitReasons.GroupOf(retained.Reason), GitReasons.IsAFailureToAsk(retained.Reason), NeededGit: true),
+        _ => new Placement(null, GitNotAskedReason, true, NeededGit: true),
     };
 
     private static Placement Stays(string reason) => new(null, reason, false);

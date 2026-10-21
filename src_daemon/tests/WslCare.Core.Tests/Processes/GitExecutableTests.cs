@@ -374,6 +374,46 @@ public sealed class GitExecutableTests
     }
 
     [Fact]
+    public void A_reused_judgement_is_good_for_sixty_seconds_and_then_the_descriptors_are_read_again()
+    {
+        // The identity covers the program files, NOT the DLLs they load or the permissions of the folders above: that gap is bounded in time.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");
+        using var folder = new ThrowAwayFolder("gitexe");
+        var exe = DummyProgram(folder, "Git/cmd/git.exe");
+        var acl = new ScriptedAcl((_, _) => string.Empty);
+        var clock = new ManualTimeProvider(new DateTimeOffset(2026, 10, 21, 12, 0, 0, TimeSpan.Zero));
+        var git = new GitExecutable(() => [exe], acl, reuseJudgement: true, clock);
+
+        git.Resolve().Should().Be(new ResolvedExecutable.Found(exe));
+        var first = acl.Asked.Count;
+        clock.Advance(TimeSpan.FromSeconds(59));
+        git.Resolve();
+        acl.Asked.Count.Should().Be(first, "inside the 60 s window the descriptors are not read again");
+
+        clock.Advance(TimeSpan.FromSeconds(2));
+        git.Resolve();
+        var second = acl.Asked.Count;
+        second.Should().Be(first * 2, "at 61 s the judgement has expired and every descriptor is read again");
+
+        clock.Advance(TimeSpan.FromSeconds(30));
+        git.Resolve();
+        acl.Asked.Count.Should().Be(second, "the window restarts from the new full pass");
+    }
+
+    [Theory]
+    [InlineData(AclRight.WriteAttributes)]
+    [InlineData(AclRight.WriteExtendedAttributes)]
+    public void Writing_attributes_is_refused_on_the_program_and_its_folder_but_not_on_an_ancestor(AclRight right)
+    {
+        // WriteAttributes moves a file's timestamps — the very identity a reused judgement is checked by — and extended attributes carry alternate data.
+        // Not on an ancestor: C:\ grants Authenticated Users append rights by default, and that must keep passing.
+        AdminOnlyJudge.Problem(Owned(Administrators, Allow(Users, right)), AdminOnlyRole.ProgramFile).Should().Contain(Users);
+        AdminOnlyJudge.Problem(Owned(Administrators, Allow(Users, right)), AdminOnlyRole.ProgramFolder).Should().Contain(Users);
+        AdminOnlyJudge.Problem(Owned(System, Allow(AuthenticatedUsers, right)), AdminOnlyRole.Ancestor).Should().BeEmpty();
+        AdminOnlyJudge.KnownRights((int)right).Should().Be(right);
+    }
+
+    [Fact]
     public void Without_reuse_every_resolve_reads_every_descriptor_again()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "git.exe is a Windows program: run on the Windows legs");

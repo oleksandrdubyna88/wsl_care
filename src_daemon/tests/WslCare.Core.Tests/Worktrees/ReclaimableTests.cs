@@ -24,9 +24,16 @@ public sealed class ReclaimableTests
     {
         public RecordingCommandRunner Runner { get; } = new RecordingCommandRunner { Policy = CommandPolicy.Product };
 
+        /// <summary>How long every <c>rev-parse</c> takes: a slow git, for the scan's time budget.</summary>
+        public TimeSpan Sleep { get; init; }
+
         public GitQuestions Questions(Func<string, bool>? exists = null)
         {
-            Runner.ScriptEffect(argv => argv.Contains("rev-parse"), request => RecordingCommandRunner.Exited(0, request.WorkingDirectory.Replace('\\', '/') + "\n"));
+            Runner.ScriptEffect(argv => argv.Contains("rev-parse"), request =>
+            {
+                Thread.Sleep(Sleep);
+                return RecordingCommandRunner.Exited(0, request.WorkingDirectory.Replace('\\', '/') + "\n");
+            });
             Runner.ScriptEffect(argv => argv.Contains("ls-files"), request => RecordingCommandRunner.Exited(0, string.Concat(Of(tracked, request).Select(t => t + "\0"))));
             Runner.ScriptEffect(argv => argv.Contains("check-ignore"), request => Check(request));
             return new GitQuestions(Runner, Limits, _ => string.Empty, exists ?? Directory.Exists);
@@ -117,7 +124,7 @@ public sealed class ReclaimableTests
 
         Scan(world, git);
 
-        var asked = git.Runner.Requests.Select(r => Path.GetFileName(r.WorkingDirectory.TrimEnd('\\'))).Distinct().ToList();
+        var asked = git.Runner.Requests.Where(r => !r.Argv.Contains("--version")).Select(r => Path.GetFileName(r.WorkingDirectory.TrimEnd('\\'))).Distinct().ToList();
         asked.Should().BeEquivalentTo("wt-ok", "wt-tracked", "wt-notignored", "orph");
         asked.Should().NotContain(["wt-locked", "wt-recent", "wt-structural"], "another check already keeps these, and the first reason is the one reported");
         asked.Should().NotContain("orph-lost", "its repository is gone: nothing is started, it is not confirmed by git");
@@ -134,8 +141,9 @@ public sealed class ReclaimableTests
         Scan(world, git);
 
         git.Runner.Requests.Should().NotBeEmpty();
-        git.Runner.Requests.Select(r => CommandCatalogue.Product.MatchMachine(r.Argv)?.Name).Should().OnlyContain(n => n == "git-toplevel" || n == "git-ls-files" || n == "git-check-ignore" || n == "git-check-ignore-orphan");
-        git.Runner.Requests.Should().OnlyContain(r => r.Environment is CommandEnvironment.Clean && r.WorkingDirectory.StartsWith(world.Work, StringComparison.OrdinalIgnoreCase));
+        git.Runner.Requests.Select(r => CommandCatalogue.Product.MatchMachine(r.Argv)?.Name).Should().OnlyContain(n => n == "git-version" || n == "git-toplevel" || n == "git-ls-files" || n == "git-check-ignore" || n == "git-check-ignore-orphan");
+        git.Runner.Requests.Where(r => !r.Argv.Contains("--version")).Should().OnlyContain(r => r.Environment is CommandEnvironment.Clean && r.WorkingDirectory.StartsWith(world.Work, StringComparison.OrdinalIgnoreCase));
+        git.Runner.Requests.Count(r => r.Argv.Contains("--version")).Should().Be(1, "git is probed once per scan");
     }
 
     [Fact]
@@ -187,8 +195,107 @@ public sealed class ReclaimableTests
 
         var result = world.Scanner(git: git.Questions()).Run([world.Work], WorktreeWorld.DefaultSettings() with { MaxSeconds = 0 }, CancellationToken.None);
 
-        git.Runner.Requests.Should().BeEmpty("a scan past its time budget starts no process");
+        git.Runner.Requests.Select(r => r.Argv).Should().OnlyContain(argv => argv.Contains("--version"), "a scan past its time budget asks no question; only the probe of whether git can be run at all ran");
         result.Complete.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_policy_refusal_for_one_orphan_retains_only_that_folders_candidates_and_the_rest_are_still_confirmed()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
+        using var world = new WorktreeWorld("reclaim-refusal");
+        world.Main("main");
+        world.Worktree("wt-ok");
+        world.BuildOutput(Path.Combine(world.Work, "wt-ok"));
+        // An orphan whose repository lies under <home>\git: the never-list's protected-path rule refuses the --git-dir argument.
+        world.Pointing("orph-home", "gitdir: C:/Users/me/git/repo/.git/worktrees/orph-home\n");
+        world.BuildOutput(Path.Combine(world.Work, "orph-home"));
+        foreach (var old in new[] { "main", "wt-ok", "orph-home" })
+        {
+            world.Age(Path.Combine(world.Work, old));
+        }
+
+        var git = new ScriptedGit(Map(("wt-ok", ["bin"]), ("orph-home", ["bin"])), Map());
+
+        var report = WorktreeReports.From(world.Scanner(git: git.Questions(exists: _ => true)).Run([world.Work], WorktreeWorld.DefaultSettings(), CancellationToken.None), WorktreeWorld.DefaultSettings());
+
+        var reclaimable = report.Reclaimable;
+        reclaimable.Available.Should().BeTrue("the refusal is that folder's, not git's absence");
+        reclaimable.GitUnavailable.Should().BeNull();
+        reclaimable.A24.Should().Be(new Tally(1, BinBytes), "the normal worktree's bin is still confirmed");
+        reclaimable.A24Orphans.Should().Be(new Tally(0, 0));
+        reclaimable.Retained!.Should().ContainSingle(r => r.Reason == GitReasons.PolicyRefusal && r.Count == 1);
+        reclaimable.NotAsked.Should().Be(1, "a candidate the policy refused is not a confirmed zero");
+    }
+
+    [Fact]
+    public void A_scan_whose_git_cannot_be_run_says_so_even_when_no_candidate_needed_a_question()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
+        using var world = new WorktreeWorld("reclaim-probe-gone");
+        world.Main("main");
+        world.Worktree("wt-recent");
+        world.BuildOutput(Path.Combine(world.Work, "wt-recent"));
+        const string why = "git.exe is not started: no admitted git (it is never looked up on PATH)";
+        var runner = new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart(why), Policy = CommandPolicy.Product };
+        var questions = new GitQuestions(runner, Limits, _ => string.Empty, Directory.Exists);
+
+        var report = WorktreeReports.From(world.Scanner(git: questions).Run([world.Work], WorktreeWorld.DefaultSettings(), CancellationToken.None), WorktreeWorld.DefaultSettings());
+
+        report.Reclaimable.Available.Should().BeFalse();
+        report.Reclaimable.GitUnavailable.Should().Contain(why);
+        runner.Requests.Should().ContainSingle("only the probe ran: no candidate needed a question");
+        var verdict = WorktreesStatus.From([world.Work], Reading.Of(report), WorktreeWorld.DefaultSettings(), DateTimeOffset.UtcNow).Verdict;
+        verdict.Level.Should().Be(Level.Unknown, "never ok when git cannot be asked");
+        verdict.Reason.Should().Contain("git could not be asked");
+    }
+
+    [Fact]
+    public void A_scan_where_no_candidate_needed_git_says_so_instead_of_implying_git_confirmed_it()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
+        using var world = new WorktreeWorld("reclaim-nothing-needed");
+        world.Main("main");
+        world.Worktree("wt-recent");
+        world.BuildOutput(Path.Combine(world.Work, "wt-recent"));
+        var git = new ScriptedGit(Map(), Map());
+
+        var report = WorktreeReports.From(world.Scanner(git: git.Questions()).Run([world.Work], WorktreeWorld.DefaultSettings(), CancellationToken.None), WorktreeWorld.DefaultSettings());
+
+        report.Reclaimable.Available.Should().BeTrue();
+        report.Reclaimable.NothingNeededGit.Should().BeTrue();
+        report.Reclaimable.A24.Should().Be(new Tally(0, 0));
+        var verdict = WorktreesStatus.From([world.Work], Reading.Of(report), WorktreeWorld.DefaultSettings(), DateTimeOffset.UtcNow).Verdict;
+        verdict.Reason.Should().Contain("nothing needed git");
+        git.Runner.Requests.Should().ContainSingle(r => r.Argv.Contains("--version"), "the probe ran once; no question did");
+        git.Runner.Requests.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void The_scans_time_budget_bounds_the_git_time_and_later_folders_are_not_asked()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WorktreeWorld.WindowsOnly);
+        using var world = new WorktreeWorld("reclaim-gitbudget");
+        world.Main("main");
+        var names = new[] { "wt-a", "wt-b", "wt-c", "wt-d" };
+        foreach (var name in names)
+        {
+            world.Worktree(name);
+            world.BuildOutput(Path.Combine(world.Work, name));
+            world.Age(Path.Combine(world.Work, name));
+        }
+
+        world.Age(Path.Combine(world.Work, "main"));
+        var git = new ScriptedGit(Map(names.Select(n => (n, new[] { "bin" })).ToArray()), Map()) { Sleep = TimeSpan.FromMilliseconds(1500) };
+        var settings = WorktreeWorld.DefaultSettings() with { MaxSeconds = 2 };
+
+        var result = world.Scanner(git: git.Questions()).Run([world.Work], settings, CancellationToken.None);
+
+        var asked = git.Runner.Requests.Where(r => r.Argv.Contains("rev-parse")).Select(r => Path.GetFileName(r.WorkingDirectory.TrimEnd('\\'))).Distinct().ToList();
+        asked.Count.Should().BeLessThan(names.Length, "once the scan's time is spent no further folder is asked");
+        git.Runner.Requests.Where(r => r.Argv.Contains("rev-parse")).Should().OnlyContain(r => r.Timeout <= TimeSpan.FromSeconds(2), "no call may outlive the scan's remaining time");
+        result.Complete.Should().BeFalse("a scan that ran out of time is incomplete");
+        asked.Should().NotContain(names[^1], "the last folder is reached only after the time is spent, and git is not started for it");
     }
 
     [Fact]

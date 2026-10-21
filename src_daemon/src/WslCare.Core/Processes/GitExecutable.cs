@@ -15,12 +15,21 @@ namespace WslCare.Core.Processes;
 /// <param name="acl">Whether only administrators could change a path.</param>
 /// <param name="reuseJudgement">Remember a candidate that passed, and trust the permissions of its folders on a later call as long as the program files
 /// themselves are the SAME files (path, length, creation and last-write time) — measured at 12 ms a call without it (50 calls 601 ms, 2026-10-21), and a
-/// scan makes hundreds. A replaced program is judged afresh; a permission changed under an unchanged program during one short-lived process is not seen.</param>
-public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdminOnlyPath acl, bool reuseJudgement = false)
+/// scan makes hundreds. A replaced program is judged afresh, and so is everything once 60 seconds have passed since the full pass; the identity covers the
+/// PROGRAM FILES only — not the DLLs they load, nor a permission changed under an unchanged program inside that minute.</param>
+/// <param name="clock">The clock the 60 seconds are read from; the system's unless a test moves one.</param>
+public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdminOnlyPath acl, bool reuseJudgement = false, TimeProvider? clock = null)
 {
     private static readonly string[] ProgramFilesVariables = ["ProgramFiles", "ProgramW6432"];
 
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _passed = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>How long a passed judgement may be reused: a minute from the full pass that made it. The identity check covers the PROGRAM FILES (path,
+    /// length, creation and last-write time), not the DLLs they load nor the permissions of the folders above; this bound is what limits that gap. A fixed
+    /// bound of a security rule, not a tuning: it stays a constant (and a test pins it), not a key a user could stretch.</summary>
+    private static readonly TimeSpan ReuseFor = TimeSpan.FromSeconds(60);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Identity, DateTimeOffset At)> _passed = new(StringComparer.OrdinalIgnoreCase);
+
+    private TimeProvider Clock => clock ?? TimeProvider.System;
 
     /// <summary>The product's: the Program Files install (and the machine layer's choice), judged by the real security descriptors, the judgement
     /// reused while the program files are unchanged.</summary>
@@ -70,7 +79,8 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
         }
 
         var identity = reuseJudgement ? Identity(path) : string.Empty;
-        if (reuseJudgement && _passed.TryGetValue(path, out var before) && before == identity)
+        var now = Clock.GetUtcNow();
+        if (reuseJudgement && _passed.TryGetValue(path, out var before) && before.Identity == identity && now - before.At < ReuseFor)
         {
             return string.Empty;
         }
@@ -78,7 +88,7 @@ public sealed class GitExecutable(Func<IReadOnlyList<string>> candidates, IAdmin
         var chain = ChainProblem(path);
         if (reuseJudgement && chain.Length == 0)
         {
-            _passed[path] = identity;
+            _passed[path] = (identity, now);
         }
         else
         {

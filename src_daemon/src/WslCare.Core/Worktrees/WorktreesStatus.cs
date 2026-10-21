@@ -75,10 +75,11 @@ public static class WorktreesStatus
         var value = string.Create(CultureInfo.InvariantCulture, $"{bytes / BytesPerGibibyte:0.0} GiB: {worktrees.Bytes / BytesPerGibibyte:0.0} GiB in {Count(worktrees.Count, "worktree folder")} + {orphans.Bytes / BytesPerGibibyte:0.0} GiB in {Count(orphans.Count, "orphan folder")} (tracked files of orphans not checked); {Structure(report)}");
         var retained = reclaimable.Retained ?? [];
         var kept = retained.Count == 0 ? "nothing else was found" : "kept: " + string.Join("; ", retained.Select(r => $"{r.Reason} ({r.Count})"));
+        var needed = reclaimable.NothingNeededGit ? "nothing needed git: every candidate is kept by another check, so git confirmed nothing and was asked nothing" : string.Empty;
         var warns = bytes > (long)settings.ReclaimableWarnGib * (long)BytesPerGibibyte;
         var doubt = !report.Complete ? "the scan did not finish, so the figure is a lower bound" : reclaimable.NotAsked > 0 ? $"{Count(reclaimable.NotAsked, "candidate")} could not be asked of git, so the figure may be understated" : string.Empty;
         var level = stale ? Level.Unknown : warns ? Level.Warn : doubt.Length > 0 ? Level.Unknown : Level.Ok;
-        var reason = string.Join("; ", new[] { stale ? StaleOr(true, age, settings, string.Empty).TrimEnd(' ', ';') : string.Empty, doubt, kept }.Where(p => p.Length > 0));
+        var reason = string.Join("; ", new[] { stale ? StaleOr(true, age, settings, string.Empty).TrimEnd(' ', ';') : string.Empty, doubt, needed, kept }.Where(p => p.Length > 0));
         return new Verdict(VerdictId, level, value, limit, reason) { Basis = new VerdictBasis(VerdictSource.Scan, null, basis.ScannedAt, basis.AgeSeconds) };
     }
 

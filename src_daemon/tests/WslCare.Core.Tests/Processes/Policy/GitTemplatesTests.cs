@@ -217,7 +217,7 @@ public sealed class GitTemplatesTests
     {
         var inputs = new HostileInputs(20261015);
         var git = ReadCommandTemplates.All.Where(t => t.Executable == "git.exe").ToList();
-        git.Should().HaveCount(4);
+        git.Should().HaveCount(5, "the version probe and the four questions");
 
         foreach (var template in git)
         {

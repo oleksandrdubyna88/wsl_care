@@ -81,6 +81,14 @@ public static class ReadCommandTemplates
     /// cap. The clock probe has no pwsh template. Declared BEFORE <see cref="All"/>.</summary>
     public static CommandTemplate WindowsDiskUnderPwsh { get; } = DiskScript(WindowsDiskCommands.PwshName, HealthCommands.Pwsh);
 
+    /// <summary><c>git.exe --version</c> (E19.S4): whether git can be run at all — the scan's probe, so a git that is not admitted is a fact even when
+    /// no question is asked. Declared BEFORE <see cref="All"/>.</summary>
+    public static CommandTemplate GitVersion { get; } = Machine(
+        "git-version",
+        GitCommands.Executable,
+        [L("--version")],
+        ConfigKeys.Worktrees.GitTimeoutSeconds);
+
     /// <summary><c>git.exe rev-parse --show-toplevel</c> (E19.S4): which working tree git believes a folder is in. The bare
     /// <c>git.exe</c> is judged; the file started is <see cref="Processes.GitExecutable"/>'s, never one found on <c>PATH</c>.
     /// Declared BEFORE <see cref="All"/>.</summary>
@@ -148,6 +156,7 @@ public static class ReadCommandTemplates
             ConfigKeys.Docker.ListTimeoutSeconds),
         SystemctlShow,
         JournalSearch,
+        GitVersion,
         GitTopLevel,
         GitLsFiles,
         GitCheckIgnore,
