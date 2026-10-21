@@ -9,7 +9,7 @@ import { DISTRO_NAME } from '../wsl/distros';
 import { decodePng } from './support/iconPng';
 import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
 import { NUMBER_NAMES, NUMBER_SETTINGS } from '../settings/numbers';
-import { PUBLISHER_PLACEHOLDER } from './support/vsixCheck';
+import { listLines, PUBLISHER_PLACEHOLDER } from './support/vsixCheck';
 
 /**
  * The manifest E5.S1 owes (plan §16 E5.S1, §15f #5 / #12, §15g M3): what VS Code reads from `package.json` decides
@@ -135,24 +135,70 @@ test('no runtime dependency ships, and every development dependency is pinned to
   }
 });
 
-/** The options object scripts/bundle.mjs hands esbuild's buildSync, read with the TypeScript parser: name → source text. */
-function bundleOptions(): Map<string, string> {
+/** The exact kit release the full view is built from (W0 of `todo/PLAN_disk_health_E18.md`): bundled by esbuild, so a development dependency. */
+const KIT = '@oleksandrdubyna88/vscode-webview-kit';
+
+test('W0 item 1: the kit is a development dependency pinned to EXACTLY 0.2.0 — no ^, ~, range or tag — and package.json still has no dependencies', () => {
+  assert.equal(manifest.devDependencies[KIT], '0.2.0');
+  const raw = JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8')) as Record<string, unknown>;
+  assert.equal('dependencies' in raw, false, 'the bundle carries everything: nothing is a runtime dependency');
+});
+
+/** The two lines of `.npmrc`: the scope's registry and a token that is read from the environment, never written down. */
+const NPMRC_LINES = ['@oleksandrdubyna88:registry=https://npm.pkg.github.com', '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}'];
+
+test('W0 item 2: .npmrc is exactly the scope registry and the token read from NODE_AUTH_TOKEN — no literal token — and it never ships', () => {
+  const text = fs.readFileSync(path.join(EXTENSION_ROOT, '.npmrc'), 'utf8');
+  assert.deepEqual(text.split(/\r?\n/).filter((line) => line.trim() !== ''), NPMRC_LINES);
+  assert.doesNotMatch(text, /_authToken=(?!\$\{NODE_AUTH_TOKEN\}\s*$)/m, 'the token is never a literal');
+  const listed = listLines(fs.readFileSync(path.join(EXTENSION_ROOT, 'vsix-files.txt'), 'utf8'));
+  assert.equal(listed.some((file) => file.includes('npmrc')), false, '.npmrc is not in vsix-files.txt');
+  const ignore = listLines(fs.readFileSync(path.join(EXTENSION_ROOT, '.vscodeignore'), 'utf8'));
+  assert.equal(ignore.some((line) => line.startsWith('!') && line.includes('npmrc')), false, '.vscodeignore never lets .npmrc back in');
+});
+
+/** The options object of EVERY `buildSync` call in scripts/bundle.mjs, read with the TypeScript parser: name → source text, in call order. */
+function bundleCalls(): Map<string, string>[] {
   const file = ts.createSourceFile('bundle.mjs', fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
-  const options = new Map<string, string>();
+  const calls: Map<string, string>[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && node.expression.getText(file) === 'buildSync' && node.arguments[0] !== undefined && ts.isObjectLiteralExpression(node.arguments[0])) {
+      const options = new Map<string, string>();
       for (const property of node.arguments[0].properties) {
         if (ts.isPropertyAssignment(property)) {
           options.set(property.name.getText(file), property.initializer.getText(file));
         }
       }
+      calls.push(options);
     }
     ts.forEachChild(node, visit);
   };
   visit(file);
 
-  return options;
+  return calls;
 }
+
+/** The options of the `buildSync` call that writes `outfile` — one call per bundle, found by what it writes. */
+function bundleOptions(outfile = "'dist/extension.js'"): Map<string, string> {
+  const found = bundleCalls().filter((options) => options.get('outfile') === outfile);
+  assert.equal(found.length, 1, `scripts/bundle.mjs has ${found.length} buildSync call(s) writing ${outfile}`);
+
+  return found[0] ?? new Map<string, string>();
+}
+
+test('W0 item 4: the webview is a second bundle — src/webview/fullView.ts to dist/webview/full.js, an IIFE for the browser (the Chromium of VS Code 1.85), no source map, not minified', () => {
+  assert.equal(bundleCalls().length, 2, 'two bundles: the extension host and the full view');
+  const options = bundleOptions("'dist/webview/full.js'");
+  assert.equal(options.get('entryPoints'), "['src/webview/fullView.ts']");
+  assert.equal(options.get('bundle'), 'true');
+  assert.equal(options.get('format'), "'iife'");
+  assert.equal(options.get('platform'), "'browser'");
+  assert.equal(options.get('target'), "'chrome114'", 'Electron 25 / Chromium 114 is what VS Code 1.85 ships');
+  assert.equal(options.get('sourcemap'), 'false');
+  assert.equal(options.get('minify'), 'false');
+  assert.equal(options.has('sourcesContent'), false);
+  assert.equal(options.has('external'), false, 'nothing is left external: the page has no require');
+});
 
 test('the bundle is CommonJS for node 18 with vscode left external, no source map, and the build stamp (scripts/bundle.mjs)', () => {
   assert.equal(manifest.scripts.bundle, 'node scripts/clean.mjs dist && node scripts/bundle.mjs');
