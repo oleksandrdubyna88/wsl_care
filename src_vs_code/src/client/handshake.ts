@@ -43,7 +43,7 @@ export const MIN_DAEMON_FOR_ACTIONS = '0.1.0';
  * win-x64 zip; the fetch verifies the zip's attestation and the attest job re-derives the bytes before it signs. The WSL side
  * runs whatever the owner installed — the panel names each side's version. min-daemon.json carries it as `bundledDaemon`.
  */
-export const BUNDLED_DAEMON = '0.4.0';
+export const BUNDLED_DAEMON = '0.6.0';
 
 const MINIMUM: readonly [number, number, number] = [0, 1, 0];
 
