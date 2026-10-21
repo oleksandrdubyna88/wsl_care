@@ -386,7 +386,9 @@
   "windowsTasks": {
     "watchLogonDelaySeconds": 60,
     "archiveLogonDelayMinutes": 20,
-    "archiveEveryHours": 4
+    "archiveEveryHours": 4,
+    "cleanupLogonDelayMinutes": 30,
+    "cleanupEveryHours": 24
   },
   "temp": {
     "olderThanDays": 7,

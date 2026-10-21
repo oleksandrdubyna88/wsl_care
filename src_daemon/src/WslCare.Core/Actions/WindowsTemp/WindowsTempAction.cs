@@ -21,7 +21,10 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
     {
     }
 
-    public ActionId Id { get; } = ActionId.Find("A23")!;
+    /// <summary>A23's id, spelt here and nowhere else: the action's own <see cref="Id"/>, its dry-week <see cref="StampName"/>, the task worker's argument and the task's stamp all read this one constant.</summary>
+    public const string IdText = "A23";
+
+    public ActionId Id { get; } = ActionId.Find(IdText)!;
 
     public string Summary => "clean the Windows TEMP folder of the user's own old scratch entries";
 
@@ -34,7 +37,10 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
 
     /// <summary>A23 keeps its own first dry week (<c>first-timer-run-A23.json</c>): the common stamp is started by the Windows watch and the
     /// archive body, so it would open deletion on the first A23 run without any dry week of its own.</summary>
-    public string DryWindowStamp => "A23";
+    public string DryWindowStamp => StampName;
+
+    /// <summary>The name of A23's own dry-run week stamp: <c>first-timer-run-A23.json</c>. Equal to the action id (<see cref="IdText"/>).</summary>
+    public const string StampName = IdText;
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Windows];
 
@@ -43,11 +49,12 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
     public Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
         var settings = settingsOf(context);
-        return Task.FromResult(TempRoots.Resolve(context.Paths) switch
+        return Task.FromResult(Planning.Of(context, settings, cancellationToken) switch
         {
-            TempRootResult.Resolved resolved => PreviewRoot(context, settings, resolved.Root, cancellationToken),
-            TempRootResult.Refused refused => Refused(settings, refused.Reason),
-            _ => throw new System.Diagnostics.UnreachableException("TempRootResult is a closed set"),
+            Planning.Planned planned => Previewed(planned.Plan, settings),
+            Planning.Refused refused => Refused(settings, refused.Reason),
+            Planning.Unreadable unreadable => ActionPreview.Unavailable(WhatIs(settings), unreadable.Reason),
+            _ => throw new System.Diagnostics.UnreachableException("Planning is a closed set"),
         });
     }
 
@@ -56,18 +63,6 @@ public sealed class WindowsTempAction(Func<ActionContext, TempSettings> settings
 
     public Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken) =>
         Task.FromResult(new TempRun(context, settingsOf(context), preview, cancellationToken).Execute());
-
-    private static ActionPreview PreviewRoot(ActionContext context, TempSettings settings, string root, CancellationToken token)
-    {
-        var listBudget = new TempBudget(settings.ScanMaxNodes, settings.ScanMaxTime, context.Clock);
-        return context.Files.ListEntries(root, new ListingBounds(settings.MaxTopLevelEntries, listBudget.OutOfTime, token)) switch
-        {
-            EntryListing.Listed { Complete: true } listed => Previewed(TempPlanner.Plan(context, settings, root, listed.Entries, listBudget, token), settings),
-            EntryListing.Listed cut => Refused(settings, $"{root} holds more than {settings.MaxTopLevelEntries} top-level entries or could not be listed in time ({cut.Note}); raise temp.maxTopLevelEntries or temp.scanMaxSeconds - a cut listing has no stable order for the cursor"),
-            EntryListing.Unreadable unreadable => ActionPreview.Unavailable(WhatIs(settings), unreadable.Reason),
-            _ => throw new System.Diagnostics.UnreachableException("EntryListing is a closed set"),
-        };
-    }
 
     private static string WhatIs(TempSettings settings) =>
         string.Create(CultureInfo.InvariantCulture, $"delete the user's own top-level entries of the temp folder that match {string.Join(", ", settings.AllowGlobs)} and whose newest descendant is older than {settings.OlderThan.TotalDays:0} days");

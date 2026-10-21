@@ -13,7 +13,8 @@ internal sealed record PlannedEntry(Candidate Candidate, Judgement Judgement, bo
 /// <param name="Deferred">Names the budget (or the per-run maximum) stopped the run before.</param>
 /// <param name="Next">The cursor as it stands once this run's plan is carried out — its <c>InProgress</c> is the one on disk until the run resolves it.</param>
 /// <param name="ResolvesInProgress">The interrupted candidate was decided (finished, retained or gone): the run clears its marker.</param>
-internal sealed record TempPlan(string Root, IReadOnlyList<PlannedEntry> Entries, int Total, int Deferred, TempCursor Next, bool ResolvesInProgress)
+/// <param name="BudgetStopped">Some of the deferred names were deferred because the scan budget was exhausted - not because <c>temp.maxItemsPerRun</c> was reached.</param>
+internal sealed record TempPlan(string Root, IReadOnlyList<PlannedEntry> Entries, int Total, int Deferred, TempCursor Next, bool ResolvesInProgress, bool BudgetStopped = false)
 {
     public int Count(TempVerdict verdict) => Entries.Count(e => e.Judgement.Verdict == verdict);
 
@@ -49,7 +50,7 @@ internal static class TempPlanner
 
         var decidedAhead = run.DecideAll(ahead, cursor.InProgress);
         var decidedWrapped = run.DecideAll(wrapped, cursor.InProgress);
-        return new TempPlan(root, run.Entries, entries.Count, run.Deferred, Next(cursor, now, run, decidedAhead, decidedWrapped), ResolvesInProgress: !cursor.InProgress.IsNone && (resume is null || run.Entries.Any(e => e.Resumes)));
+        return new TempPlan(root, run.Entries, entries.Count, run.Deferred, Next(cursor, now, run, decidedAhead, decidedWrapped), ResolvesInProgress: !cursor.InProgress.IsNone && (resume is null || run.Entries.Any(e => e.Resumes)), BudgetStopped: run.BudgetStopped);
     }
 
     private static TempCursor Next(TempCursor cursor, DateTimeOffset now, Run run, int decidedAhead, int decidedWrapped)
@@ -71,6 +72,9 @@ internal static class TempPlanner
 
         public int Deferred { get; private set; }
 
+        /// <summary>A name was deferred because the budget ran out (the per-run maximum, checked first, is not that).</summary>
+        public bool BudgetStopped { get; private set; }
+
         public string LastDecided { get; private set; } = string.Empty;
 
         /// <summary>Decides the names in turn while the budgets last; the rest are deferred. Answers how many it decided.</summary>
@@ -83,6 +87,7 @@ internal static class TempPlanner
                 {
                     // Once a cap is reached nothing after it is decided: the rest is counted, not visited (finding 8).
                     Deferred += names.Count - i;
+                    BudgetStopped |= _eligible < settings.MaxItemsPerRun;
                     break;
                 }
 

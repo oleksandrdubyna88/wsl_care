@@ -58,7 +58,7 @@ public static class TempCursors
         {
             files.CreateDirectory(paths.StateDirectory);
             var json = JsonSerializer.SerializeToUtf8Bytes(cursor, WslCareJsonContext.Default.TempCursor);
-            return files.WriteFileAtomically(File(paths), json, new DeletionScope(paths.StateDirectory, "A23")) is DeletionVerdict.Refused refused ? refused.Reason : string.Empty;
+            return files.WriteFileAtomically(File(paths), json, new DeletionScope(paths.StateDirectory, WindowsTempAction.IdText)) is DeletionVerdict.Refused refused ? refused.Reason : string.Empty;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

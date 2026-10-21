@@ -200,6 +200,8 @@ public static partial class ConfigKeys
         WindowsTasks.WatchLogonDelaySeconds,
         WindowsTasks.ArchiveLogonDelayMinutes,
         WindowsTasks.ArchiveEveryHours,
+        WindowsTasks.CleanupLogonDelayMinutes,
+        WindowsTasks.CleanupEveryHours,
         Temp.OlderThanDays,
         Temp.ScanMaxNodes,
         Temp.ScanMaxSeconds,

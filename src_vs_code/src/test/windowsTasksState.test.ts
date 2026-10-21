@@ -264,7 +264,7 @@ function goldenAnswers(): readonly { readonly name: string; readonly xml: string
 
 test('plan round 10: the daemon\'s `tasks render` summary lines (the golden) are what `summariesMatch` expects from SUMMARY_FUNCTION\'s read-back of the golden\'s own XML', () => {
   const answers = goldenAnswers();
-  assert.equal(answers.length, 3, 'the scan sees every golden answer');
+  assert.equal(answers.length, 4, 'the scan sees every golden answer');
   for (const { name, xml, summary } of answers) {
     const readBack = summaryOfXml(parseXml(xml));
     assert.equal(summariesMatch(readBack, summary), true, `${name}:\n${readBack.join('\n')}\n--\n${summary.join('\n')}`);
