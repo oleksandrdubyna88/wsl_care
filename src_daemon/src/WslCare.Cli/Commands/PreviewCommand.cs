@@ -42,6 +42,10 @@ internal static class PreviewText
         foreach (var row in report.Rows)
         {
             text.AppendLine(Row(row));
+            foreach (var note in NamedNotes(row))
+            {
+                text.AppendLine(note);
+            }
         }
 
         text.AppendLine(Kept(report.Kept));
@@ -55,6 +59,11 @@ internal static class PreviewText
         var refusal = row.Refusal is null ? string.Empty : $" - refuses: {row.Refusal}";
         return $"{row.Id,-17} {figure}  {row.What} [{row.AutoSwitch}={(row.Auto ? "on" : "off")}]{refusal}";
     }
+
+    /// <summary>A note that names what it counts (A5's compose projects) is shown under its row — the panel shows only counts, so this
+    /// is where a person at a terminal learns WHICH projects the daemon left alone.</summary>
+    private static IEnumerable<string> NamedNotes(PreviewRowReport row) =>
+        (row.Notes ?? []).Where(n => n.Names is { Count: > 0 }).Select(n => Invariant($"{string.Empty,-17} {n.Count} {n.What}: {string.Join(", ", n.Names!)}"));
 
     private static string Kept(KeptReport kept) =>
         kept.Available ? Invariant($"kept named volumes: {kept.Count}, {Gb(kept.Bytes ?? 0)} (report only)") : $"kept named volumes: unavailable ({kept.Reason})";

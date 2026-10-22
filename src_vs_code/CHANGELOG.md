@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.7.0...extension-v0.8.0) (2026-10-21)
+
+
+### Features
+
+* **daemon:** disk.volumeFree — every lettered Windows volume (E19.S1) ([#156](https://github.com/oleksandrdubyna88/wsl_care/issues/156)) ([c9be102](https://github.com/oleksandrdubyna88/wsl_care/commit/c9be1029e05b3abd8a884fc8e71c53fef4749d81))
+* **tasks:** the Windows TEMP cleanup task, daemon side (WR-T2) ([#172](https://github.com/oleksandrdubyna88/wsl_care/issues/172)) ([bd6e642](https://github.com/oleksandrdubyna88/wsl_care/commit/bd6e642631309591834eb9e68f18919cef12a3d9))
+* **vscode:** install and remove the Windows tasks from the panel (WR-E3) ([#166](https://github.com/oleksandrdubyna88/wsl_care/issues/166)) ([7e8ffec](https://github.com/oleksandrdubyna88/wsl_care/commit/7e8ffec0258d55854be9bda49389bc9ca3333798))
+* **vscode:** one Task Scheduler read for the daemon's task folder, and the Windows tasks lines in the panel (WR-E2) ([5d7d193](https://github.com/oleksandrdubyna88/wsl_care/commit/5d7d193d0bcb6fa42b60f530f03811d9d957dc7f))
+* **vscode:** run the Windows tasks now from the panel (WR-E4) ([#170](https://github.com/oleksandrdubyna88/wsl_care/issues/170)) ([2db20e5](https://github.com/oleksandrdubyna88/wsl_care/commit/2db20e50107378efa3730871844f26e3956a9cf1))
+* **vscode:** wsl_care consumes the webview kit 0.2.0 — the pinned package, the webview bundle, the harness widened by the kit's DOM port (E18.W0) ([#171](https://github.com/oleksandrdubyna88/wsl_care/issues/171)) ([4d05137](https://github.com/oleksandrdubyna88/wsl_care/commit/4d051378c27af5e2a7df2eb7fa0677e7b079ee76))
+
 ## [0.7.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.6.0...extension-v0.7.0) (2026-10-17)
 
 

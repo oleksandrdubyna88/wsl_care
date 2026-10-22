@@ -37,13 +37,17 @@ public static class DockerCommands
     /// <remarks>A mount is read with <c>index $m "Name"</c>, never <c>$m.Name</c>: the CLI evaluates the template
     /// over the decoded JSON, and a bind mount has no <c>Name</c> key, so <c>$m.Name</c> fails the WHOLE command
     /// ("map has no entry for key Name") — found by the live contract on 2026-10-02, on this machine's 29
-    /// containers; <c>index</c> answers null for a missing key.</remarks>
+    /// containers; <c>index</c> answers null for a missing key.
+    /// <para>The <c>compose</c> field (E21.S1) is the ONE compose label read — the project name — so A5 can leave a compose
+    /// project's containers alone; the project's config-file and working-directory labels carry host paths and are never read.
+    /// Measured 2026-10-15 on real stopped compose containers: an absent label is JSON <c>null</c>, a present one the plain name.</para></remarks>
     public const string InspectTemplate =
         "{\"id\":{{json .Id}},\"name\":{{json .Name}},\"created\":{{json .Created}},\"state\":{{json .State.Status}}," +
         "\"startedAt\":{{json .State.StartedAt}},\"finishedAt\":{{json .State.FinishedAt}},\"image\":{{json .Image}}," +
         "\"logDriver\":{{json .HostConfig.LogConfig.Type}},\"logMaxSize\":{{json (index .HostConfig.LogConfig.Config \"max-size\")}}," +
         "\"logPath\":{{json .LogPath}},\"testcontainers\":{{json (index .Config.Labels \"org.testcontainers\")}}," +
         "\"keep\":{{json (index .Config.Labels \"wsl-care.keep\")}}," +
+        "\"compose\":{{json (index .Config.Labels \"com.docker.compose.project\")}}," +
         "\"mounts\":[{{range $i, $m := .Mounts}}{{if $i}},{{end}}{\"type\":{{json (index $m \"Type\")}},\"name\":{{json (index $m \"Name\")}}}{{end}}]}";
 
     private static int SmallCap => Tuning.Current.Int(ConfigKeys.Docker.SmallOutputCapBytes);

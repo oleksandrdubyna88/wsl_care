@@ -142,6 +142,10 @@ public static class DockerLabels
     /// <summary>What Testcontainers puts on everything it starts.</summary>
     public const string Testcontainers = "org.testcontainers";
 
+    /// <summary>What <c>docker compose</c> puts on every container it creates: the project name. A container with it is
+    /// owned by a compose project — A5 keeps it (E21.S1).</summary>
+    public const string ComposeProject = "com.docker.compose.project";
+
     /// <summary>What Docker (23+) puts on a volume it created anonymously — the one mark <c>volume prune</c> without
     /// <c>--all</c> removes by.</summary>
     public const string Anonymous = "com.docker.volume.anonymous";
