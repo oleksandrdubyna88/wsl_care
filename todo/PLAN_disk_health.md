@@ -2319,6 +2319,9 @@ Four drifted by one or three lines, none by meaning: `WindowsDiskCommands.cs:105
 plausible value) right behind `compression=`; `SOURCE.txt` says so, as it did for `windows.account`. The new fixture
 `tests/fixtures/health/defender-cpu-2026-10-16/` holds the measured line of the research note (counters, an instant and a pid: nothing private).
 
+- **A Windows binary that judges no Defender verdict** (security round): the design made `HostRules.Verdicts` the same list as the full run's; it is the three a
+  Windows sample can judge, and `host.defenderCpu` stays carried from the full run.
+
 ### The golden diff (`contracts/golden/head/`, regenerated in WSL, checked twice without the write variable)
 
 Seven files change, 214 lines added and none removed. In `status.json`: two verdicts right behind `host.compression` — `host.vmmem` (ok,
@@ -2328,6 +2331,31 @@ at the end, `"defender"`: `available: true`, `sampledAt` (normalised), `coresAve
 `coreHoursPerWeek` and `coveredHours` (unavailable: "no Defender span of the last 7 days …"), no `extrapolated`, `basis: fullRun`. The six
 `status-running-*.json` goldens (no full run recorded) gain the same two verdicts as `unknown` with the "no full run has been recorded yet"
 reason and `"defender": {available: false, reason, basis: {source: fullRun}}`. Nothing else moved.
+
+### The code round and the security round (2026-10-21)
+
+The coai code round said `proceed`; the Fable security judge said **SHIP after fix 1**. Every fix below was RED first (the messages are in the
+table), then green, then BROKEN in product code (red) and restored byte for byte (`git diff -- src_daemon/src` empty after each).
+
+| # | Finding | Fix | RED message | Break-it (red) |
+|---|---|---|---|---|
+| Fable 1 (MUST) | A forged `defender=2\|9000000000000000000\|1\|1` after a small valid line crashed the full run: `DefenderCpu.Instant` → `DateTime.FromFileTimeUtc` threw `ArgumentOutOfRangeException` inside the week's spans, and `CollectRun` caught nothing | `DefenderCpu.LastFileTime` / `IsInstant`, ONE rule for the parser (`0 < timestamp ≤ Last`, `0 < start ≤ Last`, `pid > 0`) and the ledger's reader (which also now refuses a start marker past the range); `Instant` is total (clamped) | *System.ArgumentOutOfRangeException : Not a valid Win32 FileTime.* (the repro, through `CollectRun`); *Expected parsed.IsAvailable to be False because defender=1\|9000000000000000000\|1\|1, but found True.* (five lines: ts past range, ts 0, pid 0, start 0, start past range); *Did not expect any exception because an instant is a pure conversion …, but found System.ArgumentOutOfRangeException* | range check removed: 7 red; `Instant` unclamped: 1 red (the theory's five numbers are one test) |
+| coai 0 / Fable | The Windows status sampled `HostRules.Verdicts`, which carried `host.defenderCpu`; its unknown stub REPLACED the carried full-run verdict, so Windows showed unknown always | `HostRules.Verdicts` = exactly what a Windows sample can judge (commit, compression, vmmem); `FullRunVerdicts` = those + Defender; `host.defenderCpu` stays CARRIED | *Expected HostRules.Verdicts(Facts(), Config()).Select(v => v.Id) to be equal to {"host.commit", "host.compression", "host.vmmem"}, but {…"host.defenderCpu"} contains 1 item(s) too many.*; *Expected verdicts.Where(v => v.Id == "host.defenderCpu") to be Verdict { … Warn …}* (a carried warn must show, once); *… to be VerdictSource.FullRun because carried, never sampled on the Windows side, but found VerdictSource.Sample* | Defender back in `Verdicts`: 22 red |
+| coai 1/3, Fable 4 | A line that does not parse is never aged and every run named each one | the write DROPS lines whose JSON does not parse (or is not well formed); the note COUNTS them ("3 lines skipped"), once | *Expected Text().Split(…) to contain 3 item(s) because the two valid lines and the new one, but found 5*; *Expected next.LedgerNote to be empty because the write dropped them, but found "3 lines skipped".* | unparseable lines kept again: 2 red |
+| coai 2 | `NeverOracle` kept its own copy of the fixed scripts | it takes them from `HealthCommands.FixedScripts` | (test infrastructure; no behaviour) | — |
+| Fable 3 | the ledger was read by the plain `ReadFile` | the owner-checked `ReadStateFile`, as `McpCpuLedger` reads root's place; the ReadSites test classifies it `TrustedState` | *Expected spy.StateReads to contain a single item, but the collection is empty.* | `ReadFile` again: 2 red (the spy, the read-site classification) |
+| Fable 5 | two parsers, two precedence rules | the disk parser's: the script's own `defender.error=` wins over a value; a second tagged line is "printed … more than once" and none of it is read | *Expected parsed.IsAvailable to be False, but found True.* (a forged value ahead of the error line; two values; a value and a none) | error arm removed: 2 red |
+| Fable 6 | `Measure-Object -Sum` answers a Double in Windows PowerShell 5.1 (checked here) and a Double above 1e15 prints as `1E+15` | `[string][long](…)`, as `ProcessWorkingSets.Sum` casts | *Expected script … to contain "try { $p=@(Get-Process -Name 'vmmemWSL' … [string][long](($p \| Measure-Object WorkingSet64 -Sum).Sum)) …"* | cast removed: 1 red |
+
+Also: the doc of `DefenderCpuLedger` no longer promises ONE lock for the trim and the append — they are two sequential acquisitions of the
+file's lock (a line another process appends between them lands after the rewrite and is kept); `research/2026-10-16_defender_cpu_cost.md` names
+`thresholds.defenderCoresWarnPercent` (default 100 % of one core); `research/architecture.md` no longer lists `elapsedSeconds` in the status shape.
+
+**Recorded residual (Fable 2).** The filter `Name='MsMpEng'` names the process's performance-counter INSTANCE. If the OS ever lists a second instance
+(`MsMpEng#1`, e.g. during an engine update that overlaps two processes) the script reads only the first instance it is handed. The pair is still keyed
+on (pid, start marker), so a switch between instances is a new baseline, never a wrong figure; but the reading may follow the wrong one for a run. Not
+fixed: unmeasured (no machine here has shown a second instance), and a second read would cost the script's budget. The 36-hour measurement of
+`research/2026-10-16_defender_cpu_cost.md` saw one instance in all six reads.
 
 ### Totals
 
