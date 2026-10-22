@@ -1309,6 +1309,35 @@ request — W1a's shape (§ 9a). Were the order not standing, the three commits 
 K2 is the critical path: W1b-1 and W1b-2 are built while K2 is reviewed and released; the code round waits for W1b-3, because the
 unit is not shipped without its layout proof.
 
+### 10a. The gate's plan round (session `6fc851ec`, 2026-10-22)
+
+Two reviewers answered; `proceed` at 5 of 6. Five findings accepted and one rejected; the accepted ones bind the build as much as
+§§ 3–4 do:
+
+1. **`layout:full` is bounded.** Each bin invocation runs under a ceiling (`LAYOUT_PAGE_MS`, a named constant) and the whole script
+   under another; the bin's own deadlines and its browser-tree stop by PID (K2 § 9 #3, #5) do the killing; on a ceiling reached the
+   script stops the bin by ITS pid, never by image name, and exits non-zero naming the page. RED 32 gains a stub bin that never
+   exits: the script returns non-zero within the ceiling and leaves no child.
+2. **A failed distro list has its own state.** When `listDistros()` answers a failure on open, *Refresh* or becoming visible, the WSL
+   tab shows "WSL did not list its distributions — <failureText sentence>" with a *Refresh* button and keeps the last good list's
+   picker muted (or none); RED 6 gains the three triggers with a failing list.
+3. **K2 is a hard prerequisite of W1b-3, with no stub.** W1b-1 and W1b-2 are built and committed while K2 is reviewed and released;
+   W1b-3, the code round and the pull request start only after kit 0.3.0 is on GitHub Packages and verified by its release run. No
+   mock of the bin ever stands in for it in CI (a check that cannot run has not passed). Google Chrome is on GitHub's ubuntu image;
+   its absence is a red run that says so.
+4. **A distro action acts on the distro it was RENDERED for.** The host keeps the target of the last eight pick generations; a
+   distro action's `pick` selects that target, so a click that lands after a pick still acts on the distro its button was drawn for —
+   and its modal names that distro (W1a) — instead of being dropped. A generation older than the eight is refused with "The distro
+   changed — press the button again." RED 7 gains: a *Clean…* rendered for Ubuntu, posted after a pick of Debian, opens Ubuntu's
+   modal and builds `-d Ubuntu`; one from nine generations back is refused with the notice.
+5. **A pick shows its state at once.** The picked entry's mark is "checking…" (neutral) from the pick until its read settles, so the
+   page never presents another moment's figures as current; RED 7 asserts the mark in the view posted at once.
+
+Rejected: **keeping revealed command lines across a hide** — a revealed line vanishing when the page is hidden is deliberate. The
+command line is the one secret-adjacent thing this page carries (E15.S7's redaction notwithstanding), the owner's rule is "arguments
+hidden by default", and restoring reveals automatically would re-show them without a click. A data-only re-post with equal rows
+already keeps a table's generation (§ 3.6), so a background refresh does not wipe a reveal.
+
 ### 11. Questions the specification could not settle
 
 0. **Settled 2026-10-22:** K2 ships `--single-line <selector>` (kit `todo/PLAN_layout_check_bin.md` §1.2, §9 #6), so `layout:full` also runs `--single-line '.kit-table__cell--end'` over the PID columns — question 1 below is answered.
