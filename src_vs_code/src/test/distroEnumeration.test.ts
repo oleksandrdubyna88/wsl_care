@@ -370,6 +370,9 @@ const COMMAND_CLASS: Readonly<Record<string, Class>> = {
   'wslCare.removeWindowsTasks': 'windowsSide',
   'wslCare.runWindowsWatchTask': 'windowsSide',
   'wslCare.runWindowsArchiveTask': 'windowsSide',
+  'wslCare.installWindowsCleanupTask': 'windowsSide',
+  'wslCare.previewWindowsTempCleanup': 'windowsSide',
+  'wslCare.runWindowsCleanupTask': 'windowsSide',
   'wslCare.chooseArchiveFolder': 'distro',
   'wslCare.stopArchiving': 'distro',
   'wslCare.archiveNow': 'distro',
@@ -390,12 +393,12 @@ const DRIVEN_AS: Readonly<Record<string, string>> = {
   'wslCare.stopRelays': 'host:stopRelays',
 };
 
-test('RED 20(c) · all 19 commands are classified; a distro command names the flow driven above — a 20th command fails here', () => {
+test('RED 20(c) · all 22 commands are classified; a distro command names the flow driven above — a 23rd command fails here', () => {
   const buttons = Object.keys(COMMAND_BUTTONS).sort();
   const manifest = JSON.parse(fs.readFileSync(path.join(SOURCE_ROOT, '..', 'package.json'), 'utf8')) as { contributes: { commands: { command: string }[] } };
   assert.deepEqual(manifest.contributes.commands.map((c) => c.command).sort(), buttons, 'package.json and COMMAND_BUTTONS agree (commandButtons.test.ts)');
   assert.deepEqual(Object.keys(COMMAND_CLASS).sort(), buttons, 'every command is classified, and only commands are');
-  assert.equal(buttons.length, 19);
+  assert.equal(buttons.length, 22);
   const distro = Object.entries(COMMAND_CLASS).filter(([, kind]) => kind === 'distro').map(([command]) => command).sort();
   assert.deepEqual(Object.keys(DRIVEN_AS).sort(), distro, 'each distro command is driven, and only those');
 });
