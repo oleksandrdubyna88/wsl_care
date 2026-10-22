@@ -1311,6 +1311,7 @@ unit is not shipped without its layout proof.
 
 ### 11. Questions the specification could not settle
 
+0. **Settled 2026-10-22:** K2 ships `--single-line <selector>` (kit `todo/PLAN_layout_check_bin.md` §1.2, §9 #6), so `layout:full` also runs `--single-line '.kit-table__cell--end'` over the PID columns — question 1 below is answered.
 1. **PIDs that never wrap, proved in Chrome.** The kit keeps an `align: 'end'` cell on one line above `30em` and W1b stacks every PID
    table at `narrow` or wider (RED 14 holds the specs), but the K2 bin as described checks overflow and card heights, not "one line".
    Ask K2 for an optional single-line selector (`.kit-table__cell--end` in an unstacked table); without it, RED 14 is the proof.
