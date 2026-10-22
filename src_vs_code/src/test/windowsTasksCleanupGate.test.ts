@@ -9,7 +9,7 @@ import { runTasksOp, type TasksOp } from '../windowsTasks/tasksFlow';
 import { TasksHost } from '../windowsTasks/tasksHost';
 import { QUERY_SCRIPT } from '../windowsTime/guardScripts';
 import { exited } from './support/recordingRunner';
-import { schedulerStdout } from './support/schedulerAnswers';
+import { schedulerStdout, type SchedulerFixture } from './support/schedulerAnswers';
 import { quietTasks } from './support/tasksDeps';
 import { tasksWorld } from './support/tasksWorld';
 
@@ -23,10 +23,10 @@ import { tasksWorld } from './support/tasksWorld';
 const ENV = { SystemRoot: 'C:\\Windows' } as const;
 const CLEANUP_IDS = ['installWindowsCleanupTask', 'previewWindowsTempCleanup', 'runWindowsCleanupTask'];
 
-function hostWith(pin: string, since?: string) {
+function hostWith(pin: string, since?: string, read: SchedulerFixture = { tasks: [] }) {
   const world = tasksWorld();
   const queries: ProcessRequest[] = [];
-  const query = (request: ProcessRequest): Promise<ProcessResult> => { queries.push(request); return Promise.resolve(exited(0, schedulerStdout({ tasks: [] }))); };
+  const query = (request: ProcessRequest): Promise<ProcessResult> => { queries.push(request); return Promise.resolve(exited(0, schedulerStdout(read))); };
   const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
   const quiet = quietTasks();
   quiet.recorder.answer = true;
@@ -72,6 +72,19 @@ test('with the real pin (0.6.0) the cleanup row says why, the three buttons are 
   assert.deepEqual(renders, ['tasks render watch --json', 'tasks render archive --json'], 'a render of the cleanup task was run');
   assert.deepEqual(h.world.daemon().filter((a) => a.includes('cleanup')), [], 'nothing spawned for the cleanup task');
   assert.equal(view.cleanup.line, '', 'and no last-cleanup line');
+});
+
+test('with the real pin, a cleanup task that somehow ran (registered by another build) is not read about: no run-history request, no line', async () => {
+  const ran = { name: 'cleanup', summary: ['principal'], lastRunUtc: '2026-10-01T21:00:00.0000000Z', lastResult: '0' };
+  const h = hostWith('0.6.0', undefined, { tasks: [ran] });
+  await Promise.all([h.scheduler.refresh(), h.host.refresh()]);
+  await settle();
+  assert.deepEqual(h.world.calls.filter((c) => c.request.args[0] === 'runs').map((c) => c.request.args.join(' ')), [], 'a run-history read was made while the gate is closed');
+  assert.equal(h.host.view().cleanup.line, '');
+  const open = hostWith('0.4.0', '0.1.0', { tasks: [ran] });
+  await Promise.all([open.scheduler.refresh(), open.host.refresh()]);
+  await settle();
+  assert.ok(open.world.calls.some((c) => c.request.args[0] === 'runs'), 'and with the gate open the history IS read');
 });
 
 test('with the real pin, a flow of the cleanup task asked anyway (the palette) starts nothing and says the sentence', async () => {
