@@ -13,7 +13,11 @@ import type { GuardRecorder } from './windowsTime/guardUi';
 import type { WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import type { LogsPanel } from './logsPage/logsPanel';
 import type { ArchivePanel } from './archivePage/archivePanel';
+import type { Failure } from './client/outcome';
+import type { RunOptions } from './client/WslCareClient';
+import type { Poller } from './poll/poller';
 import type { ProcessRequest, Runner } from './process/runner';
+import { listedNameOf, type DistroList } from './wsl/distroTarget';
 import type { RunnerChoice } from './process/runnerSelection';
 import type { CleanupController } from './root/cleanupController';
 import type { BarView } from './statusBar/statusBarModel';
@@ -69,6 +73,13 @@ export interface WslCareTestApi {
   /** E10.S1: the archive's host — its reads, its view and its two flows — and its recorded dialog, modals and notifications. */
   archive(): ArchiveHost;
   archiveRecorder(): ArchiveRecorder;
+  /** E18.W1a: every distribution WSL reports (`-l -v` then `--list --running --quiet`); the store drops the picked snapshots of names it no longer holds. */
+  listDistros(): Promise<DistroList | Failure>;
+  /**
+   * E18.W1a: reads a PICKED distribution with no UI — asks WSL for the list first, mints the name from it (a name WSL does not list THROWS: a
+   * test defect), then `status` / `preview` / `doctor` into the store's picked slot of that name. `options.startIfStopped` is the explicit start.
+   */
+  readPicked(name: string, options?: RunOptions): Promise<void>;
   /** The version the running bundle was built for (`buildStamp.ts`). */
   buildVersion(): string;
 }
@@ -88,4 +99,21 @@ export function loggedRunner(inner: Runner, log: string[]): Runner {
     log.push(request.args.join(' '));
     return inner(request);
   };
+}
+
+/**
+ * The test API's picked read: the list FIRST (a store that has been told no list ignores every picked write), the name minted from it
+ * with `listedNameOf` — the one road to a `DistroName` — and then the read. A name WSL does not list, or a list that failed, THROWS:
+ * it is a defect of the test that asked, never a read of an invented distribution.
+ */
+export async function readPickedBy(poller: Pick<Poller, 'listDistros' | 'readPicked'>, name: string, options?: RunOptions): Promise<void> {
+  const list = await poller.listDistros();
+  if (!('distros' in list)) {
+    throw new Error(`readPicked(${name}): WSL's list failed (${list.kind})`);
+  }
+  const minted = listedNameOf(name, list.distros.map((info) => info.name));
+  if (minted === undefined) {
+    throw new Error(`readPicked(${name}): WSL does not list that distribution (it lists: ${list.distros.map((info) => info.name).join(', ')})`);
+  }
+  await poller.readPicked(minted, options);
 }

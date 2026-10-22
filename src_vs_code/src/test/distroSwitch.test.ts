@@ -8,9 +8,10 @@ import { Poller, type Timers } from '../poll/poller';
 import type { ProcessResult } from '../process/runner';
 import { OutcomeStore, type PanelVerb } from '../state/outcomeStore';
 import { TEST_ENV } from './support/fakeWorld';
-import { answered, headBody } from './support/outcomes';
+import { answered, headBody, NO_DISTRO_LIST } from './support/outcomes';
 import { golden } from './support/paths';
 import { daemonArgv, exited, exitedUtf16, LIST_QUIET, LIST_RUNNING, recordingRunner, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 
 /**
  * Switching `wslCare.distro` while a call for the previous distribution is still in flight (retro review of PR #9,
@@ -77,10 +78,10 @@ test('a preview asked for another distribution is not joined to the one still in
   const rec = recordingRunner(script);
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
 
-  const first = client.run('preview');
+  const first = client.run('preview', DEFAULT_TARGET);
   await asked.promise;
   distro = 'Debian';
-  const second = client.run('preview');
+  const second = client.run('preview', DEFAULT_TARGET);
   held.resolve(exited(0, JSON.stringify(golden('head', 'preview'))));
 
   assert.equal(distroOf(await first), 'Ubuntu');
@@ -95,7 +96,8 @@ test('the panel never shows the previous distribution\'s preview under the new o
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
   const store = new OutcomeStore();
   const options = {
-    run: (verb: Verb, runOptions?: RunOptions) => client.run(verb, runOptions),
+    listDistros: NO_DISTRO_LIST,
+    run: (verb: Verb, target: DistroTarget, runOptions?: RunOptions) => client.run(verb, target, runOptions),
     store,
     focused: () => true,
     refreshSeconds: () => undefined,
@@ -134,7 +136,7 @@ function pollerWorld(): { poller: Poller; store: OutcomeStore; held: Deferred<Ve
 
     return Promise.resolve(answered(panelVerb, headBody(panelVerb), distro));
   };
-  const options = { run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro };
+  const options = { listDistros: NO_DISTRO_LIST, run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro };
 
   return { poller: new Poller(options), store, held, asked: asked.promise, setDistro: (d) => { distro = d; } };
 }
@@ -196,7 +198,7 @@ test('a round made obsolete while its status is pending asks no preview or docto
 
     return Promise.resolve(answered(asPanelVerb(verb), headBody(asPanelVerb(verb)), distro));
   };
-  const poller = new Poller({ run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro });
+  const poller = new Poller({ listDistros: NO_DISTRO_LIST, run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro });
 
   void poller.refreshPanel();
   await statusAsked.promise;
@@ -230,7 +232,7 @@ function recordedWorld(heldUbuntuStatus: boolean): {
 
     return Promise.resolve(answered(asPanelVerb(verb), headBody(asPanelVerb(verb)), state.distro));
   };
-  const poller = new Poller({ run, store, focused: () => state.focused, refreshSeconds: () => undefined, timers: NEVER, target: () => state.distro });
+  const poller = new Poller({ listDistros: NO_DISTRO_LIST, run, store, focused: () => state.focused, refreshSeconds: () => undefined, timers: NEVER, target: () => state.distro });
 
   return { poller, store, calls, held, statusAsked: statusAsked.promise, setDistro: (d) => { state.distro = d; }, setFocused: (f) => { state.focused = f; } };
 }
@@ -280,7 +282,7 @@ test('a non-string wslCare.distro (a number, null, an object in settings.json) i
     const rec = recordingRunner({});
     const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => raw });
     let outcome: VerbOutcome | undefined;
-    assert.doesNotThrow(() => { void client.run('status').then((o) => { outcome = o; }); }, `run() threw for ${JSON.stringify(raw)}`);
+    assert.doesNotThrow(() => { void client.run('status', DEFAULT_TARGET).then((o) => { outcome = o; }); }, `run() threw for ${JSON.stringify(raw)}`);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(outcome?.kind, 'distroRefused', `${JSON.stringify(raw)}: ${JSON.stringify(outcome)}`);
     assert.equal(rec.requests.length, 0, 'nothing may be started for a setting that is not a name');
@@ -308,10 +310,10 @@ test('a run read asked for another distribution is not joined to the one still i
   const rec = recordingRunner(script);
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
 
-  const first = client.read(read);
+  const first = client.read(read, DEFAULT_TARGET);
   await asked.promise;
   distro = 'Debian';
-  const second = client.read(read);
+  const second = client.read(read, DEFAULT_TARGET);
   held.resolve(exited(0, answer));
 
   const [ubuntu, debian] = [await first, await second];

@@ -1,5 +1,6 @@
 import type { EnumRead } from '../client/enumValue';
 import type { DaemonVersion, Failure } from '../client/outcome';
+import type { DistroTarget } from '../wsl/distroTarget';
 import type { ActionId, ActionIds, EntryId, RunId, ShownProcess, VolumeName } from './rootIds';
 
 /**
@@ -132,6 +133,8 @@ export interface PreviewedAction {
  */
 export interface HeldPreview {
   readonly distro: string;
+  /** E18.W1a: the target this preview was taken for — its confirm goes to THIS distribution, never to whichever the setting names by then. */
+  readonly target: DistroTarget;
   readonly ids: ActionIds;
   readonly actions: readonly PreviewedAction[];
   readonly a4: ShownSelection | undefined;

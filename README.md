@@ -541,14 +541,25 @@ wsl-care.exe worktrees roots clear
 
 The Windows binary's report of the folders you choose (`worktrees.roots`, the parents of your worktrees; `config set worktrees.roots` is the same through the same
 rules). A root must be a folder on a local fixed drive, not a drive root, not behind a link, not your profile or a folder around it, not in or around an AI agent's
-folder or Claude's temporary folder, and not inside or over another root; the verb is all or nothing, and every path comes back with its own verdict. The scan starts
-no process and deletes nothing. For each direct child folder it says what it is from file reads alone — a worktree (locked or not), an orphan whose git folder is gone,
+folder or Claude's temporary folder, and not inside or over another root; the verb is all or nothing, and every path comes back with its own verdict. The scan
+deletes nothing and starts no process but git's three read-only questions (below). For each direct child folder it says what it is from file reads alone — a worktree (locked or not), an orphan whose git folder is gone,
 a worktree made inside WSL (a `/mnt/<letter>/…` pointer is read as the Windows folder it is; any other pointer is left alone as made elsewhere), a main clone, not
 git — how long each worktree and orphan has been idle (`worktrees.idleDays`, 3: the newest write outside its build output, each build folder's own write and git's
 admin files), and its build output (`bin`/`obj` beside a project file, `node_modules` beside a `package.json`), kept whole when it holds a nested repository or any
 file that is not a build artifact (a database, a key, an `.env`, anything written after the build) — with that file named. A walk past `worktrees.scanMaxEntries` /
-`scanMaxSeconds`, or an unreadable folder, leaves a folder unknown, never idle. `status` shows the report with its age and the verdict `worktrees.reclaimable`, which
-stays unknown until git confirms what a cleanup may delete.
+`scanMaxSeconds`, or an unreadable folder, leaves a folder unknown, never idle. `status` shows the report with its age and the verdict `worktrees.reclaimable`.
+
+**What is reclaimable** is only what a cleanup would be allowed to delete: the logical bytes of the build-output folders that pass every check — idle folder, not
+locked, nothing in them but build artifacts — and git's confirmation. For a candidate in such a folder the binary asks git three read-only questions: which working
+tree is this (`rev-parse --show-toplevel`, which must be the folder itself), does it track a file inside (`ls-files`), and does an ignore rule cover it
+(`check-ignore`, read per name, never by the exit code; a negated rule counts as not ignored). The report shows `a24` (worktrees) and `a24Orphans` (an orphan whose
+repository is still there: "ignore rules confirmed; tracked files NOT checked"), and everything else under `retained` with the reason (recent, locked, tracked, not ignored,
+git refused, …); when the scan had no git to ask, the figures are absent, never zero. The verdict warns above `worktrees.reclaimableWarnGib` GiB confirmed by git
+(a figure below it that a budget or a git failure may have understated is `unknown`, never `ok`). Git runs with a clean environment (no home, no user or system
+configuration, discovery stopped at the root), never changes a repository's index, and is the `git.exe` of `C:\Program Files\Git` only when no non-administrator could
+replace it (or the one an administrator names in `worktrees.gitPath`, same rule) — never one found on `PATH`. Keys: `worktrees.gitPath` (machine layer),
+`worktrees.gitTimeoutSeconds` (30), `worktrees.gitNamesPerCall` (64), `worktrees.gitCommandLineMaxChars` (7000). Measured behaviour:
+[research/2026-10-15_disk_hygiene_git_probe.md](research/2026-10-15_disk_hygiene_git_probe.md).
 
 ## Busy — may an agent start heavy work now?
 
@@ -654,7 +665,7 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | Action | What it runs | Freed is | Notes |
 |---|---|---|---|
 | `A4` | `docker volume rm <64-hex>…` — never `prune` | the `system df -v` sizes, read just before, of exactly the volumes Docker confirmed | anonymous volumes only, unattached, no `wsl-care.keep=true`, first seen ≥ `volumes.anonymousOlderThanDays` ago; refuses on Docker < 23 or an unreadable version; a button run removes only the volumes passed with `--volume <name>` (repeatable) / `--only <file>` (one name per line) and refuses without them |
-| `A5`, `A5Testcontainers` | `docker rm -v <id>…` — never `-f` | the confirmed containers' layers + their anonymous volumes Docker no longer lists | stopped ≥ `containers.stoppedOlderThanDays` / Testcontainers ≥ `containers.testcontainersOlderThanHours`; keep label respected; a container that started since is refused by Docker and kept |
+| `A5`, `A5Testcontainers` | `docker rm -v <id>…` — never `-f` | the confirmed containers' layers + their anonymous volumes Docker no longer lists | stopped ≥ `containers.stoppedOlderThanDays` / Testcontainers ≥ `containers.testcontainersOlderThanHours`; keep label respected; **`A5` never takes a container of a docker compose project** (the `com.docker.compose.project` label — a stopped dev stack is the project's, and its anonymous volumes would go with it): it counts them in a note, "containers of a docker compose project (kept — compose owns them)", and `wsl-care preview --all` names the projects (at most five, then `more: N`; `--json` carries them as the note's `names`); the panel shows only counts, no note and no names. `A5Testcontainers` is unchanged: a Testcontainers compose module's containers carry its label and are taken |
 | `A6`, `A6Unused` | `docker image prune -f` / `-a -f --filter until=<h>h`, both with `--filter label!=wsl-care.keep=true` | Docker's own "Total reclaimed space" | never an image any container uses; no prune when the preview selects nothing |
 | `A7` | the timer: `docker builder prune -f --max-used-space <buildCache.maxGb>GB` (or `--keep-storage`, whichever THIS Docker's help lists); a button: `-a -f` | Docker's own "Total:" | waits for an idle machine |
 | `A8` | `npm cache clean --force` as the target user | `~/.npm` walked before and after | npm not installed = a skip |

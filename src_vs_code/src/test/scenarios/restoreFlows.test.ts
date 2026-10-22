@@ -14,6 +14,7 @@ import { bodyAt, bodyOf } from '../support/body';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld } from '../support/fakeWorld';
 import { ManualTimers, MapStore } from '../support/memento';
 import { GOLDEN_ROOT, goldenFile } from '../support/paths';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S2b: *Restore* end to end — the REAL Archive page host (`ArchiveController`) wired to the REAL cleanup host as
@@ -76,18 +77,18 @@ function openWindow(world: FakeWorld, durable: MapStore): Window {
   const recorder = newCleanRecorder();
   recorder.answer = true;
   const askStatus = async () => {
-    const outcome = await client.run('status');
+    const outcome = await client.run('status', DEFAULT_TARGET);
     outcomes.set('status', outcome);
     return outcome;
   };
   const host = new CleanupHost({
-    durable, controller, read: (request) => client.read(request), outcomes, askStatus, refreshPanel: async () => { await askStatus(); },
+    durable, controller, read: (request) => client.read(request, DEFAULT_TARGET), outcomes, askStatus, refreshPanel: async () => { await askStatus(); },
     focused: () => true, ui: recordingCleanUi(recorder), timers: new ManualTimers(), now: () => mono, wallNow: () => Date.parse('2026-10-11T10:00:00.000Z'), log: () => undefined,
   });
   const views: ArchivePageView[] = [];
   const page = new ArchiveController({
-    read: (request) => client.read(request), status: () => outcomes.snapshot().status, post: (view) => { views.push(view); },
-    restore: { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids) => host.restore(ids) },
+    read: (request) => client.read(request, DEFAULT_TARGET), status: () => outcomes.snapshot().status, post: (view) => { views.push(view); },
+    restore: { facts: () => ({ inFlight: host.restoreInFlight(), state: host.controls().state, blocker: host.restoreBlocker() }), start: (ids) => host.restore(ids, DEFAULT_TARGET) },
   });
   const pending: Promise<void>[] = [];
   host.onChange(() => { pending.push(page.restoreChanged()); });
@@ -165,7 +166,7 @@ test('a DEAD restore run after a reload ends as interrupted — never stuck on "
     const durable = new MapStore();
     const started = openWindow(world, durable);
     await started.host.follower.tick();
-    assert.equal((await started.host.restore([VERIFIED]))?.kind, 'handedOff');
+    assert.equal((await started.host.restore([VERIFIED], DEFAULT_TARGET))?.kind, 'handedOff');
     world.rewrite({ answers: answers(world, 'dead', { 'status.json': restoring('dead') }), runsShow: 'runs-show-interrupted.json' });
     const window = openWindow(world, durable);
     await window.host.follower.tick();
@@ -190,7 +191,7 @@ test('a selection past a LOWERED act.maxShownNames (still under restoreCeiling) 
     }
     assert.equal(last(window).selection.count, 1);
     assert.match(last(window).notice, /^One restore takes at most 1 /);
-    const outcome = await window.host.restore([VERIFIED, OTHER]);
+    const outcome = await window.host.restore([VERIFIED, OTHER], DEFAULT_TARGET);
     assert.ok(outcome?.kind === 'refused' && outcome.failure.kind === 'entriesRefused', JSON.stringify(outcome).slice(0, 300));
     assert.ok(world.calls().every((c) => !c.includes(' act A20 ')), 'nothing reached the root daemon');
     await window.settled();

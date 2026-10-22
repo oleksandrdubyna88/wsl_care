@@ -8,6 +8,7 @@ import { ROW_IDS } from '../cleanup/rowIds';
 import { parsePreview } from '../root/rootAnswers';
 import { ACTION_IDS, type ActionIds } from '../root/rootIds';
 import type { HeldPreview } from '../root/rootOutcome';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 import { golden, GOLDEN_ROOT } from './support/paths';
 
 /**
@@ -22,7 +23,7 @@ function previewBody(edit: (actions: Record<string, unknown>[]) => void = () => 
 }
 
 function held(ids: ActionIds, body = previewBody()): HeldPreview {
-  const preview = parsePreview(JSON.stringify(body), { distro: 'Ubuntu', ids, takenAtMs: 0 });
+  const preview = parsePreview(JSON.stringify(body), { distro: 'Ubuntu', target: DEFAULT_TARGET, ids, takenAtMs: 0 });
   assert.ok(!('kind' in preview), JSON.stringify(preview).slice(0, 300));
   return preview;
 }
@@ -137,7 +138,7 @@ test('#17: the truncated line names the cap in force, not the compiled bound', (
     a4.shown = a4.shown.slice(0, 300);
     a4.shownTruncated = true;
   });
-  const preview = parsePreview(JSON.stringify(body), { distro: 'Ubuntu', ids: ['A4'], takenAtMs: 0, maxShownNames: 300 });
+  const preview = parsePreview(JSON.stringify(body), { distro: 'Ubuntu', target: DEFAULT_TARGET, ids: ['A4'], takenAtMs: 0, maxShownNames: 300 });
   assert.ok(!('kind' in preview), JSON.stringify(preview).slice(0, 300));
   assert.match(firstModal(preview, false).detail, /Only the 300 volumes shown are removed; 387 were selected\./);
 });

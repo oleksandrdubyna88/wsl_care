@@ -13,6 +13,7 @@ import { WslCareClient } from '../client/WslCareClient';
 import { TEST_ENV } from './support/fakeWorld';
 import { GOLDEN_ROOT } from './support/paths';
 import { daemonArgv, exited, exitedUtf16, LIST_QUIET, LIST_RUNNING, LIST_VERBOSE, recordingRunner, verboseTable, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * The two run reads E6.S3 adds to the client (plan §15j M3 / M7, §15k #19): `runs show <runId> --json` and
@@ -56,7 +57,7 @@ function bodyOf(outcome: ReadOutcome): Record<string, unknown> {
 
 test('runs show: after the three WSL questions, exactly -d <distro> --cd / --exec <daemon> runs show <runId> --json — no -u, 20 s', async () => {
   const { c, rec } = client({ ...wsl(true), [SHOW]: exited(0, goldenText('runs-show-done.json')) });
-  const outcome = await c.read({ read: 'runsShow', runId: RUN });
+  const outcome = await c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET);
   assert.equal(bodyOf(outcome).state, 'done');
   assert.ok(outcome.kind === 'read' && outcome.distro === 'Ubuntu' && outcome.read === 'runsShow');
   assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, SHOW]);
@@ -66,7 +67,7 @@ test('runs show: after the three WSL questions, exactly -d <distro> --cd / --exe
 
 test('runs --from --to: the instant window, exactly as built, 20 s', async () => {
   const { c, rec } = client({ ...wsl(true), [RUNS]: exited(0, goldenText('runs-local-day.json')) });
-  const outcome = await c.read({ read: 'runs', from: FROM, to: TO });
+  const outcome = await c.read({ read: 'runs', from: FROM, to: TO }, DEFAULT_TARGET);
   assert.equal(bodyOf(outcome).count, 3);
   assert.equal(rec.argvs().at(-1), RUNS);
   assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.runs);
@@ -76,7 +77,7 @@ const LOGS = daemonArgv('Ubuntu', ['logs', '--from', FROM, '--to', TO, '--json']
 
 test('logs --from --to (E6.S4): the instant window of the Logs page, exactly as built — no --detail, no --action, no -u, 20 s', async () => {
   const { c, rec } = client({ ...wsl(true), [LOGS]: exited(0, goldenText('logs-local-day.json')) });
-  const outcome = await c.read({ read: 'logs', from: FROM, to: TO });
+  const outcome = await c.read({ read: 'logs', from: FROM, to: TO }, DEFAULT_TARGET);
   assert.equal(bodyOf(outcome).freedBytes, 308003000);
   assert.ok(outcome.kind === 'read' && outcome.read === 'logs');
   assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, LOGS]);
@@ -95,8 +96,8 @@ test('review K2: each run read names its CLI verb in an explicit table — a tag
 test('review C1: exit 4 WITH a readable answer on logs and runs is an answer — its `problem` reaches the caller, nothing is dropped', async () => {
   const body = (name: string) => JSON.stringify({ ...JSON.parse(goldenText(name)), problem: 'history.jsonl could not be read: permission denied' });
   const { c } = client({ ...wsl(true), [LOGS]: exited(4, body('logs-local-day.json'), 'wsl-care: the history cannot be read\n'), [RUNS]: exited(4, body('runs-local-day.json'), 'wsl-care: the history cannot be read\n') });
-  assert.equal(bodyOf(await c.read({ read: 'logs', from: FROM, to: TO })).problem, 'history.jsonl could not be read: permission denied');
-  assert.equal(bodyOf(await c.read({ read: 'runs', from: FROM, to: TO })).problem, 'history.jsonl could not be read: permission denied');
+  assert.equal(bodyOf(await c.read({ read: 'logs', from: FROM, to: TO }, DEFAULT_TARGET)).problem, 'history.jsonl could not be read: permission denied');
+  assert.equal(bodyOf(await c.read({ read: 'runs', from: FROM, to: TO }, DEFAULT_TARGET)).problem, 'history.jsonl could not be read: permission denied');
 });
 
 test('every run read\'s tail is built from its typed parts, and each has a stated ceiling', () => {
@@ -110,13 +111,13 @@ test('every run read\'s tail is built from its typed parts, and each has a state
 test('§15q: a run read\'s ceiling reads the settings — 45 s set, 45 s handed to the runner', async () => {
   const rec = recordingRunner({ ...wsl(true), [SHOW]: exited(0, goldenText('runs-show-done.json')) });
   const c = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '', numbers: () => ({ ...DEFAULT_NUMBERS, runReadSeconds: 45 }) });
-  await c.read({ read: 'runsShow', runId: RUN });
+  await c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET);
   assert.equal(rec.requests.at(-1)?.timeoutMs, 45_000);
 });
 
 test('a stopped distribution: no -d call at all, the read answers "stopped"', async () => {
   const { c, rec } = client(wsl(false));
-  const outcome = await c.read({ read: 'runsShow', runId: RUN });
+  const outcome = await c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'stopped');
   assert.deepEqual(rec.argvs().filter((a) => a.startsWith('-d ')), []);
 });
@@ -136,7 +137,7 @@ test('a value the daemon would never write is refused BEFORE anything starts —
   ];
   for (const request of refused) {
     const { c, rec } = client(wsl(true));
-    const outcome = await c.read(request);
+    const outcome = await c.read(request, DEFAULT_TARGET);
     assert.equal(outcome.kind, 'readRefused', JSON.stringify(request));
     assert.deepEqual(rec.argvs(), [], `nothing started for ${JSON.stringify(request)}`);
   }
@@ -144,23 +145,23 @@ test('a value the daemon would never write is refused BEFORE anything starts —
 
 test('exit 4 WITH a readable answer is an answer (the history unreadable, the rest read); exit 4 without one is a failure', async () => {
   const withBody = client({ ...wsl(true), [SHOW]: exited(4, goldenText('runs-show-unknown.json'), 'wsl-care: the history cannot be read\n') });
-  assert.equal(bodyOf(await withBody.c.read({ read: 'runsShow', runId: RUN })).state, 'unknown');
+  assert.equal(bodyOf(await withBody.c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET)).state, 'unknown');
   const without = client({ ...wsl(true), [SHOW]: exited(4, '', 'wsl-care: the history cannot be read\n') });
-  const outcome = await without.c.read({ read: 'runsShow', runId: RUN });
+  const outcome = await without.c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'unknownFailure');
 });
 
 test('a timeout reads as a timeout of the read\'s own ceiling; a refusal (2) as refused', async () => {
   const slow = client({ ...wsl(true), [SHOW]: { kind: 'timedOut', timeoutMs: RUN_READ_TIMEOUT_MS.runsShow, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
-  const timedOut = await slow.c.read({ read: 'runsShow', runId: RUN });
+  const timedOut = await slow.c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET);
   assert.ok(timedOut.kind === 'timedOut' && timedOut.timeoutMs === RUN_READ_TIMEOUT_MS.runsShow, JSON.stringify(timedOut));
   const usage = client({ ...wsl(true), [SHOW]: exited(2, '', 'wsl-care: "runs show" takes a run id\n') });
-  assert.equal((await usage.c.read({ read: 'runsShow', runId: RUN })).kind, 'refused');
+  assert.equal((await usage.c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET)).kind, 'refused');
 });
 
 test('two reads of the same run in flight share ONE call', async () => {
   const { c, rec } = client({ ...wsl(true), [SHOW]: exited(0, goldenText('runs-show-done.json')) });
-  await Promise.all([c.read({ read: 'runsShow', runId: RUN }), c.read({ read: 'runsShow', runId: RUN })]);
+  await Promise.all([c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET), c.read({ read: 'runsShow', runId: RUN }, DEFAULT_TARGET)]);
   assert.equal(rec.argvs().filter((a) => a === SHOW).length, 1);
 });
 

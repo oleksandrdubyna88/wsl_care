@@ -8,6 +8,7 @@ import { INSTALL_COMMAND } from '../../install/installCommand';
 import { FIELD_MAP } from '../../panel/fieldMap';
 import { CLOSED_REASON } from '../../process/runner';
 import type { WslCareTestApi } from '../../testApi';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * The extension-host scenarios: run INSIDE a real VS Code by `scripts/run-host.mjs` (`@vscode/test-electron`, 1.85.0
@@ -61,6 +62,10 @@ function daemonCalls(api: WslCareTestApi): string[] {
 }
 
 const RUNNING = { distros: [{ name: 'Ubuntu', running: true }], startable: false };
+/** The two questions of a list round (`listDistros`) — also the picked road's own two. */
+const LIST_ROUND = ['-l -v', '--list --running --quiet'];
+const DEBIAN = '-d Debian --cd / --exec /opt/wsl-care/bin/wsl-care';
+const TWO = { distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: true }], defaultDistro: 'Ubuntu', startable: false };
 const STOPPED = { distros: [{ name: 'Ubuntu', running: false }], startable: false };
 
 /** Every mode: the running bundle is the one built for this manifest's version (scripts/bundle.mjs's stamp). */
@@ -198,7 +203,7 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       assert.ok(host.controls().rows.some((r) => r.rowId === 'A4' && r.enabled), JSON.stringify(host.controls()).slice(0, 300));
       api.cleanRecorder().answer = true;
       api.resetCalls();
-      const outcome = await host.clean(['A4'], false);
+      const outcome = await host.clean(['A4'], false, DEFAULT_TARGET);
       assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
       assert.equal(api.cleanRecorder().modals.at(-1)?.message, 'Clean A4 in "Ubuntu"?');
       assert.deepEqual(daemonCalls(api).filter((c) => c.includes('--confirm')), ['-d Ubuntu -u root --cd / --exec /opt/wsl-care/bin/wsl-care act A4 --confirm --manual --detach --only - --json']);
@@ -236,6 +241,56 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       const reads = daemonCalls(api).filter((c) => / archive /.test(c));
       assert.deepEqual(reads, ['-d Ubuntu --cd / --exec /opt/wsl-care/bin/wsl-care archive list --json'], JSON.stringify(reads));
       assert.equal(archive.view().agents[0]?.agent, 'claude-code', 'the golden list reached the page');
+    },
+  },
+  {
+    // E18.W1a-3 (RED 21): a PICKED distribution is read with no UI — the WHOLE call log is asserted, and the default's views do not move.
+    name: "E18.W1a: readPicked(Debian) sends exactly the list round, then status, preview and doctor to Debian — each behind the picked road's own two questions; the bar and the rendered rows stay the default's",
+    run: async (api) => {
+      scenario(TWO);
+      api.setFocused(false);
+      await api.settled();
+      await api.refreshPanel();
+      await api.settled();
+      const bar = api.statusBar();
+      const rendered = api.lastRendered();
+      api.resetCalls();
+      await api.readPicked('Debian');
+      await api.settled();
+      const calls = api.calls();
+      assert.deepEqual(calls.slice(0, 5), [...LIST_ROUND, ...LIST_ROUND, `${DEBIAN} status --json`]);
+      // preview and doctor run at once and each resolves its own target (the picked road's two questions, then its -d), so their six calls interleave
+      assert.deepEqual(calls.slice(5).sort(), [...LIST_ROUND, ...LIST_ROUND, `${DEBIAN} doctor --json`, `${DEBIAN} preview --all --json`].sort());
+      assert.equal(calls.length, 11);
+      assert.deepEqual(api.statusBar(), bar, 'the status bar still shows the default distribution');
+      assert.equal(api.lastRendered(), rendered, 'the panel was not re-rendered by a picked read');
+    },
+  },
+  {
+    name: 'E18.W1a: readPicked(Debian) while Debian is stopped sends the two list rounds and NOTHING else — and even a startable fake still has Debian stopped afterwards',
+    run: async (api) => {
+      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: false }], startable: true });
+      api.setFocused(false);
+      await api.settled();
+      api.resetCalls();
+      await api.readPicked('Debian');
+      await api.settled();
+      assert.deepEqual(api.calls(), [...LIST_ROUND, ...LIST_ROUND]);
+      const fake = JSON.parse(fs.readFileSync(SCENARIO_FILE, 'utf8')) as { distros: { name: string; running: boolean }[] };
+      assert.deepEqual(fake.distros.find((d) => d.name === 'Debian'), { name: 'Debian', running: false }, 'the fake never started it: a read is not a start');
+    },
+  },
+  {
+    name: 'E18.W1a: readPicked(Debian) with Debian at WSL version 1 sends the list round, then the picked -l -v alone — no running question, no -d',
+    run: async (api) => {
+      scenario({ ...TWO, distros: [{ name: 'Ubuntu', running: true }, { name: 'Debian', running: true, version: 1 }], startable: false });
+      api.setFocused(false);
+      await api.settled();
+      api.resetCalls();
+      await api.readPicked('Debian');
+      await api.settled();
+      assert.deepEqual(api.calls(), [...LIST_ROUND, '-l -v']);
+      scenario(RUNNING);
     },
   },
   {

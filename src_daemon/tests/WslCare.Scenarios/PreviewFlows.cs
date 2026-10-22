@@ -63,7 +63,7 @@ public sealed class PreviewFlows
         report.SchemaVersion.Should().Be(SchemaVersion.Current);
         report.Docker.Available.Should().BeTrue();
         Row(report, "A4").Should().BeEquivalentTo(new { Count = 3, ReclaimableBytes = 641_400_000L, Available = true });
-        Row(report, "A5").Count.Should().Be(13);
+        Row(report, "A5").Count.Should().Be(12, "13 containers are stopped; one belongs to a compose project (E21.S1) and A5 keeps it");
         Row(report, "A5Testcontainers").Count.Should().Be(0);
         Row(report, "A6").Count.Should().Be(0);
         Row(report, "A6Unused").Count.Should().Be(10);
@@ -203,5 +203,23 @@ public sealed class PreviewFlows
         text.StdoutLines.Should().Contain(l => l.StartsWith("A4 ", StringComparison.Ordinal));
         refused.Exit.Should().Be((int)ExitCode.Usage);
         CliStderr.Of(refused).Messages.Should().ContainSingle().Which.Should().Contain("needs --all");
+    }
+
+    /// <summary>E21.S1: A5 keeps a compose project's containers and says so — the count in the JSON note (with the project's name in
+    /// <c>names</c>) and, for a person at a terminal, a line under the A5 row naming the project. The panel reads the counts only.</summary>
+    [Fact]
+    public async Task Preview_names_the_compose_project_A5_keeps_in_the_json_note_and_under_the_text_row()
+    {
+        using var home = Captured("preview-compose");
+
+        var json = Report(await home.RunAsync("preview", "--all", "--json"));
+        var text = await home.RunAsync("preview", "--all");
+
+        var note = Row(json, "A5").Notes!.Should().ContainSingle(n => n.What == CleanupPreviews.ComposeKeptNote).Subject;
+        note.Count.Should().Be(1);
+        note.Names.Should().Equal("project-1");
+        Row(json, "A5Testcontainers").Notes!.Should().NotContain(n => n.What == CleanupPreviews.ComposeKeptNote);
+        var a5 = Array.FindIndex([.. text.StdoutLines], l => l.StartsWith("A5 ", StringComparison.Ordinal));
+        text.StdoutLines[a5 + 1].Should().Contain("containers of a docker compose project").And.EndWith(": project-1", "the terminal form folds the note's em dash to ASCII");
     }
 }

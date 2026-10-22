@@ -65,8 +65,8 @@
       "auto": false,
       "basis": "writable layers (system df -v) + their anonymous volumes",
       "available": true,
-      "count": 13,
-      "reclaimableBytes": 1677670978,
+      "count": 12,
+      "reclaimableBytes": 1677650478,
       "unsized": 0,
       "notes": [
         {
@@ -79,10 +79,10 @@
         },
         {
           "what": "named volumes they hold (kept)",
-          "count": 6,
+          "count": 5,
           "bytes": {
             "available": true,
-            "bytes": 21731880000
+            "bytes": 21479780000
           }
         },
         {
@@ -108,6 +108,17 @@
             "available": true,
             "bytes": 0
           }
+        },
+        {
+          "what": "containers of a docker compose project (kept — compose owns them)",
+          "count": 1,
+          "bytes": {
+            "available": true,
+            "bytes": 20500
+          },
+          "names": [
+            "project-1"
+          ]
         }
       ]
     },

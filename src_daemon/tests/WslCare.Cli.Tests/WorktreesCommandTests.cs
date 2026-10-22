@@ -247,7 +247,7 @@ public sealed class WorktreesCommandTests
     }
 
     [Fact]
-    public void A_scan_reports_the_roots_writes_the_report_and_starts_no_process()
+    public void A_scan_reports_the_roots_writes_the_report_and_asks_git_nothing_when_no_check_leaves_a_candidate()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
         using var world = new Roots("scan-report");
@@ -269,11 +269,14 @@ public sealed class WorktreesCommandTests
         root["mainClones"]!.GetValue<int>().Should().Be(1);
         root["notGit"]!.GetValue<int>().Should().Be(1);
         root["buildOutput"]!["all"]!["bytes"]!.GetValue<long>().Should().Be(300);
-        report["reclaimable"]!["available"]!.GetValue<bool>().Should().BeFalse();
+        report["reclaimable"]!["available"]!.GetValue<bool>().Should().BeTrue("the scan had git to ask");
+        report["reclaimable"]!["a24"]!["count"]!.GetValue<int>().Should().Be(0, "wt1 was written to just now: it is recent, and nothing is confirmed");
+        report["reclaimable"]!["retained"]!.AsArray().Single()!["reason"]!.GetValue<string>().Should().Contain("within worktrees.idleDays");
         var file = Path.Combine(world.Paths.StateDirectory, "worktrees.json");
         File.Exists(file).Should().BeTrue("the scan writes its report");
         Json(File.ReadAllText(file))["scannedAt"]!.GetValue<string>().Should().Be(report["scannedAt"]!.GetValue<string>());
-        world.Runner.Requests.Should().BeEmpty("the scan starts no process — git's questions are a later story's");
+        report["reclaimable"]!["nothingNeededGit"]!.GetValue<bool>().Should().BeTrue("every candidate is kept by another check: git confirmed nothing because it was asked nothing");
+        world.Runner.Requests.Select(r => r.Display).Should().Equal("git.exe --version");
     }
 
     [Fact]

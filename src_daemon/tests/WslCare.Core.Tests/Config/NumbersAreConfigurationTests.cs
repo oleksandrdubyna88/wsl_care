@@ -40,6 +40,7 @@ public sealed class NumbersAreConfigurationTests
         "disk.volumeFreeWarnGib", "disk.volumeFreeCriticalGib", "disk.volumeFreeWarnPercent", "disk.volumeFreeCriticalPercent",
         "disk.volumeFreeMinSizeGib", "disk.volumeFreeAbsoluteMinSizeGib", "windowsTasks.watchLogonDelaySeconds", "windowsTasks.archiveLogonDelayMinutes", "windowsTasks.archiveEveryHours", "windowsTasks.cleanupLogonDelayMinutes", "windowsTasks.cleanupEveryHours",
         "worktrees.idleDays", "worktrees.artifactSkewMinutes", "worktrees.scanMaxEntries", "worktrees.scanMaxSeconds", "worktrees.reportTop", "worktrees.reportMaxAgeDays", "worktrees.reclaimableWarnGib",
+        "worktrees.gitTimeoutSeconds", "worktrees.gitNamesPerCall", "worktrees.gitCommandLineMaxChars",
     ];
 
     /// <summary>The inventory's group B (root-safety limits) — machine-layer-only keys.</summary>

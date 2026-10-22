@@ -239,5 +239,8 @@ public static partial class ConfigKeys
         Worktrees.ReportTop,
         Worktrees.ReportMaxAgeDays,
         Worktrees.ReclaimableWarnGib,
+        Worktrees.GitTimeoutSeconds,
+        Worktrees.GitNamesPerCall,
+        Worktrees.GitCommandLineMaxChars,
     ];
 }
