@@ -1,6 +1,7 @@
 import { parseAnswer, parseDaemonVersion } from '../../client/handshake';
 import type { Failure, VerbOutcome } from '../../client/outcome';
 import type { Verb } from '../../client/verbs';
+import type { DistroList } from '../../wsl/distroTarget';
 import type { Snapshot } from '../../state/outcomeStore';
 import type { Body } from './body';
 import { golden } from './paths';
@@ -68,4 +69,9 @@ export function removeAt(body: Body, path: string): Body {
   delete parent[key];
 
   return body;
+}
+
+/** A poller's `listDistros` for a test that lists nothing: WSL "failed", so a poller built without a list source drops nothing. */
+export function NO_DISTRO_LIST(): Promise<DistroList | Failure> {
+  return Promise.resolve({ kind: 'wslFailed', message: 'this test lists no distributions' });
 }

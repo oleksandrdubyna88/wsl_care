@@ -9,6 +9,7 @@ import { WslCareClient } from '../client/WslCareClient';
 import { TEST_ENV } from './support/fakeWorld';
 import { GOLDEN_ROOT } from './support/paths';
 import { daemonArgv, exited, exitedUtf16, LIST_QUIET, LIST_RUNNING, LIST_VERBOSE, recordingRunner, verboseTable, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S1: the three archive reads — `archive status --json`, `archive preview --json`, `archive check-base <path> --json`
@@ -53,7 +54,7 @@ test('the three archive tails are exactly the daemon verbs, each ending in --jso
 
 test('archive status: after the three WSL questions, unprivileged, the run-read ceiling', async () => {
   const { c, rec } = client({ ...wsl(), [STATUS]: exited(0, goldenText('archive-status.json')) });
-  const outcome = await c.read({ read: 'archiveStatus' });
+  const outcome = await c.read({ read: 'archiveStatus' }, DEFAULT_TARGET);
   assert.ok('outcome' in bodyOf(outcome) || 'side' in bodyOf(outcome));
   assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, STATUS]);
   assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.archiveStatus);
@@ -62,7 +63,7 @@ test('archive status: after the three WSL questions, unprivileged, the run-read 
 
 test('archive preview: its own ceiling, above the daemon\'s archive.previewTimeoutSeconds at its range maximum', async () => {
   const { c, rec } = client({ ...wsl(), [PREVIEW]: exited(0, goldenText('archive-preview.json')) });
-  const outcome = await c.read({ read: 'archivePreview' });
+  const outcome = await c.read({ read: 'archivePreview' }, DEFAULT_TARGET);
   assert.ok(Array.isArray(bodyOf(outcome).agents));
   assert.equal(rec.argvs().at(-1), PREVIEW);
   assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.archivePreview);
@@ -71,7 +72,7 @@ test('archive preview: its own ceiling, above the daemon\'s archive.previewTimeo
 
 test('archive check-base: the picked folder as ONE argument, spaces and backslashes as they are', async () => {
   const { c, rec } = client({ ...wsl(), [CHECK]: exited(0, goldenText('archive-check-base.json')) });
-  const outcome = await c.read({ read: 'archiveCheckBase', path: FOLDER });
+  const outcome = await c.read({ read: 'archiveCheckBase', path: FOLDER }, DEFAULT_TARGET);
   assert.equal(bodyOf(outcome).accepted, true);
   assert.equal(rec.argvs().at(-1), CHECK);
   assert.ok(rec.requests.every((r) => !r.args.includes('-u')));
@@ -87,7 +88,7 @@ test('archive list: exactly `archive list --json` — no agent, month, run or re
 
 test('archive list: after the three WSL questions, unprivileged, the archive preview\'s ceiling (it reads the same months over the same base)', async () => {
   const { c, rec } = client({ ...wsl(), [LIST]: exited(0, goldenText('archive-list.json')) });
-  const outcome = await c.read({ read: 'archiveList' });
+  const outcome = await c.read({ read: 'archiveList' }, DEFAULT_TARGET);
   assert.ok(Array.isArray(bodyOf(outcome).entries));
   assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, LIST]);
   assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.archivePreview, 'the setting wslCare.timeouts.archivePreviewSeconds');
@@ -98,16 +99,16 @@ test('archive list: after the three WSL questions, unprivileged, the archive pre
 test('own review #1: archive list exits 1 WITH its answer when the base is unreachable — the answer is read, the daemon\'s note kept', async () => {
   const unreachable = JSON.stringify({ ...JSON.parse(goldenText('archive-list.json')), outcome: 'unreachable', note: 'the base did not answer within archive.reachabilitySeconds (5 s)', entries: [] });
   const { c } = client({ ...wsl(), [LIST]: exited(1, unreachable) });
-  const body = bodyOf(await c.read({ read: 'archiveList' }));
+  const body = bodyOf(await c.read({ read: 'archiveList' }, DEFAULT_TARGET));
   assert.equal(body.outcome, 'unreachable');
   assert.match(String(body.note), /did not answer within archive\.reachabilitySeconds/);
 });
 
 test('own review #1: an exit 1 WITHOUT a readable answer is still the exit\'s own failure — and only the list reads exit 1 as an answer', async () => {
   const { c } = client({ ...wsl(), [LIST]: exited(1, '', 'wsl-care: something failed\n') });
-  assert.notEqual((await c.read({ read: 'archiveList' })).kind, 'read');
+  assert.notEqual((await c.read({ read: 'archiveList' }, DEFAULT_TARGET)).kind, 'read');
   const status = client({ ...wsl(), [STATUS]: exited(1, goldenText('archive-status.json')) });
-  assert.notEqual((await status.c.read({ read: 'archiveStatus' })).kind, 'read', 'archive status is unchanged: exit 1 is a failure there');
+  assert.notEqual((await status.c.read({ read: 'archiveStatus' }, DEFAULT_TARGET)).kind, 'read', 'archive status is unchanged: exit 1 is a failure there');
 });
 
 for (const [bad, why] of [
@@ -118,7 +119,7 @@ for (const [bad, why] of [
 ] as const) {
   test(`archive check-base refuses ${why} before anything starts`, async () => {
     const { c, rec } = client(wsl());
-    const outcome = await c.read({ read: 'archiveCheckBase', path: bad });
+    const outcome = await c.read({ read: 'archiveCheckBase', path: bad }, DEFAULT_TARGET);
     assert.equal(outcome.kind, 'readRefused');
     assert.equal(rec.requests.length, 0, 'nothing is started for a value the daemon would refuse');
   });

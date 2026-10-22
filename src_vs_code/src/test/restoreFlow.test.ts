@@ -18,6 +18,7 @@ import { ManualTimers, MapStore } from './support/memento';
 import { answered, headBody, type Body } from './support/outcomes';
 import { goldenFile } from './support/paths';
 import { exited, recordingRunner, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S2b story 2: *Restore* through the cleanup transaction as it is — its words (ONE table, `cleanup/runWords.ts`,
@@ -62,7 +63,7 @@ function controller(script: Readonly<Record<string, Scripted>>, status: () => Bo
 }
 
 async function heldA20(edit?: (line: Body) => Body): Promise<HeldPreview> {
-  const outcome = await controller({ [PREVIEW_A20]: exited(0, previewText(edit)) }).controller.previewRestore([ENTRY]);
+  const outcome = await controller({ [PREVIEW_A20]: exited(0, previewText(edit)) }).controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed', JSON.stringify(outcome).slice(0, 300));
   return outcome.preview;
 }
@@ -156,7 +157,7 @@ test('a restore of many lists the first ten sessions and counts the rest', async
   const ids = Array.from({ length: 12 }, (_, i) => `00000000000000${i.toString(16).padStart(2, '0')}`);
   const items = ids.map((id) => ({ kind: 'archived session', name: id, bytes: 10, note: 'codex 2026/01, 1 file(s)' }));
   const many = previewText((line) => ({ ...line, shown: ids, preview: { ...bodyOf(line.preview, 'preview'), count: 12, bytes: 120, items } }));
-  const outcome = await controller({ [PREVIEW_A20]: exited(0, many) }).controller.previewRestore(ids);
+  const outcome = await controller({ [PREVIEW_A20]: exited(0, many) }).controller.previewRestore(ids, DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed', JSON.stringify(outcome).slice(0, 300));
   const modal = firstModal(outcome.preview, false);
   assert.equal(modal.message, 'Restore 12 archived sessions in "Ubuntu"?');
@@ -168,7 +169,7 @@ test('a restore of many lists the first ten sessions and counts the rest', async
 
 test('Restore: the preview of the page\'s ids, its modal, the journal entry BEFORE the confirm, ONE detached confirm of the shown ids, told as the restore run', async () => {
   const w = flowWorld((store, seen) => ({ [PREVIEW_A20]: exited(0, previewText()), [CONFIRM_A20]: () => { seen.push(...new CleanupJournal(store).entries().map((e) => e.actions.join(','))); return exited(0, handOff()); } }));
-  const outcome = await w.flow.restore([ENTRY, 'fedcba9876543210']);
+  const outcome = await w.flow.restore([ENTRY, 'fedcba9876543210'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'handedOff');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, PREVIEW_A20, CONFIRM_A20]);
   assert.deepEqual(w.seenBefore, ['A20'], 'persisted before the call');
@@ -181,7 +182,7 @@ test('Restore: the preview of the page\'s ids, its modal, the journal entry BEFO
 
 test('declined: nothing confirmed, nothing written', async () => {
   const w = flowWorld(() => ({ [PREVIEW_A20]: exited(0, previewText()) }), false);
-  assert.equal((await w.flow.restore([ENTRY])).kind, 'declined');
+  assert.equal((await w.flow.restore([ENTRY], DEFAULT_TARGET)).kind, 'declined');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, PREVIEW_A20]);
   assert.deepEqual(w.journal.entries(), []);
 });
@@ -189,7 +190,7 @@ test('declined: nothing confirmed, nothing written', async () => {
 test('a preview offering none still restorable opens NO modal and confirms nothing — it says so, in the restore\'s words', async () => {
   const none = previewText((line) => ({ ...line, shown: [], preview: { ...bodyOf(line.preview, 'preview'), count: 0, bytes: 0, items: [] } }));
   const w = flowWorld(() => ({ [PREVIEW_A20]: exited(0, none) }));
-  assert.equal((await w.flow.restore([ENTRY])).kind, 'nothing', 'the relay stop\'s outcome, reused');
+  assert.equal((await w.flow.restore([ENTRY], DEFAULT_TARGET)).kind, 'nothing', 'the relay stop\'s outcome, reused');
   assert.deepEqual(w.modals, []);
   assert.deepEqual(w.journal.entries(), []);
   assert.match(w.notices.at(-1)?.sentence ?? '', /^None of the selected archived sessions can be restored now/);
@@ -197,7 +198,7 @@ test('a preview offering none still restorable opens NO modal and confirms nothi
 
 test('ids the daemon does not take start nothing: refused before the root check, told in the restore\'s words', async () => {
   const w = flowWorld(() => ({}));
-  const outcome = await w.flow.restore(['not-an-id']);
+  const outcome = await w.flow.restore(['not-an-id'], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'refused' && outcome.failure.kind === 'entriesRefused');
   assert.deepEqual(w.runner.argvs(), []);
   assert.equal(w.notices.at(-1)?.level, 'error');
@@ -235,7 +236,7 @@ function runningStatus(name: string, actions: readonly string[]): Body {
 test('Restore is refused by the HOST while a run is in flight — whatever the page sent; nothing reaches the controller', async () => {
   const busy = await hostWith(runningStatus('status-running-live.json', ['A4']));
   assert.notEqual(busy.host.restoreBlocker(), '');
-  assert.equal(await busy.host.restore([ENTRY]), undefined);
+  assert.equal(await busy.host.restore([ENTRY], DEFAULT_TARGET), undefined);
   assert.deepEqual(busy.asked, []);
   assert.match(busy.notices.at(-1) ?? '', /^Restore is not available: /);
   assert.equal((await hostWith(headBody('status'))).host.restoreBlocker(), '');
@@ -258,7 +259,7 @@ test('Restore is greyed by the HOST when the daemon does not offer it — a capa
   for (const missing of ['archive.restore', 'act.entryStdin', 'act.shownList', 'act.detach']) {
     const without = await hostWith({ ...head, capabilities: stringsAt(head, 'capabilities').filter((c) => c !== missing) });
     assert.match(without.host.restoreBlocker(), new RegExp(`does not offer .*${missing.split('.').join('[.]')}.* update the daemon`), missing);
-    assert.equal(await without.host.restore([ENTRY]), undefined);
+    assert.equal(await without.host.restore([ENTRY], DEFAULT_TARGET), undefined);
     assert.deepEqual(without.asked, [], missing);
   }
   const unreported = await hostWith({ ...head, actions: stringsAt(head, 'actions').filter((a) => a !== 'A20') });
@@ -270,7 +271,7 @@ test('Restore is greyed by the HOST when the daemon does not offer it — a capa
 test('own review #1: the daemon\'s own "no" (more entries than one restore takes) is told in its words — never "none still restorable"', async () => {
   const past = previewText((line) => ({ ...line, shown: [], preview: { ...bodyOf(line.preview, 'preview'), count: 0, bytes: 0, items: [], reason: '3 entries are more than one restore takes (archive.maxRestoreEntries: 2)' } }));
   const w = flowWorld(() => ({ [PREVIEW_A20]: exited(0, past) }));
-  assert.equal((await w.flow.restore([ENTRY])).kind, 'nothing');
+  assert.equal((await w.flow.restore([ENTRY], DEFAULT_TARGET)).kind, 'nothing');
   assert.deepEqual(w.modals, []);
   assert.match(w.notices.at(-1)?.sentence ?? '', /3 entries are more than one restore takes \(archive\.maxRestoreEntries: 2\)/);
   assert.doesNotMatch(w.notices.at(-1)?.sentence ?? '', /removed at its source and verified/);
@@ -280,7 +281,7 @@ test('own review #3: a list the daemon CUT opens no modal — refused before it,
   const cut = previewText((line) => ({ ...line, shownTruncated: true, preview: { ...bodyOf(line.preview, 'preview'), count: 3 } }));
   const status = headBody('status');
   const w = flowWorld(() => ({ [PREVIEW_A20]: exited(0, cut) }), true, () => ({ ...status, limits: { ...bodyOf(status.limits, 'limits'), maxShownNames: 1 } }));
-  assert.equal((await w.flow.restore([ENTRY])).kind, 'nothing');
+  assert.equal((await w.flow.restore([ENTRY], DEFAULT_TARGET)).kind, 'nothing');
   assert.deepEqual(w.modals, []);
   assert.deepEqual(w.journal.entries(), []);
   assert.match(w.notices.at(-1)?.sentence ?? '', /showed only 1 of the 3/);

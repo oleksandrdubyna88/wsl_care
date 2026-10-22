@@ -335,10 +335,17 @@ test('the writer\'s import scan finds a planted import of configCall.ts outside 
 /** Files that assert a value INTO `JudgedFolder` (`x as JudgedFolder`, `<JudgedFolder>x`), read with the parser — casts are erased
  * from the bundle, so this is the one place a forged folder could be seen. */
 function judgedFolderCasters(all: readonly Source[]): string[] {
+  return castersInto(all, 'JudgedFolder');
+}
+
+/** Files that assert a value INTO the branded type `brand` (`x as Brand`, `<Brand>x`) — the one scan every brand shares. */
+function castersInto(all: readonly Source[], brand: string): string[] {
+  const named = new RegExp(`\\b${brand}\\b`);
+
   return all.filter((s) => {
     let found = false;
     const visit = (node: ts.Node): void => {
-      found ||= (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && /\bJudgedFolder\b/.test(node.type.getText());
+      found ||= (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && named.test(node.type.getText());
       ts.forEachChild(node, visit);
     };
     visit(ts.createSourceFile('scan.ts', s.text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS));
@@ -357,4 +364,29 @@ test('the brand scan finds a planted cast, in both spellings, and ignores a ment
     { file: 'src/z.ts', text: '// never `x as JudgedFolder` here\nlet f: JudgedFolder | undefined;' },
   ];
   assert.deepEqual(judgedFolderCasters(planted), ['src/archive/archiveFlow.ts', 'src/panel/x.ts']);
+});
+
+// ---- E18.W1a-1: the typed distro (todo/PLAN_disk_health_E18.md, W1a §3.1, RED 11) ----
+//
+// `src/wsl/distroTarget.ts` is the home of the one distro token every client road takes. It sits under `wsl/` so that `state/`, `poll/`,
+// `panel/`, `install/` and the pages may import it without touching `root/` or `config/`; it must therefore import none of the three
+// modules that would pull them in, and no module but it may mint a `DistroName` by a cast.
+
+const DISTRO_TARGET = 'src/wsl/distroTarget.ts';
+
+test('distroTarget.ts imports nothing under src/root/, src/config/ or src/client/, and no package', () => {
+  const source = sources().find((s) => s.file === DISTRO_TARGET);
+  assert.ok(source !== undefined, 'the scan sees the typed distro module');
+  assert.deepEqual(resolvedImports(source).filter((m) => m.startsWith('src/root/') || m.startsWith('src/config/') || m.startsWith('src/client/')), []);
+  assert.deepEqual(importsOf(source.text).filter((m) => !m.startsWith('.')), []);
+});
+
+test('only distroTarget.ts makes a DistroName — no other shipped module casts a value into one (listDistros mints through listedNameOf)', () => {
+  assert.deepEqual(castersInto(sources(), 'DistroName'), [DISTRO_TARGET]);
+  const planted: Source[] = [
+    { file: 'src/client/WslCareClient.ts', text: 'const d = row.name as DistroName;' },
+    { file: 'src/poll/poller.ts', text: 'const d = <DistroName>(name);' },
+    { file: 'src/z.ts', text: '// never `x as DistroName` here\nlet d: DistroName | undefined;' },
+  ];
+  assert.deepEqual(castersInto(planted, 'DistroName'), ['src/client/WslCareClient.ts', 'src/poll/poller.ts']);
 });

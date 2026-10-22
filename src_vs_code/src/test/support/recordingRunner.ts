@@ -38,10 +38,10 @@ export function exitedUtf16(code: number, stdout: string): ProcessResult {
   return { kind: 'exited', code, stdout: Buffer.from(stdout, 'utf16le'), stderr: Buffer.alloc(0) };
 }
 
-/** The measured `wsl.exe -l -v` table (2026-10-03), with the `*` on `defaultName`. */
-export function verboseTable(rows: readonly { name: string; running: boolean }[], defaultName: string | undefined): string {
+/** The measured `wsl.exe -l -v` table (2026-10-03), with the `*` on `defaultName`; each row's version column is `version` (2 unless given — only 2 was measured). */
+export function verboseTable(rows: readonly { name: string; running: boolean; version?: number }[], defaultName: string | undefined): string {
   const head = `  ${'NAME'.padEnd(18)}${'STATE'.padEnd(16)}VERSION\r\n`;
-  const body = rows.map((r) => `${r.name === defaultName ? '*' : ' '} ${r.name.padEnd(18)}${(r.running ? 'Running' : 'Stopped').padEnd(16)}2\r\n`);
+  const body = rows.map((r) => `${r.name === defaultName ? '*' : ' '} ${r.name.padEnd(18)}${(r.running ? 'Running' : 'Stopped').padEnd(16)}${r.version ?? 2}\r\n`);
 
   return head + body.join('');
 }

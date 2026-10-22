@@ -4,7 +4,8 @@ import type { Runner } from '../process/runner';
 import { failureText } from '../failureText';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
-import type { OutcomeStore } from '../state/outcomeStore';
+import type { OutcomeStore, Snapshot } from '../state/outcomeStore';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 import { advertisedOf, offersAction } from '../state/statusBody';
 import { noticeText, unlinked } from '../text/safeText';
 import { chooseArchiveFolder, stopArchiving, type ArchiveFlowDeps, type ArchiveFlowOutcome, type ArchiveUi, type ConfigTarget } from './archiveFlow';
@@ -21,8 +22,8 @@ import { archiveNowBlocker, deriveArchive, type ArchiveControls, type ArchiveSta
  */
 
 export interface ArchiveHostOptions {
-  readonly read: (request: RunRead) => Promise<ReadOutcome>;
-  readonly target: () => Promise<ConfigTarget | Failure>;
+  readonly read: (request: RunRead, target: DistroTarget) => Promise<ReadOutcome>;
+  readonly target: (target: DistroTarget) => Promise<ConfigTarget | Failure>;
   readonly runner: Runner;
   readonly outcomes: OutcomeStore;
   readonly ui: ArchiveUi;
@@ -34,7 +35,7 @@ export interface ArchiveHostOptions {
   /** E10.S1b: the cleanup's state changed (its journal, a result, its flow); returns an unsubscribe. */
   readonly onCleanupChange?: (listener: () => void) => () => void;
   /** E10.S1b: the cleanup host's *Archive now* — A13 through its transaction; refused there while the cleanup controls are greyed. */
-  readonly archiveNow?: () => Promise<unknown>;
+  readonly archiveNow?: (target: DistroTarget) => Promise<unknown>;
 }
 
 /** The capabilities the store's newest answered status advertises — `undefined` until one answered. */
@@ -49,7 +50,11 @@ export function offersA13(outcomes: OutcomeStore): boolean {
 
 /** The short label of the panel's own `status` failure, or '' — what the archive line says instead of a lasting "checking…" (own review #1). */
 export function statusFailureOf(outcomes: OutcomeStore): string {
-  const status = outcomes.snapshot().status;
+  return failureLabelOf(outcomes.snapshot());
+}
+
+function failureLabelOf(snapshot: Snapshot): string {
+  const status = snapshot.status;
 
   return status === undefined || status.kind === 'answered' ? '' : failureText(status).label;
 }
@@ -105,6 +110,22 @@ export class ArchiveHost {
     this.unsubscribe();
   }
 
+  /**
+   * The state *Archive now* is judged on. The default's is the host's own view; a PICKED distribution's is built from ITS `status` (the
+   * capabilities, A13 in `status.actions`, a failed status) and its OWN `archive status` for the folder — read here, once, only when it
+   * advertises the read (the host's view is the default's; a per-distro archive card is W1b's).
+   */
+  private async stateFor(target: DistroTarget): Promise<ArchiveState> {
+    if (target.kind === 'default') {
+      return this.state();
+    }
+    const snapshot = this.options.outcomes.snapshotOf(target.distro);
+    const capabilities = advertisedOf(snapshot);
+    const status = capabilities?.includes(READS[0].capability) === true ? await this.options.read(READS[0].request, target) : undefined;
+
+    return { ...this.state(), status, capabilities, a13Offered: offersAction(snapshot, 'A13'), unavailable: failureLabelOf(snapshot) };
+  }
+
   private state(): ArchiveState {
     const outcomes = this.options.outcomes;
 
@@ -131,55 +152,55 @@ export class ArchiveHost {
   }
 
   /** *Choose archive folder…* — never rejects: a fault is told and logged. */
-  choose(): Promise<ArchiveFlowOutcome | undefined> {
-    return this.flow('choosing the archive folder', chooseArchiveFolder);
+  choose(target: DistroTarget): Promise<ArchiveFlowOutcome | undefined> {
+    return this.flow('choosing the archive folder', chooseArchiveFolder, target);
   }
 
   /** *Stop archiving* — never rejects. */
-  stop(): Promise<ArchiveFlowOutcome | undefined> {
-    return this.flow('stopping the archive', stopArchiving);
+  stop(target: DistroTarget): Promise<ArchiveFlowOutcome | undefined> {
+    return this.flow('stopping the archive', stopArchiving, target);
   }
 
   /**
    * *Archive now* (E10.S1b, own review #1): refused here, and told, when the archive's side of the button would grey it — the
    * palette's command and a stale page send the same bare request the button does. The cleanup host refuses its own side.
    */
-  async archiveNow(): Promise<void> {
-    const blocker = archiveNowBlocker(this.state());
+  async archiveNow(target: DistroTarget): Promise<void> {
+    const blocker = archiveNowBlocker(await this.stateFor(target));
     if (blocker !== '') {
       await this.ui.notify('warn', `Archive now is not available: ${blocker}.`);
       return;
     }
-    await this.options.archiveNow?.();
+    await this.options.archiveNow?.(target);
   }
 
   private async reads(): Promise<void> {
     const capabilities = capabilitiesOf(this.options.outcomes) ?? [];
-    const [status, preview] = await Promise.all(READS.map((r) => (capabilities.includes(r.capability) ? this.options.read(r.request) : Promise.resolve(undefined))));
+    const [status, preview] = await Promise.all(READS.map((r) => (capabilities.includes(r.capability) ? this.options.read(r.request, DEFAULT_TARGET) : Promise.resolve(undefined))));
     this.status = status;
     this.preview = preview;
     this.asked = true;
   }
 
   /** One flow at a time: a second press while one runs is told, and starts nothing. */
-  private async flow(what: string, run: (deps: ArchiveFlowDeps) => Promise<ArchiveFlowOutcome>): Promise<ArchiveFlowOutcome | undefined> {
+  private async flow(what: string, run: (deps: ArchiveFlowDeps) => Promise<ArchiveFlowOutcome>, target: DistroTarget): Promise<ArchiveFlowOutcome | undefined> {
     if (this.flowRunning) {
       await this.ui.notify('warn', 'The archive folder is already being changed — wait for it to finish.');
       return undefined;
     }
     this.flowRunning = true;
     try {
-      return await this.ran(what, run);
+      return await this.ran(what, run, target);
     } finally {
       this.flowRunning = false;
       this.busy('');
     }
   }
 
-  private async ran(what: string, run: (deps: ArchiveFlowDeps) => Promise<ArchiveFlowOutcome>): Promise<ArchiveFlowOutcome | undefined> {
+  private async ran(what: string, run: (deps: ArchiveFlowDeps) => Promise<ArchiveFlowOutcome>, target: DistroTarget): Promise<ArchiveFlowOutcome | undefined> {
     try {
-      const outcome = await run(this.deps());
-      await (ASKED_AGAIN.has(outcome) ? this.refresh() : Promise.resolve());
+      const outcome = await run(this.deps(target));
+      await (ASKED_AGAIN.has(outcome) && target.kind === 'default' ? this.refresh() : Promise.resolve());
       return outcome;
     } catch (error) {
       this.options.log(`archive: ${what} failed: ${reasonOf(error)}`);
@@ -188,11 +209,11 @@ export class ArchiveHost {
     }
   }
 
-  private deps(): ArchiveFlowDeps {
+  private deps(aim: DistroTarget): ArchiveFlowDeps {
     return {
       ui: this.ui,
-      read: this.options.read,
-      target: this.options.target,
+      read: (request) => this.options.read(request, aim),
+      target: () => this.options.target(aim),
       runner: this.options.runner,
       numbers: () => this.options.numbers?.() ?? DEFAULT_NUMBERS,
       limits: () => this.options.limits?.() ?? FALLBACK_LIMITS,

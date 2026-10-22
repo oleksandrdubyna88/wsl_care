@@ -6,7 +6,7 @@ import type { VerbOutcome } from '../client/outcome';
 import { Poller } from '../poll/poller';
 import { OutcomeStore } from '../state/outcomeStore';
 import { fakeWorld, UBUNTU_RUNNING } from './support/fakeWorld';
-import { answered, headBody } from './support/outcomes';
+import { answered, headBody, NO_DISTRO_LIST } from './support/outcomes';
 
 /**
  * E19.S2b review (coai plan round): a hung bundled exe ends at ITS ceiling as the client's own timeout failure — the runner's kill
@@ -25,6 +25,7 @@ test('a hung windows status ends at its ceiling as a timeout, the runner kills t
     const store = new OutcomeStore();
     const distro: VerbOutcome = answered('status', headBody('status'));
     const poller = new Poller({
+      listDistros: NO_DISTRO_LIST,
       run: () => Promise.resolve(distro), store, focused: () => true, refreshSeconds: () => undefined, timers: { every: () => () => undefined }, target: () => '',
       windows: { usable: () => typeof client.exe() === 'string', status: () => client.status() },
     });

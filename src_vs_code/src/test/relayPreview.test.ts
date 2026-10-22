@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { parsePreview } from '../root/rootAnswers';
 import { MAX_PROCESS_ARGS } from '../root/rootIds';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 import { goldenFile } from './support/paths';
 import { relayKeys, relayPreviewBody } from './support/relayBodies';
 
@@ -12,7 +13,7 @@ import { relayKeys, relayPreviewBody } from './support/relayBodies';
  * generalised; a list longer than the command line takes is cut to `MAX_PROCESS_ARGS`, said as truncated.
  */
 
-const CONTEXT = { distro: 'Ubuntu', ids: ['A21'], takenAtMs: 0 } as const;
+const CONTEXT = { distro: 'Ubuntu', target: DEFAULT_TARGET, ids: ['A21'], takenAtMs: 0 } as const;
 
 test('A21\'s shown processes are held, in order, with the daemon\'s count', () => {
   const preview = parsePreview(JSON.stringify(relayPreviewBody(relayKeys(3))), CONTEXT);

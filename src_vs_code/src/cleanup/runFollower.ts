@@ -1,10 +1,11 @@
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { ReadOutcome, VerbOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 import { runningOf } from '../root/rootAnswers';
 import type { RunId } from '../root/rootIds';
 import type { RunningBlock } from '../root/rootOutcome';
-import type { CleanupJournal, JournalEntry } from './journal';
+import { entryTarget, type CleanupJournal, type JournalEntry } from './journal';
 import { isTerminal, parseRuns, parseRunShow, type RunShow } from './runAnswers';
 import { adoptable, inFlightNaming, isQueuedOrLive, matches, mustWait, windowOf } from './runMatching';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
@@ -74,8 +75,8 @@ export interface OneShot {
 export interface FollowerOptions {
   readonly journal: CleanupJournal;
   /** Asks `status` — through the store, so the bar and the panel see the same answer. */
-  readonly status: () => Promise<VerbOutcome>;
-  readonly read: (request: RunRead) => Promise<ReadOutcome>;
+  readonly status: (target: DistroTarget) => Promise<VerbOutcome>;
+  readonly read: (request: RunRead, target: DistroTarget) => Promise<ReadOutcome>;
   /** Shows a terminal answer (a notification, and the panel's *Last cleanup*). */
   readonly show: (result: RunResult) => void;
   /** After a tick that ended anything: the panel is re-read once (`preview`'s totals become "Docker after"). */
@@ -118,6 +119,36 @@ interface Observed {
   readonly track: Track;
   /** When this window first saw it — an observed run is dropped (quietly: it is not ours) past the ceiling. */
   readonly seenAt: number;
+}
+
+/** The status map's key of a target: the default's, or the picked name — the in-flight key's prefix, without a setting text (one setting at a time). */
+const DEFAULT_KEY = 'default';
+
+function keyOf(target: DistroTarget): string {
+  return target.kind === 'picked' ? `picked|${target.distro}` : DEFAULT_KEY;
+}
+
+/**
+ * The targets whose `status` a poll asks: the default — always, and first — and each distinct PICKED distribution an entry follows.
+ */
+function askedTargets(entries: readonly JournalEntry[]): readonly DistroTarget[] {
+  const picked = [...new Map(entries.map((e) => entryTarget(e)).filter((t) => t.kind === 'picked').map((t) => [keyOf(t), t] as const)).values()];
+
+  return [DEFAULT_TARGET, ...picked];
+}
+
+function seenOfKey(answers: ReadonlyMap<string, VerbOutcome>, key: string): Seen | undefined {
+  const answer = answers.get(key);
+
+  return answer === undefined ? undefined : seenOf(answer);
+}
+
+/**
+ * A PICKED entry whose distribution WSL's list no longer holds (its `status` answers `distroRefused`): it was unregistered, nothing will
+ * ever answer for it, and it is resolved as unknown instead of being followed forever. A DEFAULT entry's refusal is the setting's problem.
+ */
+function unregistered(entry: JournalEntry, answer: VerbOutcome | undefined): boolean {
+  return entry.targetKind === 'picked' && answer !== undefined && answer.kind === 'distroRefused';
 }
 
 function newTrack(): Track {
@@ -211,16 +242,32 @@ export class RunFollower {
   }
 
   private async pollOnce(): Promise<void> {
-    const seen = seenOf(await this.options.status());
-    this.lastRunning = seen?.running;
     const focused = this.options.focused();
-    this.endedThisTick = 0;
     const entries = this.options.journal.entries().filter((e) => this.mayFollow(e, focused));
-    await eachAtMost(this.numbers().settleAtOnce, entries, (entry) => this.guarded(() => this.settle(entry, seen)));
-    await this.guarded(() => this.observe(seen, focused));
+    const answers = await this.statuses(entries);
+    const own = seenOfKey(answers, DEFAULT_KEY);
+    this.lastRunning = own?.running;
+    this.endedThisTick = 0;
+    await eachAtMost(this.numbers().settleAtOnce, entries, (entry) => this.guarded(() => this.settle(entry, answers.get(keyOf(entryTarget(entry))))));
+    await this.guarded(() => this.observe(own, focused));
     if (this.endedThisTick > 0 && !this.disposed) {
       await this.options.afterTerminal();
     }
+  }
+
+  /**
+   * One `status` per DISTINCT target the entries follow (E18.W1a): a run for a picked distribution is followed with that distribution's
+   * status, a default run (every entry written before W1a) with the default's, as ever. The default is ALWAYS asked, first — the observed
+   * runs and the store's running block come from it, and its observation must not stall because every entry is a picked one. The asks run
+   * at most `settleAtOnce` at a time, the same ceiling the settling below honours: a journal is never one `wsl.exe` round per distribution at once.
+   */
+  private async statuses(entries: readonly JournalEntry[]): Promise<ReadonlyMap<string, VerbOutcome>> {
+    const answers = new Map<string, VerbOutcome>();
+    await eachAtMost(this.numbers().settleAtOnce, askedTargets(entries), async (target) => {
+      answers.set(keyOf(target), await this.options.status(target));
+    });
+
+    return answers;
   }
 
   /** Review A5: one entry's fault is reported and the others go on. */
@@ -244,10 +291,18 @@ export class RunFollower {
   }
 
   /** Only a status that answered for the entry's distribution is evidence; past the ceiling only once its record was read (B1). */
-  private async settle(entry: JournalEntry, seen: Seen | undefined): Promise<void> {
-    if (!answeredFor(seen, entry.distro)) {
+  private async settle(entry: JournalEntry, answer: VerbOutcome | undefined): Promise<void> {
+    if (unregistered(entry, answer)) {
+      await this.end({ kind: 'unreadable', entry, reason: 'distroRefused' });
       return;
     }
+    const seen = answer === undefined ? undefined : seenOf(answer);
+    if (answeredFor(seen, entry.distro)) {
+      await this.settleSeen(entry, seen);
+    }
+  }
+
+  private async settleSeen(entry: JournalEntry, seen: Seen): Promise<void> {
     const track = this.trackOf(entry.id);
     const ended = await this.evaluated(entry, seen.running, track);
     if (!ended && this.mayEndOnCeiling(entry, track)) {
@@ -316,7 +371,7 @@ export class RunFollower {
   }
 
   private async readRun(entry: Extract<JournalEntry, { kind: 'run' }>, track: Track): Promise<boolean> {
-    const read = await this.boundedRead(track, { read: 'runsShow', runId: entry.runId });
+    const read = await this.boundedRead(track, { read: 'runsShow', runId: entry.runId }, entryTarget(entry));
     if (read === undefined || read.kind !== 'read') {
       return this.unreadable(entry, track, read);
     }
@@ -350,7 +405,7 @@ export class RunFollower {
    * else decides nothing here, and the ceiling then ends it "state unknown" — never "never ran" for a run that may be running.
    */
   private async lastLook(entry: JournalEntry, track: Track): Promise<boolean> {
-    const candidates = candidatesOf(await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow(), this.limits()) }), entry, this.limits());
+    const candidates = candidatesOf(await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow(), this.limits()) }, entryTarget(entry)), entry, this.limits());
     const [only] = candidates;
     if (candidates.length === 1 && only !== undefined) {
       await this.adopt(entry, only);
@@ -360,7 +415,7 @@ export class RunFollower {
   }
 
   private async listed(entry: JournalEntry, track: Track): Promise<boolean> {
-    const read = await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow(), this.limits()) });
+    const read = await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow(), this.limits()) }, entryTarget(entry));
     if (read === undefined || read.kind !== 'read') {
       return this.unreadable(entry, track, read);
     }
@@ -368,11 +423,11 @@ export class RunFollower {
   }
 
   /** A read — or `undefined` while the backoff says to wait; a failure is counted (review C8). */
-  private async boundedRead(track: Track, request: RunRead): Promise<ReadOutcome | undefined> {
+  private async boundedRead(track: Track, request: RunRead, target: DistroTarget): Promise<ReadOutcome | undefined> {
     if (this.options.wallNow() < track.nextReadAt) {
       return undefined;
     }
-    const read = await this.options.read(request);
+    const read = await this.options.read(request, target);
     track.recordTried = true;
     track.failures = read.kind === 'read' ? 0 : track.failures + 1;
     // The n-th try waits n − 1 steps after the failure before it (the defaults: 0, 8 s, 16 s).
@@ -473,7 +528,7 @@ export class RunFollower {
 
   /** ONE runs show; a terminal state shown once; a non-terminal answer or the read's last failure ends the watch quietly. */
   private async readObserved(observed: Observed): Promise<void> {
-    const show = showOf(await this.boundedRead(observed.track, { read: 'runsShow', runId: observed.runId }));
+    const show = showOf(await this.boundedRead(observed.track, { read: 'runsShow', runId: observed.runId }, DEFAULT_TARGET));
     if (this.disposed || stillTrying(show, observed.track, this.numbers().recordReadTries)) {
       return;
     }

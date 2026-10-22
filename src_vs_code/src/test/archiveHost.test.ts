@@ -11,6 +11,7 @@ import { stringsAt } from './support/body';
 import { goldenOutcomes } from './support/outcomes';
 import { goldenFile } from './support/paths';
 import { exited } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S1: the archive's host — the two reads only on a refresh and only of a daemon that advertises them, ONE flow at
@@ -100,7 +101,7 @@ test('a written folder is followed by the reads again — the panel shows the da
   const h = host();
   h.recorder.picked = 'V:\\ai-archive';
   h.recorder.answer = true;
-  assert.equal(await h.archive.choose(), 'written');
+  assert.equal(await h.archive.choose(DEFAULT_TARGET), 'written');
   assert.deepEqual(h.reads.map((r) => r.read), ['archiveCheckBase', 'archiveStatus', 'archivePreview']);
   assert.equal(h.writes.length, 1);
 });
@@ -114,8 +115,8 @@ test('one flow at a time: a second press while one runs is told, and starts noth
     target: () => Promise.resolve({ wsl: 'w', distro: 'Ubuntu' }), runner: () => Promise.resolve(exited(0, '')), outcomes: new OutcomeStore(),
     ui: { ...ui, pickFolder: () => new Promise((resolve) => { pick = resolve; }) }, log: () => undefined,
   });
-  const first = held.choose();
-  assert.equal(await held.stop(), undefined);
+  const first = held.choose(DEFAULT_TARGET);
+  assert.equal(await held.stop(DEFAULT_TARGET), undefined);
   assert.match(h.recorder.notices.at(-1)?.sentence ?? '', /already being changed/);
   pick(undefined);
   assert.equal(await first, 'cancelled');
@@ -127,7 +128,7 @@ test('a fault inside a flow is told and logged, never thrown', async () => {
     read: () => Promise.reject(new Error('boom')), target: () => Promise.resolve({ wsl: 'w', distro: 'Ubuntu' }), runner: () => Promise.resolve(exited(0, '')),
     outcomes: new OutcomeStore(), ui: { ...recordingArchiveUi(h.recorder), pickFolder: () => Promise.resolve('V:\\a') }, log: (line) => h.logged.push(line),
   });
-  assert.equal(await broken.choose(), undefined);
+  assert.equal(await broken.choose(DEFAULT_TARGET), undefined);
   assert.match(h.logged[0] ?? '', /^archive: choosing the archive folder failed: boom/);
   assert.equal(h.recorder.notices.at(-1)?.level, 'error');
   assert.match(broken.view().line, /checking/, 'the busy text is gone after the fault');
@@ -153,7 +154,7 @@ test('code round #4: after a write whose ending is unknown or failed, the daemon
       read: (request) => { reads.push(request.read); return Promise.resolve({ kind: 'read', read: request.read, distro: 'Ubuntu', body: goldenFile(FILES[request.read] ?? '') }); },
       target: () => Promise.resolve({ wsl: 'w', distro: 'Ubuntu' }), runner: () => Promise.resolve(ending), outcomes: store, ui: recordingArchiveUi(recorder), log: () => undefined,
     });
-    await h.stop();
+    await h.stop(DEFAULT_TARGET);
     assert.deepEqual(reads, ['archiveStatus', 'archivePreview'], ending.kind);
   }
 });
@@ -178,19 +179,19 @@ function archiveNowEnabled(archive: ArchiveHost): boolean | undefined {
 test('E10.S1b own review #1: Archive now is refused here, and told, when the archive\'s side of the button would grey it — the cleanup host is never asked', async () => {
   const noFolder = host({ baseFolder: '', cleanupFree: () => true });
   await noFolder.archive.refresh();
-  await noFolder.archive.archiveNow();
+  await noFolder.archive.archiveNow(DEFAULT_TARGET);
   assert.deepEqual(noFolder.asked, [], 'no folder set: nothing started');
   assert.equal(noFolder.recorder.notices.at(-1)?.sentence, 'Archive now is not available: no archive folder is set.');
 
   const notOffered = host({ a13Offered: false, cleanupFree: () => true });
   await notOffered.archive.refresh();
-  await notOffered.archive.archiveNow();
+  await notOffered.archive.archiveNow(DEFAULT_TARGET);
   assert.deepEqual(notOffered.asked, [], 'A13 not offered: nothing started');
   assert.equal(notOffered.recorder.notices.at(-1)?.sentence, 'Archive now is not available: the daemon does not offer A13.');
 
   const old = host({ capabilities: ['archive.checkBase', 'archive.preview', 'act.detach'], cleanupFree: () => true });
   await old.archive.refresh();
-  await old.archive.archiveNow();
+  await old.archive.archiveNow(DEFAULT_TARGET);
   assert.deepEqual(old.asked, [], 'archive.run not advertised: nothing started');
   assert.match(old.recorder.notices.at(-1)?.sentence ?? '', /^Archive now is not available: the daemon does not advertise .*archive\.run/);
 
@@ -203,8 +204,8 @@ test('E10.S1b own review #1: Archive now is refused here, and told, when the arc
     target: () => Promise.resolve({ wsl: 'w', distro: 'Ubuntu' }), runner: () => Promise.resolve(exited(0, '')), outcomes: new OutcomeStore(),
     ui: { ...ui, pickFolder: () => new Promise((resolve) => { pick = resolve; }) }, log: () => undefined, archiveNow: () => { busy.asked.push(1); return Promise.resolve(undefined); },
   });
-  const choosing = held.choose();
-  await held.archiveNow();
+  const choosing = held.choose(DEFAULT_TARGET);
+  await held.archiveNow(DEFAULT_TARGET);
   assert.deepEqual(busy.asked, [], 'a flow busy: nothing started');
   assert.match(busy.recorder.notices.at(-1)?.sentence ?? '', /^Archive now is not available: /);
   pick(undefined);
@@ -215,7 +216,7 @@ test('E10.S1b: with every archive condition holding, Archive now is handed to th
   const h = host({ cleanupFree: () => true });
   await h.archive.refresh();
   assert.equal(archiveNowEnabled(h.archive), true);
-  await h.archive.archiveNow();
+  await h.archive.archiveNow(DEFAULT_TARGET);
   assert.deepEqual(h.asked, [1]);
 });
 

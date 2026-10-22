@@ -21,6 +21,7 @@ import { answered, headBody, type Body } from './support/outcomes';
 import { goldenFile } from './support/paths';
 import { exited, recordingRunner, type Scripted } from './support/recordingRunner';
 import { relayKeys, relayPreviewBody } from './support/relayBodies';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * S7b.2b: *Stop client-gone relays* — A21 through the cleanup controller as it is, on *Archive now*'s road with a `--process`
@@ -61,7 +62,7 @@ function controller(script: Readonly<Record<string, Scripted>>, status: () => Bo
 }
 
 async function held(keys: readonly string[], options: Parameters<typeof relayPreviewBody>[1] = {}): Promise<HeldPreview> {
-  const outcome = await controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody(keys, options))) }).controller.preview(['A21']);
+  const outcome = await controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody(keys, options))) }).controller.preview(['A21'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 300));
   assert.ok(outcome.kind === 'previewed');
   return outcome.preview;
@@ -90,7 +91,7 @@ function flowOver(c: { controller: CleanupController }, store = new MapStore(), 
 
 test('a preview of A21 without act.processList advertised is refused before any root call', async () => {
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody(relayKeys(1)))) }, () => statusWithout('act.processList'));
-  const outcome = await c.controller.preview(['A21']);
+  const outcome = await c.controller.preview(['A21'], DEFAULT_TARGET);
   assert.notEqual(outcome.kind, 'previewed');
   assert.deepEqual(c.runner.argvs(), [], 'nothing ran as root');
 });
@@ -166,7 +167,7 @@ test('Stop client-gone relays: the preview of A21, its modal, the journal entry 
   let seenBefore: string[] = [];
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody(keys))), [confirmOf(keys)]: () => { seenBefore = new CleanupJournal(store, () => Date.parse('2026-10-11T12:00:00.000Z')).entries().map((e) => e.actions.join(',')); return exited(0, handOff()); } });
   const { flow, recorded } = flowOver(c, store);
-  const outcome = await flow.relays();
+  const outcome = await flow.relays(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
   assert.deepEqual(c.runner.argvs(), [ROOT_CHECK, PREVIEW_A21, confirmOf(keys)]);
   assert.deepEqual(seenBefore, ['A21'], 'persisted before the call');
@@ -177,7 +178,7 @@ test('Stop client-gone relays: the preview of A21, its modal, the journal entry 
 test('an EMPTY preview opens no modal and confirms nothing — it tells the daemon\'s basis, every kept relay and why', async () => {
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody([], { basis: '2 relay(s) of user kept: 2 because its stdio is a socket' }))) });
   const { flow, recorded, journal } = flowOver(c);
-  const outcome = await flow.relays();
+  const outcome = await flow.relays(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'nothing');
   assert.deepEqual(recorded.modals, []);
   assert.match(recorded.notices.at(-1)?.sentence ?? '', /^No relay's client is shown gone, so nothing was stopped\. The daemon says: 2 relay\(s\) of user kept: 2 because its stdio is a socket/);
@@ -188,7 +189,7 @@ test('an EMPTY preview opens no modal and confirms nothing — it tells the daem
 test('an UNAVAILABLE preview opens no modal and confirms nothing — it tells the daemon\'s reason', async () => {
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody([], { available: false, reason: 'the boot id cannot be read' }))) });
   const { flow, recorded } = flowOver(c);
-  const outcome = await flow.relays();
+  const outcome = await flow.relays(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'nothing');
   assert.deepEqual(recorded.modals, []);
   assert.match(recorded.notices.at(-1)?.sentence ?? '', /^The daemon could not read the relays: the boot id cannot be read\. Nothing was stopped\./);
@@ -197,7 +198,7 @@ test('an UNAVAILABLE preview opens no modal and confirms nothing — it tells th
 test('a declined modal starts nothing', async () => {
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody(relayKeys(1)))) });
   const { flow, journal } = flowOver(c, new MapStore(), false);
-  assert.equal((await flow.relays()).kind, 'declined');
+  assert.equal((await flow.relays(DEFAULT_TARGET)).kind, 'declined');
   assert.equal(c.runner.argvs().some((a) => a.includes('--confirm')), false);
   assert.deepEqual(journal.entries(), []);
 });
@@ -264,7 +265,7 @@ test('an available preview WITHOUT a shown list is no empty selection — it is 
   const { shown: _dropped, ...withoutShown } = actions[0] ?? {};
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify({ ...body, actions: [withoutShown] })) });
   const { flow, recorded } = flowOver(c);
-  const outcome = await flow.relays();
+  const outcome = await flow.relays(DEFAULT_TARGET);
   assert.equal(outcome.kind, 'nothing');
   assert.deepEqual(recorded.modals, []);
   assert.match(recorded.notices.at(-1)?.sentence ?? '', /^The daemon's preview carried no relay list/);
@@ -278,13 +279,13 @@ test('own review #3: a Stop of the daemon\'s OWN A21 run (the watch, trigger tim
   const stop = `${ROOT} act --stop ${RUN} --json`;
   const c = controller({ [stop]: exited(0, JSON.stringify({ schemaVersion: 1, result: 'stopping', kind: 'act', runId: RUN, unit: `wsl-care-act@${RUN}.service`, productVersion: '0.4.0' })) });
   const { flow } = flowOver(c, store);
-  await flow.stop({ runId: runId(RUN), actions: ['A21'], trigger: 'timer' });
+  await flow.stop({ runId: runId(RUN), actions: ['A21'], trigger: 'timer' }, DEFAULT_TARGET);
   assert.ok(journal.entries().some((e) => e.kind === 'unresolved' && e.actions.join() === 'A21'), 'the panel\'s own entry stays unresolved, for its own run');
 });
 
 test('own review #4: a confirm of a preview that carried no process list says so — not "nothing to stop"', async () => {
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody([], { available: false, reason: 'the boot id cannot be read' }))) });
-  const previewed = await c.controller.preview(['A21']);
+  const previewed = await c.controller.preview(['A21'], DEFAULT_TARGET);
   assert.ok(previewed.kind === 'previewed');
   const outcome = await c.controller.confirm(previewed.preview);
   assert.equal(outcome.kind, 'shownListInvalid');
@@ -308,7 +309,7 @@ test('own review #6: a non-object interopRelays shows no button AND refuses the 
 test('own review #8: a shown list that names a relay twice refuses the preview', async () => {
   const keys = relayKeys(1);
   const c = controller({ [PREVIEW_A21]: exited(0, JSON.stringify(relayPreviewBody([...keys, ...keys]))) });
-  const outcome = await c.controller.preview(['A21']);
+  const outcome = await c.controller.preview(['A21'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'shownListInvalid');
   assert.match(JSON.stringify(outcome), /names an entry twice/);
 });

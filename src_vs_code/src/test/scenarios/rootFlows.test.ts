@@ -8,6 +8,7 @@ import { CleanupController } from '../../root/cleanupController';
 import { ROOT_OPS, type RootOpName } from '../../root/rootCall';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from '../support/fakeWorld';
 import { GOLDEN_ROOT } from '../support/paths';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * The extension's scenario harness, ROOT tier (E6.S2; research/module_tests.md § The extension): the REAL cleanup
@@ -64,23 +65,23 @@ function restorableWorld(world: FakeWorld): void {
 
 /** One flow per root op: what the controller answers through the fake, and the exact root calls the fake received. */
 const FLOWS: { readonly [K in RootOpName]: (c: CleanupController, world: FakeWorld) => Promise<Expected & { readonly got: string }> } = {
-  rootCheck: async (c) => ({ got: (await c.rootCheck()).kind, kind: 'rootOk', root: [`${ROOT} --version`] }),
-  preview: async (c) => ({ got: (await c.preview(['A4'])).kind, kind: 'previewed', root: [`${ROOT} --version`, `${ROOT} act A4 --preview --json`] }),
+  rootCheck: async (c) => ({ got: (await c.rootCheck(DEFAULT_TARGET)).kind, kind: 'rootOk', root: [`${ROOT} --version`] }),
+  preview: async (c) => ({ got: (await c.preview(['A4'], DEFAULT_TARGET)).kind, kind: 'previewed', root: [`${ROOT} --version`, `${ROOT} act A4 --preview --json`] }),
   confirm: async (c) => {
-    const held = await c.preview(['A4']);
+    const held = await c.preview(['A4'], DEFAULT_TARGET);
     assert.ok(held.kind === 'previewed', JSON.stringify(held).slice(0, 300));
     return { got: (await c.confirm(held.preview)).kind, kind: 'accepted', root: [`${ROOT} --version`, `${ROOT} act A4 --preview --json`, `${ROOT} act A4 --confirm --manual --detach --only - --json`] };
   },
-  stop: async (c) => ({ got: (await c.stop(RUN)).kind, kind: 'stopping', root: [`${ROOT} --version`, `${ROOT} act --stop ${RUN} --json`] }),
-  fullCheck: async (c) => ({ got: (await c.runFullCheck()).kind, kind: 'accepted', root: [`${ROOT} --version`, `${ROOT} collect --detach --json`] }),
+  stop: async (c) => ({ got: (await c.stop(RUN, DEFAULT_TARGET)).kind, kind: 'stopping', root: [`${ROOT} --version`, `${ROOT} act --stop ${RUN} --json`] }),
+  fullCheck: async (c) => ({ got: (await c.runFullCheck(DEFAULT_TARGET)).kind, kind: 'accepted', root: [`${ROOT} --version`, `${ROOT} collect --detach --json`] }),
   // E10.S2b: A20's two ops, the entry ids on stdin.
   restorePreview: async (c, world) => {
     restorableWorld(world);
-    return { got: (await c.previewRestore([ENTRY])).kind, kind: 'previewed', root: [`${ROOT} --version`, `${ROOT} act A20 --preview --entry - --json`] };
+    return { got: (await c.previewRestore([ENTRY], DEFAULT_TARGET)).kind, kind: 'previewed', root: [`${ROOT} --version`, `${ROOT} act A20 --preview --entry - --json`] };
   },
   restoreConfirm: async (c, world) => {
     restorableWorld(world);
-    const held = await c.previewRestore([ENTRY]);
+    const held = await c.previewRestore([ENTRY], DEFAULT_TARGET);
     assert.ok(held.kind === 'previewed', JSON.stringify(held).slice(0, 300));
     return { got: (await c.confirm(held.preview)).kind, kind: 'accepted', root: [`${ROOT} --version`, `${ROOT} act A20 --preview --entry - --json`, `${ROOT} act A20 --confirm --manual --detach --entry - --json`] };
   },
@@ -99,7 +100,7 @@ for (const op of ROOT_OPS) {
 
 test('root flow · confirm of A4 pipes EVERY name its preview showed — all 387, on stdin, never on the command line', async () => {
   await flow(UBUNTU_RUNNING, async ({ world, controller }) => {
-    const held = await controller.preview(['A4']);
+    const held = await controller.preview(['A4'], DEFAULT_TARGET);
     assert.ok(held.kind === 'previewed');
     assert.equal((await controller.confirm(held.preview)).kind, 'accepted');
     const shown = goldenShown();
@@ -111,7 +112,7 @@ test('root flow · confirm of A4 pipes EVERY name its preview showed — all 387
 
 test('root flow · a stopped distribution: refused as "stopped", and the fake saw no -d call at all', async () => {
   await flow({ distros: [{ name: 'Ubuntu', running: false }], defaultDistro: 'Ubuntu', binary: 'present' }, async ({ world, controller }) => {
-    for (const run of [() => controller.rootCheck(), () => controller.preview(['A4']), () => controller.runFullCheck(), () => controller.stop(RUN)]) {
+    for (const run of [() => controller.rootCheck(DEFAULT_TARGET), () => controller.preview(['A4'], DEFAULT_TARGET), () => controller.runFullCheck(DEFAULT_TARGET), () => controller.stop(RUN, DEFAULT_TARGET)]) {
       assert.equal((await run()).kind, 'stopped');
     }
     assert.deepEqual(world.calls().filter((c) => c.startsWith('-d ')), []);
@@ -129,7 +130,7 @@ test('root flow · a daemon that does not advertise the capabilities: "Update da
     delete status.capabilities;
     fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify(status));
     world.rewrite({ answers });
-    for (const run of [() => controller.preview(['A4']), () => controller.runFullCheck(), () => controller.stop(RUN)]) {
+    for (const run of [() => controller.preview(['A4'], DEFAULT_TARGET), () => controller.runFullCheck(DEFAULT_TARGET), () => controller.stop(RUN, DEFAULT_TARGET)]) {
       assert.equal((await run()).kind, 'actionsUnavailable');
     }
     assert.deepEqual(rootCalls(world), []);
@@ -138,7 +139,7 @@ test('root flow · a daemon that does not advertise the capabilities: "Update da
 
 test('root flow · a detach answered "unknown" WITH its run id is handed back at once — E6.S3 follows the run id (review M3)', async () => {
   await flow({ ...UBUNTU_RUNNING, root: { detach: 'unknown' } }, async ({ world, controller }) => {
-    const outcome = await controller.runFullCheck();
+    const outcome = await controller.runFullCheck(DEFAULT_TARGET);
     assert.equal(outcome.kind, 'outcomeUnknown');
     assert.ok(outcome.kind === 'outcomeUnknown');
     assert.equal(outcome.runId, RUN);
@@ -149,7 +150,7 @@ test('root flow · a detach answered "unknown" WITH its run id is handed back at
 
 test('root flow · the daemon busy (75): the refusal, with the running block status reports', async () => {
   await flow({ ...UBUNTU_RUNNING, root: { exit: { code: 75, stderr: 'wsl-care: busy: a run is acting\n' } } }, async ({ controller }) => {
-    const outcome = await controller.runFullCheck();
+    const outcome = await controller.runFullCheck(DEFAULT_TARGET);
     assert.equal(outcome.kind, 'busy');
     assert.ok(outcome.kind === 'busy');
     assert.deepEqual(outcome.messages, ['wsl-care: busy: a run is acting']);
@@ -159,7 +160,7 @@ test('root flow · the daemon busy (75): the refusal, with the running block sta
 
 test('root flow · the root check refused: "needs root", and no act reached the fake', async () => {
   await flow({ ...UBUNTU_RUNNING, root: { checkExit: { code: 1, stderr: 'refused\n' } } }, async ({ world, controller }) => {
-    assert.equal((await controller.preview(['A4'])).kind, 'rootRefused');
+    assert.equal((await controller.preview(['A4'], DEFAULT_TARGET)).kind, 'rootRefused');
     assert.deepEqual(rootCalls(world), [`${ROOT} --version`]);
   });
 });
@@ -169,7 +170,7 @@ test('root flow · S2: with WSLENV set in the extension host, every root call re
   process.env.WSLENV = 'PATH/l:USERPROFILE/p';
   try {
     await flow(UBUNTU_RUNNING, async ({ world, controller }) => {
-      assert.equal((await controller.runFullCheck()).kind, 'accepted');
+      assert.equal((await controller.runFullCheck(DEFAULT_TARGET)).kind, 'accepted');
       assert.equal(rootCalls(world).length, 2, 'the root check and the full check, both answered');
     });
   } finally {
