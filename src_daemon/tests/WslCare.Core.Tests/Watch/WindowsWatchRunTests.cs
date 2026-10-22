@@ -8,6 +8,7 @@ using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
+using WslCare.Core.Health;
 using WslCare.Core.Hosting;
 using WslCare.Core.Json;
 using WslCare.Core.Mcp;
@@ -58,18 +59,116 @@ public sealed class WindowsWatchRunTests : IDisposable
 
     private string LedgerFile => _sandbox.Paths.Rules.Join(_sandbox.Paths.StateDirectory, McpCpuLedger.FileName);
 
-    private Task<WatchResult> Watch(bool timer = true, IFileSystem? through = null)
+    private readonly RecordingCommandRunner _commands = new();
+    private readonly ScriptedVolumes _volumes = ScriptedVolumes.Machine();
+
+    private Task<WatchResult> Watch(bool timer = true, IFileSystem? through = null, IWindowsVolumes? volumes = null)
     {
         var clock = new FixedTimeProvider(Now);
         var files = through ?? _sandbox.Files;
-        var context = new WatchContext(_sandbox.Paths, files, new RecordingCommandRunner(), clock, new FakeProbe(HostSide.Windows, clock),
+        var context = new WatchContext(_sandbox.Paths, files, _commands, clock, new FakeProbe(HostSide.Windows, clock),
             ConfigLoader.Load(_sandbox.Paths, files), new FakeProcessTable(), 4242, ActionRegistry.Product, timer)
         {
             WindowsProcesses = new ScriptedTable(),
             WindowsBoot = _boot,
+            WindowsVolumes = volumes ?? _volumes,
             Wait = (_, _) => Task.CompletedTask,
         };
         return WatchRun.RunAsync(context, CancellationToken.None);
+    }
+
+    private VolumeSampleStore Store => new(_sandbox.Paths, _sandbox.Files);
+
+    /// <summary>E19.S2: the Windows watch takes the native volume reading under the run lock, after the MCP sample, into
+    /// <c>%LOCALAPPDATA%\wsl-care\volumes.json</c> — no process is started for it.</summary>
+    [Fact]
+    public async Task The_windows_watch_writes_the_volume_sample_without_a_process()
+    {
+        OnWindowsOnly();
+
+        var result = await Watch();
+
+        result.Outcome.Should().Be(WatchOutcome.Sampled, result.Reason);
+        result.Volumes.Should().Be(new VolumeSampleOutcome.Written(2, Store.File));
+        Store.File.Should().EndWith(Path.Combine("wsl-care", "volumes.json"));
+        var sample = Store.Read().Should().BeOfType<Reading<VolumeSample>.Available>().Subject.Value;
+        sample.SampledAt.Should().Be(Now);
+        sample.ToVolumes().Select(v => v.Letter).Should().Equal("C", "E");
+        sample.ToVolumes()[0].FreeBytes.Should().Be(Reading.Of(114 * ScriptedVolumes.Gib));
+        _volumes.Calls.Should().Be(1);
+        _commands.Requests.Should().BeEmpty("the volumes are read natively: the watch starts no process for them");
+        WatchReport.From(result).Volumes.Should().Be(new VolumeSampleReport(true, 2, null));
+    }
+
+    /// <summary>The sample is not written when the watch lost the run lock — the next period's watch takes it, and a status in between reads live.</summary>
+    [Fact]
+    public async Task A_busy_run_lock_writes_no_sample()
+    {
+        OnWindowsOnly();
+        var held = RunLock.TryTake(_sandbox.Paths, _sandbox.Files).Should().BeOfType<ExclusiveLock.Held>().Subject;
+        WatchResult busy;
+        using (held.Handle)
+        {
+            busy = await Watch();
+        }
+
+        busy.Outcome.Should().Be(WatchOutcome.Busy, busy.Reason);
+        busy.Volumes.Should().BeOfType<VolumeSampleOutcome.NotTaken>();
+        _volumes.Calls.Should().Be(0, "a busy run samples nothing");
+        File.Exists(Store.File).Should().BeFalse();
+        WatchReport.From(busy).Volumes.Should().BeNull();
+    }
+
+    /// <summary>A sample that cannot be written costs the run nothing else: the ledger and the sweep are done, the answer says what failed, and the
+    /// previous file — whose age says how old it is — stays.</summary>
+    [Fact]
+    public async Task A_failed_sample_write_is_reported_and_the_watch_goes_on()
+    {
+        OnWindowsOnly();
+        var previous = await Watch();
+        previous.Volumes.Should().BeOfType<VolumeSampleOutcome.Written>("the first run wrote one");
+
+        var failed = await Watch(through: new FailingVolumeWrites(_sandbox.Files, new IOException("the disk is full (a test)")));
+
+        failed.Outcome.Should().Be(WatchOutcome.Sampled, failed.Reason);
+        failed.Ledger.Recorded.Should().BeTrue(failed.Ledger.Reason);
+        failed.Swept.Should().ContainSingle("the retention sweep ran after the failed write");
+        var not = failed.Volumes.Should().BeOfType<VolumeSampleOutcome.NotWritten>().Subject;
+        not.Reason.Should().Contain("the disk is full (a test)").And.Contain(Store.File);
+        var report = WatchReport.From(failed).Volumes!;
+        (report.Written, report.Volumes).Should().Be((false, (int?)null));
+        report.Reason.Should().Contain("the disk is full (a test)");
+        Store.Read().IsAvailable.Should().BeTrue("the previous sample is still there");
+    }
+
+    /// <summary>An unreadable drive table is not a sample: nothing is written (an empty list would be read as "no volumes"), the reason is said.</summary>
+    [Fact]
+    public async Task An_unreadable_drive_table_writes_nothing_and_says_why()
+    {
+        OnWindowsOnly();
+
+        var result = await Watch(volumes: ScriptedVolumes.Unread("the drive list is not available (a test)"));
+
+        result.Outcome.Should().Be(WatchOutcome.Sampled, result.Reason);
+        result.Volumes.Should().BeOfType<VolumeSampleOutcome.NotWritten>().Which.Reason.Should().Contain("the drive list is not available (a test)");
+        File.Exists(Store.File).Should().BeFalse();
+    }
+
+    /// <summary>A drive that could not be read is IN the sample with its reason — the table is written whole.</summary>
+    [Fact]
+    public async Task A_drive_that_could_not_be_read_is_in_the_sample_with_its_reason()
+    {
+        OnWindowsOnly();
+        var table = new ScriptedVolumes(Reading.Of<IReadOnlyList<WindowsVolume>>(
+        [
+            ScriptedVolumes.Volume("C", 953 * ScriptedVolumes.Gib, 114 * ScriptedVolumes.Gib),
+            new("F", Reading.Missing<int>("not read natively"), string.Empty, Reading.Missing<long>("F: is not ready"), Reading.Missing<long>("F: is not ready"), string.Empty),
+        ]));
+
+        var result = await Watch(volumes: table);
+
+        result.Volumes.Should().Be(new VolumeSampleOutcome.Written(2, Store.File));
+        Store.Read().Should().BeOfType<Reading<VolumeSample>.Available>().Which.Value.ToVolumes().Single(v => v.Letter == "F").FreeBytes.Should().Be(Reading.Missing<long>("F: is not ready"));
     }
 
     private IReadOnlyList<RunRecord> History() => RunHistory.Read(_sandbox.Paths, _sandbox.Files).Records;

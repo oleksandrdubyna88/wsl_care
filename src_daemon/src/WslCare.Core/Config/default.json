@@ -304,6 +304,7 @@
     "volumeFreeCriticalPercent": 3,
     "volumeFreeMinSizeGib": 8,
     "volumeFreeAbsoluteMinSizeGib": 100,
+    "volumeSampleMaxAgePeriods": 3,
     "volumeFreeIgnoreLetters": []
   },
   "commands": {

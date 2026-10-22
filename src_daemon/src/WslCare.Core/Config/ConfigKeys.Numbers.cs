@@ -135,6 +135,7 @@ public static partial class ConfigKeys
         Disk.VolumeFreeCriticalPercent,
         Disk.VolumeFreeMinSizeGib,
         Disk.VolumeFreeAbsoluteMinSizeGib,
+        Disk.VolumeSampleMaxAgePeriods,
         Health.SnapTimeoutSeconds,
         Health.OutputCapBytes,
         Health.KernelLinesKept,

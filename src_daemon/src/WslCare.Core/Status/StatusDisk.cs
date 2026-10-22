@@ -23,6 +23,16 @@ public static class StatusDisk
     /// <summary>The Windows binary's answer: unavailable, naming the side that reads them.</summary>
     public static DiskReport OnWindows => DiskReports.Unavailable(ReadByTheDistro);
 
+    /// <summary>E19.S2, the Windows binary's answer with its OWN lettered volumes: the virtual disks are still the distro's (the section stays
+    /// unavailable, saying so), but <c>lettered</c> carries what <c>disk.volumeFree</c> judged — absent when the table was not read, never an empty
+    /// list — with the basis it was judged on (the watch's sample and its age, or a live read).</summary>
+    public static DiskReport OnWindowsWith(VolumeFreeAssessment volumes, VerdictBasis basis) =>
+        OnWindows with
+        {
+            Lettered = volumes.Volumes.Count > 0 ? DiskReports.Lettered(volumes.Volumes) : null,
+            Basis = basis,
+        };
+
     private static DiskReport Carried(RecordedVerdicts run, DateTimeOffset now)
     {
         var basis = new VerdictBasis(VerdictSource.FullRun, run.RunId.Text, run.EvaluatedAt, Math.Round((now - run.EvaluatedAt).TotalSeconds));

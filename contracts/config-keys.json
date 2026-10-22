@@ -2718,6 +2718,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "disk.volumeSampleMaxAgePeriods",
+      "shape": "int",
+      "min": 1,
+      "max": 12,
+      "default": 3,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "health.snapTimeoutSeconds",
       "shape": "int",
       "min": 5,

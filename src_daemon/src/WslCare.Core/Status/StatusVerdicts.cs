@@ -67,7 +67,17 @@ public static class StatusVerdicts
 
     /// <summary>Verdicts evaluated over THIS answer's own sample (the MCP servers', plan §15q E7.S2d), with the sample's basis.</summary>
     public static IReadOnlyList<Verdict> Sampled(IReadOnlyList<Verdict> verdicts, DateTimeOffset sampledAt) =>
-        [.. verdicts.Select(v => v with { Basis = new VerdictBasis(VerdictSource.Sample, null, sampledAt, 0) })];
+        Sampled(verdicts, sampledAt, sampledAt);
+
+    /// <summary>Verdicts evaluated over a sample taken at <paramref name="sampledAt"/> and shown at <paramref name="now"/> (E19.S2: the Windows
+    /// watch's <c>volumes.json</c>) — the first <c>sample</c> basis with a REAL age.</summary>
+    public static IReadOnlyList<Verdict> Sampled(IReadOnlyList<Verdict> verdicts, DateTimeOffset sampledAt, DateTimeOffset now) =>
+        [.. verdicts.Select(v => v with { Basis = SampleBasis(sampledAt, now) })];
+
+    /// <summary>The basis of a verdict judged from a sample taken at <paramref name="sampledAt"/> and shown at <paramref name="now"/>: <c>sample</c>,
+    /// when it was taken, and how old it is (whole seconds; never negative — a sample from the future is not trusted before it gets here).</summary>
+    public static VerdictBasis SampleBasis(DateTimeOffset sampledAt, DateTimeOffset now) =>
+        new(VerdictSource.Sample, null, sampledAt, Math.Max(0, Math.Round((now - sampledAt).TotalSeconds)));
 
     /// <summary>The full run's record of <paramref name="unread"/>'s id, or <c>unknown</c> under its limit with the reason.</summary>
     private static Verdict Carried(Verdict unread, Reading<RecordedVerdicts> fullRun, DateTimeOffset now) => fullRun switch

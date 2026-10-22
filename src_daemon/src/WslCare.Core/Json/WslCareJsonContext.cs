@@ -77,6 +77,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Mcp.McpCpuFile))]
 [JsonSerializable(typeof(Watch.WatchTriesFile))]
 [JsonSerializable(typeof(Watch.WatchReport))]
+[JsonSerializable(typeof(Watch.VolumeSample))]
 [JsonSerializable(typeof(Scheduler.TasksRenderReport))]
 [JsonSerializable(typeof(Actions.WindowsTemp.TempPreviewReport))]
 [JsonSerializable(typeof(Scheduler.StageRecord))]

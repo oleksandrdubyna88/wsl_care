@@ -70,6 +70,11 @@ public static partial class ConfigKeys
         /// 100 — a STARTING VALUE.</summary>
         public static readonly ConfigKey.IntKey VolumeFreeAbsoluteMinSizeGib = new("disk.volumeFreeAbsoluteMinSizeGib", 8, 10240) { Trust = KeyTrust.Display };
 
+        /// <summary>E19.S2: the Windows <c>status</c> trusts the watch's <c>volumes.json</c> for this many <c>mcpWatchdog.periodMinutes</c>; a
+        /// sample older than that (or missing, or unreadable) is replaced by a live read, and the reason says so. Default 3 — one missed
+        /// watch run (a logon delay, a busy lock) does not send every status to the drives; three in a row do. Range 1-12.</summary>
+        public static readonly ConfigKey.IntKey VolumeSampleMaxAgePeriods = new("disk.volumeSampleMaxAgePeriods", 1, 12) { Trust = KeyTrust.Display };
+
         /// <summary>At most this many letters in <see cref="VolumeFreeIgnoreLetters"/> — one per drive letter A-Z, a schema limit, part of the
         /// contract other tools write against (<c>contracts/config-keys.json</c>).</summary>
         public const int MaxIgnoredLetters = 26;

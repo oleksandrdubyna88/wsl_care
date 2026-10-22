@@ -1,6 +1,6 @@
 # PLAN — E19 "See it": the stories of the first disk-hygiene epic (volume verdicts, the 5-minute Windows reading, the worktree report)
 
-> Status: **in progress, 2026-10-15 — E19.S2b built (PR pending); the other stories not started.** Scope: the stories of epic E19 of
+> Status: **in progress, 2026-10-22 — E19.S1 (#156), S2b (#157), S3 (#158) and S4 (#159) built; E19.S2 built (PR pending); E19.S5 not started.** Scope: the stories of epic E19 of
 > [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (DH-1, DH-1b, DH-3) — read-only, nothing in this epic
 > deletes. Written by the Opus judge per `.agents/conventions/common/subagent-models.md` (epic → stories); no story of E19
 > is a cornerstone (the parent's ledger: `Cornerstones: 2 of 2 — DH-4, DH-6`, both outside this epic).
@@ -184,6 +184,31 @@ coai code round per story; the full test executables and `npm test` before the P
   `Cli/Commands/StatusCommand.cs`, `Cli/CliHost.cs`, `Json/WslCareJsonContext.cs`, tests in `Core.Tests/Watch`,
   `Cli.Tests/StatusCommandTests.cs`, `Scenarios/WindowsWatchFlows.cs`, docs (`module_daemon.md` *WR-D4* section gains the
   volume sample, README *Watch* and *Status*).
+- **As built (2026-10-22, PR pending).** As briefed, with these deviations and additions:
+  - **A drive seam under the seam.** `WindowsVolumes` takes its drives through `IDrive` (a thin wrapper over `DriveInfo`), so the network-drive,
+    not-ready and throwing-drive cases are scripted without this machine's drives. A `Network` drive is dropped by its `DriveType` ALONE and none of
+    its other properties is ever read (a mapped drive that is down can block for the network timeout). The one test that reads the real
+    drives asserts shape only.
+  - **An unread drive table writes nothing.** A drive LIST that cannot be read (`DriveInfo.GetDrives()` throws) is `NotWritten(reason)` in the
+    watch's answer and leaves the previous file — an empty `volumes[]` would read as "this machine has no volumes". A single drive that cannot be
+    read IS in the file, with its size and free space unread and the reason.
+  - **The wire reuses `ByteFigure`** for `size` and `free` (`{available, bytes, reason}`), so an unread figure survives the file as unread; the file
+    has no `diskNumber` (the native reading never has one), and `ToVolumes()` gives it back "not read natively".
+  - **Future-dated samples are not trusted.** Besides missing, unreadable and older than the window, a sample whose `sampledAt` is later than
+    the status' clock (a clock that moved back) is replaced by a live read, reason "…in the future" — otherwise it would stay young for ever.
+  - **The window is `disk.volumeSampleMaxAgePeriods` × `mcpWatchdog.periodMinutes`** (Display, 1–12, default 3 → 15 min by default); a sample EXACTLY
+    that old is still trusted. The reason of a live read is `read live by status (no watch sample within 15 min): <why>; <the rule's reason>`, and a live
+    read that fails as well is `unknown` with both reasons.
+  - **`StatusVerdicts.SampleBasis(sampledAt, now)`** is the one place a sample basis is built; `Sampled(verdicts, sampledAt)` (age 0) now delegates to
+    the new `Sampled(verdicts, sampledAt, now)`. `disk` on Windows is `StatusDisk.OnWindowsWith(assessment, basis)`: still unavailable for the virtual
+    disks, plus `lettered` and the basis.
+  - **Where the scenarios live.** The seam-level cases are `Core.Tests/Collectors/WindowsVolumesTests`; the file `Core.Tests/Watch/VolumeSampleStoreTests`;
+    the watch `Core.Tests/Watch/WindowsWatchRunTests` (and `WatchRunTests` for the distro); the status, the busy lock and the watch's text/JSON answer
+    `Cli.Tests/WindowsVolumeStatusTests` (a new file rather than `StatusCommandTests`: the Windows layout needs its own host); the built binary
+    `Scenarios/WindowsWatchFlows` (the sample's shape with this machine's real drives; a hand-planted sample judged with its age; an old sample
+    replaced by a live read). The busy-lock case is in-process only.
+  - **Only `contracts/config-keys.json` moved** (regenerated on the Linux leg); the `head` goldens did not change.
+  - **Not done here:** the panel's and the bar's use of the Windows binary's reading is E19.S5.
 
 ### E19.S3 — the worktree report without git (DH-3, part 1)
 
