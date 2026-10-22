@@ -765,3 +765,34 @@ test('E19.S2b: the fake answers the bundled exe\'s status --json from the distro
     world.dispose();
   }
 });
+
+// ---- E18.W1a-1: a distro's version column; a `-d` to a WSL 1 distro is refused ----
+
+const TWO_VERSIONS: ScenarioInput = { distros: [{ name: 'Ubuntu', running: true }, { name: 'Legacy', running: true, version: 1 }], defaultDistro: 'Ubuntu', binary: 'present' };
+
+test('W1a-1: -l -v prints each distro\'s version digit — 2 unless the scenario says 1', async () => {
+  await within(TWO_VERSIONS, async (world) => {
+    const table = exitOf(await ask(world, ['-l', '-v'])).stdout.toString('utf16le');
+    assert.equal(table, '  NAME              STATE           VERSION\r\n* Ubuntu            Running         2\r\n  Legacy            Running         1\r\n');
+  });
+});
+
+test('W1a-1: a -d to a WSL 1 distro is refused with its own exit code and sentence — stricter than the real wsl.exe, which would run it', async () => {
+  await within(TWO_VERSIONS, async (world) => {
+    const read = exitOf(await ask(world, ['-d', 'Legacy', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'status', '--json']));
+    assert.equal(read.code, FAKE_EXIT.wsl1);
+    assert.match(read.stderr, /the daemon needs WSL 2/);
+    assert.notEqual(FAKE_EXIT.wsl1, FAKE_EXIT.wouldStart);
+    assert.notEqual(FAKE_EXIT.wsl1, FAKE_EXIT.refused);
+    const root = exitOf(await ask(world, ['-d', 'Legacy', '-u', 'root', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'collect', '--detach', '--json']));
+    assert.equal(root.code, FAKE_EXIT.wsl1, 'a root call is refused too');
+    const config = exitOf(await ask(world, ['-d', 'Legacy', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'config', 'set', 'archive.baseFolder', '']));
+    assert.equal(config.code, FAKE_EXIT.wsl1, 'and a config write');
+  });
+});
+
+test('W1a-1: the WSL 2 distro of the same scenario is answered as before (the positive)', async () => {
+  await within(TWO_VERSIONS, async (world) => {
+    assert.equal(exitOf(await ask(world, [...DAEMON_CALL, 'status', '--json'])).code, 0);
+  });
+});

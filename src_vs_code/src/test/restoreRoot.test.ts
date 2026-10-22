@@ -8,6 +8,7 @@ import { bodyOf, stringsAt } from './support/body';
 import { answered, headBody, type Body } from './support/outcomes';
 import { goldenFile } from './support/paths';
 import { exited, recordingRunner, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S2b: *Restore* through the root road — A20's preview and its detached confirm through the cleanup controller, the
@@ -45,7 +46,7 @@ function controller(script: Readonly<Record<string, Scripted>>, status: () => Bo
 
 async function held(script: Readonly<Record<string, Scripted>> = { [PREVIEW_A20]: exited(0, previewText()) }): Promise<{ preview: HeldPreview; c: ReturnType<typeof controller> }> {
   const c = controller(script);
-  const outcome = await c.controller.previewRestore([ENTRY]);
+  const outcome = await c.controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'previewed', JSON.stringify(outcome).slice(0, 300));
   assert.ok(outcome.kind === 'previewed');
   return { preview: outcome.preview, c };
@@ -56,7 +57,7 @@ async function held(script: Readonly<Record<string, Scripted>> = { [PREVIEW_A20]
 test('entry ids that are not a list the daemon takes start NOTHING — none, one twice, a bad id, more than one restore takes', async () => {
   const c = controller({});
   for (const bad of [[], [ENTRY, ENTRY], [ENTRY, 'NOT-AN-ID'], Array.from({ length: 5001 }, (_, i) => i.toString(16).padStart(16, '0'))]) {
-    assert.equal((await c.controller.previewRestore(bad)).kind, 'entriesRefused', `${bad.length} ids`);
+    assert.equal((await c.controller.previewRestore(bad, DEFAULT_TARGET)).kind, 'entriesRefused', `${bad.length} ids`);
   }
   assert.deepEqual(c.runner.argvs(), [], 'not even the root check');
 });
@@ -66,7 +67,7 @@ test('entry ids that are not a list the daemon takes start NOTHING — none, one
 test('a restore needs archive.restore, act.entryStdin and its op\'s own capabilities advertised — else "Update daemon", nothing started', async () => {
   for (const missing of ['archive.restore', 'act.entryStdin', 'act.shownList']) {
     const c = controller({}, statusWithout((s) => ({ ...s, capabilities: stringsAt(s, 'capabilities').filter((x) => x !== missing) })));
-    const outcome = await c.controller.previewRestore([ENTRY]);
+    const outcome = await c.controller.previewRestore([ENTRY], DEFAULT_TARGET);
     assert.equal(outcome.kind, 'actionsUnavailable', missing);
     assert.deepEqual(c.runner.argvs(), [], missing);
   }
@@ -76,9 +77,9 @@ test('a restore needs archive.restore, act.entryStdin and its op\'s own capabili
 
 test('A20 is acted on only when the daemon REPORTS it in status.actions — and the cleanup ops still never act on it', async () => {
   const c = controller({}, statusWithout((s) => ({ ...s, actions: stringsAt(s, 'actions').filter((a) => a !== 'A20') })));
-  assert.equal((await c.controller.previewRestore([ENTRY])).kind, 'idsRefused');
+  assert.equal((await c.controller.previewRestore([ENTRY], DEFAULT_TARGET)).kind, 'idsRefused');
   const cleanup = controller({});
-  const outcome = await cleanup.controller.preview(['A20']);
+  const outcome = await cleanup.controller.preview(['A20'], DEFAULT_TARGET);
   assert.equal(outcome.kind, 'idsRefused', 'a button-only id is never a cleanup row');
   assert.ok(cleanup.runner.argvs().every((a) => !a.includes('A20')));
 });
@@ -87,7 +88,7 @@ test('A20 is acted on only when the daemon REPORTS it in status.actions — and 
 
 test('the preview pipes the page\'s ids; the CONFIRM pipes the ids the preview SHOWED — never the selection it was asked for', async () => {
   const c = controller({ [PREVIEW_A20]: exited(0, previewText()), [CONFIRM_A20]: exited(0, handOff()) });
-  const outcome = await c.controller.previewRestore([ENTRY, OTHER]);
+  const outcome = await c.controller.previewRestore([ENTRY, OTHER], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed', JSON.stringify(outcome).slice(0, 200));
   assert.deepEqual(outcome.preview.restore?.names, [ENTRY], 'the daemon showed one of the two (the other is no longer restorable)');
   assert.equal((await c.controller.confirm(outcome.preview)).kind, 'accepted');
@@ -99,7 +100,7 @@ test('the preview pipes the page\'s ids; the CONFIRM pipes the ids the preview S
 test('a shown entry that is not 16 lowercase hex, or one shown twice, refuses the preview — nothing can be confirmed', async () => {
   for (const shown of [['NOT-AN-ENTRY-ID!'], [ENTRY, ENTRY]]) {
     const c = controller({ [PREVIEW_A20]: exited(0, previewText((line) => ({ ...line, shown, preview: { ...bodyOf(line.preview, 'preview'), count: shown.length } }))) });
-    assert.equal((await c.controller.previewRestore([ENTRY])).kind, 'restoreListInvalid', JSON.stringify(shown));
+    assert.equal((await c.controller.previewRestore([ENTRY], DEFAULT_TARGET)).kind, 'restoreListInvalid', JSON.stringify(shown));
   }
 });
 
@@ -108,9 +109,9 @@ test('the plan round\'s #0: a list the daemon CUT (shownTruncated) is never conf
   const c = controller({ [PREVIEW_A20]: exited(0, cut) });
   const status = headBody('status');
   const capped = controller({ [PREVIEW_A20]: exited(0, cut) }, () => ({ ...status, limits: { ...bodyOf(status.limits, 'limits'), maxShownNames: 1 } }));
-  assert.equal((await c.controller.previewRestore([ENTRY])).kind, 'restoreListInvalid', 'a cut list under the default cap does not add up');
-  assert.equal((await capped.controller.previewRestore([ENTRY, OTHER])).kind, 'entriesRefused', 'more ids than the cap in force: refused before the preview, not cut');
-  const outcome = await capped.controller.previewRestore([ENTRY]);
+  assert.equal((await c.controller.previewRestore([ENTRY], DEFAULT_TARGET)).kind, 'restoreListInvalid', 'a cut list under the default cap does not add up');
+  assert.equal((await capped.controller.previewRestore([ENTRY, OTHER], DEFAULT_TARGET)).kind, 'entriesRefused', 'more ids than the cap in force: refused before the preview, not cut');
+  const outcome = await capped.controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed', JSON.stringify(outcome).slice(0, 300));
   assert.equal(outcome.preview.restore?.truncated, true);
   const confirm = await capped.controller.confirm(outcome.preview);
@@ -140,7 +141,7 @@ test('a restore detach answered without a run id never ADOPTS a manual full chec
     statuses += 1;
     return statuses <= 2 ? headBody('status') : fullCheck;
   });
-  const outcome = await c.controller.previewRestore([ENTRY]);
+  const outcome = await c.controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed');
   const handed = await c.controller.confirm(outcome.preview);
   assert.equal(handed.kind, 'outcomeUnknown', 'a full check in flight is not this restore');
@@ -163,21 +164,21 @@ test('own review #1: an UNAVAILABLE A20 line (its archive child failed, no shown
     return { ...rest, preview: { ...bodyOf(line.preview, 'preview'), available: false, reason: 'the archive list child timed out after 600 s', count: 0, bytes: 0, items: [] } };
   });
   const c = controller({ [PREVIEW_A20]: exited(0, unread) });
-  const outcome = await c.controller.previewRestore([ENTRY]);
+  const outcome = await c.controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'restoreListInvalid', JSON.stringify(outcome).slice(0, 300));
   assert.match(outcome.reason, /the archive list child timed out after 600 s/);
 });
 
 test('own review #2: a shown entry the panel did NOT ask for refuses the preview — the confirm can only pipe ids the page handed', async () => {
   const c = controller({ [PREVIEW_A20]: exited(0, previewText((line) => ({ ...line, shown: [OTHER] }))) });
-  const outcome = await c.controller.previewRestore([ENTRY]);
+  const outcome = await c.controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'restoreListInvalid', JSON.stringify(outcome).slice(0, 300));
   assert.match(outcome.reason, /did not ask for/);
 });
 
 test('own review #7: the restore confirm\'s exit 2 is a refusal of the piped list — shownListRefused, the retry road', async () => {
   const c = controller({ [PREVIEW_A20]: exited(0, previewText()), [CONFIRM_A20]: exited(2, '', 'wsl-care: act: the entry list on stdin had no end within 10 s; nothing was done\n') });
-  const outcome = await c.controller.previewRestore([ENTRY]);
+  const outcome = await c.controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed');
   const confirm = await c.controller.confirm(outcome.preview);
   assert.equal(confirm.kind, 'shownListRefused');
@@ -187,7 +188,7 @@ test('own review #7: A20 dropped from status.actions between the preview and the
   let reported = true;
   const status = headBody('status');
   const c = controller({ [PREVIEW_A20]: exited(0, previewText()), [CONFIRM_A20]: exited(0, handOff()) }, () => (reported ? status : { ...status, actions: stringsAt(status, 'actions').filter((a) => a !== 'A20') }));
-  const outcome = await c.controller.previewRestore([ENTRY]);
+  const outcome = await c.controller.previewRestore([ENTRY], DEFAULT_TARGET);
   assert.ok(outcome.kind === 'previewed');
   reported = false;
   assert.equal((await c.controller.confirm(outcome.preview)).kind, 'idsRefused');

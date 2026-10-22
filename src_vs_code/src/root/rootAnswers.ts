@@ -2,6 +2,7 @@ import { readEnum, type EnumRead } from '../client/enumValue';
 import { checkedBody } from '../client/handshake';
 import { RUN_ID_BODY } from '../shared/shapes';
 import type { JsonObject } from '../client/outcome';
+import type { DistroTarget } from '../wsl/distroTarget';
 import { actionIdOf, entryIdOf, MAX_PROCESS_ARGS, MAX_SHOWN_VOLUMES, runIdOf, shownCap, shownProcessOf, volumeNameOf, type ActionId, type ActionIds, type EntryId, type RunId, type ShownProcess, type VolumeName } from './rootIds';
 import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type PreviewItem, type RestoreSelection, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
 
@@ -196,6 +197,8 @@ function actionEntry(actions: unknown, id: ActionId): JsonObject | undefined {
 /** What the preview needs beyond its body: where and when it was taken, and what was asked. */
 export interface PreviewContext {
   readonly distro: string;
+  /** The target the preview was asked of; the held preview carries it so a confirm can never be sent to another distribution. */
+  readonly target: DistroTarget;
   readonly ids: ActionIds;
   readonly takenAtMs: number;
   /** The daemon's published `maxShownNames` in the status the preview was gated on (`MAX_SHOWN_VOLUMES` when absent). */
@@ -284,5 +287,5 @@ function heldOf({ body }: { body: JsonObject }, lists: HeldLists, context: Previ
   const actions = Array.isArray(body.actions) ? body.actions.flatMap(previewedAction) : [];
   const { a4, processes, restore } = lists;
 
-  return { distro: context.distro, ids: context.ids, actions, a4, ...(processes === undefined ? {} : { processes }), ...(restore === undefined ? {} : { restore }), takenAtMs: context.takenAtMs, productVersion: optionalString(body.productVersion) };
+  return { distro: context.distro, target: context.target, ids: context.ids, actions, a4, ...(processes === undefined ? {} : { processes }), ...(restore === undefined ? {} : { restore }), takenAtMs: context.takenAtMs, productVersion: optionalString(body.productVersion) };
 }

@@ -7,13 +7,14 @@ import { rootFailureText } from '../root/rootFailureText';
 import { runningOf } from '../root/rootAnswers';
 import { runIdOf } from '../root/rootIds';
 import type { RootFailure, RunningBlock } from '../root/rootOutcome';
-import type { OutcomeStore } from '../state/outcomeStore';
+import type { OutcomeStore, Snapshot } from '../state/outcomeStore';
 import { statusBodyOf } from '../state/statusBody';
 import { CleanFlow, type CleanUi, type FlowOutcome } from './cleanFlow';
 import { deriveCleanup } from './cleanupView';
 import { CleanupJournal, type DurableStore } from './journal';
 import { resultNotice, type Notice } from './resultText';
 import type { RowId } from './rowIds';
+import { DEFAULT_TARGET, type DistroTarget } from '../wsl/distroTarget';
 import { noticeText, unlinked } from '../text/safeText';
 import { RunFollower, type OneShot, type RunResult } from './runFollower';
 import { runWordsOf } from './runWords';
@@ -30,10 +31,10 @@ import { daemonLimitsOf, type DaemonLimits } from '../shared/daemonLimits';
 export interface CleanupHostOptions {
   readonly durable: DurableStore;
   readonly controller: Pick<CleanupController, 'preview' | 'previewRestore' | 'confirm' | 'stop' | 'runFullCheck'>;
-  readonly read: (request: RunRead) => Promise<ReadOutcome>;
+  readonly read: (request: RunRead, target: DistroTarget) => Promise<ReadOutcome>;
   readonly outcomes: OutcomeStore;
   /** `status` through the poller and the store, whatever the focus — the follower's one question. */
-  readonly askStatus: () => Promise<VerbOutcome>;
+  readonly askStatus: (target: DistroTarget) => Promise<VerbOutcome>;
   /** The panel's round (`status`, `preview`, `doctor`) — asked once after a terminal answer, for "Docker after". */
   readonly refreshPanel: () => Promise<void>;
   readonly focused: () => boolean;
@@ -75,8 +76,8 @@ const RESTORE_NEEDS: readonly string[] = [...new Set([...previewNeeds(['A20']), 
  * What the newest `status` does not offer of a restore (E10.S2b) — '' when it offers everything: the controller's own gate
  * (`actionGate`, the capabilities the authority) over the preview's and the confirm's needs, and A20 reported in `status.actions`.
  */
-function restoreUnoffered(outcomes: OutcomeStore): string {
-  const status = outcomes.snapshot().status;
+function restoreUnoffered(snapshot: Snapshot): string {
+  const status = snapshot.status;
   if (status?.kind !== 'answered' || status.answer.verb !== 'status') {
     return 'the daemon has not answered status yet';
   }
@@ -146,27 +147,28 @@ export class CleanupHost {
     this.follower.kick();
   }
 
-  controls(): CleanupControls {
-    return deriveCleanup(this.options.outcomes.snapshot(), this.state()).controls;
+  /** The controls derived from `aim`'s own `status` (E18.W1a review): the default's unless a PICKED distribution is named. */
+  controls(aim: DistroTarget = DEFAULT_TARGET): CleanupControls {
+    return deriveCleanup(this.snapshotOf(aim), this.state()).controls;
   }
 
   /** A row's *Clean* or *Clean selected* — never rejects: a fault is told and logged (review C11, the detached edge). */
-  clean(rowIds: readonly RowId[], selected: boolean): Promise<FlowOutcome | undefined> {
-    return this.edge('a cleanup', () => this.flow.clean(rowIds, selected));
+  clean(rowIds: readonly RowId[], selected: boolean, target: DistroTarget): Promise<FlowOutcome | undefined> {
+    return this.edge('a cleanup', () => this.flow.clean(rowIds, selected, target));
   }
 
   /**
    * *Archive now* (E10.S1b) — refused here, and told, while the cleanup controls are greyed (a run in flight, the journal full);
    * the archive's own conditions (a folder set, no archive flow busy, A13 offered with its capabilities) are `ArchiveHost.archiveNow`'s.
    */
-  archiveNow(): Promise<FlowOutcome | undefined> {
-    const controls = this.controls();
+  archiveNow(target: DistroTarget): Promise<FlowOutcome | undefined> {
+    const controls = this.controls(target);
     if (!controls.enabled) {
       void this.ui.notify('warn', `Archive now is not available: ${controls.reason === '' ? controls.state : controls.reason}.`);
       return Promise.resolve(undefined);
     }
 
-    return this.edge('the archive run', () => this.flow.archive());
+    return this.edge('the archive run', () => this.flow.archive(target));
   }
 
   /** S7b.2b: the client-gone relays' line and button — the daemon's `interopRelays` and this host's own controls. */
@@ -180,15 +182,15 @@ export class CleanupHost {
    * *Stop client-gone relays* (S7b.2b) — refused here, and told, on the same conditions the button greys on: the palette's command
    * and a stale page send the same bare request.
    */
-  stopRelays(): Promise<FlowOutcome | undefined> {
-    const controls = this.controls();
-    const why = stopRelaysBlocker(this.options.outcomes.snapshot(), { enabled: controls.enabled, reason: controls.reason === '' ? controls.state : controls.reason });
+  stopRelays(target: DistroTarget): Promise<FlowOutcome | undefined> {
+    const controls = this.controls(target);
+    const why = stopRelaysBlocker(this.snapshotOf(target), { enabled: controls.enabled, reason: controls.reason === '' ? controls.state : controls.reason });
     if (why !== '') {
       void this.ui.notify('warn', `Stop client-gone relays is not available: ${why}.`);
       return Promise.resolve(undefined);
     }
 
-    return this.edge('the relay stop', () => this.flow.relays());
+    return this.edge('the relay stop', () => this.flow.relays(target));
   }
 
   /**
@@ -196,12 +198,15 @@ export class CleanupHost {
    * preview and confirm need, or the cleanup controls are greyed (a run in flight, the journal full, no status yet). The archive page
    * greys its button by this and the host refuses by it again, whatever the page sent; the controller's gate checks again at the call.
    */
-  restoreBlocker(): string {
-    const unoffered = restoreUnoffered(this.options.outcomes);
-    if (unoffered !== '') {
-      return unoffered;
-    }
-    const controls = this.controls();
+  restoreBlocker(aim: DistroTarget = DEFAULT_TARGET): string {
+    const unoffered = restoreUnoffered(this.snapshotOf(aim));
+
+    return unoffered === '' ? this.greyedWords(aim) : unoffered;
+  }
+
+  /** Why the cleanup controls of `aim` are greyed — '' when they are not. */
+  private greyedWords(aim: DistroTarget): string {
+    const controls = this.controls(aim);
     if (controls.enabled) {
       return '';
     }
@@ -210,14 +215,14 @@ export class CleanupHost {
   }
 
   /** *Restore* the archive page's selected entry ids (E10.S2b) — refused here, and told, while `restoreBlocker()` names a reason. */
-  restore(texts: readonly string[]): Promise<FlowOutcome | undefined> {
-    const blocker = this.restoreBlocker();
+  restore(texts: readonly string[], target: DistroTarget): Promise<FlowOutcome | undefined> {
+    const blocker = this.restoreBlocker(target);
     if (blocker !== '') {
       void this.ui.notify('warn', `Restore is not available: ${blocker}.`);
       return Promise.resolve(undefined);
     }
 
-    return this.edge('the restore run', () => this.flow.restore(texts));
+    return this.edge('the restore run', () => this.flow.restore(texts, target));
   }
 
   /**
@@ -230,25 +235,25 @@ export class CleanupHost {
   }
 
   /** *Run full check now* — refused here when the controls grey it (review A4), whatever the page sent. */
-  runFullCheck(): Promise<FlowOutcome | undefined> {
-    const controls = this.controls();
+  runFullCheck(target: DistroTarget): Promise<FlowOutcome | undefined> {
+    const controls = this.controls(target);
     if (!controls.fullCheck) {
       void this.ui.notify('warn', `Run full check now is not available: ${controls.reason === '' ? controls.state : controls.reason}.`);
       return Promise.resolve(undefined);
     }
 
-    return this.edge('a full check', () => this.flow.fullCheck());
+    return this.edge('a full check', () => this.flow.fullCheck(target));
   }
 
   /** `index` names a run of the stoppable list the host derives NOW; its run id is checked once more before the call. */
-  stop(index: number): Promise<FlowOutcome | undefined> {
-    const target = deriveCleanup(this.options.outcomes.snapshot(), this.state()).stoppable[index];
+  stop(index: number, aim: DistroTarget): Promise<FlowOutcome | undefined> {
+    const target = deriveCleanup(this.snapshotOf(aim), this.state()).stoppable[index];
     if (target === undefined || runIdOf(target.runId) === undefined) {
       void this.ui.notify('warn', 'That run can no longer be stopped from here — the daemon reports it differently now.');
       return Promise.resolve(undefined);
     }
 
-    return this.edge('a stop', () => this.flow.stop(target));
+    return this.edge('a stop', () => this.flow.stop(target, aim));
   }
 
   onChange(listener: () => void): () => void {
@@ -274,6 +279,11 @@ export class CleanupHost {
   private faulted(what: string, error: unknown): void {
     this.options.log(`cleanup: ${what} failed: ${reasonOf(error)}${error instanceof Error && error.stack !== undefined ? `\n${error.stack}` : ''}`);
     void this.ui.notify('error', `AI OS Care could not complete ${what}: ${reasonOf(error)}`);
+  }
+
+  /** The snapshot a target's controls read: the default's, or the picked distribution's own (`OutcomeStore.snapshotOf`). */
+  private snapshotOf(aim: DistroTarget): Snapshot {
+    return aim.kind === 'picked' ? this.options.outcomes.snapshotOf(aim.distro) : this.options.outcomes.snapshot();
   }
 
   private state(): { entries: ReturnType<CleanupJournal['entries']>; results: readonly Notice[]; flowBusy: boolean } {

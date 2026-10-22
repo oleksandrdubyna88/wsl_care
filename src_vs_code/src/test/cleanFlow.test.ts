@@ -16,6 +16,7 @@ import { MapStore } from './support/memento';
 import { answered, headBody } from './support/outcomes';
 import { GOLDEN_ROOT } from './support/paths';
 import { exited, recordingRunner, type Scripted } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * The cleanup buttons' host transaction (E6.S3, plan §7.3, §15j M8, m8, m9; §15k #12, #19): the REAL cleanup controller
@@ -90,7 +91,7 @@ function world(script: Readonly<Record<string, Scripted>> = {}, distro: () => st
 test('Clean A4: preview, ONE modal, the confirm — persisted UNRESOLVED before the call goes out, then the run; followed; told', async () => {
   let seenBeforeCall: unknown;
   const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: (_request: ProcessRequest) => { seenBeforeCall = new CleanupJournal(w.store).entries().map((e) => e.kind); return exited(0, handOff()); } });
-  const outcome = await w.flow.clean(['A4'], false);
+  const outcome = await w.flow.clean(['A4'], false, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'handedOff');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, PREVIEW_A4, CONFIRM_A4]);
   assert.deepEqual(seenBeforeCall, ['unresolved'], 'common.durable-status rule 1: written before the work starts');
@@ -107,7 +108,7 @@ test('Clean A4: preview, ONE modal, the confirm — persisted UNRESOLVED before 
 
 test('a 387-volume A4 pipes ALL 387 names on stdin, none on the command line', async () => {
   const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: exited(0, handOff()) });
-  await w.flow.clean(['A4'], false);
+  await w.flow.clean(['A4'], false, DEFAULT_TARGET);
   const confirm = w.runner.requests.find((r) => r.args.includes('--confirm'));
   const lines = confirm?.stdin?.toString('utf8').split('\n').filter((l) => l.length > 0) ?? [];
   assert.equal(lines.length, 387);
@@ -117,7 +118,7 @@ test('a 387-volume A4 pipes ALL 387 names on stdin, none on the command line', a
 test('declined: nothing confirmed, nothing written, the in-flight flag back to idle', async () => {
   const w = world({ [PREVIEW_A4]: exited(0, previewText()) });
   w.answers = [false];
-  assert.equal((await w.flow.clean(['A4'], false)).kind, 'declined');
+  assert.equal((await w.flow.clean(['A4'], false, DEFAULT_TARGET)).kind, 'declined');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, PREVIEW_A4]);
   assert.deepEqual(w.journal.entries(), []);
   assert.equal(w.store.writes, 0);
@@ -129,12 +130,12 @@ test('Clean selected = ONE act call holding every selected id; the second confir
   const script = { [preview]: exited(0, previewText((a) => a.push(action('A5'), action('A6Unused')))), [confirm]: exited(0, handOff()) };
   const declined = world(script);
   declined.answers = [true, false];
-  assert.equal((await declined.flow.clean(['A6Unused', 'A5', 'A4'], true)).kind, 'declined');
+  assert.equal((await declined.flow.clean(['A6Unused', 'A5', 'A4'], true, DEFAULT_TARGET)).kind, 'declined');
   assert.equal(declined.modals.length, 2);
   assert.match(declined.modals[1]?.detail ?? '', /containers\.stoppedOlderThanDays/);
   assert.equal(declined.runner.argvs().filter((a) => a.includes('--confirm')).length, 0);
   const w = world(script);
-  assert.equal((await w.flow.clean(['A6Unused', 'A5', 'A4'], true)).kind, 'handedOff');
+  assert.equal((await w.flow.clean(['A6Unused', 'A5', 'A4'], true, DEFAULT_TARGET)).kind, 'handedOff');
   assert.deepEqual(w.runner.argvs().filter((a) => a.includes(' act ')), [preview, confirm], 'ONE preview, ONE confirm');
   assert.match(w.modals[0]?.message ?? '', /the 3 selected rows/);
 });
@@ -144,7 +145,7 @@ test('§15p: the preview rounds read their setting — at 1, an expired preview 
   const w = world({ [PREVIEW_A4]: () => { previews += 1; return exited(0, previewText()); } });
   w.numbers = { ...DEFAULT_NUMBERS, previewRounds: 1 };
   w.onModal = () => { w.clock.now += PREVIEW_EXPIRY_MS + 1; };
-  assert.equal((await w.flow.clean(['A4'], false)).kind, 'expired');
+  assert.equal((await w.flow.clean(['A4'], false, DEFAULT_TARGET)).kind, 'expired');
   assert.equal(previews, 1);
 });
 
@@ -152,7 +153,7 @@ test('§15q: the preview\'s expiry reads its setting — at 1 minute, a preview 
   const w = world({ [PREVIEW_A4]: exited(0, previewText()) });
   w.numbers = { ...DEFAULT_NUMBERS, previewExpiryMinutes: 1 };
   w.onModal = () => { w.clock.now += 61_000; };
-  assert.equal((await w.flow.clean(['A4'], false)).kind, 'expired');
+  assert.equal((await w.flow.clean(['A4'], false, DEFAULT_TARGET)).kind, 'expired');
 });
 
 test('§15k #12: the preview\'s age is re-checked AFTER the last modal — expired, it is taken again and the NEW count shown before any confirm', async () => {
@@ -162,7 +163,7 @@ test('§15k #12: the preview\'s age is re-checked AFTER the last modal — expir
     [CONFIRM_A4]: exited(0, handOff()),
   });
   w.onModal = () => { if (w.modals.length === 1) { w.clock.now += PREVIEW_EXPIRY_MS + 1; } };
-  assert.equal((await w.flow.clean(['A4'], false)).kind, 'handedOff');
+  assert.equal((await w.flow.clean(['A4'], false, DEFAULT_TARGET)).kind, 'handedOff');
   assert.equal(previews, 2);
   assert.equal(w.modals.length, 2, 'the modal shown again over the new preview');
   assert.match(w.modals[1]?.detail ?? '', /380 objects/);
@@ -173,17 +174,17 @@ test('§15k #12: the preview\'s age is re-checked AFTER the last modal — expir
 test('an age of exactly 5 minutes is still fresh; a preview that keeps expiring ends the flow after three rounds, nothing confirmed', async () => {
   const fresh = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: exited(0, handOff()) });
   fresh.onModal = () => { fresh.clock.now += PREVIEW_EXPIRY_MS; };
-  assert.equal((await fresh.flow.clean(['A4'], false)).kind, 'handedOff');
+  assert.equal((await fresh.flow.clean(['A4'], false, DEFAULT_TARGET)).kind, 'handedOff');
   const stale = world({ [PREVIEW_A4]: exited(0, previewText()) });
   stale.onModal = () => { stale.clock.now += PREVIEW_EXPIRY_MS + 1; };
-  assert.equal((await stale.flow.clean(['A4'], false)).kind, 'expired');
+  assert.equal((await stale.flow.clean(['A4'], false, DEFAULT_TARGET)).kind, 'expired');
   assert.equal(stale.runner.argvs().filter((a) => a === PREVIEW_A4).length, 3);
   assert.deepEqual(stale.journal.entries(), []);
 });
 
 test('a refusal (75): its own words — with the running block the daemon reports — and the unresolved entry REMOVED', async () => {
   const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: exited(75, '', 'wsl-care: busy: a run is acting\n') });
-  const outcome = await w.flow.clean(['A4'], false);
+  const outcome = await w.flow.clean(['A4'], false, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'handedOff');
   assert.deepEqual(w.journal.entries(), [], 'nothing was written by the daemon, nothing is followed');
   assert.equal(w.notices.at(-1)?.level, 'error');
@@ -194,7 +195,7 @@ test('§15k #19: the daemon refusing the piped list (its 10 s stdin ceiling) is 
   let confirms = 0;
   const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: () => { confirms += 1; return confirms === 1 ? exited(2, '', 'wsl-care: the --only list did not end within 10 s\n') : exited(0, handOff()); } });
   w.noticeAnswer = RETRY_LABEL;
-  assert.equal((await w.flow.clean(['A4'], false)).kind, 'handedOff');
+  assert.equal((await w.flow.clean(['A4'], false, DEFAULT_TARGET)).kind, 'handedOff');
   const refusal = w.notices.find((n) => n.level === 'error');
   assert.ok(refusal !== undefined);
   assert.match(refusal.sentence, /refused the list it was handed on stdin/, 'E10.S2b: one sentence for the names of A4 and the entry ids of A20');
@@ -205,7 +206,7 @@ test('§15k #19: the daemon refusing the piped list (its 10 s stdin ceiling) is 
 
 test('§15k #3: a detach whose answer was not seen and whose run never showed stays UNRESOLVED in the journal — the follower resolves it', async () => {
   const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: { kind: 'timedOut', timeoutMs: 90_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) } });
-  const outcome = await w.flow.clean(['A4'], false);
+  const outcome = await w.flow.clean(['A4'], false, DEFAULT_TARGET);
   assert.ok(outcome.kind === 'handedOff' && outcome.outcome.kind === 'outcomeUnknown');
   assert.deepEqual(w.journal.entries().map((e) => e.kind), ['unresolved']);
   assert.equal(w.notices.at(-1)?.level, 'warn');
@@ -215,8 +216,8 @@ test('§15k #3: a detach whose answer was not seen and whose run never showed st
 test('m9: a second cleanup in this window while the first is still at its modal is refused at once, starting nothing', async () => {
   const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: exited(0, handOff()) });
   let second: Promise<unknown> | undefined;
-  w.onModal = () => { second ??= w.flow.clean(['A4'], false); };
-  await w.flow.clean(['A4'], false);
+  w.onModal = () => { second ??= w.flow.clean(['A4'], false, DEFAULT_TARGET); };
+  await w.flow.clean(['A4'], false, DEFAULT_TARGET);
   assert.deepEqual(await second, { kind: 'busy' });
   assert.equal(w.runner.argvs().filter((a) => a === PREVIEW_A4).length, 1);
   assert.ok(w.notices.some((n) => /already/.test(n.sentence)));
@@ -224,7 +225,7 @@ test('m9: a second cleanup in this window while the first is still at its modal 
 
 test('a preview refused (the ids not offered) is told in its own words; nothing is written', async () => {
   const w = world({}, () => 'Ubuntu', () => ({ ...headBody('status'), actions: ['A4'] }));
-  const outcome = await w.flow.clean(['A9'], false);
+  const outcome = await w.flow.clean(['A9'], false, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'refused');
   assert.match(w.notices.at(-1)?.sentence ?? '', /Not offered by this daemon/);
   assert.equal(w.store.writes, 0);
@@ -235,11 +236,11 @@ test('Stop: a modal first, then act --stop as one call; a run already followed i
   const stopping = JSON.stringify({ schemaVersion: 1, result: 'stopping', kind: 'act', runId: RUN, unit: `wsl-care-act@${RUN}.service`, productVersion: '0.1.0' });
   const declined = world({ [stop]: exited(0, stopping) });
   declined.answers = [false];
-  assert.equal((await declined.flow.stop({ runId: runId(RUN), actions: ['A4'] })).kind, 'declined');
+  assert.equal((await declined.flow.stop({ runId: runId(RUN), actions: ['A4'] }, DEFAULT_TARGET)).kind, 'declined');
   assert.deepEqual(declined.runner.argvs(), []);
   const w = world({ [stop]: exited(0, stopping) });
   await w.journal.add({ kind: 'run', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: '2026-10-05T09:00:00.000Z', runId: runId(RUN) });
-  assert.equal((await w.flow.stop({ runId: runId(RUN), actions: ['A4'] })).kind, 'handedOff');
+  assert.equal((await w.flow.stop({ runId: runId(RUN), actions: ['A4'] }, DEFAULT_TARGET)).kind, 'handedOff');
   assert.match(w.modals[0]?.message ?? '', /Stop run 20000101T000000Z-1/);
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, stop]);
   assert.equal(w.journal.entries().length, 1, 'still the one entry');
@@ -250,7 +251,7 @@ test('Run full check now: no modal (it measures, it does not act), persisted bef
   const full = `${ROOT} collect --detach --json`;
   let before: unknown;
   const w = world({ [full]: () => { before = new CleanupJournal(w.store).entries().map((e) => [e.kind, e.op, e.actions]); return exited(0, JSON.stringify({ schemaVersion: 1, result: 'accepted', kind: 'collect', runId: RUN, unit: `wsl-care-act@${RUN}.service` })); } });
-  assert.equal((await w.flow.fullCheck()).kind, 'handedOff');
+  assert.equal((await w.flow.fullCheck(DEFAULT_TARGET)).kind, 'handedOff');
   assert.deepEqual(before, [['unresolved', 'fullCheck', ['collect']]]);
   assert.equal(w.modals.length, 0);
   assert.equal(w.journal.entries()[0]?.kind, 'run');
@@ -258,14 +259,14 @@ test('Run full check now: no modal (it measures, it does not act), persisted bef
 
 test('a full check or a stop before any status answered says so and starts nothing', async () => {
   const w = world({}, () => undefined);
-  assert.equal((await w.flow.fullCheck()).kind, 'noStatus');
+  assert.equal((await w.flow.fullCheck(DEFAULT_TARGET)).kind, 'noStatus');
   assert.deepEqual(w.runner.argvs(), []);
 });
 
 test('E6.S3 review A3: a preview that does not describe every asked id is NOT confirmed — told, nothing written', async () => {
   const preview = `${ROOT} act A4,A5 --preview --json`;
   const w = world({ [preview]: exited(0, previewText()) });
-  const outcome = await w.flow.clean(['A5', 'A4'], true);
+  const outcome = await w.flow.clean(['A5', 'A4'], true, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'incomplete');
   assert.equal(w.modals.length, 0, 'no modal over a preview that does not describe A5');
   assert.equal(w.runner.argvs().filter((a) => a.includes('--confirm')).length, 0);
@@ -278,7 +279,7 @@ test('E6.S3 review C12: with the journal full the confirm is NOT sent — told t
   for (let i = 0; i < MAX_ENTRIES; i += 1) {
     await w.journal.add({ kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: '2026-10-05T09:59:00.000Z' });
   }
-  const outcome = await w.flow.clean(['A4'], false);
+  const outcome = await w.flow.clean(['A4'], false, DEFAULT_TARGET);
   assert.equal(outcome.kind, 'journalFull');
   assert.equal(w.runner.argvs().filter((a) => a.includes('--confirm')).length, 0);
   assert.equal(w.journal.entries().length, MAX_ENTRIES);
@@ -291,7 +292,7 @@ test('E6.S3 review B4: Stop of a run an UNRESOLVED confirm is waiting for adopts
   const w = world({ [stop]: exited(0, stopping) });
   const waiting = await w.journal.add({ kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A4', 'A5'], since: '2026-10-05T09:59:00.000Z' });
   assert.ok(waiting !== undefined);
-  assert.equal((await w.flow.stop({ runId: runId(RUN), actions: ['A5', 'A4'] })).kind, 'handedOff');
+  assert.equal((await w.flow.stop({ runId: runId(RUN), actions: ['A5', 'A4'] }, DEFAULT_TARGET)).kind, 'handedOff');
   const entries = w.journal.entries();
   assert.equal(entries.length, 1, JSON.stringify(entries));
   assert.ok(entries[0]?.kind === 'run' && entries[0].runId === runId(RUN) && entries[0].id === waiting.id);

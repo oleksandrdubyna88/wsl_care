@@ -12,6 +12,7 @@ import { MapStore } from '../support/memento';
 import { answered, headBody } from '../support/outcomes';
 import { Element, runPageScript } from '../support/pageHarness';
 import { EXTENSION_ROOT } from '../support/paths';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * Plan §15s, E10.S2c (D8; the plan round's #0): the Logs page over the daemon's OWN archive run goldens — the REAL client asks the
@@ -31,7 +32,7 @@ function statusNaming(runId: string): VerbOutcome {
 async function thisRun(world: FakeWorld): Promise<Element> {
   const client = new WslCareClient({ runner: world.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '' });
   const views: LogsView[] = [];
-  const controller = new LogsController({ durable: new MapStore(), read: (request) => client.read(request), status: () => statusNaming(RUN), post: (view) => { views.push(view); }, wallNow: () => Date.parse('2000-01-21T09:00:00Z') });
+  const controller = new LogsController({ durable: new MapStore(), read: (request) => client.read(request, DEFAULT_TARGET), status: () => statusNaming(RUN), post: (view) => { views.push(view); }, wallNow: () => Date.parse('2000-01-21T09:00:00Z') });
   await controller.receive({ type: 'thisRun' });
   const view = views.at(-1);
   assert.ok(view !== undefined);

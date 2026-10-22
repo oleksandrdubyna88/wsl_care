@@ -76,6 +76,22 @@ public sealed class DockerParserTests
         details.SelectMany(d => d.Mounts).Where(m => m.Type == "bind").Should().OnlyContain(m => m.Name.Length == 0);
     }
 
+    /// <summary>E21.S1: twenty-eight of the captured lines were taken (2026-10-02) by a template that did not read the compose label,
+    /// so they carry no <c>"compose"</c> key and must keep parsing — to an EMPTY project. The one line recaptured with the current
+    /// template (a real, stopped compose container; its project redacted to <c>project-1</c>) reads its project.</summary>
+    [Fact]
+    public void A_fixture_line_without_the_compose_key_still_parses()
+    {
+        var lines = DockerFixture.Read("container-inspect.out").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var oldTemplate = lines.Where(l => !l.Contains("\"compose\":", StringComparison.Ordinal)).ToList();
+
+        var details = Value(ContainerDetail.Parse(string.Join('\n', lines)));
+
+        oldTemplate.Should().HaveCount(28, "the captured lines of the old template");
+        details.Where(d => oldTemplate.Any(l => l.Contains(d.Id, StringComparison.Ordinal))).Should().OnlyContain(d => d.ComposeProject.Length == 0);
+        details.Where(d => d.ComposeProject.Length > 0).Should().ContainSingle().Which.ComposeProject.Should().Be("project-1");
+    }
+
     [Fact]
     public void Ps_a_rows_read_by_the_same_parser_name_the_df_v_containers()
     {

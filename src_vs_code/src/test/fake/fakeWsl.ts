@@ -44,6 +44,8 @@ import { A20_PREVIEW_ACTION, pipedEntries, RESTORE_CAPABILITIES, restoreOpOf, re
 export interface FakeDistro {
   readonly name: string;
   readonly running: boolean;
+  /** The version column of `-l -v`; 2 when absent. A `-d` to a version-1 distro is refused. */
+  readonly version?: 1 | 2;
 }
 
 export interface FakeScenario {
@@ -157,6 +159,8 @@ export const FAKE_EXIT = {
   refused: 98,
   /** A `-d` to a stopped distro — the real `wsl.exe` would START it. */
   wouldStart: 95,
+  /** A `-d` to a WSL 1 distro (E18.W1a) — the daemon needs WSL 2; the real wsl.exe would run it. */
+  wsl1: 94,
 } as const;
 
 export const DAEMON = '/opt/wsl-care/bin/wsl-care';
@@ -200,7 +204,7 @@ function refuse(why: string, argv: readonly string[]): Reply {
 
 function verboseTable(scenario: FakeScenario): string {
   const head = `  ${'NAME'.padEnd(18)}${'STATE'.padEnd(16)}VERSION\r\n`;
-  const rows = scenario.distros.map((d) => `${d.name === scenario.defaultDistro ? '*' : ' '} ${d.name.padEnd(18)}${(d.running ? 'Running' : 'Stopped').padEnd(16)}2\r\n`);
+  const rows = scenario.distros.map((d) => `${d.name === scenario.defaultDistro ? '*' : ' '} ${d.name.padEnd(18)}${(d.running ? 'Running' : 'Stopped').padEnd(16)}${d.version ?? 2}\r\n`);
 
   return head + rows.join('');
 }
@@ -396,6 +400,9 @@ function distroReply(scenario: FakeScenario, argv: readonly string[]): Reply | u
   const known = scenario.distros.find((x) => x.name === distro);
   if (known === undefined) {
     return { code: -1, stdout: wslText(scenario, NO_SUCH_DISTRO) };
+  }
+  if (known.version === 1) {
+    return { code: FAKE_EXIT.wsl1, stderr: `fake wsl: -d ${distro} is a WSL 1 distribution — the daemon needs WSL 2 (the real wsl.exe would run it)\n` };
   }
   if (!known.running && scenario.startable !== true) {
     return { code: FAKE_EXIT.wouldStart, stderr: `fake wsl: -d ${distro} would START the stopped distribution\n` };

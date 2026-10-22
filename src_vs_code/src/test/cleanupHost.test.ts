@@ -10,6 +10,7 @@ import { noticeText, safeText } from '../text/safeText';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { ManualTimers, MapStore } from './support/memento';
 import { answered, headBody } from './support/outcomes';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * The cleanup host's own guarantees (E6.S3 review round): the ONE road every notification takes is sanitised for the
@@ -71,7 +72,7 @@ test('A1: safeText also makes line and paragraph separators, direction marks and
 
 test('A1: a refusal whose daemon message carries a command link reaches the notification WITHOUT the link (the one road)', async () => {
   const { host, recorder } = hostWith({ runFullCheck: () => Promise.resolve({ kind: 'busy', messages: [`wsl-care: busy ${LINK}`], running: undefined }) });
-  await host.runFullCheck();
+  await host.runFullCheck(DEFAULT_TARGET);
   const sentences = recorder.notices.map((n) => n.sentence);
   assert.ok(sentences.length > 0);
   assert.ok(sentences.every((s) => !s.includes(BRACKET_PAREN)), JSON.stringify(sentences));
@@ -83,14 +84,14 @@ test('A4: Run full check now is refused host-side when the controls grey it — 
   const live = { ...headBody('status'), running: { state: 'live', reason: 'acting', runId: '20261005T100000Z-77', actions: ['A4'], current: 'A4', trigger: 'manual' } };
   const { host, recorder } = hostWith({ runFullCheck: () => { asked += 1; return Promise.resolve({ kind: 'accepted', runId: run('20261005T100000Z-77'), unit: 'x', productVersion: undefined }); } }, live);
   assert.equal(host.controls().fullCheck, false);
-  await host.runFullCheck();
+  await host.runFullCheck(DEFAULT_TARGET);
   assert.equal(asked, 0);
   assert.match(recorder.notices.at(-1)?.sentence ?? '', /a run is in flight/);
 });
 
 test('C11: a fault at the detached edge is told (sanitised) and logged — never swallowed', async () => {
   const { host, recorder, logged } = hostWith({ runFullCheck: () => Promise.reject(new Error(`boom ${LINK}`)) });
-  await host.runFullCheck();
+  await host.runFullCheck(DEFAULT_TARGET);
   assert.match(recorder.notices.at(-1)?.sentence ?? '', /boom/);
   assert.equal((recorder.notices.at(-1)?.sentence ?? '').includes(BRACKET_PAREN), false);
   assert.ok(logged.some((line) => line.includes('boom')), JSON.stringify(logged));

@@ -6,6 +6,7 @@ import { newArchiveRecorder, recordingArchiveUi, type ArchiveRecorder } from '..
 import { WslCareClient } from '../../client/WslCareClient';
 import { OutcomeStore } from '../../state/outcomeStore';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from '../support/fakeWorld';
+import { DEFAULT_TARGET } from '../../wsl/distroTarget';
 
 /**
  * The extension's scenario harness, ARCHIVE tier (E10.S1a; research/module_tests.md § The extension; the coai code round's finding
@@ -42,10 +43,10 @@ async function scene(input: ScenarioInput, body: (s: Scene) => Promise<void>): P
   try {
     const client = new WslCareClient({ runner: world.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '' });
     const store = new OutcomeStore();
-    store.set('status', await client.run('status'));
+    store.set('status', await client.run('status', DEFAULT_TARGET));
     const before = world.calls().length;
     const recorder = newArchiveRecorder();
-    const host = new ArchiveHost({ read: (r) => client.read(r), target: () => client.rootTarget(), runner: world.runner, outcomes: store, ui: recordingArchiveUi(recorder), log: () => undefined });
+    const host = new ArchiveHost({ read: (r) => client.read(r, DEFAULT_TARGET), target: () => client.rootTarget(DEFAULT_TARGET), runner: world.runner, outcomes: store, ui: recordingArchiveUi(recorder), log: () => undefined });
     await body({ world, host, recorder, archiveCalls: () => ordered(world.calls().slice(before).filter((c) => c.startsWith('-d '))) });
   } finally {
     world.dispose();
@@ -58,7 +59,7 @@ test('scenario · choose: the panel reads, the daemon judges the picked folder, 
     assert.equal(host.view().line, 'Archive folder: /mnt/v/ai-archive');
     recorder.picked = 'v:\\ai-archive';
     recorder.answer = true;
-    assert.equal(await host.choose(), 'written');
+    assert.equal(await host.choose(DEFAULT_TARGET), 'written');
     assert.deepEqual(archiveCalls(), [
       ...READS,
       `${DAEMON} archive check-base V:\\ai-archive --json`,
@@ -73,7 +74,7 @@ test('scenario · choose: a folder the daemon REFUSES is told with its rule, and
   await scene({ ...UBUNTU_RUNNING, checkBase: 'archive-check-base-refused.json' }, async ({ host, recorder, archiveCalls }) => {
     recorder.picked = 'C:\\Users\\user\\.claude\\archive';
     recorder.answer = true;
-    assert.equal(await host.choose(), 'refused');
+    assert.equal(await host.choose(DEFAULT_TARGET), 'refused');
     assert.equal(archiveCalls().some((c) => c.includes(' config ')), false);
     assert.match(recorder.notices.at(-1)?.sentence ?? '', /cannot hold the archive \(overlap\)/);
   });
@@ -82,7 +83,7 @@ test('scenario · choose: a folder the daemon REFUSES is told with its rule, and
 test('scenario · stop: its modal, then config set archive.baseFolder with the EMPTY value, then the reads again', async () => {
   await scene(UBUNTU_RUNNING, async ({ host, recorder, archiveCalls }) => {
     recorder.answer = true;
-    assert.equal(await host.stop(), 'written');
+    assert.equal(await host.stop(DEFAULT_TARGET), 'written');
     assert.deepEqual(archiveCalls(), [`${DAEMON} config set archive.baseFolder `, ...READS]);
   });
 });
@@ -90,7 +91,7 @@ test('scenario · stop: its modal, then config set archive.baseFolder with the E
 test('scenario · the daemon refusing the write (2) is told with its own line, and the panel is read again', async () => {
   await scene({ ...UBUNTU_RUNNING, configExit: { code: 2, stderr: 'wsl-care: archive.baseFolder: refused (gone): x. Nothing was written.\n' } }, async ({ host, recorder, archiveCalls }) => {
     recorder.answer = true;
-    assert.equal(await host.stop(), 'failed');
+    assert.equal(await host.stop(DEFAULT_TARGET), 'failed');
     assert.match(recorder.notices.at(-1)?.sentence ?? '', /refused \(gone\): x\. Nothing was written\./);
     assert.deepEqual(archiveCalls().slice(-2), READS);
   });

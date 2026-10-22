@@ -119,12 +119,12 @@ public sealed class WorktreeReportTests
     }
 
     [Fact]
-    public void The_report_never_carries_a_reclaimable_figure_in_this_story()
+    public void A_report_made_without_git_carries_no_reclaimable_figure_at_all()
     {
         var report = Report(Result(SampleRoot()));
 
         report.Reclaimable.Available.Should().BeFalse();
-        report.Reclaimable.Reason.Should().Contain("git has not confirmed the candidates yet (E19.S4)");
+        report.Reclaimable.Reason.Should().Contain("git has not confirmed the candidates (the scan had no git to ask)");
         var json = JsonSerializer.Serialize(report, WslCareJsonContext.Default.WorktreeReport);
         using var document = JsonDocument.Parse(json);
         document.RootElement.GetProperty("reclaimable").EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("available", "reason");

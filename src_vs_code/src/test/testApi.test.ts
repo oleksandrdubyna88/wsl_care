@@ -4,9 +4,12 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import * as ts from 'typescript';
 
+import type { Poller } from '../poll/poller';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
-import { clientRunner } from '../testApi';
+import { clientRunner, readPickedBy } from '../testApi';
+import { distroListOf } from '../wsl/distroList';
 import { EXTENSION_ROOT } from './support/paths';
+import { verboseTable } from './support/recordingRunner';
 
 /**
  * The call log is the TEST API's (E5 code round, security review #4): it exists for the extension-host scenarios, and
@@ -66,4 +69,32 @@ test('extension.ts chooses the client\'s runner through clientRunner and never w
   const names = calledNames(path.join(EXTENSION_ROOT, 'src', 'extension.ts'));
   assert.ok(names.includes('clientRunner'), 'the wiring goes through the one place that knows the mode');
   assert.ok(!names.includes('loggedRunner'), 'a direct loggedRunner(...) logs in production too');
+});
+
+// ---- E18.W1a-2: the test API drives a pick with no UI ----
+
+/** A poller stand-in that records what the test API asked of it, in order. */
+function recordingPoller(names: readonly string[], seen: string[]): Pick<Poller, 'listDistros' | 'readPicked'> {
+  return {
+    listDistros: () => { seen.push('listDistros'); return Promise.resolve(distroListOf(verboseTable(names.map((name) => ({ name, running: true })), names[0]), names)); },
+    readPicked: (distro, options) => { seen.push(`readPicked ${distro} ${JSON.stringify(options ?? {})}`); return Promise.resolve(); },
+  };
+}
+
+test('readPickedBy asks WSL for the list FIRST (the store ignores a name no list held), then reads the minted name with the options', async () => {
+  const seen: string[] = [];
+  await readPickedBy(recordingPoller(['Ubuntu', 'Debian'], seen), 'Debian', { startIfStopped: true });
+  assert.deepEqual(seen, ['listDistros', 'readPicked Debian {"startIfStopped":true}']);
+});
+
+test('readPickedBy throws for a name WSL does not list — a test defect, never a read of an invented distribution', async () => {
+  const seen: string[] = [];
+  await assert.rejects(readPickedBy(recordingPoller(['Ubuntu'], seen), 'Debian'), /Debian/);
+  assert.deepEqual(seen, ['listDistros'], 'nothing was read');
+  await assert.rejects(readPickedBy(recordingPoller(['-x', 'Ubuntu'], []), '-x'), /-x/);
+});
+
+test('readPickedBy throws when the list itself failed', async () => {
+  const poller: Pick<Poller, 'listDistros' | 'readPicked'> = { listDistros: () => Promise.resolve({ kind: 'wslFailed', message: 'no wsl' }), readPicked: () => Promise.resolve() };
+  await assert.rejects(readPickedBy(poller, 'Ubuntu'), /wsl/i);
 });

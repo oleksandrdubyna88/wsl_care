@@ -10,7 +10,23 @@ VSCE_PAT expires: 2026-12-01 — effectively: the token itself expires 2027-10-0
 honouring global PATs on 2026-12-01 (global PAT retirement — see todo/PLAN_marketplace_entra_publish.md). Item 12 reads the
 first date, so it fails from 2026-11-01: rotate to an organization-scoped PAT, or move to OIDC or the manual upload
 (`VSCE_PAT expires: none — OIDC` / `none — manual upload`; docs/repo-settings.md, step 9).
-Last verified: 2026-10-11 · the owner's installation (WSL Ubuntu) · daemon 0.4.0
+Last verified: 2026-10-21 · the owner's installation (WSL Ubuntu) · daemon 0.6.0
+— the release, then items 1, 2, 5, 7, 8 and 11, against the attested `daemon-v0.6.0` install of 2026-10-21, 20:30–20:31:39Z, from the
+tag's `install.sh` (the owner's go of 2026-10-22 for 0.6.0; items 4 and 10 were not re-run for this release).
+- **The release:** #163 merged as `6788364d`; the release-please run `39668375363` cut `daemon-v0.6.0` and the draft; `release.yml`
+  run `39668405182` succeeded (guard, linux-x64, linux-arm64, win-x64, publish) and the release is published, not a draft.
+- **Item 8, the assets:** exactly three archives and three `.sha256` (nothing else); `sha256sum -c` passed ×3; `gh attestation
+  verify` passed ×3 with the identity `release.yml@refs/tags/daemon-v0.6.0` and `--deny-self-hosted-runners`.
+- **Items 1, 2, 5, 7, 11:** three units active; `--version` `0.6.0+6788364dce8200c0806b030de0872faca64754e8`; `doctor --json` as root
+  `"healthy": true`; `KillMode=control-group`, `MemoryMax=1073741824`, `TimeoutStopUSec=1min 30s`, `CollectMode=inactive-or-failed`;
+  no oom-kill, memory.max or snap-confine line in two days; 0 failed units. The install's first full run `20261021T203111Z-1753537`
+  was recorded (it read `kernel.allocationFailures` critical, 4 — the case of todo/PLAN_alloc_recurrence_and_boot_network.md).
+- **How it was read** (the target: the owner's WSL distro `Ubuntu`, as root): `wsl.exe -d Ubuntu -u root -- /bin/sh <script>`
+  with a script FILE holding items 1, 2, 5, 7, 11 exactly as the table below spells them; item 8 on the Windows side with
+  `gh release download daemon-v0.6.0`, `sha256sum -c` and `gh attestation verify` into a new, empty folder. The extension's
+  own items (3, 6, 12) are not part of this stamp — they follow the extension 0.8.0 install.
+
+Earlier record — daemon 0.4.0 (2026-10-11):
 — the release, then items 1, 2, 4, 5, 7, 8, 10 and 11, against the attested `daemon-v0.4.0` install of 2026-10-11, 09:59–10:00:16Z,
 from the tag's `install.sh`. 0.4.0 is the version installed for the owner's PLANNED dryRun-off on 2026-10-12 morning; that run is not observed here.
 - **The release:** #72 merged as `9cacb0bd`. The release-please run `38129751957` cut the tag and the draft. `release.yml`

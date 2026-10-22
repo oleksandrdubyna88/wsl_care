@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { FULL_CHECK_ACTIONS } from '../root/cleanupController';
 import { ACTION_IDS, actionIdOf, runIdOf, type RunId } from '../root/rootIds';
+import { DEFAULT_TARGET, persistedNameOf, pickedTarget, type DistroTarget } from '../wsl/distroTarget';
 
 /**
  * The host's DURABLE memory of the cleanups this extension started (E6.S3, plan §15k #4, `common.durable-status` rules 1
@@ -70,10 +71,23 @@ interface EntryBase {
   readonly id: string;
   readonly op: JournalOp;
   readonly distro: string;
+  /** E18.W1a: `picked` when the run is for a PICKED distribution (`distro` is then its listed name); absent = the default. */
+  readonly targetKind?: 'picked';
   /** The confirmed action ids (FULL_CHECK_ACTIONS for a full check, as `status.running` names it). */
   readonly actions: readonly string[];
   /** When the call went out, UTC, ISO 8601 — the start of the window a resolution reads, and of the poll ceiling. */
   readonly since: string;
+}
+
+/**
+ * The target an entry's run is followed with: its picked distribution, or the default. A picked entry's name passed `persistedNameOf` when it
+ * was read, so the fallback is unreachable — and were it taken, the follower's own check (a status counts only for the entry's `distro`)
+ * would discard the default's answer as no evidence.
+ */
+export function entryTarget(entry: { readonly distro: string; readonly targetKind?: 'picked' }): DistroTarget {
+  const name = entry.targetKind === 'picked' ? persistedNameOf(entry.distro) : undefined;
+
+  return name === undefined ? DEFAULT_TARGET : pickedTarget(name);
 }
 
 export type JournalEntry = (EntryBase & { readonly kind: 'unresolved' }) | (EntryBase & { readonly kind: 'run'; readonly runId: RunId });
@@ -290,6 +304,18 @@ function roundTrips(ms: number, value: unknown): boolean {
   return new Date(ms).toISOString() === value;
 }
 
+/**
+ * E18.W1a: `targetKind` is absent (every entry written before W1a, and every default run) or exactly `picked` — and a picked entry's name
+ * is re-minted by its shape (`persistedNameOf`: no list exists at reload; the client's listed check is the authority on the next call).
+ */
+function targetKindOk(raw: Raw): boolean {
+  if (!Object.hasOwn(raw, 'targetKind')) {
+    return true;
+  }
+
+  return raw.targetKind === 'picked' && typeof raw.distro === 'string' && persistedNameOf(raw.distro) !== undefined;
+}
+
 /** The checks every stored entry must pass, one per field. */
 const FIELD_CHECKS: readonly ((raw: Raw, now: number) => boolean)[] = [
   (raw) => isText(raw.id, 64),
@@ -297,11 +323,12 @@ const FIELD_CHECKS: readonly ((raw: Raw, now: number) => boolean)[] = [
   (raw, now) => isReadableInstant(raw.since, now),
   (raw) => JOURNAL_OPS.some((op) => op === raw.op),
   (raw) => isActionList(raw.actions),
+  (raw) => targetKindOk(raw),
 ];
 
 /** The fields every entry carries, validated — or undefined. */
 function baseOf(raw: Raw, now: number): EntryBase | undefined {
-  return FIELD_CHECKS.every((check) => check(raw, now)) ? { id: raw.id as string, op: raw.op as JournalOp, distro: raw.distro as string, actions: raw.actions as readonly string[], since: raw.since as string } : undefined;
+  return FIELD_CHECKS.every((check) => check(raw, now)) ? { id: raw.id as string, op: raw.op as JournalOp, distro: raw.distro as string, ...(raw.targetKind === 'picked' ? { targetKind: 'picked' as const } : {}), actions: raw.actions as readonly string[], since: raw.since as string } : undefined;
 }
 
 type Kinds = { readonly [K in JournalEntry['kind']]: (base: EntryBase, raw: Raw) => JournalEntry[] };

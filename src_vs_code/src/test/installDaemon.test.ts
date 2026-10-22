@@ -12,6 +12,7 @@ import { parsePageMessage } from '../panel/messages';
 import { TEST_ENV } from './support/fakeWorld';
 import { EXTENSION_ROOT } from './support/paths';
 import { exitedUtf16, LIST_QUIET, recordingRunner } from './support/recordingRunner';
+import { DEFAULT_TARGET } from '../wsl/distroTarget';
 
 /**
  * *Install daemon* (plan §15g m2, §15f #5): the command is PINNED to the minimum daemon and never skips the
@@ -112,7 +113,7 @@ test('a refused distribution: reported, no modal, no terminal', async () => {
 test('with the real client: an out-of-pattern setting is refused BEFORE anything starts, and no terminal is created', async () => {
   const rec = recordingRunner({});
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => 'Ubuntu; rm -rf ~' });
-  const { deps: d, seen } = deps(() => client.terminalTarget(), true);
+  const { deps: d, seen } = deps(() => client.terminalTarget(DEFAULT_TARGET), true);
   assert.equal((await installDaemon(d)).kind, 'refused');
   assert.equal(rec.requests.length, 0, 'nothing was started');
   assert.deepEqual(seen.terminals, []);
@@ -121,7 +122,7 @@ test('with the real client: an out-of-pattern setting is refused BEFORE anything
 test('with the real client: the terminal is opened in the LISTED distribution, by the absolute launcher, after --list alone', async () => {
   const rec = recordingRunner({ [LIST_QUIET]: exitedUtf16(0, 'Ubuntu\r\nDebian\r\n') });
   const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => 'Debian' });
-  const { deps: d, seen } = deps(() => client.terminalTarget(), true);
+  const { deps: d, seen } = deps(() => client.terminalTarget(DEFAULT_TARGET), true);
   assert.deepEqual(await installDaemon(d), { kind: 'typed', distro: 'Debian' });
   assert.deepEqual(rec.argvs(), [LIST_QUIET]);
   assert.deepEqual(seen.terminals[0]?.shellArgs, ['-d', 'Debian', '--cd', '~'], 'the terminal starts in the home folder, not in whatever folder VS Code was started from');
