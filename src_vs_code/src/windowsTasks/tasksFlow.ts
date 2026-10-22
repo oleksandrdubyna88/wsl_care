@@ -302,7 +302,7 @@ async function preview(deps: TasksFlowDeps): Promise<TasksOutcome> {
 
 // ---- remove ----
 
-/** The tasks in the folder that are not the two Windows tasks — whoever else keeps the folder (the guard's task, when installed). */
+/** The tasks in the folder that are not one of the Windows tasks — whoever else keeps the folder (the guard's task, when installed). */
 function othersIn(read: SchedulerRead): string[] {
   return read.kind === 'read' ? [...read.sections.keys()].filter((name) => !(TASK_NAMES as readonly string[]).includes(name)) : [];
 }

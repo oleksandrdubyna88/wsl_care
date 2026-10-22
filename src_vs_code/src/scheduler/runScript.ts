@@ -31,7 +31,7 @@ const RUNNING_RESULT = SCHEDULER_RESULT.running;
 
 /**
  * Start `name` of `folder` now. Order, and why: connect; get the task (not found is exit 34, any other refusal is 37 with the HRESULT printed);
- * print `state=` BEFORE any decision; refuse a disabled task (a `Run` on one fails with 0x80041326 — the script says why instead); refuse a task
+ * print `state=` BEFORE any decision; refuse a disabled task (a `Run` on one fails with 0x80041326 — the script says why instead; `Enabled` is read refuse-by-default, so a read that throws is exit 37, never a fall through); refuse a task
  * that is ALREADY running (State 4 or the result 0x41301: the same test as the panel's row) — nothing is started, exit 35, and the overlap is
  * never silent (a state that cannot be read is exit 37, never a fall through to the start: PowerShell continues after a statement-terminating error, so every
  * verdict starts REFUSED and is lifted only by a completed read); the PRINCIPAL of the task as it is registered RIGHT NOW — the reader's own SID (the same call the status query prints), an interactive

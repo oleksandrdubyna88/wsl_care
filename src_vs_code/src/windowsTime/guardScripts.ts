@@ -5,7 +5,7 @@ import { NOT_FOUND_HRESULT, queryRequest as sharedQueryRequest, queryScript } fr
 import { deleteTasksLines, HERE_END, IMPORT_SCHEDULED_TASKS, OP_EXIT, registerTaskScript } from '../scheduler/registerScript';
 import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
 
-/** Every task this extension installs under `\wsl-care`: the two Windows tasks and the guard — the names the read must find or say it could not. */
+/** Every task this extension installs under `\wsl-care`: the Windows tasks and the guard — the names the read must find or say it could not. */
 const EXPECTED_TASKS: readonly string[] = [...TASK_NAMES, GUARD_NAME];
 
 /**

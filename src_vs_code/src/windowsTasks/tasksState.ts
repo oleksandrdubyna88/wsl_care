@@ -7,7 +7,7 @@ import { SCHEDULER_RESULT, taskOf, type LastRun, type SchedulerRead, type TaskRe
 
 /**
  * The Windows tasks' part of the panel, as ONE pure state (WR-E2 of PLAN_windows_runner.md §3.8): what Task Scheduler's ONE read
- * says about each of the two tasks (`schedulerAnswer.ts`), what the daemon's staged copy says about what this version would
+ * says about each of the tasks (`schedulerAnswer.ts`), what the daemon's staged copy says about what this version would
  * install (`tasks render <task>`, run on the staged copy by `tasksHost.ts`), and the copy's own state — joined into the plan's D5
  * rows. The truth is Task Scheduler's and the daemon's, re-read on every panel open and refresh; nothing here is a flag a window
  * holds (`common.durable-status`). Nothing is spelt for a person here: `tasksView.ts` does that.
@@ -183,7 +183,7 @@ function startedOrRan(row: TaskRow, startedAtUtcMs: number): boolean {
 /**
  * Whether Task Scheduler's read and the copy's probe already show a pending run FINISHED (WR-E3): an install of one task is finished when
  * THAT task's row is `installed` — registered, enabled, idle and its summary equal to the one the staged copy's render of THAT task gives
- * (`summariesMatch`, in `stagedRow`); a removal when both tasks are `notInstalled` and the copy probe found no staged copy. A task that is
+ * (`summariesMatch`, in `stagedRow`); a removal when every task is `notInstalled` and the copy probe found no staged copy. A task that is
  * running, disabled, unreadable or different is not finished — the record then stands to its deadline, the conservative end.
  */
 export function finishedBy(state: WindowsTasksState, pending: PendingTasksOp & Partial<PendingTimes>): boolean {

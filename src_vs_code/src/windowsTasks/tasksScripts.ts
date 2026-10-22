@@ -29,7 +29,7 @@ export function runNowScript(task: TaskName): string {
   return runTaskScript(TASK_FOLDER, task);
 }
 
-/** The removal of both Windows tasks, and of their folder when it is then empty. */
+/** The removal of every Windows task, and of their folder when it is then empty. */
 export function removeTasksScript(): string {
   return removeScriptOf(TASK_FOLDER, TASK_NAMES);
 }
