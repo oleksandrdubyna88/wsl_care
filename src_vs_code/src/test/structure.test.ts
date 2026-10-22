@@ -370,12 +370,13 @@ test('the brand scan finds a planted cast, in both spellings, and ignores a ment
 //
 // The root-word scan above reads a literal that IS `act`. A cleanup preview, install or run-now has no business near the verb at all, and an argv built from
 // one string — `'act A23 --preview'`, a template `act ${id} --confirm` — is not an exact `act`. So: no shipped module but the root module has a string literal
-// that is `act` or BEGINS with it as a word (an argv written as one string). Prose that names the verb inside a sentence (the settings' descriptions say
-// "`act <ids> --preview`" to a person) is not an argv, and neither are "the task acts" or "action".
+// that is `act` or holds it as a bare word between spaces (an argv written as one string: `'wsl-care.exe act A23 --confirm'`, the middle piece of a template
+// `${exe} act ${id}`). Prose that names the verb inside code quotes (the settings' descriptions say "`act <ids> --preview`" to a person) is not an argv, and
+// neither are "the task acts" or "action".
 
-/** The modules with a literal that spells the act verb: the whole word, or a string that begins with it as a word. */
+/** The modules with a literal that spells the act verb: the whole word, or the bare word between spaces. */
 function actSpellers(all: readonly Source[]): string[] {
-  const spelt = (literal: string): boolean => /^act(\s|$)/.test(literal);
+  const spelt = (literal: string): boolean => /(^|\s)act(\s|$)/.test(literal);
 
   return all.filter((s) => s.file !== ROOT_CALL && stringLiteralsOf(s.text).some(spelt)).map((s) => s.file);
 }
@@ -390,9 +391,11 @@ test('the act scan finds a planted argv in an array, a one-string argv and a tem
     { file: 'src/windowsTasks/x.ts', text: "const argv = ['act', 'A23'];" },
     { file: 'src/windowsTasks/y.ts', text: "const argv = 'act A23 --preview';" },
     { file: 'src/windowsTasks/z.ts', text: 'const argv = `act ${id} --confirm`;' },
-    { file: 'src/windowsTasks/ok.ts', text: "// act A23 is the root's\nconst s = 'when the dry line says it acts, the action of the cleanup act is A23 only';" },
+    { file: 'src/windowsTasks/w.ts', text: "const argv = 'wsl-care.exe act A23 --confirm';" },
+    { file: 'src/windowsTasks/v.ts', text: 'const argv = `${exe} act ${id}`;' },
+    { file: 'src/windowsTasks/ok.ts', text: "// act A23 is the root's\nconst s = 'when the dry line says it acts, the action of the cleanup is A23 only';\nconst d = 'a preview (`act <ids> --preview`) takes one snapshot; `act --stop` stops';" },
   ];
-  assert.deepEqual(actSpellers(planted), ['src/windowsTasks/x.ts', 'src/windowsTasks/y.ts', 'src/windowsTasks/z.ts']);
+  assert.deepEqual(actSpellers(planted), ['src/windowsTasks/x.ts', 'src/windowsTasks/y.ts', 'src/windowsTasks/z.ts', 'src/windowsTasks/w.ts', 'src/windowsTasks/v.ts']);
   assert.deepEqual(actSpellers([{ file: ROOT_CALL, text: "const t = ['act'];" }]), [], 'the root module is the one that may');
 });
 

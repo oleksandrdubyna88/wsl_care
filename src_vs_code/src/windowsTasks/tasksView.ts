@@ -57,6 +57,8 @@ export interface TasksControls {
   readonly busy?: boolean;
   /** WR-T3: the record read for the cleanup task's last run (the host's), when it has answered. */
   readonly cleanupRecord?: CleanupRecordRead | undefined;
+  /** '' when the bundled daemon has the cleanup task, else why not (`cleanupGate.ts`). */
+  readonly cleanupGate?: string;
 }
 
 type Line = { readonly line: string; readonly level: ViewLevel };
@@ -203,9 +205,12 @@ function allowed(id: TasksAction, state: WindowsTasksState): boolean {
   return id === 'removeWindowsTasks' ? removable(state) : !NO_INSTALL.has(state.copy.kind);
 }
 
-/** The three buttons: every one disabled while a run stands or runs; otherwise each by the state. */
-function tasksButtons(state: WindowsTasksState, held: boolean): readonly WindowsTasksButton[] {
-  return ACTIONS.map((id) => ({ id, label: TASKS_LABELS[id], enabled: !held && allowed(id, state) }));
+/** The cleanup task's three buttons: off while the bundled daemon is older than the task (`cleanupGate.ts`). */
+const CLEANUP_BUTTONS: ReadonlySet<TasksAction> = new Set<TasksAction>(['installWindowsCleanupTask', 'previewWindowsTempCleanup', 'runWindowsCleanupTask']);
+
+/** The buttons: every one disabled while a run stands or runs, the cleanup's while the gate is closed; otherwise each by the state. */
+function tasksButtons(state: WindowsTasksState, held: boolean, gate: string): readonly WindowsTasksButton[] {
+  return ACTIONS.map((id) => ({ id, label: TASKS_LABELS[id], enabled: !held && !(gate !== '' && CLEANUP_BUTTONS.has(id)) && allowed(id, state) }));
 }
 
 /** The copy line while a pending run stands — the guard's "waiting" shape: what the PowerShell is doing, in every window and after a reload. */
@@ -226,13 +231,24 @@ export function windowsTasksView(state: WindowsTasksState, pin: string, formatIn
   if (stated.line === '') {
     return NO_WINDOWS_TASKS;
   }
+  const gate = controls.cleanupGate ?? '';
   const tasks = (Object.keys(LABELS) as TaskName[]).map((id) => {
-    const { line, level } = taskLine(state.tasks[id], formatInstant);
+    const { line, level } = rowLine(id, state, formatInstant, gate);
 
     return { id, line: `${LABELS[id]}${line}`, level };
   });
 
-  return { copy: copyOrWaiting(stated, controls), tasks, cleanup: lastCleanupLine(state.cleanupRun, controls.cleanupRecord, formatInstant), dry: dryLine(state.dry), buttons: tasksButtons(state, held(controls)) };
+  return { copy: copyOrWaiting(stated, controls), tasks, cleanup: cleanupLineOf(state, controls, formatInstant), dry: dryLine(state.dry), buttons: tasksButtons(state, held(controls), gate) };
+}
+
+/** The last-cleanup line — none while the bundled daemon is older than the cleanup task. */
+function cleanupLineOf(state: WindowsTasksState, controls: TasksControls, formatInstant: (iso: string) => string): Line {
+  return (controls.cleanupGate ?? '') === '' ? lastCleanupLine(state.cleanupRun, controls.cleanupRecord, formatInstant) : { line: '', level: 'none' };
+}
+
+/** One task's line: its row — except the cleanup's while the bundled daemon is older than the task, which says so instead of a state it cannot know. */
+function rowLine(id: TaskName, state: WindowsTasksState, formatInstant: (iso: string) => string, gate: string): Line {
+  return id === 'cleanup' && gate !== '' ? { line: `unavailable — ${gate}`, level: 'none' } : taskLine(state.tasks[id], formatInstant);
 }
 
 /** The copy line, or — while a pending run stands — what that run is doing. */

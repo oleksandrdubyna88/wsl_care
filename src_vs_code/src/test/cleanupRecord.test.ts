@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import { test } from 'node:test';
 
 import { parseRuns, type RunLine } from '../cleanup/runAnswers';
@@ -7,7 +8,9 @@ import type { WindowsReadOutcome } from '../client/windowsTasks';
 import type { WindowsRunRead } from '../client/verbs';
 import type { LastRun } from '../scheduler/schedulerAnswer';
 import { keptInUseCount, lastCleanupLine, pickRecord, readCleanupRecord, recordWindow, type CleanupRecordRead } from '../windowsTasks/cleanupRecord';
+import { resultWords, UAC_SENTENCE } from '../windowsTasks/resultWords';
 import { bodyOf } from './support/body';
+import { fromExtensionRoot, shippedSources } from './support/paths';
 import { stageFixture } from './support/windowsTasks';
 
 /**
@@ -63,9 +66,9 @@ test('an interrupted run reads interrupted, never completed; a dry run reads dry
 
 test('lastResult 75 reads busy; 81 reads elevated with the UAC sentence; 84 reads the deadline; any other code its words — with and without a record', () => {
   const rows: readonly (readonly [number, RegExp, string])[] = [
-    [75, /busy: a watch was sampling under the run lock; the next run retries/, 'ok'],
-    [81, /refused: it ran elevated; with UAC off or on the built-in Administrator account every process is elevated — run it from an account that is not an administrator, or turn UAC on/, 'warn'],
-    [84, /ended at its deadline: its whole tree was ended \(exit 84\)/, 'warn'],
+    [75, /another run held the run lock/, 'ok'],
+    [81, /refused — it ran elevated, which it never may \(exit 81\)\. With UAC off \(EnableLUA=0\)/, 'warn'],
+    [84, /ended at its deadline — its whole tree was ended \(exit 84\)/, 'warn'],
     [1, /the run failed \(exit 1\)/, 'warn'],
     [0x8007_0005, /result 0x80070005/, 'warn'],
   ];
@@ -74,9 +77,16 @@ test('lastResult 75 reads busy; 81 reads elevated with the UAC sentence; 84 read
       const row = lastCleanupLine(RAN(code), record, FORMAT);
       assert.match(row.line, wanted, `${code} / ${record.kind}`);
       assert.equal(row.level, level, `${code} / ${record.kind}`);
+      assert.ok(row.line.endsWith(` — ${resultWords(code)}`), `${code} / ${record.kind}: the words are the shared table's, not a copy: ${row.line}`);
     }
   }
+  assert.ok(lastCleanupLine(RAN(81), { kind: 'none' }, FORMAT).line.includes(UAC_SENTENCE), 'the UAC sentence is the one constant');
   assert.doesNotMatch(lastCleanupLine(RAN(0), found(), FORMAT).line, /succeeded|exit 0/, 'a clean result adds nothing');
+});
+
+test('the UAC sentence has ONE home: resultWords.ts — the preview\'s refusal and the cleanup line take it from there', () => {
+  const homes = shippedSources().filter((file) => fs.readFileSync(file, 'utf8').includes('every process is elevated')).map(fromExtensionRoot);
+  assert.deepEqual(homes, ['src/windowsTasks/resultWords.ts']);
 });
 
 test('no record in the window says so; a detail that is absent says "kept in use: not recorded"; a failed history read says so and levels unknown', () => {
@@ -89,6 +99,15 @@ test('no record in the window says so; a detail that is absent says "kept in use
   assert.equal(failed.level, 'unknown');
   const reading = lastCleanupLine(RAN(), undefined, FORMAT);
   assert.equal(reading.line, 'last cleanup: <2026-10-01T21:00:00Z>', 'before the record is read the line says only what Task Scheduler said');
+});
+
+test('a record whose startedAt is not a time is not shown as the time: the line falls back to Task Scheduler\'s instant', () => {
+  const record = found();
+  assert.equal(record.kind, 'found');
+  for (const startedAt of ['not a time', '', '2026-13-45T99:00:00Z']) {
+    const { line } = lastCleanupLine(RAN(), record.kind === 'found' ? { ...record, line: { ...record.line, startedAt } } : record, FORMAT);
+    assert.match(line, /^last cleanup: <2026-10-01T21:00:00Z>, 12 deleted/, `startedAt ${JSON.stringify(startedAt)}: ${line}`);
+  }
 });
 
 test('a task that never ran says so; a task that is not there has no line', () => {

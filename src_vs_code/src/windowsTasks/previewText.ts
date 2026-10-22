@@ -17,6 +17,8 @@ import { noticeText, safeText } from '../text/safeText';
 /** The most paths one group lists, and the most groups one verdict lists — whatever the report claims. */
 export const MAX_PATHS_SHOWN = 100;
 export const MAX_GROUPS_SHOWN = 100;
+/** The most entries of any other list a line or a block carries (the allow-list, the configuration errors, the excluded reasons). */
+export const MAX_LIST_SHOWN = 100;
 
 /** A path is clipped at a bound longer than Windows' own `MAX_PATH` (260); the clip says so with an ellipsis. */
 const PATH_MAX = 320;
@@ -50,15 +52,31 @@ function passLine(report: TempPreviewAnswer): string {
   return `pass: started ${orWords(pass.started, '(not yet)')}, ${pass.decided} of ${pass.total} names decided, ${pass.passesCompleted} completed; the next run starts after ${orWords(pass.last, '(the first name)')}${interrupted}`;
 }
 
+/** Words joined at most {@link MAX_LIST_SHOWN} to a line, the rest counted: a report that lies about its bounds cannot make one line a megabyte. */
+function capped(items: readonly string[], separator: string): string {
+  const shown = items.slice(0, MAX_LIST_SHOWN).map(word);
+  const rest = items.length - shown.length;
+
+  return (rest > 0 ? [...shown, `... and ${rest} more`] : shown).join(separator);
+}
+
 /** The lines that say the run would be refused: a configuration in error, a root the daemon will not clean. */
 function refusalLines(report: TempPreviewAnswer): string[] {
-  const broken = report.observeOnly ? [`the configuration is in error (${report.configurationErrors.map(word).join('; ')}): a run would be refused until it is fixed`] : [];
+  const broken = report.observeOnly ? [`the configuration is in error (${capped(report.configurationErrors, '; ')}): a run would be refused until it is fixed`] : [];
 
   return report.refusal === '' ? broken : [...broken, `refused: ${word(report.refusal)}`];
 }
 
+/** The reasons things are never cleaned, one line each up to the cap, the rest counted. */
+function excludedLines(report: TempPreviewAnswer): string[] {
+  const shown = report.excludedByReason.slice(0, MAX_LIST_SHOWN).map((e) => `excluded ${e.count}: ${word(e.reason)}`);
+  const rest = report.excludedByReason.length - shown.length;
+
+  return rest > 0 ? [...shown, `... and ${rest} more excluded reasons not shown`] : shown;
+}
+
 function budgetLines(report: TempPreviewAnswer): string[] {
-  const globs = report.allowGlobs.length === 0 ? '(empty)' : report.allowGlobs.map(word).join(', ');
+  const globs = report.allowGlobs.length === 0 ? '(empty)' : capped(report.allowGlobs, ', ');
 
   return [
     `allow-list (temp.allowGlobs): ${globs}`,
@@ -110,7 +128,7 @@ export function previewText(report: TempPreviewAnswer): { readonly headline: str
     ...verdictLines(report, 'eligible'),
     ...wouldBeLines(report),
     ...(report.wouldBeEligibleLimited ? [LOWER_BOUND] : []),
-    ...report.excludedByReason.map((e) => `excluded ${e.count}: ${word(e.reason)}`),
+    ...excludedLines(report),
     CLOSING,
   ];
 

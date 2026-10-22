@@ -163,21 +163,13 @@ function recordParts(record: CleanupRecordRead | undefined): Part[] {
   return record === undefined ? [] : (RECORD_PARTS[record.kind] as (r: CleanupRecordRead) => Part[])(record);
 }
 
-const UAC_OFF = 'with UAC off or on the built-in Administrator account every process is elevated — run it from an account that is not an administrator, or turn UAC on';
-
-/** The task's own last results the cleanup line words itself; every other code is the shared table's. */
-const RESULT_PARTS: Readonly<Record<number, Part>> = {
-  75: { text: ' — busy: a watch was sampling under the run lock; the next run retries', level: 'ok' },
-  81: { text: ` — refused: it ran elevated; ${UAC_OFF}`, level: 'warn' },
-  84: { text: ' — ended at its deadline: its whole tree was ended (exit 84)', level: 'warn' },
-};
-
+/** Task Scheduler's last result, in the shared words (`resultWords.ts` — the task lines word every code the same way): nothing for a clean run, a warning unless it is the task working as built. */
 function resultPart(code: number): Part {
   if (code === 0) {
     return { text: '', level: 'none' };
   }
 
-  return RESULT_PARTS[code] ?? { text: ` — ${resultWords(code)}`, level: NORMAL_RESULTS.has(code) ? 'ok' : 'warn' };
+  return { text: ` — ${resultWords(code)}`, level: NORMAL_RESULTS.has(code) ? 'ok' : 'warn' };
 }
 
 /** The head of the line: when the cleanup last ran — the record's own start when it was found (whoever started it), else Task Scheduler's — and who started it when it was not the timer. */
@@ -187,8 +179,9 @@ function headOf(run: Extract<LastRun, { kind: 'ran' }>, record: CleanupRecordRea
   return `last cleanup: ${noticeText(formatInstant(startedOf(run, line)))}${triggerNote(line)}`;
 }
 
+/** The record's own start when it is a time (the same test `startedMs` makes when it picks), else Task Scheduler's instant. */
 function startedOf(run: Extract<LastRun, { kind: 'ran' }>, line: RunLine | undefined): string {
-  return line !== undefined && line.startedAt !== '' ? line.startedAt : run.utc;
+  return line !== undefined && !Number.isNaN(Date.parse(line.startedAt)) ? line.startedAt : run.utc;
 }
 
 function triggerNote(line: RunLine | undefined): string {

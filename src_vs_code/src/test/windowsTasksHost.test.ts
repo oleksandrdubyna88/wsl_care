@@ -49,7 +49,7 @@ function hostOf(options: Options = {}) {
   const quiet = quietTasks(undefined, options.now ?? (() => NOW));
   quiet.recorder.answer = true;
   const store = options.store ?? quiet.store;
-  const host = new TasksHost({ scheduler, client: world.client, pin: '0.4.0', formatInstant: (iso) => iso, ...quiet.deps, durable: store, ...options.over });
+  const host = new TasksHost({ scheduler, client: world.client, pin: '0.4.0', cleanupSince: '0.1.0', formatInstant: (iso) => iso, ...quiet.deps, durable: store, ...options.over });
 
   return { host, scheduler, queries, world, quiet, store };
 }

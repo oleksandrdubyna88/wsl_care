@@ -40,7 +40,7 @@ test('pressing Install the Windows watch task reaches ONE recorded PowerShell wh
     const scheduler = new SchedulerHost({ env: { SystemRoot: 'C:\\Windows' }, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
     const host = new TasksHost({
       scheduler, client, pin: '0.4.0', formatInstant: (iso) => iso, ui: recordingTasksUi(recorder), engine: fixedEngine(PS51_READ), durable: new MapStore(),
-      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined,
+      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined, cleanupSince: '0.1.0',
     });
     await Promise.all([scheduler.refresh(), host.refresh()]);
     assert.match(host.view().tasks[0]?.line ?? '', /not installed/);
@@ -75,7 +75,7 @@ test('pressing Run the Windows watch now reaches ONE recorded PowerShell whose p
     const scheduler = new SchedulerHost({ env: { SystemRoot: 'C:\\Windows' }, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
     const host = new TasksHost({
       scheduler, client, pin: '0.4.0', formatInstant: (iso) => iso, ui: recordingTasksUi(recorder), engine: fixedEngine(PS51_READ), durable: new MapStore(),
-      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined,
+      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined, cleanupSince: '0.1.0',
     });
     await Promise.all([scheduler.refresh(), host.refresh()]);
     assert.match(host.view().tasks[0]?.line ?? '', /^Windows watch task: installed, never run$/);
@@ -106,7 +106,7 @@ test('pressing Preview the Windows TEMP cleanup reaches the strict fake as tasks
     const scheduler = new SchedulerHost({ env: { SystemRoot: 'C:\\Windows' }, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query });
     const host = new TasksHost({
       scheduler, client, pin: '0.4.0', formatInstant: (iso) => iso, ui: recordingTasksUi(recorder), engine: fixedEngine(PS51_READ), durable: new MapStore(),
-      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined,
+      nowUtcMs: () => 1_000_000, sleep: () => Promise.resolve(), opTimeoutMs: () => 60_000, stageTimeoutMs: () => 60_000, busyRetryMs: () => 3_000, extensionFolder: EXTENSION.fsPath, log: () => undefined, cleanupSince: '0.1.0',
     });
     await Promise.all([scheduler.refresh(), host.refresh()]);
     const before = world.calls().length;

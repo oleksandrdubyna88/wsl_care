@@ -9,6 +9,7 @@ import { OP_EXIT } from '../scheduler/registerScript';
 import { RUN_EXIT } from '../scheduler/runScript';
 import { TASK_FOLDER } from '../scheduler/taskFolder';
 import { noticeText, safeText } from '../text/safeText';
+import { UAC_SENTENCE } from './resultWords';
 import { treeVerdict } from './tasksView';
 
 /**
@@ -132,9 +133,6 @@ export function stepOf(result: ProcessResult, op: TasksOp, engine: Engine): RunS
 }
 
 // ---- the sentences ----
-
-/** Why an elevated process is refused, and what to do about it: shared by the preview's refusal and the run's. */
-const UAC_SENTENCE = 'With UAC off (EnableLUA=0) or on the built-in Administrator account every process is elevated — run VS Code from an account that is not an administrator, or turn UAC on.';
 
 const SUBJECT: { readonly [K in TasksOp['kind']]: (op: Extract<TasksOp, { kind: K }>) => string } = {
   install: (op) => `The install of the Windows ${op.task} task`,

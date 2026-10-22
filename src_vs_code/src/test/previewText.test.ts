@@ -131,6 +131,24 @@ test('the renderer re-bounds a report that lies about its caps', () => {
   assert.ok(many.includes('... and 50 more group(s) not shown'), 'the groups left out are counted');
 });
 
+test('the renderer caps the other lists of a report that lies about its bounds: the allow-list, the configuration errors and the excluded reasons', () => {
+  const text = previewText(answerOf('preview-cleanup.json', (b) => {
+    b.allowGlobs = Array.from({ length: 150 }, (_, i) => `g${i}-*`);
+    b.observeOnly = true;
+    b.configurationErrors = Array.from({ length: 130 }, (_, i) => `error-${i}`);
+    b.excludedByReason = Array.from({ length: 250 }, (_, i) => ({ reason: `reason-${i}`, count: i + 1 }));
+  })).text.split('\n');
+  const globs = text.find((line) => line.startsWith('allow-list (temp.allowGlobs): ')) ?? '';
+  assert.ok(globs.includes('g99-*, ... and 50 more'), `150 globs rendered whole: ${globs.slice(-60)}`);
+  assert.ok(!globs.includes('g100-*'), 'nothing past the cap is listed');
+  const errors = text.find((line) => line.startsWith('the configuration is in error (')) ?? '';
+  assert.ok(errors.includes('error-99; ... and 30 more)'), `130 errors rendered whole: ${errors.slice(-60)}`);
+  assert.ok(!errors.includes('error-100'));
+  const excluded = text.filter((line) => /^excluded \d+: reason-/.test(line));
+  assert.equal(excluded.length, 100, `${excluded.length} excluded lines rendered`);
+  assert.ok(text.includes('... and 150 more excluded reasons not shown'), 'the rest is counted');
+});
+
 test('the daemon\'s own "more" and the renderer\'s extra paths add up', () => {
   const lines = previewText(answerOf('preview-cleanup.json', (b) => {
     const first = groupsOf(b)[0] as Group;

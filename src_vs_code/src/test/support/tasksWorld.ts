@@ -46,6 +46,8 @@ export interface WorldOptions {
   readonly editRender?: (body: Record<string, unknown>) => Record<string, unknown>;
   readonly extensionFolder?: string;
   readonly busyRetryMs?: number;
+  /** The cleanup gate the flow is given: '' (open, the default) or the closed sentence. */
+  readonly cleanupGate?: string;
   /** A daemon call that ENDS in a scripted way (a timeout, say) instead of answering: by its argv joined with spaces. */
   readonly ending?: (argv: string) => ProcessResult | undefined;
 }
@@ -172,6 +174,7 @@ export function tasksWorld(options: WorldOptions = {}): World {
     afterRun: () => { events.push('query'); },
     extensionFolder: options.extensionFolder ?? EXTENSION.fsPath,
     log: (line) => { logs.push(line); },
+    cleanupGate: options.cleanupGate ?? '',
   };
 
   return {

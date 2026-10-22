@@ -71,6 +71,8 @@ export interface TasksFlowDeps {
   readonly extensionFolder: string;
   /** The extension's log: a fault at an edge that must not stop the outcome from being told. */
   readonly log: (line: string) => void;
+  /** '' when the bundled daemon has the cleanup task, else the sentence that says it has not (`cleanupGate.ts`): the flows of that task start nothing. */
+  readonly cleanupGate: string;
 }
 
 const BUSY: TasksOutcome = { kind: 'busy' };
@@ -445,11 +447,20 @@ async function runNow(task: TaskName, deps: TasksFlowDeps): Promise<TasksOutcome
   return told(deps, op, await launched(deps, engine, { op: 'run', task }, 2 * request.timeoutMs, () => runBody(deps, op, engine, request)), engine);
 }
 
+/** Whether `op` is the cleanup task's: its install, its start now, or the preview (which is the cleanup's alone). */
+function isCleanupOp(op: TasksOp): boolean {
+  return op.kind === 'preview' || (op.kind !== 'remove' && op.task === 'cleanup');
+}
+
 /**
  * One operation, end to end: the outcome, told once (the declined install's single notice included). `undefined` is never returned here —
- * the host's "one at a time in this window" answers that case before it gets this far.
+ * the host's "one at a time in this window" answers that case before it gets this far. While the bundled daemon is older than the cleanup task
+ * (`cleanupGate.ts`) the cleanup's own operations start nothing and say why.
  */
 export async function runTasksOp(op: TasksOp, deps: TasksFlowDeps): Promise<TasksOutcome> {
+  if (deps.cleanupGate !== '' && isCleanupOp(op)) {
+    return told(deps, op, notStarted(deps.cleanupGate), NO_ENGINE);
+  }
   if (readPending(deps.durable, deps.nowUtcMs()) !== undefined) {
     return told(deps, op, BUSY, NO_ENGINE);
   }
