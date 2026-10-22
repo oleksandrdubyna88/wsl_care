@@ -235,9 +235,9 @@ public sealed class DockerCleanupTests : IDisposable
 
         var run = await action.RunAsync(context, preview, commands, CancellationToken.None);
 
-        containers.Should().HaveCount(13);
+        containers.Should().HaveCount(12, "13 are stopped; one belongs to a compose project");
         run.Succeeded.Should().BeTrue(run.Failure);
-        run.Count.Should().Be(12);
+        run.Count.Should().Be(11);
         run.NotRemoved.Should().ContainSingle(n => n.Key == containers[0].Key).Which.Note.Should().StartWith("kept by Docker, in use");
         var goneVolumes = volumes.Where(v => !remaining.Contains(v.Name)).ToList();
         run.Removed.Where(r => r.Kind == "anonymous volume").Select(r => r.Name).Should().BeEquivalentTo(goneVolumes.Select(v => v.Name));
@@ -296,8 +296,33 @@ public sealed class DockerCleanupTests : IDisposable
         var labelled = await tc.PreviewAsync(context, world.Commands(tc, context), CancellationToken.None);
 
         others.Targets.Select(t => t.Key).Should().NotContain(details[0]).And.NotContain(details[1]);
-        others.Count.Should().Be(11);
+        others.Count.Should().Be(10);
         labelled.Targets.Where(t => t.Kind == "container").Select(t => t.Key).Should().Equal(details[1]);
+    }
+
+    /// <summary>E21.S1: the engine re-previews LIVE before every run, so the compose split of <c>StoppedContainers</c> covers the run as
+    /// it covers the row — the compose containers (the fixture's own captured one and one the world marks) never reach <c>docker rm</c>.</summary>
+    [Fact]
+    public async Task The_A5_run_never_removes_a_compose_container()
+    {
+        const string fixtureCompose = "e7d0c1a808e8b14812ad04c299797e0dbe711998226a28b5da451ff59743fdca";
+        var details = await StoppedIdsAsync();
+        var marked = details.First(id => id != fixtureCompose);
+        var world = new DockerWorld(compose: marked);
+        world.Runner.ScriptEffect(argv => argv is ["docker", "rm", "-v", ..], r => Removed(r.Argv.Skip(3)));
+        world.Runner.Script(DockerCommands.VolumeList.Argv, 0, string.Empty);
+        var action = new ContainerRemoval(testcontainers: false);
+        var context = DockerWorld.Context(_sandbox);
+        var commands = world.Commands(action, context);
+
+        var preview = await action.PreviewAsync(context, commands, CancellationToken.None);
+        var run = await action.RunAsync(context, preview, commands, CancellationToken.None);
+
+        var named = world.Calls("rm", "-v").SelectMany(r => r.Argv).ToList();
+        named.Should().NotContain(fixtureCompose).And.NotContain(marked);
+        run.Removed.Where(r => r.Kind == "container").Select(r => r.Key).Should().NotContain([fixtureCompose, marked]);
+        run.Count.Should().Be(11, "13 stopped containers, two of them compose containers");
+        preview.Targets.Where(t => t.Kind == "container").Should().HaveCount(11);
     }
 
     [Fact]

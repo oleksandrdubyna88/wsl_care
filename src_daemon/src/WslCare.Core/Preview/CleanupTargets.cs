@@ -20,7 +20,8 @@ public sealed record VolumeTargets(
 
 /// <summary>A5's selection: the stopped containers old enough to go and, per container, the anonymous volumes it holds
 /// (removed with it by <c>docker rm -v</c>); the named volumes they hold (kept), those whose labels are unknown (not
-/// counted), the younger ones, the labelled ones. Each volume is listed ONCE, however many selected containers share it.</summary>
+/// counted), the younger ones, the labelled ones, and — for A5 only — the compose containers it never touches
+/// (<paramref name="ComposeKept"/>) and the distinct names of their projects (<paramref name="ComposeProjects"/>, sorted). Each volume is listed ONCE, however many selected containers share it.</summary>
 public sealed record ContainerTargets(
     IReadOnlyList<CleanupTarget> Selected,
     IReadOnlyDictionary<string, IReadOnlyList<string>> AnonymousVolumesOf,
@@ -28,7 +29,9 @@ public sealed record ContainerTargets(
     IReadOnlyList<CleanupTarget> NamedVolumes,
     IReadOnlyList<CleanupTarget> UnknownVolumes,
     IReadOnlyList<CleanupTarget> Younger,
-    IReadOnlyList<CleanupTarget> Kept);
+    IReadOnlyList<CleanupTarget> Kept,
+    IReadOnlyList<CleanupTarget> ComposeKept,
+    IReadOnlyList<string> ComposeProjects);
 
 /// <summary>A6's selection: the images no container uses (of one kind), and those created too recently.</summary>
 public sealed record ImageTargets(IReadOnlyList<CleanupTarget> Selected, IReadOnlyList<CleanupTarget> Younger);
@@ -73,14 +76,16 @@ public static class CleanupTargets
     /// <summary>A5: stopped containers (exited, created, dead) of one kind, by <c>FinishedAt</c> (or <c>Created</c>), with
     /// the anonymous volumes they hold — anonymous by the inventory's label (<see cref="Docker.AnonymousVolumes"/>), each
     /// volume once however many of them share it; named volumes stay, and a volume whose labels are unknown is not counted
-    /// as going.</summary>
+    /// as going. For A5 a container of a compose project (<see cref="ContainerDetail.ComposeProject"/>) is never selected: it is
+    /// listed in <see cref="ContainerTargets.ComposeKept"/> instead, whatever its age and its keep label.</summary>
     public static ContainerTargets StoppedContainers(DockerInventory inventory, IReadOnlyList<ContainerDetail> details, bool testcontainers, DateTimeOffset cutoff)
     {
         var sizes = inventory.Containers.GroupBy(c => c.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().SizeBytes, StringComparer.Ordinal);
         var volumes = Docker.AnonymousVolumes.ByName(inventory);
         var stopped = details.Where(d => d.Stopped).Where(d => d.Testcontainers == testcontainers).ToList();
-        var kept = stopped.Where(d => d.KeptByLabel).ToList();
-        var candidates = stopped.Except(kept).ToList();
+        var composeOwned = ComposeOwned(stopped, testcontainers);
+        var kept = stopped.Except(composeOwned).Where(d => d.KeptByLabel).ToList();
+        var candidates = stopped.Except(composeOwned).Except(kept).ToList();
         var selected = candidates.Where(d => StoppedBy(d, cutoff)).ToList();
         var mounted = selected.SelectMany(d => d.Mounts).Where(m => m.Volume).Select(m => m.Name).Distinct(StringComparer.Ordinal).ToList();
         bool IsAnonymous(string name) => Docker.AnonymousVolumes.IsAnonymous(volumes, name);
@@ -93,8 +98,16 @@ public static class CleanupTargets
             [.. mounted.Where(volumes.ContainsKey).Where(n => !IsAnonymous(n)).Select(Volume)],
             [.. mounted.Where(n => !volumes.ContainsKey(n)).Select(Volume)],
             [.. candidates.Except(selected).Select(Container)],
-            [.. kept.Select(Container)]);
+            [.. kept.Select(Container)],
+            [.. composeOwned.Select(Container)],
+            [.. composeOwned.Select(d => d.ComposeProject).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
     }
+
+    /// <summary>The stopped containers a compose project owns — split off BEFORE the keep label and the age, so they are never selected, never
+    /// "too young" and never counted a second time as kept by label (the stronger reason wins). Only for A5 (<paramref name="testcontainers"/>
+    /// false): a Testcontainers compose module's containers carry <c>org.testcontainers</c> on purpose, and A5Testcontainers takes them.</summary>
+    private static List<ContainerDetail> ComposeOwned(List<ContainerDetail> stopped, bool testcontainers) =>
+        testcontainers ? [] : [.. stopped.Where(d => d.ComposeProject.Length > 0)];
 
     private static bool StoppedBy(ContainerDetail container, DateTimeOffset cutoff) =>
         container.StoppedSince is Reading<DateTimeOffset>.Available { Value: var at } && at <= cutoff;

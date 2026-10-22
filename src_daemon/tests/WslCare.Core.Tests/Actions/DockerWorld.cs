@@ -21,13 +21,19 @@ internal sealed class DockerWorld
 
     public static readonly DateTimeOffset Now = DockerFixture.CapturedAt;
 
+    /// <summary>The project name <c>compose:</c> gives a container — the name the redaction maps a real project to.</summary>
+    public const string ComposeProject = "project-1";
+
     /// <param name="unlabelledVolume">A volume whose <c>com.docker.volume.anonymous</c> label is taken away in the captured
     /// <c>system df -v</c> — what <c>docker volume create</c> without a name leaves: a 64-hex name Docker treats as NAMED.</param>
     /// <param name="unlistedDangling">A 64-hex name added to the dangling list but absent from <c>system df -v</c> — a volume
     /// whose labels are unknown.</param>
     /// <param name="shareVolume">A container id and a volume name: the volume is ALSO mounted by that container, as
     /// <c>--volumes-from</c> leaves it — one anonymous volume held by two containers.</param>
-    public DockerWorld(string? serverVersion = null, string keepVolume = "", string keepContainer = "", string testcontainer = "", string unlabelledVolume = "", string unlistedDangling = "", (string Container, string Volume) shareVolume = default)
+    /// <param name="compose">A container id that is made a member of compose project <see cref="ComposeProject"/>: its captured line gets the
+    /// <c>"compose"</c> key the product's template now reads. The captured fixture already holds ONE such container (a real compose
+    /// container, recaptured in E21.S1), so this must name another.</param>
+    public DockerWorld(string? serverVersion = null, string keepVolume = "", string keepContainer = "", string testcontainer = "", string unlabelledVolume = "", string unlistedDangling = "", (string Container, string Volume) shareVolume = default, string compose = "")
     {
         var version = DockerFixture.Read("version.out");
         if (serverVersion is not null)
@@ -49,10 +55,13 @@ internal sealed class DockerWorld
 
         var dangling = DockerFixture.Read("volume-ls-dangling.out") + (unlistedDangling.Length > 0 ? unlistedDangling + "\n" : string.Empty);
         var inspect = string.Join('\n', DockerFixture.Read("container-inspect.out").Split('\n').Select(line =>
-            line.Contains($"\"id\":\"{keepContainer}\"", StringComparison.Ordinal) && keepContainer.Length > 0 ? line.Replace("\"keep\":null", "\"keep\":\"true\"", StringComparison.Ordinal)
-            : line.Contains($"\"id\":\"{testcontainer}\"", StringComparison.Ordinal) && testcontainer.Length > 0 ? line.Replace("\"testcontainers\":null", "\"testcontainers\":\"true\"", StringComparison.Ordinal)
-            : line.Contains($"\"id\":\"{shareVolume.Container}\"", StringComparison.Ordinal) && shareVolume.Container is { Length: > 0 } ? line.Replace("\"mounts\":[", $"\"mounts\":[{{\"type\":\"volume\",\"name\":\"{shareVolume.Volume}\"}},", StringComparison.Ordinal)
-            : line));
+            Edit(
+                Edit(
+                    Edit(
+                        Edit(line, keepContainer, "\"keep\":null", "\"keep\":\"true\""),
+                        testcontainer, "\"testcontainers\":null", "\"testcontainers\":\"true\""),
+                    compose, "\"mounts\":[", $"\"compose\":\"{ComposeProject}\",\"mounts\":["),
+                shareVolume.Container, "\"mounts\":[", $"\"mounts\":[{{\"type\":\"volume\",\"name\":\"{shareVolume.Volume}\"}},")));
         Runner = new RecordingCommandRunner { Policy = CommandPolicy.Product, Default = new CommandOutcome.FailedToStart("not scripted by the docker world") }
             .Script(DockerCommands.Version.Argv, 0, version)
             .Script(DockerCommands.SystemDf.Argv, 0, DockerFixture.Read("system-df.out"))
@@ -63,6 +72,10 @@ internal sealed class DockerWorld
     }
 
     public RecordingCommandRunner Runner { get; }
+
+    /// <summary>The edit one test asks of ONE captured line: applied only to the line of container <paramref name="id"/>, and only when one was named.</summary>
+    private static string Edit(string line, string? id, string from, string to) =>
+        id is { Length: > 0 } && line.Contains($"\"id\":\"{id}\"", StringComparison.Ordinal) ? line.Replace(from, to, StringComparison.Ordinal) : line;
 
     /// <summary>The three anonymous volumes no container uses in the capture, as Docker listed them.</summary>
     public static IReadOnlyList<string> DanglingAnonymous =>

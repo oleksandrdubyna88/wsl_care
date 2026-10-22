@@ -22,6 +22,8 @@ public sealed record ContainerMount(string Type, string Name)
 /// <param name="ImageId">The image id it was created from — what keeps an image "used" (plan §12 A6).</param>
 /// <param name="LogMaxSize">The json-file <c>max-size</c> option; empty when the log is unbounded (plan §4.5).</param>
 /// <param name="LogPath">Where the daemon writes its log — inside the docker-desktop VM under Docker Desktop.</param>
+/// <param name="ComposeProject">The <c>com.docker.compose.project</c> label: the project that owns the container; empty when the
+/// container is not a compose one (or when the line was captured before the template read the label).</param>
 public sealed record ContainerDetail(
     string Id,
     string Name,
@@ -34,6 +36,7 @@ public sealed record ContainerDetail(
     string LogPath,
     bool Testcontainers,
     bool KeptByLabel,
+    string ComposeProject,
     IReadOnlyList<ContainerMount> Mounts)
 {
     /// <summary>Docker's states for a container that holds disk and runs nothing (plan §5 A5).</summary>
@@ -64,5 +67,6 @@ public sealed record ContainerDetail(
             DockerText.Field(row, "logPath"),
             DockerText.Field(row, "testcontainers") == "true",
             DockerText.Field(row, "keep") == "true",
+            DockerText.Field(row, "compose"),
             DockerJson.Array(row, "mounts", m => new ContainerMount(DockerText.Field(m, "type"), DockerText.Field(m, "name"))));
 }
