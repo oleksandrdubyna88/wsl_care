@@ -1,6 +1,6 @@
 # PLAN — E21 "Test leftovers and A5": A5's compose exemption, this repo's test prefix, the `testsToDelete-` sweep (Docker and `%TEMP%`)
 
-> Status: **plan only, nothing implemented yet, 2026-10-15.** Scope: the stories of epic E21 of
+> Status: **in progress, 2026-10-23 — E21.S1 (DH-2, A5 never selects a compose project's container) merged as #160 (`1dfeb6e8`); DH-8, DH-6, DH-7 and DH-9 not started.** Scope: the stories of epic E21 of
 > [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (DH-2, DH-8, DH-6, DH-7, DH-9). The owner's yes for E20 and
 > E21 came on 2026-10-15. Written by the Opus judge (epic → stories); the cornerstone **DH-6** (`model: fable`, the parent's
 > ledger `Cornerstones: 2 of 2 — DH-4, DH-6`) has its scenarios and brief written by Fable (§4 DH-6).
