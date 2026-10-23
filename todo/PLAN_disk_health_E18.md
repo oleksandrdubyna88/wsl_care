@@ -1,9 +1,9 @@
 # PLAN — E18 stories: wsl_care consumes the kit, the full view, the slim side bar, Help, accessibility (#87)
 
-> Status: **in progress (2026-10-20)** — the stories document of epic E18 of [PLAN_disk_health.md](PLAN_disk_health.md)
+> Status: **in progress (2026-10-23)** — the stories document of epic E18 of [PLAN_disk_health.md](PLAN_disk_health.md)
 > (§3.4–§3.6 and its E18 table). E18.K1 is done in `dew_flow_vscode_kit` (kit #9 → `655df4de`; **0.2.0 released to
-> GitHub Packages**, release PR #16, run 39481672054 green). This document holds **W0** and **W1a**; W1b, W2, W4, W3 and W5
-> are added here, each before its own plan round. **W0 is MERGED (2026-10-21, PR #171 → `main` @ `4d051378`)** — § 6b is its code round, § 9 what shipped differently. **W1a is SPECIFIED (2026-10-21, the cornerstone section below; nothing of it built), its plan round next** — recommended as three pull requests in order (W1a § 9).
+> GitHub Packages**, release PR #16, run 39481672054 green). This document holds **W0**, **W1a** and **W1b**; W2, W4, W3 and W5
+> are added here, each before its own plan round. **W0 is MERGED (2026-10-21, PR #171 → `main` @ `4d051378`)** — § 6b is its code round, § 9 what shipped differently. **W1a is MERGED (2026-10-22, PR #177 → `main` @ `2bbd8d30`)** — built as one branch in three commits (W1a § 9a), § 10 / § 10a what shipped differently and its review round. **W1b is specified (2026-10-22, § W1b — the full view) and its coai plan round passed (session `6fc851ec`, proceed 5/6, folded in at `e1ecf478`); its build has not started (2026-10-23). It waits for kit 0.3.0 (E18.K2, kit draft PR #19) only at W1b-3; W1b-1 and W1b-2 can start now. Before W1b merges, a Fable security check of the pick → target map, the closed wire and the reveal binding must say SHIP.**
 >
 > Related: [module_vs_code.md](../research/module_vs_code.md), [architecture.md](../research/architecture.md), the kit's
 > `research/PLAN_kit_components_storybook.md` (kit `main` @ `1d2681cc`) §4.3 (the DOM port), §4.6 / §4.6a (the DataTable, its reveal contract and the
@@ -733,3 +733,617 @@ The coai code round (session d18198b1, 12 reviewers, verdict `good_enough`, 14 f
 5. **The header of `-l -v` is the line immediately before the first row** (not the first non-row line): a stray line above it no longer becomes the state column. RED: the fixture with a stray notice lost its two-word state.
 
 Break-its (SHA-256 restored): `version !== 1` passing as 2 → the version-3 test red; `persistedNameOf` by length only → the name tests red.
+
+## W1b — the full view
+
+> Specified 2026-10-22 on `main` @ `2bbd8d30` (W1a merged). **Plan only; the plan round is next.** W1b is the first thing the
+> owner SEES of #87's split: an editor-area page, built from the kit's components (W0) over the per-distro data path (W1a), that
+> shows everything the side bar shows and more, per distro, with every action a button. It implements
+> [PLAN_disk_health.md](PLAN_disk_health.md) §3.5 (the full view READS the store, never polls; `preview` / `doctor` only on open,
+> *Refresh* and becoming visible; a hidden view gets no posts; the spawn ledger as "AI OS Care's own cost"; `program` + safe prefix,
+> the command line revealed per row; "not available yet" muted; binary units for held memory), §3.6 items 1–3 (no table scrolls
+> sideways; cards in one row of one height, buttons at the bottom; the distro picker on top of the WSL tab and the VM / distro split)
+> and the E18 table row W1b. The headless layout check is the kit's (K2, kit 0.3.0, specified in `dew_flow_vscode_kit`); W1b's side
+> of it is § 3.10.
+
+### 1. Goal
+
+What must be true when W1b is done:
+
+1. **One page, opened by a button.** `wslCare.openFullView` opens (or reveals) ONE `WebviewPanel` `wslCare.fullView` in the editor
+   area — from an icon in the side bar's title bar AND a button on the side bar's page; a page open at a reload is restored by a
+   serializer on its persisted tab and distro.
+2. **It reads, it does not poll.** Its data is the store's (`OutcomeStore`), the hosts' derived views (cleanup, archive, relays,
+   GPU, Windows Time, Windows tasks, the bundled daemon) and the spawn ledger. It starts reads only on open, *Refresh*, a pick and
+   becoming visible — never on a timer — and posts nothing while hidden.
+3. **Two tabs, per side.** *WSL: <distro>* and *Windows*, each with its status mark. On top of the WSL tab, a distro picker (a
+   radio group: name, state, its mark; arrows / Home / End); every figure on the tab follows the picked distro, and the WSL VM's
+   figures are labelled "the WSL VM — shared by every distro", apart from the distro's own.
+4. **Every picker state has its page**: a running distro with a daemon; no daemon (*Install daemon in <distro>…*, the VM's
+   figures "measured by <source>'s daemon"); stopped (last known figures, muted, with their time, and *Start <distro> and check*);
+   running state not known; WSL 1 and an unknown WSL version (the W1a sentences, no VM figures); Docker Desktop's own distros
+   (read-only); a failed daemon read (its sentence); not read yet.
+5. **No command line before a click.** Tables show `program` + the daemon's `argumentsShown`; the redacted `commandLine` reaches
+   the page only as the host's answer to one row's reveal, and never sits in a button label.
+6. **Units and absence.** Held memory in binary adaptive units (14 MiB reads "14.0 MiB"); PIDs never wrap; what `main` cannot
+   read yet is a muted "not available yet — needs <what> (<story>)", never a figure and never 0.
+7. **Every action is a button here too.** Every contributed command has its full-view button (`commandButtons.ts` gains the
+   `full` place), proved by rendering the page and pressing every button, as the side bar's test does.
+8. **The layout holds in a real Chrome**: the kit's layout-check bin passes over a static rendering of every tab and picker state
+   at 300 / 1280 / 1920 px × four themes × three sizes — no page, box, table or cell wider than its room; cards in a row of one
+   height.
+
+### 2. Where things are today (checked on `main` @ `2bbd8d30`, 2026-10-22)
+
+- **The page shape to reuse** — `src_vs_code/src/logsPage/logsPanel.ts`: `viewType` (`:24`), a `PanelSlot` (`:27`, one panel,
+  created or revealed synchronously), `post` through the slot (`:30`), `show` (`:34-46`, `createWebviewPanel(…, panelOptions(media))`),
+  `restore` (`:49-53`), `statusChanged` (`:56-60`), `wire` (`:70-81`: `panelShell({ nonce, scriptUri, styleUri, page })`,
+  `onDidReceiveMessage` → `controller.receive(raw)` with the log as the detached edge). The serializers: `extension.ts:513` (Archive),
+  `:523` (Logs); activation `package.json:52-53` (`onWebviewPanel:…`). `archivePage/archivePanel.ts:80` drops the page's state on
+  `onDidDispose` (`pageClosed`) and names rows by index with the view's `generation` (`archivePage/archiveMessages.ts:25-28`, `:49`).
+- **Visibility exists only in the side bar**: `panel/panelProvider.ts:98` (`onDidChangeVisibility`), `:108-110` (`isVisible`),
+  `:116-120` (refresh on becoming visible). No page panel handles `onDidChangeViewState`; `panelOptions` (`panel/panelHtml.ts:74-76`)
+  sets no `retainContextWhenHidden`, so a hidden page's webview is torn down and sends `ready` again when shown
+  (`LogsController`'s `ready`, `logsPage/logsController.ts:180`).
+- **The shell**: `type Page = 'panel' | 'logs' | 'archive'` (`panelHtml.ts:23`), `PAGES` (`:26-30`, root id and title), ONE
+  `scriptUri` and ONE `styleUri` (`:15-21`, `:62`, `:67`), the CSP `default-src 'none'; script-src 'nonce-…'; style-src 'nonce-…'`
+  (`:60`), the nonce 32 hex (`:32`), `SAFE_URI` (`:33`); `test/panel/webviewHost.test.ts:123-129` pins the CSP equal across pages and
+  each page's root and title.
+- **The full view's bundle (W0)**: `src/webview/fullView.ts:1-25` (imports the kit, acquires the API once, empties `#view`);
+  `scripts/bundle-entries.json` (the `webview` entry → `dist/webview/full.js`, IIFE, `chrome114`; esbuild emits `full.css`);
+  `webviewBoundary.test.ts:26-28`, `:51-63` (a page file imports only its folder and the kit's two browser entries; no host module
+  imports `src/webview/`); `kitPage.test.ts` + `test/webview/kitPageEntry.ts` (the reveal wiring `{ type: 'reveal', index, request }`);
+  `fullView.test.ts` runs the shipped `full.js` (no throw, nothing posted, the API acquired once).
+- **The side bar's data path**: `panel/viewModel.ts` builds the page from `FIELD_MAP` — `fromOutcome` (`:57`), `rowFor` (`:65`, not
+  exported), `sections` (`:73`), `buildPanelView` (`:141`); `panel/fieldMap.ts` `SECTIONS` (`:30-42`), `FIELD_MAP` (`:118-164`);
+  `panel/rowRenderers.ts:36-42` renders processes with a *Command line* column from `commandLine` and `gib()` for Held (`0.0 GiB` for
+  14 MiB — #87's screenshot). `text/format.ts` has `gb` (`:9`), `sizeText` (decimal adaptive, `:20`), `gib` (`:28`), `percent` (`:32`);
+  no binary adaptive helper; the words "not available yet" exist nowhere.
+- **The side bar's closed set**: `panel/messages.ts` `PageMessage` (`:38-63`), `BARE` (`:65`), `rowIdsOf` / `isIndex` (private),
+  `READERS` (`:116-124`), `PAGE_MESSAGE_TYPES` (`:137`); `panel/view.ts:51` `PAGE_ACTIONS`. `panel/panelProvider.ts` `PanelActions`
+  (`:23-75`), `receive` (`:122-153`), `post` (`:155-157`, the DEFAULT snapshot only).
+- **The buttons rule**: `panel/commandButtons.ts:18-21` (`where`: `page` with an action | `title` | `opener`), `:23-44` (19 commands);
+  `test/commandButtons.test.ts:42-47` (every command has an entry), `:52-88` (renders `media/panel.js` over real views and presses
+  every button), `:100-111` (a page button is rendered, accepted and named after its command), `:113-124` (only `openPanel` is an
+  opener; a `title` command is in `view/title`). `package.json:174-184` (`view/title`: refresh, openLogs).
+- **The W1a roads W1b stands on**: `OutcomeStore.snapshot()` (the default's), `snapshotOf` (`state/outcomeStore.ts:70`), `setPicked`
+  (`:79`), `pickedNames` (`:89`), `dropUnlisted` (`:98`), `clear()` (`:61-64`, keeps the picked map); a `stopped` / `wsl1` read
+  REPLACES the picked snapshot's answered outcomes verb by verb (`poll/poller.ts` `afterPickedStatus`), so a stopped distro's last
+  figures are gone from the store after a read. `Poller.refreshPanel` (`:176`, the default + the Windows read, `panelRound` `:205-219`),
+  `readPicked` (`:185`), `listDistros` (`:190`); the Windows read `askWindows` (`:293`) is private. `DistroInfo.running` is
+  `boolean | undefined`, `version` `1 | 2 | undefined` (`wsl/distroList.ts`); `CleanupHost.controls(aim)` (`cleanup/cleanupHost.ts:151`)
+  but `relays()` (`:175`) reads the default only; `installPrompt(distro)` (`install/installDaemon.ts:57-72`) has no running fact.
+- **The Windows side**: the store's `windowsStatus` slot (`outcomeStore.ts:25`, `:49`), read by the poller (`:293-360`) through
+  `WindowsCareClient.status` (`client/WindowsCareClient.ts:171-180`, `client/windowsStatus.ts:57`) — and NOTHING renders its body. The
+  Windows binary's report: `HostReport` (`src_daemon/src/WslCare.Core/Status/StatusReport.cs:197-209`: memory, system drive, vmmem
+  working set, `vmmemAdvice`), `WindowsMcpServers` (`:88`), `Worktrees` (`:100`, E19.S3/S4 merged); verdicts `host.commit`,
+  `host.compression`, `host.vmmem` (`Thresholds/HostRules.cs:60`, `:71`, `:83-85`). There is NO Windows status golden: the goldens are
+  the Linux binary's over the captured fixtures (`tests/WslCare.Scenarios/GoldenContracts.cs`), and E19's plan records the same gap
+  ([PLAN_disk_hygiene_windows_E19.md](PLAN_disk_hygiene_windows_E19.md), E19.S2b's **OPEN** item). A Windows status is already built
+  from a fixed `ProbeSample` with `HostSide.Windows` in `tests/WslCare.Cli.Tests/McpStatusTests.cs`.
+- **The process door**: `process/runner.ts` (`Runner` `:58`, `spawnRunner` `:262`, `closedRunner` `:291`), the only importer of
+  `child_process` (`structure.test.ts:58-60`). `extension.ts:151` builds ONE client runner (`clientRunner(…, runnerFor(choice), calls)`,
+  also the Windows client's and the archive's); the PowerShell hosts take `runnerFor({ kind: 'real' })` (`:179`, `:280`, `:355`,
+  `:402`). Nothing counts spawns.
+- **The harness after W0** (`test/support/pageHarness.ts`): tags `:37`, attributes `:44` (`role`, `scope`, `title`, `type`, `colspan`,
+  `min`, `max`, `id`, `tabindex`; `aria-*` / `data-*` by prefix), events `:47` (`click`, `keydown`, `input`), `focus()` on an attached
+  button, input or `tabindex` element (`:392-396`). A radio group of buttons with `role="radio"` + `aria-checked` + a roving
+  `tabindex` + arrow keys needs NOTHING more.
+- **Structural lists that name page hosts**: `structure.test.ts:226` (`FAR_FROM_ROOT`: `src/panel/`, …, `src/logsPage/`,
+  `src/archivePage/`), used by the root (`:250-255`) and config (`:309-312`) import rules.
+
+### 3. Design
+
+#### 3.1 The panel
+
+- **`src/fullView/fullViewPanel.ts`** (new, the `LogsPanel` shape, `logsPanel.ts:23-82`): `viewType = 'wslCare.fullView'`, title
+  `AI OS Care — Full view`, one `PanelSlot`, `show()`, `restore(panel)`, `isOpen()`, `dispose()`, and `wire(panel)` with the shell
+  page `full` (`PAGES` gains `full: { root: 'view', title: 'AI OS Care — Full view' }` — `view` is W0's mount point, and the word
+  `root` stays out of shipped sources but the root-call module, W0 § 9). `onDidDispose` → `controller.pageClosed()` (the Archive
+  page's rule): the reveal texts, the pick timer and the generations are dropped.
+- **`localResourceRoots`: `dist/webview/` only, for this page only.** `panelOptions(root)` already takes its root
+  (`panelHtml.ts:74-76`); the full view passes `Uri.joinPath(extensionUri, 'dist', 'webview')`, the other pages keep `media/`. No
+  `retainContextWhenHidden`: the page holds no state the host does not (the tab and the distro are the host's, § 3.2), a revealed
+  command line SHOULD vanish when the page is hidden, and a torn-down webview costs no memory. Sort and search state is the page's
+  and is lost on hide — stated (§ 7).
+- **ONE stylesheet, decided.** The page's own CSS (`src/webview/fullView.css`: the card grid, the card, the picker, muted and
+  section rules) is imported by `fullView.ts` beside the kit's, so esbuild emits ONE `dist/webview/full.css`. Reasons: `ShellParts`
+  keeps its single `styleUri` (`panelHtml.ts:15-21`) and the CSP stays byte-equal across pages (`webviewHost.test.ts:123-129`
+  unchanged); W0's `full.css` checks (no `url(`, `@import`, `@font-face`) cover the page's rules for free; `.vscodeignore` and
+  `vsix-files.txt` are unchanged. A second `<link>` would widen the shell for one page and buy nothing. `src/webview/stylesheets.d.ts`
+  gains the `*.css` side-effect module declaration TypeScript 6 needs (W0 § 9).
+- **The command and its buttons.** `package.json` contributes `wslCare.openFullView` ("Open full view", category `AI OS Care`,
+  icon `$(open-preview)`), a `view/title` entry `when: view == wslCare.panel` (the icon), and `onWebviewPanel:wslCare.fullView`; the
+  side bar's page gains the bare action `openFullView` (`PAGE_ACTIONS`, `messages.ts` `BARE`, `PanelActions.openFullView`), rendered
+  by `media/panel.js` among the head actions. `extension.ts` registers the command, the serializer
+  (`registerWebviewPanelSerializer(FullViewPanel.viewType, …)`, as `:523`) and the change subscriptions (§ 3.2). W2's "*Open full
+  view*" item of PLAN_disk_health.md's E18 table is therefore delivered here; W2 keeps only its placement under the recommendation.
+
+#### 3.2 Reads, visibility and the host-held state (`src/fullView/fullViewController.ts`)
+
+- **The host holds the page's state**, never the page: the shown tab (`wsl` | `windows`), the shown distro (a `DistroName`, or the
+  default entry), the last `DistroList`, and three counters — `list` (bumped when the list's names change), `pick` (bumped on every
+  accepted pick and every list change) and one `generation` per reveal table (§ 3.6). The tab and the shown distro's NAME are written to
+  `workspaceState['wslCare.fullView']` (`{ tab, distro? }`, < 200 bytes, overwritten); a restore re-mints the name with
+  `persistedNameOf` (`wsl/distroTarget.ts`) and keeps it only if the next `listDistros()` lists it — otherwise the default entry.
+- **The default entry is read through the DEFAULT road, every other entry through `readPicked`** — decided, because the side bar and
+  the full view must never disagree about the default distro, and a picked read of the default would double every open's spawns
+  (W1a: a default call and a picked call never share, `§3.1`). `defaultEntryOf(list, settingText, snapshot)` (pure,
+  `src/fullView/distroEntries.ts`): the distro the default snapshot's `status` names (answered, or a failure that names one), else a
+  SET `wslCare.distro` that the list holds, else `list.default`, else none. That entry renders `store.snapshot()`; any other renders
+  `store.snapshotOf(name)`.
+- **When it reads** (never on a timer; each read through the poller, so the store stays the one data service):
+
+  | Event | Reads | Posts |
+  |---|---|---|
+  | `ready` (a new or re-created page) | none | the current view at once |
+  | open, *Refresh* on the WSL tab, becoming visible | `poller.listDistros()`, then the shown entry: default → `poller.refreshPanel()`; picked → `poller.readPicked(name)`; a WSL 1 / version-unknown / Docker Desktop / stopped entry → none | after each store change (visible only) |
+  | *Refresh* on the Windows tab | `poller.refreshWindows()` — NEW, public: today's private `askWindows(true)`, tracked (a widening of W1a's poller, `poller.ts:293`) | as above |
+  | `pick` | the picked entry's read, started `PICK_SETTLE_MS` (400) after the LAST pick — arrow keys over five distros start one read, not five; the view from the store is posted at once | as above |
+  | `tab` | none (the tab shows the store's newest; *Refresh* reads) | the view |
+
+  `PICK_SETTLE_MS` is a named constant with that reason, not a setting (a UI settle, not a threshold); the timer is injected
+  (`ONE_SHOT`'s shape) and replaced, never stacked; `pageClosed` clears it.
+- **Hidden means silent.** The panel port exposes `visible`; `post` returns without posting while the panel is not visible. The
+  store's and the hosts' `onChange` (`store`, `host`, `archive`, `gpu`, `guard`, `bundled`, `windowsTasks`, the ledger) call
+  `controller.changed()`, which posts only when visible. `onDidChangeViewState` with `visible` turning true runs the "becoming visible"
+  row; the page's own `ready` (it was torn down) gets the current view.
+
+#### 3.3 The wire — one shared module and two closed message sets
+
+- **`src/shared/fullViewWire.ts`** (new) holds the posted view's TYPES, the closed tables (`TAB_IDS`, `REVEAL_TABLES`,
+  `FULL_MESSAGE_TYPES`, the button-message shapes) and NOTHING that imports: the host's parser validates against it and the page
+  renders from it, so the contract is written once (`common.testing`: a contract with two implementations is enumerated, not
+  retyped). The W0 boundary widens by exactly this file, RED-first: a page file may import `src/shared/fullViewWire.ts` and no other
+  host module; the wire imports nothing (a planted import is found); it compiles under both configs, so a DOM or Node reference in
+  it fails one of the two typechecks. Reason for `shared/` rather than `webview/`: the host owns the contract (it is the side that
+  validates), and `shared/` already holds pure modules both sides of a boundary use (`shared/viewLevel.ts`).
+- **Page → host** (`src/fullView/fullMessages.ts`, `parseFullMessage(raw): FullMessage | undefined`, the `messages.ts` style:
+  each type checked with EXACTLY its keys; `rowIdsOf`, `isIndex`, `MAX_STOP_INDEX` and the GPU bound are exported from
+  `panel/messages.ts` and reused, not copied):
+
+  | `type` | keys besides `type` | values |
+  |---|---|---|
+  | `ready`, `refresh` | — | |
+  | `rendered` | `cards`, `styled` | a whole number; a boolean (§ 3.11) |
+  | `tab` | `id` | `wsl` \| `windows` |
+  | `pick` | `index`, `list` | an index into the host's list of THAT `list` generation (< its length, ≤ 63); the generation |
+  | `reveal` | `table`, `generation`, `index`, `request` | a `REVEAL_TABLES` id; whole numbers (index ≤ 999); the kit's request, `^\d{1,9}:\d{1,9}$` |
+  | `startWsl`, `installDaemon`, `runFullCheck`, `archiveNow`, `chooseArchiveFolder`, `stopArchiving`, `openArchive`, `stopRelays`, `openRunLogs` | `pick` | the pick generation the button was rendered in |
+  | `clean`, `cleanSelected` | `rowIds`, `pick` | the side bar's row-id rule (one id for `clean`) |
+  | `stop` | `index`, `pick` | ≤ `MAX_STOP_INDEX` |
+  | `openSettings`, `openLogs`, `startWindowsTime`, `installWindowsTimeGuard`, `removeWindowsTimeGuard`, `installWindowsWatchTask`, `installWindowsArchiveTask`, `removeWindowsTasks`, `runWindowsWatchTask`, `runWindowsArchiveTask` | — | |
+  | `enableGpu` | `index`, `readAt` | the side bar's rule |
+
+  A distro action whose `pick` is not the CURRENT pick generation is dropped and the view re-posted with the notice "The distro
+  changed — press the button again." (a click on a button rendered for Ubuntu that lands after a pick of Debian never acts on Debian);
+  the modals still name their distro (W1a), a second guard. A `pick` of a stale `list`, or an index past the list, is ignored.
+- **Host → page**: `{ type: 'view', view: FullView }` and `{ type: 'revealed', table, generation, index, request, text }`. Every
+  button in a view carries the COMPLETE message it posts, built by the host from the closed shapes; the page posts it verbatim and
+  composes only `ready`, `rendered`, `tab`, `pick` and `reveal` itself.
+
+#### 3.4 The picker and the states of an entry (`src/fullView/distroEntries.ts`, pure)
+
+`entryOf(info, source)` turns one `DistroInfo` and its snapshot into a `PickerEntry { name, meta, mark: { tone, word }, kind }`
+and decides which cards the WSL tab shows. The kinds, checked in this order:
+
+| Kind | When | Picker meta / mark | The WSL tab | Reads |
+|---|---|---|---|---|
+| `dockerDesktop` | name is `docker-desktop` or `docker-desktop-data` (the two names Docker Desktop creates; exact) | "Docker Desktop's own" / neutral "read only" | one card: "Docker Desktop creates and manages this distro. AI OS Care installs nothing here and offers no action on it." + its version and state | none |
+| `wsl1` | `version === 1` | "WSL 1" / neutral "WSL 1" | the W1a sentence "WSL 1 — AI OS Care needs WSL 2 …"; no VM card, no button | none |
+| `versionUnknown` | `version === undefined` | "version not known" / warning "version not known" | the W1a `versionUnknown` sentence; no VM card, no button | none |
+| `stopped` | `running === false` | "stopped" / neutral "stopped" | "<d> is stopped — AI OS Care does not start a distro on its own." + *Start <d> and check* (`startWsl`); the LAST KNOWN distro cards, muted, "as of <local minute>" (or "no figures were read in this window") | none |
+| `stateUnknown` | `running === undefined` | "state not known" / neutral "state not known" — never "stopped" | as `stopped`, worded "WSL did not say whether <d> runs" | none |
+| `checking` | running, no `status` outcome yet | "checking…" / neutral | "Asking <d>'s daemon…" | the entry's read |
+| `noDaemon` | `status` is `notInstalled` | "no daemon" / info "no daemon" | *Install daemon in <d>…* (`installDaemon`); the VM section "measured by <source>'s daemon" (§ 3.5); each distro card "not available — needs the daemon in <d>" | the entry's read |
+| `failed` | any other failure of `status` | `failureText(…).label` / critical | the failure's sentence; *Install daemon…* when it is `daemonTooOld`; last known, muted | the entry's read |
+| `daemon` | `status` answered | "default · running · daemon <version>" / the worst verdict: critical "N critical", warning "N warnings", ok "OK" | every card of § 3.5 | the entry's read |
+
+- **Last known figures** need the store to keep them: a `stopped` read replaces the answered outcomes. `OutcomeStore` gains
+  `lastKnownOf(target): { snapshot, at } | undefined` — updated on every write of an `answered` outcome (default or picked), never by a
+  failure, cleared for the default by `clear()` (a setting change is another distro) and for a picked name by `dropUnlisted`; `at` is
+  the answer's `sampledAt`. In memory only (§ 8), so after a reload a stopped distro says "no figures were read in this window".
+- **The page's picker** (§ 3.11) is a `div role="radiogroup" aria-labelledby` of `button role="radio" aria-checked` chips (name,
+  meta, mark word — the mark's tone is a glyph AND a word, never colour alone), roving `tabindex`, ArrowRight / ArrowDown /
+  ArrowLeft / ArrowUp (wrapping), Home, End with `preventDefault` and `focus()` — the WAI-ARIA radio group, selection follows focus;
+  each selection posts `pick`. The chips wrap (`flex-wrap`), never scroll. The tab label follows the pick: the kit's `Tabs` has no
+  `setLabel` (kit §4.5), so the page rebuilds the tablist when the label changes (on a pick only), keeps the selected tab and puts
+  focus back on the checked chip; other posts only `setStatus` and replace the panels' content.
+
+#### 3.5 The view model (`src/fullView/fullViewModel.ts`, `wslCards.ts`, `windowsCards.ts`, pure)
+
+- **Host-side, spelt.** `buildFullView(input): FullView` takes the snapshots, the list, the host views and the ledger and returns
+  strings and numbers only — every daemon string through `safeText` (`panel/format.ts`) — the side bar's rule (`view.ts:9-13`).
+- **One renderer for both views.** A figure the side bar also shows is rendered by the SAME code: `viewModel.ts` exports `rowFor`
+  (`:65`, a widening, `common.reuse-first` step 1) and the cards place `FIELD_MAP` rows by id. New renderers exist only for what the
+  side bar does not show (the reveal tables, PSI, the virtual disks, MCP instances, the Windows report). The side bar's own
+  *Command line* column (`rowRenderers.ts:36-42`) is W2's to remove (§ 3.12).
+- **`FULL_CARDS`**, one typed table: per card `{ id, tab, scope: 'vm' | 'distro' | 'windows', title, paths, build }`. `scope: 'vm'`
+  cards carry the note `VM_LABEL = 'the WSL VM — shared by every distro'`; when their figures came from another distro's snapshot
+  (a `noDaemon` entry) the note adds "measured by <source>'s daemon, <age>", the source being the default snapshot when answered,
+  else the first listed picked snapshot with an answered `status`, else the card reads "not available — no distro's daemon has
+  answered". `paths` is what makes the split checkable (RED 11): §3.6's left column as status paths and verdict-id prefixes —
+  `vm.memory`, `slow.windowsClock`, `disk.vhdx`, `disk.volumes`, verdicts `memory.*`, `pressure.*`, `clock.*`, `kernel.*`, `host.*`,
+  `disk.vhdxGap`, `disk.vhdxGrowth`, `disk.hostFree`, `disk.volumeFree` — the VM's; everything else the distro's.
+- **The WSL tab** (`daemon` kind; the mockup's order):
+
+  | Section | Card (scope) | Reads | Buttons |
+  |---|---|---|---|
+  | The WSL VM — shared by every distro | Memory (vm) | `vm.memory.*`, swap, fragmentation, unattributed; verdicts `memory.*` | — (A1 / A2 are ladder rungs, E16) |
+  | | Pressure (PSI) (vm) | `vm.memory.pressure.{memory,io,cpu}.{some,full}.{avg10,avg60,avg300}` as a table; verdicts `pressure.cpu`, `pressure.io`, `memory.pressure` | — |
+  | | Clock (vm) | `slow.windowsClock`; verdicts `clock.*` | — |
+  | | Virtual disks (vm) | `status.disk.vhdx[]` with `basis` and age; verdicts `disk.vhdxGap`, `disk.vhdxGrowth` | — |
+  | | Responsiveness and the restart forecast (vm) | not available yet — needs the responsiveness probe and the forecast (E16.S1, E16.S2) | — |
+  | <distro>'s own | Recommendation (distro) | not available yet — needs the remedy ladder (E16.S3) | — |
+  | | Disk (distro) | `vm.disk`; verdicts `disk.root`, `disk.discard`; this distro's own `vhdx` row (by name) | — |
+  | | Docker (distro) | `preview.docker`, `preview.totals`, `vm.containers`, `slow.containerStats`, the cleanup rows, kept volumes, hygiene | each row's *Clean…* (`clean`), *Clean selected…* (`cleanSelected`) — `CleanupHost.controls(aim)` |
+  | | Top processes (distro) | `vm.processes.top` (reveal table), `families`, `mntWalkers` (reveal table) | — |
+  | | MCP servers (distro) | `mcpServers` counts, `instances[]` with the owner (reveal table on `owner.commandLine`), `servers[]` | — (A19 is a ladder rung) |
+  | | Orphaned AI-agent processes (distro) | `processes.top[].orphaned`, `mcpServers.instances[].owner.orphaned` | — ("ending them: not available yet — needs the remedy ladder (E16.S3)") |
+  | | Interop relays (distro) | `interopRelays` | *Stop client-gone relays…* (`stopRelays`) — `CleanupHost.relays(aim)`, widened like `controls(aim)` |
+  | | Big folders, Container starts (distro) | `folders`, `containerStarts` | — |
+  | | CPU by Claude session (distro) | not available yet — needs E15.S6 | — |
+  | | Daemon (distro) | `productVersion`, doctor `healthy` / `checks` / `versions` / `configError`, `running` | *Run full check now* (`runFullCheck`), *Install daemon…* when outdated (`installDaemon`), *Stop* (`stop {index}`) |
+  | | Last cleanup (distro) | `lastCleanup` | *Logs* (`openRunLogs`) — the default entry only (the Logs page is the default's, W1a §3.5) |
+  | | AI-session archive (distro) | the default entry: `ArchiveHost`'s controls; a picked entry: `src/fullView/pickedArchive.ts` reads `archive status` through `client.read(request, pickedTarget(name))` on the entry's read and derives with `deriveArchive` (`archive/archiveView.ts`, reused) | *Archive now…*, *Choose folder…*, *Stop archiving…* with the entry's target; *Open archive* the default entry only |
+  | | AI OS Care's own cost (distro-independent, shown on the WSL tab) | the spawn ledger (§ 3.9); "the daemon's own cost — not available yet — needs E15.S9" | *Settings* (`openSettings`) |
+
+- **Units.** `text/format.ts` gains `binarySize(bytes)`: `B` below 1 KiB as a whole number, else one decimal in the largest of
+  KiB / MiB / GiB / TiB it reaches (14 680 064 → "14.0 MiB"); a negative or non-finite count is a `TypeError` (a defect, not data);
+  every held-memory figure of the full view uses it (Held, `memory.current`, MCP held, families). Disk and Docker stay decimal, as
+  `df -H` and `docker system df` print them (`panel/format.ts:6-8`). An absent figure is `—` with a `null` sort value (kit §4.6).
+- **"not available yet"** is ONE table, `src/fullView/notYet.ts`: `NOT_YET = 'not available yet'` and per card the missing piece
+  and its story (E16.S1/S2, E16.S3, E15.S6, E15.S9 on the WSL tab; Windows processes E15.S3/E15.S6, Defender E15.S10/E16.S5, disks by
+  number E15.S4 on the Windows tab). Rendered muted (`wc-card--muted`), with no figure and no button. Each story that lands flips its
+  row — the table is the checklist.
+
+#### 3.6 Tables and the reveal (`src/fullView/fullTables.ts`)
+
+- Every table is the kit's `DataTable` (W0) with **short headers** and a declared **`stack`** — never the default:
+
+  | Table | Columns | `stack` |
+  |---|---|---|
+  | `processes`, `mntWalkers` (reveal) | PID · Program · Cmd · Family · CPU · Held · Age | `wide` |
+  | `mcpInstances` (reveal) | PID · Server · State · Owner · Held · Age · Cmd | `wide` |
+  | `windowsMcp` (reveal, § 3.7) | PID · Server · State · Held · Cmd | `medium` |
+  | families, containers, PSI, own cost | 3–4 columns | `narrow` |
+  | virtual disks, volumes, folders, orphans, doctor checks | 4–5 columns | `medium` |
+
+  *Program* is `program` followed by the daemon's `argumentsShown` joined by spaces; *Owner* is `owner.agent` + `owner.program`. A
+  `pid` column is `align: 'end'`, which the kit keeps on one line while the table is wider than `30em` (kit §4.6a) — and every PID
+  table stacks at `narrow` or wider, so below that width it is a label line, never a wrapped number. Each cell is `{ text, sort }`;
+  the page's `value` is `sort` and its `format` is `text`.
+- **The reveal.** A reveal table's rows carry NO command line; each has a `revealLabel` — "Show the command line of <program> (PID
+  <pid>)" — the kit's `button(row)` text, never the hidden value. The host keeps, per reveal table, the `commandLine` texts of the rows
+  it last posted under that table's `generation`; the generation is bumped only when that table's posted rows differ (a deep compare
+  of the spelt rows), so a background re-post does not wipe a revealed line. `reveal { table, generation, index, request }` is
+  answered `revealed { …, text }` with `safeText(commandLine)` when the generation is current and the row has one, else
+  `not available` (the kit's contract for a host that cannot answer, kit §4.6). The page calls `table.reveal(index, text, request)`
+  and ignores `false`. When a table leaves the page (a pick, a tab rebuild, `pageClosed`), the page calls `setRows([])` and then
+  `dispose()` (kit §4.6: `dispose` alone keeps a revealed text). `onReveal` posts; if posting throws, the kit restores the row to
+  clickable and rethrows, and the page's handler logs nothing and survives (RED 16).
+
+#### 3.7 The Windows tab and the Windows status golden
+
+- **The golden, from the emitter.** A daemon test beside `McpStatusTests` (`tests/WslCare.Cli.Tests/WindowsStatusGoldenTests.cs`)
+  builds `status --json` of a FIXED Windows `ProbeSample` (host memory, the system drive, a vmmem working set over the advice
+  threshold, two Windows MCP servers with owners and redacted command lines, a worktree section) through `StatusReports.From` and the
+  CLI's JSON writer, and holds `contracts/golden/head/status-windows.json` equal to it (`WSL_CARE_WRITE_GOLDENS=1` writes it, as
+  `GoldenContracts.cs` does) — platform-independent: no Win32 call. `FixturePrivacyTests` reads it like every golden. The extension's
+  `test/support/outcomes.ts` gains `windowsGoldenSnapshot()` through `windowsStatusOutcomeOf` (the real validator: the fixture must
+  answer `answered`, `side: 'windows'`, `common.testing`). The strict fake's Windows answer moves from the distro golden with
+  `side: "windows"` to this file. This closes E19's **OPEN** item for E19.S5 too (§ 3.12).
+- **The cards** (scope `windows`): *Bundled Windows daemon* (`bundled/bundledView.ts`); *GPU adapters* (`GpuView`, *Enable <GPU>…*
+  by `index` + `readAt`); *Windows memory* (`host.memory`, `vmmemWorkingSet` in binary units, `vmmemAdvice` as text, verdicts
+  `host.commit`, `host.compression`, `host.vmmem`); *Windows volumes* (`host.systemDrive`, and the default snapshot's `status.disk.volumes`
+  with its basis — "read by <d>'s full run, <age>" — and verdicts `disk.volumeFree`, `disk.hostFree`); *Windows MCP servers*
+  (`windowsMcpServers`, reveal table); *AI-agent worktrees* (`worktrees`, read-only, verdict `worktrees.reclaimable`; its buttons are
+  E20's); *Windows Time* (`GuardView` + its three buttons); *Windows tasks* (`WindowsTasksView` + its five buttons); not-yet cards
+  *Windows processes*, *Defender*, *Physical disks*.
+- When the Windows reading is not an answer (`notWindows`, the exe not usable, a timeout), the four report cards say
+  "not available — <failureText sentence>" — a failure, not the muted not-yet; the host-derived cards (GPU, Windows Time, tasks)
+  keep their own reads.
+
+#### 3.8 Every action is a button here too
+
+- `CommandButton` gains a REQUIRED `full` field: `{ where: 'full'; action: FullAction }` or `{ where: 'notInFull'; why: string }`.
+  The side bar's `where` keeps its meaning (W2 slims it). Required, so a command added without a decision does not compile. After
+  W1b exactly two commands are `notInFull`: `wslCare.openPanel` ("the side bar's own opener") and `wslCare.openFullView` ("this is
+  the full view"). `openFullView`'s side bar entry is `{ where: 'page', action: 'openFullView' }` and it is also in `view/title`.
+- Distro actions run against the SHOWN entry's `DistroTarget` (W1a's roads: `CleanupHost.clean / runFullCheck / stop / archiveNow /
+  stopRelays (target)`, `ArchiveHost.choose / stop / archiveNow (target)`, `installer(parts, target)`, `poller.readPicked(name,
+  { startIfStopped: true })` or `refreshAll({ startIfStopped: true })` for *Start <d> and check*) — the target is the host's, the page
+  sends only the pick generation. The install modal for a picked distro uses W1a's `TerminalTarget.running`: `installPrompt(distro,
+  running)` adds "<d> is stopped — opening the terminal starts it." for `false` and "whether <d> runs is not known — opening the
+  terminal may start it." for `undefined` (W1a § 9a #3); the default's prompt is unchanged.
+- Windows-side actions call the same host functions the side bar's `PanelActions` do; nothing new is launched.
+
+#### 3.9 The spawn ledger (`src/process/spawnLedger.ts`)
+
+- `SpawnLedger` (pure): per UTC hour of a call's START, per key, `{ calls, wallMs }`; it keeps the current hour and the 23 before
+  it (`LEDGER_HOURS = 24`) and drops older buckets on the next record. `ledgered(inner, ledger, keyOf, clock): Runner` — a decorator
+  that records the call at start, adds its wall time (the monotonic `clock`) when the inner promise settles, and passes the request
+  and the result (or the rejection) through unchanged. It imports nothing but the runner's types.
+- **Keys never carry data.** `ledgerKeyOf(request)` is exported by `client/WslCareClient.ts` — the module allowed to spell argv
+  words (`structure.test.ts:79-84`): for `wsl.exe`, `wsl.exe list` (the list questions) or `daemon <first word of the daemon's
+  tail>` (+ ` (root)` for `-u root`); for the bundled exe, `wsl-care.exe <first argument>`; for anything else the program's file name
+  only (PowerShell's script is never part of a key). No distro name, path, value, id or pid ever reaches a key (RED 28).
+- **Every runner is wrapped**: `extension.ts` wraps the client runner (`:151`) and every `runnerFor({ kind: 'real' })` it builds (one
+  helper), and an AST scan holds it (RED 29). The ledger is per window and in memory: what THIS window's extension started. The
+  card shows this hour's rows (Verb · Calls · Wall) and the previous hour's total; it judges nothing — the budget verdict
+  `selfCost.extensionCalls` is the daemon's (E15.S9, PLAN_disk_health.md §2 item 7), so the extension holds no threshold (#87 item 3).
+
+#### 3.10 One height per row, and the layout check (kit 0.3.0)
+
+- **The page's CSS** (`src/webview/fullView.css`, classes only): `.wc-grid` is a grid of `repeat(auto-fill, minmax(min(100%, 24em),
+  1fr))` with `align-items: stretch` (`.wc-grid--wide`: `36em`), `.wc-card` a flex column with `min-width: 0`, `.wc-card__actions`
+  `margin-top: auto` — so cards side by side have one height and their buttons line up at the bottom (§3.6 item 2); the picker's chips
+  `flex-wrap`. Tokens are VS Code's `--vscode-*` and the kit's; no `url(`, no `@import`.
+- **The bin.** Kit 0.3.0 (K2) ships `vscode-webview-kit-layout-check`: a static page from a file, headless Chrome over the DevTools
+  protocol, widths 300 / 1280 / 1920, four themes, three sizes; it fails on page, box, table and cell overflow and on unequal card
+  heights in a row by a consumer-given selector. W1b pins EXACTLY `0.3.0` (the lock entry with `version` + `integrity` and no
+  `resolved`, W0 § 3 / § 9) and never copies the probe.
+- **W1b's side** — `scripts/layout-full.mjs`, `npm run layout:full`, after `npm run bundle` and the test compile:
+  1. builds the fixture messages with the REAL view model (`out/test/layout/fullFixtures.js`, compiled from
+     `src/test/layout/fullFixtures.ts`): the WSL tab for every kind of § 3.4, the Windows tab answered (the Windows golden) and
+     unavailable, and a "wide data" fixture — 50 processes, a 120-character unbreakable token in `argumentsShown`, a long server name,
+     and a `revealed` message carrying a 200-character command line;
+  2. writes one static page per fixture into `os.tmpdir()/testsToDelete-full-layout-<pid>/`: `full.css` and `full.js` copied beside
+     it, `<main id="view">`, a stub `acquireVsCodeApi` (records, posts nowhere), the fixture's messages dispatched as `message`
+     events;
+  3. runs the kit's bin per page with the card selector `.wc-grid > .wc-card` (the flag spelling is K2's); any failure is the
+     script's exit code, naming the page;
+  4. removes its folder in a `finally`, and at start removes any `testsToDelete-full-layout-<pid>` folder whose pid is not alive (a
+     killed run's leftover). Chrome not found is a failure that says so, never a skip (kit §4.6a's rule).
+  CI runs it on the extension workflow's ubuntu leg (Google Chrome is on the image). Nothing of it ships (`vsix-files.txt` unchanged).
+
+#### 3.11 The page script (`src/webview/`)
+
+- `fullView.ts` (the entry) acquires the API once, listens for `message`, posts `ready` once, and renders `view` / `revealed`
+  messages; `cards.ts` (a card: head, note, lines, tables, buttons; muted and failed states), `picker.ts` (§ 3.4), `tables.ts` (the
+  kit `DataTable` per `TableSpec`, its reveal wiring, `setRows([])` + `dispose()` on removal), `classes.ts` (every class name the page
+  sets — the CSS test iterates it). DOM by `createElement` / `textContent` / `setAttribute` only — the strict harness refuses
+  anything else.
+- `rendered { cards, styled }` after each render: `styled` is whether the stylesheet applied — `typeof getComputedStyle ===
+  'function' && getComputedStyle(grid).display === 'grid'`. The harness has no `getComputedStyle`, so it is `false` there; in a real
+  VS Code it is `true` only if `full.css` loaded under the nonce CSP — W0 § 7's open item, closed by the host scenario (RED 23).
+
+#### 3.12 Boundaries (written on both sides when each other story starts)
+
+| Item | W1b builds | The other story |
+|---|---|---|
+| The side bar | *Open full view* (title icon + page button) | W2: the slim list (`justifies`, the `sidebar` / `full` column), the removal of the side bar's *Command line* column and "arrives in E#" rows, the recommendation's placement |
+| One renderer | `rowFor` exported and reused by the full view | W5: `pagesShareOneRenderer.test.ts` |
+| The Windows `status` golden | the emitter-side golden and the fake's answer (§ 3.7) | E19.S5: reuses it for the bar and side bar halves (`disk.volumeFree` from the newer reading, the worktree row); the boundary row is written into [PLAN_disk_hygiene_windows_E19.md](PLAN_disk_hygiene_windows_E19.md) in W1b's first commit |
+| Worktrees | a read-only card on the Windows tab | E19.S5: the side bar's suffix; E20 (DH-5): *Scan* / *Clean build output…* buttons, which then join the card |
+| The layout probe | the static pages, the selector, the CI step | K2 (`dew_flow_vscode_kit`): the bin, its checks, its release 0.3.0 |
+| Accessibility | the picker's radio group and the reveal labels | W5: keyboard sort / search across both pages, the contrast job |
+| Disjoint | no daemon change except the golden's test; no new verdict, threshold or verb | — |
+
+### 4. RED list (each seen failing for the real reason first; the commit it belongs to in brackets, § 10)
+
+Panel, picker, WSL tab [W1b-1]:
+
+1. `webviewHost.test.ts`: `panelShell({…, page: 'full'})` has `<main id="view">`, the title `AI OS Care — Full view` and the panel's
+   CSP byte for byte; the full view's options are `localResourceRoots` = exactly `[…/dist/webview]`, `enableCommandUris: false`, no
+   `retainContextWhenHidden`.
+2. `manifest.test.ts` / `extensionWiring.test.ts`: `wslCare.openFullView` is contributed, in `view/title` for `wslCare.panel`, its
+   activation `onWebviewPanel:wslCare.fullView`, its serializer registered.
+3. `commandButtons.test.ts`: every entry has `full`; the `notInFull` commands are exactly `openPanel` and `openFullView`, each with a
+   non-empty `why` (during W1b-1 the Windows-side commands are `notInFull` "the Windows tab (W1b-2)"; W1b-2 shrinks the set — the
+   final assertion is the two); `openFullView`'s side bar button is pressed in `postedByPageButtons` and the host accepts it.
+4. **The full-page button pass**: views built by the REAL view model over fixtures that between them show every button (each picker
+   kind, a wedged run for *Stop*, a disabled GPU, the guard present and absent, the tasks state of `commandButtons.test.ts`), rendered
+   by the SHIPPED `dist/webview/full.js` in the strict harness, every button clicked: the posted types include every `full.action`;
+   each posted message parses (`parseFullMessage`); `command === wslCare.<action>`.
+5. `fullMessages.test.ts`: over `FULL_MESSAGE_TYPES` (derived, not retyped) every type parses with exactly its keys; one key more,
+   one fewer, a value of the wrong type, an index past its bound, an unknown table or tab, a request not of the kit's shape — each
+   `undefined`.
+6. `fullViewController.test.ts`, the panel port faked (`visible`, a post spy, view-state events): while hidden, store and host
+   changes post NOTHING; turning visible runs `listDistros` then the shown entry's read (default → `refreshPanel`, picked →
+   `readPicked`) and posts after the store changes; `ready` posts the current view at once, before any read resolves.
+7. Pick: a current `pick` posts the store's view at once and starts `readPicked` after `PICK_SETTLE_MS` (fake timers); three picks
+   inside it start ONE read, the last; a stale `list` or an index past the list starts nothing; picking the default entry calls
+   `refreshPanel`, never `readPicked`; a pick clears no snapshot (the store's spy).
+8. `distroEntries.test.ts`: `defaultEntryOf` — the answered `status`'s distro wins over a set setting and over `list.default`; a set
+   setting the list does not hold is passed over; nothing → no default entry.
+9. `entryOf` for each kind of § 3.4 (fixtures through `distroListOf`, W1a's real parser): its meta, mark tone AND word, cards and
+   buttons; `wsl1`, `versionUnknown` and `dockerDesktop` start no read (the poller's spy) and carry no VM card and no button;
+   `stateUnknown` never says "stopped"; `stopped` shows *Start <d> and check* and the last known cards muted with "as of" — after a
+   `stopped` read replaced the answered snapshot (`lastKnownOf`).
+10. **Every figure follows the pick**: two distros answer from edited golden copies with planted distinct values (Ubuntu
+    `vm.disk.usedPercent` 11.1, top pid 11111, `interopRelays.count` 1; Debian 22.2, 22222, 2): Debian's view holds Debian's on
+    every distro-scoped card and none of Ubuntu's; its relays button is derived from Debian's snapshot (`relays(aim)`); a `noDaemon`
+    Debian's VM cards hold Ubuntu's figures and say "measured by Ubuntu's daemon".
+10b. Debian's archive card is derived from Debian's own `archive status` read (`-d Debian … archive status --json` in the recording
+    runner) and its buttons carry the pick generation; *Open archive* and *Logs* are on the default entry's cards only.
+11. **The split is derived**: for every card in `FULL_CARDS`, a `vm` card reads only §3.6's VM paths and carries `VM_LABEL`; a
+    `distro` card reads none of them — iterating the table, not a retyped list (a card added in the wrong scope fails).
+12. Every `FIELD_MAP` read row is placed on some full-view card, and its text there equals `rowFor`'s (one renderer) — except the
+    `processes` kind, whose full-view home is the reveal table.
+13. `textFormat.test.ts`: `binarySize` — 0 → "0 B", 1023 → "1023 B", 1024 → "1.0 KiB", 14 680 064 → "14.0 MiB", 1.5 GiB → "1.5 GiB",
+    2 TiB → "2.0 TiB"; −1, `NaN`, `Infinity` → `TypeError`. A process holding 14 680 064 bytes shows Held "14.0 MiB", never "0.0 GiB".
+14. Over every `TableSpec` the view model builds from the fixtures: a `pid` column is `align: 'end'`; every table names its `stack`
+    and a PID table's is `narrow` or wider.
+15. **The reveal, host side**: the posted view's JSON contains NONE of the fixtures' command lines (derived: every `commandLine`
+    and `owner.commandLine` in the bodies, with a planted sentinel unlike `program` / `argumentsShown`); `reveal` with the current
+    generation answers that row's `safeText(commandLine)`; a stale generation, an index past the rows, a row without one → `not
+    available`; no `revealLabel` contains its row's command line; a re-post with equal rows keeps the generation.
+16. **The reveal, page side** (harness): *Show* posts exactly `{ type: 'reveal', table, generation, index, request }`; before the
+    reply the row holds no command line; the reply shows it; a view with a new generation drops it; a pick that removes the table runs
+    `setRows([])` then `dispose()`, after which a late `revealed` changes nothing; with an API whose `postMessage` throws, the row is
+    clickable again and the page keeps running.
+17. Each `NOT_YET` row renders muted "not available yet — needs … (E1x.Sy)" with no figure, no 0 and no button.
+18. The page in the harness: the picker is a `radiogroup` of `role="radio"` buttons with one `aria-checked="true"` and a roving
+    `tabindex`; each of ArrowRight / ArrowDown / ArrowLeft / ArrowUp / Home / End posts `pick` with the expected index (wrapping) and
+    records `preventDefault`; and `harness.test.ts` pins `CREATABLE`, `ATTRIBUTES` and `ELEMENT_EVENTS` equal to W0's — W1b widens
+    nothing (a widening the build turns out to need is its own RED test first, with its reason).
+19. A serializer restore reopens on the persisted tab and distro; a persisted name the next list does not hold falls back to the
+    default entry; a name failing `persistedNameOf` is never minted.
+20. `fullViewCss.test.ts` over the bundled `full.css`: the four rules of § 3.10; every class in `classes.ts` has a rule; no `url(`,
+    `@import`, `@font-face`.
+21. `installDaemon.test.ts`: the prompt for `running: false` and `undefined` carries its sentence; `true` and the default's prompt are
+    unchanged.
+22. `structure.test.ts`: `FAR_FROM_ROOT` gains `src/fullView/` and the scan sees a module there; `webviewBoundary.test.ts`: a page file
+    may import `src/shared/fullViewWire.ts` and a planted page import of another `src/shared/` module is refused; the wire imports
+    nothing (planted companion).
+23. **Host scenario** (`test/host/suite.ts`, VS Code 1.85 and stable, the strict fake): `api.openFullView()` → `rendered` with
+    `cards > 0` and `styled: true`; `api.fullPick('Debian')` → the W1a call sequence for Debian, the status bar still Ubuntu's; with the
+    panel hidden (another editor in its group) a store change posts nothing (`api.fullPosts()` unchanged). `fullView.test.ts` (W0)
+    now expects exactly one `ready` with a mount and none without.
+
+Windows tab and the ledger [W1b-2]:
+
+24. `WindowsStatusGoldenTests`: the built report equals `contracts/golden/head/status-windows.json` (red before the file exists);
+    `windowsStatusOutcomeOf` answers it `answered` with `side: 'windows'`; `FixturePrivacyTests` green over it.
+25. `windowsCards.test.ts`: from the Windows golden — memory (binary units), the three host verdicts, the system drive, Windows MCP
+    (a reveal table, its command lines absent from the view), worktrees; the volumes from the DEFAULT snapshot's `status.disk` with
+    their basis; with a `notWindows` / timed-out reading each report card says "not available — <sentence>" and is not muted.
+26. RED 3 and 4 complete: the Windows-side commands are `full`, pressed in the button pass; `notInFull` is exactly the two.
+27. *Refresh* on the Windows tab calls `refreshWindows()` and no distro read; on the WSL tab it starts no Windows read.
+28. `spawnLedger.test.ts`: `ledgered` hands the same request and result objects through; a call counts at start and adds its wall
+    time at settle (fake clock); a rejection still counts and is rethrown; buckets follow the call's start hour; a 25th hour drops the
+    oldest; over every request W1a's enumeration (RED 20) recorded, `ledgerKeyOf` never yields a key with a distro name, `/`, `\`,
+    `=` or a run of five digits.
+29. An AST scan of `extension.ts`: every `clientRunner(` / `runnerFor(` result is passed to `ledgered(`; a planted unwrapped
+    `runnerFor({ kind: 'real' })` is found. The own-cost card shows this hour's rows and the previous hour's total, and the
+    daemon half as not-yet.
+
+The layout [W1b-3]:
+
+30. `manifest.test.ts` (W0's RED 1 retargeted): the kit is exactly `0.3.0`; the lock entry has `version` + `integrity` and no
+    `resolved`; `node_modules/.bin/vscode-webview-kit-layout-check` exists after `npm ci --ignore-scripts`.
+31. `npm run layout:full` passes over every fixture page at 300 / 1280 / 1920 × four themes × three sizes. **Seen red first** on the
+    built page with the card rules of § 3.10 taken out (unequal heights reported for the WSL tab's VM row) and with a table spec at
+    `stack: 'never'` (the wide-data fixture overflows at 300 px).
+32. `layoutFull.test.ts` (no Chrome): the fixture list covers every `PickerEntry` kind and both Windows states (derived from the
+    kinds' union); a `CHROME_PATH` naming nothing exits non-zero with its reason; a leftover folder of a dead pid is removed at start,
+    a live pid's is kept.
+
+### 5. Break-its (product code, each restored byte for byte, SHA-256 compared; never a tripwire touched)
+
+The visible guard removed from `post` → RED 6 red. The default entry read through `readPicked` → RED 7 red. The settle timer
+removed (a read per pick) → RED 7 red. `commandLine` put in the *Program* cell → RED 15 red. The generation check removed from the
+reveal answer → RED 15 red. `gib` back in Held → RED 13 red. `align: 'end'` dropped from one PID column → RED 14 red. A VM path
+moved onto the Disk card → RED 11 red. A reader accepting one extra key → RED 5 red. `readPicked` started for a WSL 1 entry → RED 9
+red. The `relays(aim)` widening reverted to the default → RED 10 red. One `runnerFor` left unwrapped → RED 29 red. `styled`
+hard-coded `true` → the harness half of RED 23 red. `align-items: start` in `.wc-grid` → RED 31 red. A command's `full` field
+deleted → the compile fails (required field).
+
+### 6. Build order
+
+1. This section; the plan round (coai, the whole of W1b in one round).
+2. **W1b-1** — first the boundary row in PLAN_disk_hygiene_windows_E19.md (§ 3.12); RED 1–23, then: the shell page and the panel,
+   the command and both side bar buttons, `fullViewWire.ts` and the boundary widening, the parser, the controller (visibility,
+   reads, pick settle, persisted state), `distroEntries.ts`, `lastKnownOf`, `relays(aim)`, `rowFor` exported, `binarySize`,
+   `notYet.ts`, the WSL cards and tables, the reveal, `pickedArchive.ts`, the `full` field, the install prompt, the page script and
+   its CSS, the test API's `openFullView` / `fullPick` / `fullPosts`. Full suites green.
+3. **W1b-2** — RED 24–29: the Windows golden (daemon test, regenerated in WSL as every golden is), the fake's Windows answer,
+   `refreshWindows()`, the Windows cards and buttons, the spawn ledger and its wiring, the own-cost card.
+4. **W1b-3** — after kit 0.3.0 is on GitHub Packages: the pin, `layout-full.mjs`, the fixtures module, the CI step; RED 30–32; the
+   page CSS fixed for whatever the bin finds, each fix named in W1b's *as built* subsection.
+5. Break-its (§ 5); docs: `research/module_vs_code.md` (the full view's modules, the wire, the read table of § 3.2, a sequence
+   diagram open → ready → reads → post / pick / reveal, the ledger, the units helper), `research/architecture.md` (the second page
+   and its resource root; the ledger around the process door), `research/module_tests.md` (the layout check, the Windows golden, the
+   host scenario and what they do not prove), README (the command and the full view), PLAN_disk_health.md's E18 row W1b marked built.
+6. Full suites: `npm run typecheck`, `lint`, `test`, `test:host`, `check:vsix`, `layout:full`; the daemon tests that read
+   `src_vs_code/` and the goldens (`GoldenContract`, `FixturePrivacy`, `Architecture`, `ReleaseExtension*`, the new Windows golden
+   test); the family checks; a private-data scan before the push.
+7. Reviews: the coai code round over the branch, an own Opus review, and a Fable security check of the reveal road and the wire
+   (command lines are the one secret-adjacent thing this page carries); the pull request; merge on every check green.
+
+### 7. What W1b does not prove
+
+- A real WSL 1 row (W1a § 7) and Docker Desktop renaming its distros (the two exact names are matched).
+- The Windows golden is a fixed sample: the owner's machine's Windows answer is read once by hand after deploy (POST_DEPLOY), not by
+  a test.
+- `styled: true` proves that the stylesheet's grid rule applied under the nonce, not every rule; the layout check runs WITHOUT the
+  CSP (a static page) and only at its three widths, four themes and three sizes — VS Code's own zoom and other fonts are not covered.
+- A real keyboard and screen reader on the picker and the tables (W5; the kit's Storybook for the components).
+- The ledger counts this window's spawns only: other windows, the daemon's timers and the root units are E15.S9's.
+- Sort and search survive neither a hide nor a re-post that changes a table's rows (the page's state, lost by design with the
+  webview); a revealed command line likewise.
+- A layout under data larger than the wide-data fixture.
+
+### 8. Growth surfaces (planning-docs rule)
+
+| Surface | Projected size | Retired by | Interrupted |
+|---|---|---|---|
+| The spawn ledger | ≤ 24 hours × ~25 keys ≈ 600 small entries, < 50 KB per window | the hour rollover (`LEDGER_HOURS`), the extension's disposal | in memory; nothing to sweep |
+| `lastKnownOf` snapshots | ≤ the machine's distros × ≈ 60 KB (W1a §3.3's bound), under 1 MB at a dozen | `dropUnlisted`, `clear()` for the default, disposal | in memory; nothing to sweep |
+| The reveal texts | per reveal table, the posted rows' command lines (≤ 200 chars each; tens of rows) — < 50 KB | replaced per table generation; dropped by `pageClosed` | in memory |
+| `workspaceState['wslCare.fullView']` | one object < 200 bytes | overwritten on every tab / pick | written whole |
+| The layout pages | one folder per run, ≈ 1–2 MB (copies of `full.js` / `full.css` + ~12 pages) | removed in `finally`; a dead run's folder swept at the next start | the sweep by pid |
+| `contracts/golden/head/status-windows.json` | one file, ≈ 20 KB | replaced on regeneration | written by the test only under `WSL_CARE_WRITE_GOLDENS=1` |
+| The pick timer | one at a time | replaced on each pick, cleared by `pageClosed` | — |
+
+### 9. Definition of Done
+
+- [ ] Goals 1–8 hold; RED 1–32 seen red for the real reason, then green; the break-its of § 5 turned the named test red.
+- [ ] The default distro's behaviour, the side bar, the status bar and the Logs and Archive pages are unchanged
+      (`distroSwitch`, `poller` churn numbers, `clientFlows`, `commandButtons`' side bar half, the host suites green without edits to
+      their expectations — new tests only, and W0's `fullView.test.ts` expectation updated for `ready`).
+- [ ] No command line in any posted view; every reveal answered by the host only, by generation.
+- [ ] The kit pinned to exactly 0.3.0; `layout:full` green locally and in CI.
+- [ ] Docs of § 6 step 5 updated; the E19 boundary row written; the plan round and the code round resolved; merged; this section's
+      *as built* written and the `todo/README.md` row updated.
+
+### 10. Size, and the commit shape
+
+Counted against § 3: about fifteen new host modules (`src/fullView/` ×9, the wire, the ledger, the units helper, `notYet`, the
+fixtures module, the layout script), four page files and the page CSS, edits in `extension.ts`, `package.json`, `panelHtml.ts`,
+`messages.ts`, `commandButtons.ts`, `viewModel.ts`, `outcomeStore.ts`, `poller.ts`, `cleanupHost.ts`, `installDaemon.ts`,
+`WslCareClient.ts`, `media/panel.js`, one daemon test and one golden, and some twenty test files — the largest extension story so far,
+with a RED list of 32. Read in one sitting it is not reviewable; read as three slices it is, because each leaves `main`-quality
+behaviour (the side bar untouched) and each has its own proof:
+
+| Commit | Contents | RED | Why it stands alone |
+|---|---|---|---|
+| **W1b-1** panel + picker + WSL tab | § 3.1–3.6, 3.8 (WSL side), 3.11 | 1–23 | the page opens, reads, picks and reveals; the Windows-side buttons are declared `notInFull` for one commit |
+| **W1b-2** Windows tab + ledger | § 3.7, 3.8 (Windows side), 3.9 | 24–29 | the Windows golden and the ledger are independent of the picker |
+| **W1b-3** layout check | § 3.10 after kit 0.3.0 | 30–32 | the only slice that waits on another repository |
+
+**Recommendation, respecting the gate operator's order** ("a piece of a split already under way: build it as one unit"): ONE branch
+(`feat/wc-e18-w1b-full-view`), ONE plan round over this whole section, three commits in the order above, ONE code round and ONE pull
+request — W1a's shape (§ 9a). Were the order not standing, the three commits are the three pull requests it would have been cut into.
+K2 is the critical path: W1b-1 and W1b-2 are built while K2 is reviewed and released; the code round waits for W1b-3, because the
+unit is not shipped without its layout proof.
+
+### 10a. The gate's plan round (session `6fc851ec`, 2026-10-22)
+
+Two reviewers answered; `proceed` at 5 of 6. Five findings accepted and one rejected; the accepted ones bind the build as much as
+§§ 3–4 do:
+
+1. **`layout:full` is bounded.** Each bin invocation runs under a ceiling (`LAYOUT_PAGE_MS`, a named constant) and the whole script
+   under another; the bin's own deadlines and its browser-tree stop by PID (K2 § 9 #3, #5) do the killing; on a ceiling reached the
+   script stops the bin by ITS pid, never by image name, and exits non-zero naming the page. RED 32 gains a stub bin that never
+   exits: the script returns non-zero within the ceiling and leaves no child.
+2. **A failed distro list has its own state.** When `listDistros()` answers a failure on open, *Refresh* or becoming visible, the WSL
+   tab shows "WSL did not list its distributions — <failureText sentence>" with a *Refresh* button and keeps the last good list's
+   picker muted (or none); RED 6 gains the three triggers with a failing list.
+3. **K2 is a hard prerequisite of W1b-3, with no stub.** W1b-1 and W1b-2 are built and committed while K2 is reviewed and released;
+   W1b-3, the code round and the pull request start only after kit 0.3.0 is on GitHub Packages and verified by its release run. No
+   mock of the bin ever stands in for it in CI (a check that cannot run has not passed). Google Chrome is on GitHub's ubuntu image;
+   its absence is a red run that says so.
+4. **A distro action acts on the distro it was RENDERED for.** The host keeps the target of the last eight pick generations; a
+   distro action's `pick` selects that target, so a click that lands after a pick still acts on the distro its button was drawn for —
+   and its modal names that distro (W1a) — instead of being dropped. A generation older than the eight is refused with "The distro
+   changed — press the button again." RED 7 gains: a *Clean…* rendered for Ubuntu, posted after a pick of Debian, opens Ubuntu's
+   modal and builds `-d Ubuntu`; one from nine generations back is refused with the notice.
+5. **A pick shows its state at once.** The picked entry's mark is "checking…" (neutral) from the pick until its read settles, so the
+   page never presents another moment's figures as current; RED 7 asserts the mark in the view posted at once.
+
+Rejected: **keeping revealed command lines across a hide** — a revealed line vanishing when the page is hidden is deliberate. The
+command line is the one secret-adjacent thing this page carries (E15.S7's redaction notwithstanding), the owner's rule is "arguments
+hidden by default", and restoring reveals automatically would re-show them without a click. A data-only re-post with equal rows
+already keeps a table's generation (§ 3.6), so a background refresh does not wipe a reveal.
+
+### 11. Questions the specification could not settle
+
+0. **Settled 2026-10-22:** K2 ships `--single-line <selector>` (kit `todo/PLAN_layout_check_bin.md` §1.2, §9 #6), so `layout:full` also runs `--single-line '.kit-table__cell--end'` over the PID columns — question 1 below is answered.
+1. **PIDs that never wrap, proved in Chrome.** The kit keeps an `align: 'end'` cell on one line above `30em` and W1b stacks every PID
+   table at `narrow` or wider (RED 14 holds the specs), but the K2 bin as described checks overflow and card heights, not "one line".
+   Ask K2 for an optional single-line selector (`.kit-table__cell--end` in an unstacked table); without it, RED 14 is the proof.
+2. **The E19 boundary row** (§ 3.12) belongs in PLAN_disk_hygiene_windows_E19.md, outside this specification's write scope: it is
+   written in W1b-1's first change unless the coordinator writes it before the plan round.
+
