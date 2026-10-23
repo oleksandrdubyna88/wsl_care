@@ -377,6 +377,11 @@
     return isObject(part.copy) && hasText(part.copy.line) ? part : undefined;
   }
 
+  // WR-T3: the last-cleanup line, between the task lines and the dry line — text with the host's level, none when the host derived none.
+  function cleanupLine(row) {
+    return isObject(row) && hasText(row.line) ? [element('p', row.line, { 'windows-tasks-cleanup': '', level: levelOf(row) })] : [];
+  }
+
   function windowsTaskLine(task) {
     return element('p', String(task.line), { 'windows-task': String(task.id), level: levelOf(task) });
   }
@@ -388,7 +393,7 @@
     }
     const box = element('div', undefined, { 'windows-tasks': '' });
     const copy = element('p', part.copy.line, { 'windows-tasks-copy': '', level: levelOf(part.copy) });
-    [copy].concat((Array.isArray(part.tasks) ? part.tasks : []).map(windowsTaskLine), optionalLine(part.dry, { 'windows-tasks-dry': '' })).forEach(function (line) { box.appendChild(line); });
+    [copy].concat((Array.isArray(part.tasks) ? part.tasks : []).map(windowsTaskLine), cleanupLine(part.cleanup), optionalLine(part.dry, { 'windows-tasks-dry': '' })).forEach(function (line) { box.appendChild(line); });
     // WR-E3: the install and remove buttons, each posting its bare id — no task, path or value ever comes from the page.
     (Array.isArray(part.buttons) ? part.buttons : []).forEach(function (b) {
       const id = b.id;

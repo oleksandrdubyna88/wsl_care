@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import * as childProcess from 'node:child_process';
 import { test } from 'node:test';
 
-import { TASK_NAMES } from '../client/verbs';
+import { TASK_NAMES, TASKS_PREVIEW_TAIL } from '../client/verbs';
 import { unelevatedRequest } from '../powershell/unelevatedLauncher';
 import { installTaskScript, removeTasksScript, runNowScript } from '../windowsTasks/tasksScripts';
 import { queryRequest } from '../windowsTime/guardScripts';
 import { PS51_ENGINE } from './support/engines';
-import { isMachineChange, refusalOf, TASK_RUN, TASK_TRIPWIRE_MESSAGE } from './support/noRealWsl';
+import { isMachineChange, isWslCareExe, refusalOf, TASK_RUN, TASK_TRIPWIRE_MESSAGE, WSL_CARE_TRIPWIRE_MESSAGE } from './support/noRealWsl';
 import { runTasksOp } from '../windowsTasks/tasksFlow';
-import { renderAnswer, registeredSummary } from './support/windowsTasks';
+import { BUNDLED_EXE_FILE, renderAnswer, registeredSummary, STAGED_EXE } from './support/windowsTasks';
 import { tasksWorld } from './support/tasksWorld';
 
 /**
@@ -90,4 +90,21 @@ test('the request the FLOW records for a run-now is refused by the tripwire too 
     assert.ok(request !== undefined, 'the flow recorded a request');
     assert.equal(refusalOf(request.file, request.args), TASK_TRIPWIRE_MESSAGE, 'the tripwire lets the flow\'s run-now through');
   }
+});
+
+// ---- WR-T3: the preview ----
+
+test('the real preview request is what the tripwire refuses — judged by the pure function, never spawned', () => {
+  assert.equal(refusalOf(STAGED_EXE, TASKS_PREVIEW_TAIL), WSL_CARE_TRIPWIRE_MESSAGE, 'the tripwire lets a real wsl-care.exe start through');
+  assert.equal(refusalOf(BUNDLED_EXE_FILE, TASKS_PREVIEW_TAIL), WSL_CARE_TRIPWIRE_MESSAGE);
+  assert.equal(isWslCareExe(STAGED_EXE), true);
+  assert.equal((globalThis as Record<string, unknown>).__wslCareTripwireArmed, true, 'the tripwire is armed in this process');
+});
+
+test('the request the FLOW makes for a preview is refused by the tripwire too — judged by the pure function', async () => {
+  const w = tasksWorld();
+  assert.equal((await runTasksOp({ kind: 'preview' }, w.deps)).kind, 'previewed');
+  const preview = w.calls.find((c) => c.request.args.join(' ') === TASKS_PREVIEW_TAIL.join(' '))?.request;
+  assert.ok(preview !== undefined, 'the flow made the preview request');
+  assert.equal(refusalOf(preview.file, preview.args), WSL_CARE_TRIPWIRE_MESSAGE);
 });

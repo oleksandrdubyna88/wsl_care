@@ -31,7 +31,7 @@ const RUNNING_RESULT = SCHEDULER_RESULT.running;
 
 /**
  * Start `name` of `folder` now. Order, and why: connect; get the task (not found is exit 34, any other refusal is 37 with the HRESULT printed);
- * print `state=` BEFORE any decision; refuse a disabled task (a `Run` on one fails with 0x80041326 — the script says why instead); refuse a task
+ * print `state=` BEFORE any decision; refuse a disabled task (a `Run` on one fails with 0x80041326 — the script says why instead; `Enabled` is read refuse-by-default, so a read that throws is exit 37, never a fall through); refuse a task
  * that is ALREADY running (State 4 or the result 0x41301: the same test as the panel's row) — nothing is started, exit 35, and the overlap is
  * never silent (a state that cannot be read is exit 37, never a fall through to the start: PowerShell continues after a statement-terminating error, so every
  * verdict starts REFUSED and is lifted only by a completed read); the PRINCIPAL of the task as it is registered RIGHT NOW — the reader's own SID (the same call the status query prints), an interactive
@@ -47,7 +47,9 @@ export function runTaskScript(folder: string, name: string): string {
     `try { $service = New-Object -ComObject Schedule.Service; $service.Connect() } catch { ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
     `try { $task = $service.GetFolder('\\${safeFolder}').GetTask('${safeName}') } catch { if ($_.Exception.HResult -eq ${NOT_FOUND_HRESULT}) { exit ${RUN_EXIT.notRegistered} }; ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
     "'state=' + [int]$task.State",
-    `if (-not $task.Enabled) { exit ${RUN_EXIT.disabled} }`,
+    // REFUSE BY DEFAULT, here too (the E4 merge follow-up, taken by WR-T3): a read of `Enabled` that throws is exit 37 with the HRESULT, never a fall through to the principal check and the Run.
+    `$enabled = $false; try { $enabled = [bool]$task.Enabled } catch { ${HRESULT_PRINT}; exit ${RUN_EXIT.runFailed} }`,
+    `if (-not $enabled) { exit ${RUN_EXIT.disabled} }`,
     // REFUSE BY DEFAULT: PowerShell goes on with the NEXT statement after a statement-terminating error, so a read or a compare that throws outside a try would
     // fall through to the running test and the Run. The verdicts start refused and only a completed, matching read lifts them.
     `$ok = $false; try { $p = $task.Definition.Principal; $id = [string]$p.UserId; $sid = $id; if ($id -ne '') { try { $sid = (New-Object System.Security.Principal.NTAccount($id)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = $id } }; $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $ok = ($sid -eq $me -and [int]$p.LogonType -eq ${PRINCIPAL_POLICY.logonType} -and [int]$p.RunLevel -eq ${PRINCIPAL_POLICY.runLevel}) } catch { $ok = $false }`,

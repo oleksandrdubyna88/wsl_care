@@ -316,7 +316,7 @@ test('the install modal names every fact the plan requires, in words, each from 
   assert.match(detail, /samples the Windows MCP servers into the daemon's CPU ledger and acts on nothing/);
   assert.match(detail, /runs only while you are logged on/);
   assert.match(detail, /EnableLUA=0.*exit 81/);
-  assert.match(detail, /Remove both tasks and the copy at any time with \*Remove the Windows tasks\*/);
+  assert.match(detail, /Remove every Windows task and the copy at any time with \*Remove the Windows tasks\*/);
   const archive = (await run(ARCHIVE)).w.recorder.prompts[0]?.detail ?? '';
   assert.match(archive, /at logon \+ 20 min, then every 4 h/);
   assert.match(archive, /after 276 min/);
@@ -335,7 +335,7 @@ test('the remove modal holds the script, both tasks, the folder rule, the copies
   const detail = prompt?.detail ?? '';
   assert.equal(prompt?.confirm, 'Remove them (one PowerShell, not elevated)');
   assert.ok(detail.includes(removeTasksScript()));
-  assert.match(detail, /\\wsl-care\\watch and \\wsl-care\\archive/);
+  assert.match(detail, /\\wsl-care\\watch, \\wsl-care\\archive and \\wsl-care\\cleanup/);
   assert.match(detail, /the Windows Time guard's task keeps it/);
   assert.match(detail, /a copy whose exe is still executing .* is kept and named/);
   assert.match(detail, /The program: Windows PowerShell 5.1/);
@@ -418,7 +418,7 @@ test('the removal keeps the folder while the guard\'s task is in it, and says so
   assert.equal(outcome.kind, 'done');
   assert.match(message(w), /the folder stays: another task is in it \(windows-time-guard/, 'the remove script deletes the folder unconditionally');
   const alone = await run(REMOVE);
-  assert.match(message(alone.w), /\\wsl-care\\watch, \\wsl-care\\archive, the folder, and 1 staged copy\. Program: Windows PowerShell 5\.1/);
+  assert.match(message(alone.w), /\\wsl-care\\watch, \\wsl-care\\archive, \\wsl-care\\cleanup, the folder, and 1 staged copy\. Program: Windows PowerShell 5\.1/);
 });
 
 test('a kept executing copy is named, never forced', async () => {
@@ -468,4 +468,61 @@ test('Fable minor 7: a pending record that cannot be cleared is logged, and the 
   assert.equal(w.recorder.reports.length, 1, 'it is told exactly once');
   assert.ok(w.events.includes('query'), 'the status is read again');
   assert.match(w.logs.join('\n'), /the pending record could not be cleared: the store refused/, 'the fault is logged');
+});
+
+// ---- WR-T3: the cleanup task is the third name of E3's flow ----
+
+const CLEANUP: TasksOp = { kind: 'install', task: 'cleanup' };
+
+test('the install of cleanup is E3\'s order for the third name: stage → render → show → modal → pending → one unelevated PowerShell → read', async () => {
+  const { w, outcome } = await run(CLEANUP);
+  assert.deepEqual(w.events, ['stage', 'render', 'engine', 'show', 'confirm', 'reread', 'run(pending=install:cleanup)', 'query', 'report']);
+  assert.deepEqual(w.daemon(), [TASKS_STAGE_TAIL.join(' '), tasksRenderTail('cleanup').join(' ')]);
+  assert.equal(outcome.kind, 'done', NOT_BUILT(outcome));
+  assert.equal(w.recorder.shown[0]?.task, 'cleanup');
+  assert.equal(w.recorder.shown[0]?.text, decoded(w.ps()[0]), 'what was shown is byte for byte what PowerShell decodes');
+  assert.ok(w.recorder.shown[0]?.text.includes(String(renderAnswer('cleanup from the staged copy').xml)), 'the XML shown is the render\'s, verbatim');
+  assert.match(message(w), /The Windows cleanup task is installed: Task Scheduler runs the cleanup of your own old scratch entries in the Windows TEMP folder \(A23\) every 24 h while you are logged on/);
+  assert.equal(w.store.get(PENDING_KEY), undefined);
+});
+
+test('a render for the watch offered for the cleanup registers nothing: the task path is the task asked\'s', async () => {
+  const { w, outcome } = await run(CLEANUP, { editRender: (body) => ({ ...body, taskPath: '\\wsl-care\\watch' }) });
+  assert.equal(outcome.kind, 'notStarted', NOT_BUILT(outcome));
+  assert.match(message(w), /the render's task path .* is not \\wsl-care\\cleanup/);
+  assert.deepEqual(w.ps(), []);
+  assert.deepEqual(w.recorder.shown, []);
+});
+
+test('the install modal for cleanup names A23, the allow-list key, the age key, never %TEMP%\\claude, logon + 30 min then every 24 h, the deadline, A23\'s OWN dry week, busy 75 and UAC-off', async () => {
+  const { w } = await run(CLEANUP);
+  const prompt = w.recorder.prompts[0];
+  const detail = prompt?.detail ?? '';
+  assert.match(prompt?.message ?? '', /Install the Windows cleanup task/);
+  assert.match(prompt?.message ?? '', /DELETES/, 'the question says the task deletes');
+  assert.match(detail, /registers ONE scheduled task, \\wsl-care\\cleanup/);
+  assert.match(detail, /at logon \+ 30 min, then every 24 h/);
+  assert.match(detail, /ended by its own supervisor after 276 min .* by Task Scheduler after 286 min/);
+  assert.match(detail, /Dry run: the setting dryRun is on/);
+  assert.match(detail, /OWN dry week \(A23's, separate from the watch's and the archive's\)/);
+  assert.match(detail, /While dry the task previews only and deletes nothing; the dry run ends/);
+  assert.match(detail, /deletes your OWN old scratch entries in the Windows TEMP folder/);
+  assert.match(detail, /temp\.allowGlobs/);
+  assert.match(detail, /temp\.olderThanDays/);
+  assert.match(detail, /never %TEMP%\\claude/, 'The input did not match /never %TEMP%\\\\claude/');
+  assert.match(detail, /never a git working folder, never a reparse point/);
+  assert.match(detail, /temp\.maxItemsPerRun/);
+  assert.match(detail, /Press \*Preview the Windows TEMP cleanup\*/);
+  assert.match(detail, /A last result of 75 means busy/);
+  assert.match(detail, /EnableLUA=0.*exit 81.*the preview answers 81 too/);
+  assert.match(detail, /Remove every Windows task and the copy at any time with \*Remove the Windows tasks\*/);
+  assert.doesNotMatch(detail, /samples|MCP servers/, 'nothing of the watch\'s words');
+});
+
+test('the removal modal and its sentence name three tasks, derived from the closed list', async () => {
+  const { w, outcome } = await run(REMOVE);
+  assert.match(w.recorder.prompts[0]?.detail ?? '', /deletes the tasks \\wsl-care\\watch, \\wsl-care\\archive and \\wsl-care\\cleanup when present/);
+  assert.equal(outcome.kind, 'done', NOT_BUILT(outcome));
+  assert.match(message(w), /The Windows tasks are removed — \\wsl-care\\watch, \\wsl-care\\archive, \\wsl-care\\cleanup, the folder, and 1 staged copy/);
+  assert.match(removeTasksScript(), /DeleteTask\('cleanup', 0\)/, 'does not match /DeleteTask\\(\'cleanup\', 0\\)/');
 });

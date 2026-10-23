@@ -1,8 +1,9 @@
-import { DAEMON_EXIT } from '../client/exitCodes';
 import type { TaskName } from '../client/verbs';
 import type { ViewLevel } from '../shared/viewLevel';
 import { noticeText } from '../text/safeText';
-import { SCHEDULER_RESULT, SCHEDULER_RESULT_WORDS } from '../scheduler/schedulerAnswer';
+import { SCHEDULER_RESULT } from '../scheduler/schedulerAnswer';
+import { NORMAL_RESULTS, resultWords } from './resultWords';
+import { lastCleanupLine, type CleanupRecordRead } from './cleanupRecord';
 import type { PendingTasksOp } from './tasksPending';
 import type { CopyState, TaskRow, WindowsTasksState } from './tasksState';
 
@@ -19,7 +20,15 @@ export interface WindowsTaskLine {
 }
 
 /** The three buttons of the Windows tasks (WR-E3), each posting its bare id — the page never sends a task, a path or a value. */
-export type TasksAction = 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks' | 'runWindowsWatchTask' | 'runWindowsArchiveTask';
+export type TasksAction =
+  | 'installWindowsWatchTask'
+  | 'installWindowsArchiveTask'
+  | 'removeWindowsTasks'
+  | 'runWindowsWatchTask'
+  | 'runWindowsArchiveTask'
+  | 'installWindowsCleanupTask'
+  | 'previewWindowsTempCleanup'
+  | 'runWindowsCleanupTask';
 
 export interface WindowsTasksButton {
   readonly id: TasksAction;
@@ -31,6 +40,8 @@ export interface WindowsTasksView {
   /** "Windows daemon copy: 0.4.0 (0123456789ab) staged" — '' off Windows. */
   readonly copy: { readonly line: string; readonly level: ViewLevel };
   readonly tasks: readonly WindowsTaskLine[];
+  /** WR-T3: the last-cleanup line — '' when the cleanup task is not registered or its read did not answer. */
+  readonly cleanup: { readonly line: string; readonly level: ViewLevel };
   /** The Windows dry state, as the daemon's render states it ('' when no render answered). */
   readonly dry: string;
   /** The install and remove buttons, derived from the state, the persisted pending run and this window's flow — none off Windows. */
@@ -38,12 +49,16 @@ export interface WindowsTasksView {
 }
 
 /** Nothing to say (off Windows, or before a caller derived anything): the page draws no part. */
-export const NO_WINDOWS_TASKS: WindowsTasksView = { copy: { line: '', level: 'none' }, tasks: [], dry: '', buttons: [] };
+export const NO_WINDOWS_TASKS: WindowsTasksView = { copy: { line: '', level: 'none' }, tasks: [], cleanup: { line: '', level: 'none' }, dry: '', buttons: [] };
 
 /** What holds the buttons besides the state: the persisted pending run (any window, across a reload) and a flow running in THIS window. */
 export interface TasksControls {
   readonly pending?: PendingTasksOp | undefined;
   readonly busy?: boolean;
+  /** WR-T3: the record read for the cleanup task's last run (the host's), when it has answered. */
+  readonly cleanupRecord?: CleanupRecordRead | undefined;
+  /** '' when the bundled daemon has the cleanup task, else why not (`cleanupGate.ts`). */
+  readonly cleanupGate?: string;
 }
 
 type Line = { readonly line: string; readonly level: ViewLevel };
@@ -52,7 +67,7 @@ const COPY_PREFIX = 'Windows daemon copy: ';
 
 const DIGEST_SHOWN = 12;
 
-const LABELS: { readonly [K in TaskName]: string } = { watch: 'Windows watch task: ', archive: 'Windows archive task: ' };
+const LABELS: { readonly [K in TaskName]: string } = { watch: 'Windows watch task: ', archive: 'Windows archive task: ', cleanup: 'Windows cleanup task: ' };
 
 // ---- the copy line ----
 
@@ -96,29 +111,6 @@ function copyLine(copy: CopyState, pin: string): Line {
 
 // ---- one task's line ----
 
-/** The last result of a task's run in words: the daemon's own exits first, then Task Scheduler's codes, else the bare code. */
-const RESULT_WORDS: Readonly<Record<number, string>> = {
-  [DAEMON_EXIT.ok]: 'succeeded',
-  [DAEMON_EXIT.runFailed]: 'the run failed (exit 1)',
-  [DAEMON_EXIT.observeOnly]: 'the configuration is in error (exit 78)',
-  [DAEMON_EXIT.busy]: 'skipped — another run held the run lock (normal)',
-  [DAEMON_EXIT.notAsRoot]: 'refused — it ran elevated, which it never may (exit 81)',
-  [DAEMON_EXIT.taskEnded]: 'ended at its deadline — its whole tree was ended (exit 84)',
-  ...SCHEDULER_RESULT_WORDS,
-};
-
-/** The results that are the task working as built: a success, a skipped overlap, a busy lock. */
-const NORMAL_RESULTS: ReadonlySet<number> = new Set([DAEMON_EXIT.ok, DAEMON_EXIT.busy, SCHEDULER_RESULT.skipped]);
-
-function resultWords(code: number): string {
-  const known = RESULT_WORDS[code];
-  if (known !== undefined) {
-    return known;
-  }
-
-  return code > 0xffff ? `result 0x${code.toString(16).toUpperCase().padStart(8, '0')}` : `exit ${code}`;
-}
-
 function installedLine(row: Extract<TaskRow, { kind: 'installed' }>, formatInstant: (iso: string) => string): Line {
   const { lastRun } = row;
   if (lastRun.kind === 'never') {
@@ -135,8 +127,8 @@ const UPDATE_SENTENCE: { readonly [K in Extract<TaskRow, { kind: 'updateNeeded' 
 };
 
 /** What the runner could say of a process tree at a ceiling: ended only when it VERIFIED it — the one wording of every timeout line. */
-export function treeVerdict(treeEnded: boolean | undefined): string {
-  return treeEnded === true ? 'its PowerShell and everything it started were ended' : 'the extension could not confirm that its PowerShell and everything it started were ended';
+export function treeVerdict(treeEnded: boolean | undefined, who = 'its PowerShell'): string {
+  return treeEnded === true ? `${who} and everything it started were ended` : `the extension could not confirm that ${who} and everything it started were ended`;
 }
 
 function unknownLine(row: Extract<TaskRow, { kind: 'unknown' }>): string {
@@ -179,12 +171,15 @@ export const TASKS_LABELS: { readonly [K in TasksAction]: string } = {
   removeWindowsTasks: 'Remove the Windows tasks',
   runWindowsWatchTask: 'Run the Windows watch now',
   runWindowsArchiveTask: 'Archive Windows sessions now',
+  installWindowsCleanupTask: 'Install the Windows cleanup task',
+  previewWindowsTempCleanup: 'Preview the Windows TEMP cleanup',
+  runWindowsCleanupTask: 'Clean Windows TEMP now',
 };
 
-const ACTIONS: readonly TasksAction[] = ['installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks', 'runWindowsWatchTask', 'runWindowsArchiveTask'];
+const ACTIONS: readonly TasksAction[] = ['installWindowsWatchTask', 'installWindowsArchiveTask', 'removeWindowsTasks', 'runWindowsWatchTask', 'runWindowsArchiveTask', 'installWindowsCleanupTask', 'previewWindowsTempCleanup', 'runWindowsCleanupTask'];
 
 /** The task each run button starts. */
-const RUN_OF: Readonly<Partial<Record<TasksAction, TaskName>>> = { runWindowsWatchTask: 'watch', runWindowsArchiveTask: 'archive' };
+const RUN_OF: Readonly<Partial<Record<TasksAction, TaskName>>> = { runWindowsWatchTask: 'watch', runWindowsArchiveTask: 'archive', runWindowsCleanupTask: 'cleanup' };
 
 /** The rows that say nothing is known yet: a run button waits for the read; every other row leaves it enabled and the PRESS says what is wrong (not installed, disabled, running…). */
 const NOT_KNOWN: ReadonlySet<TaskRow['kind']> = new Set(['checking', 'unknown']);
@@ -210,9 +205,12 @@ function allowed(id: TasksAction, state: WindowsTasksState): boolean {
   return id === 'removeWindowsTasks' ? removable(state) : !NO_INSTALL.has(state.copy.kind);
 }
 
-/** The three buttons: every one disabled while a run stands or runs; otherwise each by the state. */
-function tasksButtons(state: WindowsTasksState, held: boolean): readonly WindowsTasksButton[] {
-  return ACTIONS.map((id) => ({ id, label: TASKS_LABELS[id], enabled: !held && allowed(id, state) }));
+/** The cleanup task's three buttons: off while the bundled daemon is older than the task (`cleanupGate.ts`). */
+const CLEANUP_BUTTONS: ReadonlySet<TasksAction> = new Set<TasksAction>(['installWindowsCleanupTask', 'previewWindowsTempCleanup', 'runWindowsCleanupTask']);
+
+/** The buttons: every one disabled while a run stands or runs, the cleanup's while the gate is closed; otherwise each by the state. */
+function tasksButtons(state: WindowsTasksState, held: boolean, gate: string): readonly WindowsTasksButton[] {
+  return ACTIONS.map((id) => ({ id, label: TASKS_LABELS[id], enabled: !held && !(gate !== '' && CLEANUP_BUTTONS.has(id)) && allowed(id, state) }));
 }
 
 /** The copy line while a pending run stands — the guard's "waiting" shape: what the PowerShell is doing, in every window and after a reload. */
@@ -233,13 +231,24 @@ export function windowsTasksView(state: WindowsTasksState, pin: string, formatIn
   if (stated.line === '') {
     return NO_WINDOWS_TASKS;
   }
+  const gate = controls.cleanupGate ?? '';
   const tasks = (Object.keys(LABELS) as TaskName[]).map((id) => {
-    const { line, level } = taskLine(state.tasks[id], formatInstant);
+    const { line, level } = rowLine(id, state, formatInstant, gate);
 
     return { id, line: `${LABELS[id]}${line}`, level };
   });
 
-  return { copy: copyOrWaiting(stated, controls), tasks, dry: dryLine(state.dry), buttons: tasksButtons(state, held(controls)) };
+  return { copy: copyOrWaiting(stated, controls), tasks, cleanup: cleanupLineOf(state, controls, formatInstant), dry: dryLine(state.dry), buttons: tasksButtons(state, held(controls), gate) };
+}
+
+/** The last-cleanup line — none while the bundled daemon is older than the cleanup task. */
+function cleanupLineOf(state: WindowsTasksState, controls: TasksControls, formatInstant: (iso: string) => string): Line {
+  return (controls.cleanupGate ?? '') === '' ? lastCleanupLine(state.cleanupRun, controls.cleanupRecord, formatInstant) : { line: '', level: 'none' };
+}
+
+/** One task's line: its row — except the cleanup's while the bundled daemon is older than the task, which says so instead of a state it cannot know. */
+function rowLine(id: TaskName, state: WindowsTasksState, formatInstant: (iso: string) => string, gate: string): Line {
+  return id === 'cleanup' && gate !== '' ? { line: `unavailable — ${gate}`, level: 'none' } : taskLine(state.tasks[id], formatInstant);
 }
 
 /** The copy line, or — while a pending run stands — what that run is doing. */

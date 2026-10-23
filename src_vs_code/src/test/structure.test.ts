@@ -366,6 +366,39 @@ test('the brand scan finds a planted cast, in both spellings, and ignores a ment
   assert.deepEqual(judgedFolderCasters(planted), ['src/archive/archiveFlow.ts', 'src/panel/x.ts']);
 });
 
+// ---- WR-T3 (I4): the preview button never spells the act verb ----
+//
+// The root-word scan above reads a literal that IS `act`. A cleanup preview, install or run-now has no business near the verb at all, and an argv built from
+// one string — `'act A23 --preview'`, a template `act ${id} --confirm` — is not an exact `act`. So: no shipped module but the root module has a string literal
+// that is `act` or holds it as a bare word between spaces (an argv written as one string: `'wsl-care.exe act A23 --confirm'`, the middle piece of a template
+// `${exe} act ${id}`). Prose that names the verb inside code quotes (the settings' descriptions say "`act <ids> --preview`" to a person) is not an argv, and
+// neither are "the task acts" or "action".
+
+/** The modules with a literal that spells the act verb: the whole word, or the bare word between spaces. */
+function actSpellers(all: readonly Source[]): string[] {
+  const spelt = (literal: string): boolean => /(^|\s)act(\s|$)/.test(literal);
+
+  return all.filter((s) => s.file !== ROOT_CALL && stringLiteralsOf(s.text).some(spelt)).map((s) => s.file);
+}
+
+test('no shipped module outside the root module spells the act verb — the Windows tasks\' modules included', () => {
+  assert.deepEqual(actSpellers(sources()), []);
+  assert.ok(sources().some((s) => s.file === 'src/windowsTasks/tasksFlow.ts'), 'the scan reads the Windows tasks\' modules');
+});
+
+test('the act scan finds a planted argv in an array, a one-string argv and a template — and ignores prose and comments', () => {
+  const planted: Source[] = [
+    { file: 'src/windowsTasks/x.ts', text: "const argv = ['act', 'A23'];" },
+    { file: 'src/windowsTasks/y.ts', text: "const argv = 'act A23 --preview';" },
+    { file: 'src/windowsTasks/z.ts', text: 'const argv = `act ${id} --confirm`;' },
+    { file: 'src/windowsTasks/w.ts', text: "const argv = 'wsl-care.exe act A23 --confirm';" },
+    { file: 'src/windowsTasks/v.ts', text: 'const argv = `${exe} act ${id}`;' },
+    { file: 'src/windowsTasks/ok.ts', text: "// act A23 is the root's\nconst s = 'when the dry line says it acts, the action of the cleanup is A23 only';\nconst d = 'a preview (`act <ids> --preview`) takes one snapshot; `act --stop` stops';" },
+  ];
+  assert.deepEqual(actSpellers(planted), ['src/windowsTasks/x.ts', 'src/windowsTasks/y.ts', 'src/windowsTasks/z.ts', 'src/windowsTasks/w.ts', 'src/windowsTasks/v.ts']);
+  assert.deepEqual(actSpellers([{ file: ROOT_CALL, text: "const t = ['act'];" }]), [], 'the root module is the one that may');
+});
+
 // ---- E18.W1a-1: the typed distro (todo/PLAN_disk_health_E18.md, W1a §3.1, RED 11) ----
 //
 // `src/wsl/distroTarget.ts` is the home of the one distro token every client road takes. It sits under `wsl/` so that `state/`, `poll/`,

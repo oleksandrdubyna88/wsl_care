@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { BUNDLED_DAEMON } from '../client/handshake';
+import { TASKS_PREVIEW_TAIL } from '../client/verbs';
 import { staged, WindowsCareClient } from '../client/WindowsCareClient';
 import type { ProcessResult } from '../process/runner';
 import type { Body } from './support/body';
@@ -68,7 +69,7 @@ test('no staged exe is named off Windows, without a staging folder, or for a fol
   }
 });
 
-test('a task outside the closed pair is refused before argv is built (a cast cannot widen it)', async () => {
+test('a task outside the closed list is refused before argv is built (a cast cannot widen it)', async () => {
   await assert.rejects(() => client(NO_PROCESS.runner).tasksRender('run' as 'watch', STAGED_DIGEST), RangeError);
   await assert.rejects(() => client(NO_PROCESS.runner).tasksRender('watch --timer' as 'watch', STAGED_DIGEST), RangeError);
   assert.deepEqual(NO_PROCESS.requests, []);
@@ -94,7 +95,7 @@ test('tasks render <task> runs on the STAGED exe with the render tail and the ta
 
 test('the tasks ceiling is the one the caller sets', async () => {
   const r = recording(exited(0, renderAnswer('archive from the staged copy')));
-  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, tasksTimeoutMs: () => 90_000 });
+  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: () => 180_000, localAppData: LOCAL_APP_DATA, tasksTimeoutMs: () => 90_000 });
   assert.equal((await c.tasksRender('archive', STAGED_DIGEST)).kind, 'registrable');
   assert.deepEqual(r.requests, [{ file: STAGED_EXE, args: ['tasks', 'render', 'archive', '--json'], timeoutMs: 90_000 }]);
 });
@@ -298,7 +299,7 @@ test('a run read answers after exit 4 (history unreadable) and, for archive list
 test('a run read uses the read ceiling the caller sets, else the default of that read', async () => {
   const r = recording(exited(0, { schemaVersion: 1 }));
   await client(r.runner).read({ read: 'archiveStatus' });
-  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, readTimeoutMs: () => 12_345 });
+  const c = new WindowsCareClient({ runner: r.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: () => 180_000, readTimeoutMs: () => 12_345 });
   await c.read({ read: 'archiveStatus' });
   assert.equal(r.requests[1]?.timeoutMs, 12_345);
   assert.ok((r.requests[0]?.timeoutMs ?? 0) > 0);
@@ -308,4 +309,122 @@ test('WR-E3: a timeout of tasks stage --remove is TYPED (a caller that persists 
   const ended: ProcessResult = { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   assert.deepEqual(await client(recording(ended).runner).tasksStageRemove(), { kind: 'timedOut', timeoutMs: 60_000, treeEnded: false });
   assert.equal((await client(recording(ended).runner).tasksStage()).kind, 'failed');
+});
+
+// ---- WR-T3: tasks preview cleanup, typed ----
+
+const PREVIEW_FIXTURE = 'preview-cleanup.json';
+
+/** The preview fixture with `change` applied to a copy of its body. */
+function previewBody(change: (body: Record<string, unknown>) => void = () => undefined): Body {
+  const body = structuredClone(stageFixture(PREVIEW_FIXTURE)) as Record<string, unknown>;
+  change(body);
+
+  return body;
+}
+
+function previewClient(runner: ReturnType<typeof recording>['runner'], ceilings: () => number = () => 180_000): WindowsCareClient {
+  return new WindowsCareClient({ runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: ceilings, localAppData: LOCAL_APP_DATA });
+}
+
+test('tasks preview cleanup runs on the STAGED exe with the preview tail, the preview ceiling and the tree kill, and types the daemon\'s report', async () => {
+  const r = recording(exited(0, previewBody()));
+  const result = await previewClient(r.runner).tasksPreview(STAGED_DIGEST);
+  assert.deepEqual(r.requests, [{ file: STAGED_EXE, args: TASKS_PREVIEW_TAIL, timeoutMs: 180_000, killTree: true }]);
+  assert.deepEqual(TASKS_PREVIEW_TAIL, ['tasks', 'preview', 'cleanup', '--json']);
+  assert.equal(result.kind, 'answered', JSON.stringify(result).slice(0, 300));
+  if (result.kind === 'answered') {
+    assert.equal(result.report.counts.eligible, 2);
+    assert.equal(result.report.groups.length, 5);
+    assert.equal(result.report.groups[0]?.verdict, 'eligible');
+    assert.equal(result.report.dry.week, 'notStarted');
+    assert.equal(result.report.dry.until, undefined, 'until is omitted by the daemon when null');
+    assert.equal(result.report.wouldBeEligibleLimited, false);
+    assert.deepEqual(result.report.allowGlobs.slice(0, 2), ['coai-*', 'wsl-care-test-*']);
+  }
+});
+
+test('the preview ceiling is read at every call (two calls, two values)', async () => {
+  let ceiling = 130_000;
+  const r = recording(exited(0, previewBody()));
+  const c = previewClient(r.runner, () => ceiling);
+  await c.tasksPreview(STAGED_DIGEST);
+  ceiling = 3_700_000;
+  await c.tasksPreview(STAGED_DIGEST);
+  assert.deepEqual(r.requests.map((q) => q.timeoutMs), [130_000, 3_700_000]);
+});
+
+test('a preview needs a staged digest of 64 lower-case hex digits, a Windows machine and a staging folder — else nothing starts', async () => {
+  for (const [what, digest] of BAD_DIGESTS) {
+    const r = recording(exited(0, previewBody()));
+    await assert.rejects(() => previewClient(r.runner).tasksPreview(digest), RangeError, what);
+    assert.deepEqual(r.requests, [], `nothing started for ${what}`);
+  }
+  for (const options of [{ platform: 'linux' }, { localAppData: null }] as const) {
+    const r = recording(exited(0, previewBody()));
+    const result = await windowsClient(r.runner, options).tasksPreview(STAGED_DIGEST);
+    assert.equal(result.kind, 'unavailable', JSON.stringify(options));
+    assert.deepEqual(r.requests, []);
+  }
+});
+
+test('a dry.until the daemon prints is read; a preview body that lies about its shape is a failure naming the member', async () => {
+  const withUntil = await previewClient(recording(exited(0, previewBody((b) => { (b.dry as Record<string, unknown>).until = '2026-10-08T21:00:00+00:00'; }))).runner).tasksPreview(STAGED_DIGEST);
+  assert.equal(withUntil.kind === 'answered' ? withUntil.report.dry.until : 'not answered', '2026-10-08T21:00:00+00:00');
+  const group = (b: Record<string, unknown>): Record<string, unknown> => (b.groups as Record<string, unknown>[])[0] as Record<string, unknown>;
+  const cases: readonly (readonly [string, (b: Record<string, unknown>) => void, RegExp])[] = [
+    ['a task that is not cleanup', (b) => { b.task = 'watch'; }, /task/],
+    ['an action that is not A23', (b) => { b.action = 'A4'; }, /action/],
+    ['a group verdict outside the two words', (b) => { group(b).verdict = 'deleted'; }, /verdict/],
+    ['a negative count', (b) => { (b.counts as Record<string, unknown>).eligible = -1; }, /counts\.eligible/],
+    ['a negative group count', (b) => { group(b).count = -3; }, /groups\[0\]\.count/],
+    ['a path that is not text', (b) => { group(b).paths = [7]; }, /paths/],
+    ['a missing wouldBeEligibleLimited', (b) => { delete b.wouldBeEligibleLimited; }, /wouldBeEligibleLimited/],
+    ['a missing groupsNotShown member', (b) => { delete (b.groupsNotShown as Record<string, unknown>).wouldBeEligible; }, /groupsNotShown\.wouldBeEligible/],
+    ['a root that is not text', (b) => { b.root = 4; }, /root/],
+    ['an allow-list that is not a list of text', (b) => { b.allowGlobs = 'coai-*'; }, /allowGlobs/],
+    ['a dry state with no week', (b) => { delete (b.dry as Record<string, unknown>).week; }, /dry\.week/],
+    ['a pass with no passesCompleted', (b) => { delete (b.pass as Record<string, unknown>).passesCompleted; }, /passesCompleted/],
+    ['an excluded reason with no count', (b) => { delete ((b.excludedByReason as Record<string, unknown>[])[0] as Record<string, unknown>).count; }, /excludedByReason\[0\]\.count/],
+  ];
+  for (const [what, change, wanted] of cases) {
+    const result = await previewClient(recording(exited(0, previewBody(change))).runner).tasksPreview(STAGED_DIGEST);
+    assert.equal(result.kind, 'failed', `${what}: ${JSON.stringify(result).slice(0, 200)}`);
+    assert.match(result.kind === 'failed' ? result.reason : '', wanted, what);
+  }
+});
+
+test('a schemaVersion this extension does not read, an empty body, and any other exit are failures; exit 2 is the wrong side; exit 81 is elevated with the daemon\'s words', async () => {
+  const newer = await previewClient(recording(exited(0, previewBody((b) => { b.schemaVersion = 2; }))).runner).tasksPreview(STAGED_DIGEST);
+  assert.equal(newer.kind, 'failed');
+  assert.match(newer.kind === 'failed' ? newer.reason : '', /schemaVersion 2/);
+  const empty = await previewClient(recording(exited(0, '')).runner).tasksPreview(STAGED_DIGEST);
+  assert.equal(empty.kind, 'failed', 'exit 0 with an empty body');
+  const four = await previewClient(recording(exited(4, '', 'tasks preview: the records are unreadable\n')).runner).tasksPreview(STAGED_DIGEST);
+  assert.equal(four.kind, 'failed');
+  assert.match(four.kind === 'failed' ? four.reason : '', /exited 4: tasks preview: the records are unreadable/);
+  const wrong = await previewClient(recording(exited(2, '', '"wsl-care tasks" is the Windows binary\'s\n')).runner).tasksPreview(STAGED_DIGEST);
+  assert.deepEqual(wrong, { kind: 'wrongSide', reason: '"wsl-care tasks" is the Windows binary\'s' });
+  const sentence = 'tasks preview cleanup: an elevated (administrator) process is refused (token): it sees entries owned by the Administrators group. Nothing was read.';
+  const elevated = await previewClient(recording(exited(81, '', `${sentence}\n`)).runner).tasksPreview(STAGED_DIGEST);
+  assert.deepEqual(elevated, { kind: 'elevated', reason: sentence });
+});
+
+test('a preview that hits its ceiling is typed timedOut with the tree kill\'s verdict and shows NO partial result, even with a whole report on stdout', async () => {
+  for (const treeEnded of [true, false]) {
+    const ended: ProcessResult = { kind: 'timedOut', timeoutMs: 180_000, treeEnded, stdout: Buffer.from(JSON.stringify(previewBody())), stderr: Buffer.alloc(0) };
+    const result = await previewClient(recording(ended).runner).tasksPreview(STAGED_DIGEST);
+    assert.deepEqual(result, { kind: 'timedOut', timeoutMs: 180_000, treeEnded });
+  }
+});
+
+test('a start that finds no file is notStaged; any other failed start and too much output are failures with their reason', async () => {
+  const enoent: ProcessResult = { kind: 'failedToStart', reason: 'spawn C:\\Users\\user\\AppData\\Local\\wsl-care\\bin\\x\\wsl-care.exe ENOENT' };
+  assert.deepEqual(await previewClient(recording(enoent).runner).tasksPreview(STAGED_DIGEST), { kind: 'notStaged' });
+  const blocked: ProcessResult = { kind: 'failedToStart', reason: 'spawn EACCES' };
+  const result = await previewClient(recording(blocked).runner).tasksPreview(STAGED_DIGEST);
+  assert.equal(result.kind, 'failed');
+  assert.match(result.kind === 'failed' ? result.reason : '', /EACCES/);
+  const loud: ProcessResult = { kind: 'tooMuchOutput', stream: 'stdout', limitBytes: 16 };
+  assert.equal((await previewClient(recording(loud).runner).tasksPreview(STAGED_DIGEST)).kind, 'failed');
 });

@@ -30,6 +30,12 @@ export const DAEMON_CEILING_S = {
   archivePreviewMax: 600,
   /** `processes.fdScanMilliseconds`' range maximum, in seconds (`ConfigKeys.Processes.FdScanMilliseconds`, 30000 ms): A21's one fd-table scan. */
   fdScanMax: 30,
+  /**
+   * `temp.scanMaxSeconds`' DEFAULT (`ConfigKeys.Temp.ScanMaxSeconds`, 120; its range maximum is 3600): the one allowance `tasks preview cleanup` spends on
+   * its scan, the listing included ("one listing, one budget"). The plan round (WR-T3, R1/R5) took the DEFAULT, not the maximum the archive preview
+   * takes (`archivePreviewMax`): a person who raises the daemon's key raises `wslCare.timeouts.windowsTempPreviewSeconds` with it (its description says so).
+   */
+  tempScanDefault: 120,
 } as const;
 
 /** `RunRequests.MaxQueued`: the most requests the detach's sweep can meet, each answered by one `systemctl show`. */
@@ -76,6 +82,8 @@ export function worstCasesOf(limits: DaemonLimits) {
     /** `archive preview --json` (E10.S1): the agents' folders listed and the open-file scan, all within `archive.previewTimeoutSeconds` —
      *  taken at its RANGE MAXIMUM (machine-only, not published in `status.limits`): no child process. */
     archivePreview: DAEMON_CEILING_S.archivePreviewMax,
+    /** `tasks preview cleanup --json` (WR-T3): ONE `temp.scanMaxSeconds` allowance at its default, no child process. */
+    windowsTempPreview: DAEMON_CEILING_S.tempScanDefault,
     /**
      * A detach (`act … --confirm --detach`, `collect --detach`, `DetachedRuns`): the shown list on stdin, the request sweep
      * under the lock — one `systemctl show` per queued request, at most `MAX_QUEUED_REQUESTS` — the unit's start and, when
@@ -101,7 +109,7 @@ const TODAY = worstCasesOf(FALLBACK_LIMITS);
 export const DOCKER_SNAPSHOT_S = TODAY.snapshot;
 
 /** The fixed-shape calls' worst cases under today's limits. */
-export const WORST_CASE_S = { status: TODAY.status, windowsStatus: TODAY.windowsStatus, version: TODAY.version, doctor: TODAY.doctor, preview: TODAY.preview, runRead: TODAY.runRead, archivePreview: TODAY.archivePreview, detach: TODAY.detach, stop: TODAY.stop } as const;
+export const WORST_CASE_S = { status: TODAY.status, windowsStatus: TODAY.windowsStatus, version: TODAY.version, doctor: TODAY.doctor, preview: TODAY.preview, runRead: TODAY.runRead, archivePreview: TODAY.archivePreview, windowsTempPreview: TODAY.windowsTempPreview, detach: TODAY.detach, stop: TODAY.stop } as const;
 
 /**
  * What ONE row costs in `act <ids> --preview` (plan §15q N-2): each Docker action takes its OWN Docker snapshot

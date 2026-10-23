@@ -59,13 +59,14 @@ function world(options: WorldOptions = {}): World {
     extension: EXTENSION,
     timeoutMs: () => 20_000,
     statusTimeoutMs: () => 20_000,
+    previewTimeoutMs: () => 180_000,
     localAppData: LOCAL_APP_DATA,
     digestOf: options.digestOf ?? (() => Promise.resolve(STAGED_DIGEST)),
   });
   const answer = options.queryResult ?? exited(0, schedulerStdout({ tasks: options.tasks ?? [], folder: options.folder ?? 'present' }));
   const scheduler = new SchedulerHost({ env: ENV, queryTimeoutMs: () => 30_000, script: QUERY_SCRIPT, query: (request) => { queries.push(request); return Promise.resolve(answer); } });
 
-  return { host: new TasksHost({ scheduler, client, pin: PIN, formatInstant: (iso) => `<${iso}>`, ...quietTasks().deps }), scheduler, renders, queries };
+  return { host: new TasksHost({ scheduler, client, pin: PIN, cleanupSince: '0.1.0', formatInstant: (iso) => `<${iso}>`, ...quietTasks().deps }), scheduler, renders, queries };
 }
 
 /** What the panel's refresh does for the Windows parts: ONE shared Task Scheduler read, and the tasks' probe of the staged copy (xtension.ts, `panelRefresh`). */
@@ -132,19 +133,20 @@ test('the coai code round, findings 6 + 15: a burst of panel refreshes hashes th
   let hashed = 0;
   const w = world({ digestOf: () => { hashed += 1; return Promise.resolve(STAGED_DIGEST); } });
   await Promise.all([panelRefresh(w), panelRefresh(w), panelRefresh(w)]);
-  assert.equal(w.renders.length, 4, 'two probes of two renders: the burst is the flight and one more');
+  assert.equal(w.renders.length, 6, 'two probes of three renders: the burst is the flight and one more');
   assert.equal(hashed, 1, 'one read of the 13.7 MB exe for every probe');
 });
-test('one refresh is ONE Task Scheduler read and one probe of the copy: two renders on a staged copy, answered and typed', async () => {
+test('one refresh is ONE Task Scheduler read and one probe of the copy: three renders on a staged copy, answered and typed', async () => {
   const w = world({ tasks: [{ name: 'watch', summary: registered('watch'), lastResult: '0' }] });
   await panelRefresh(w);
   assert.equal(w.queries.length, 1);
-  assert.deepEqual(w.renders.map((r) => r.args.slice(0, 3)), [['tasks', 'render', 'watch'], ['tasks', 'render', 'archive']]);
+  assert.deepEqual(w.renders.map((r) => r.args.slice(0, 3)), [['tasks', 'render', 'watch'], ['tasks', 'render', 'archive'], ['tasks', 'render', 'cleanup']]);
   assert.ok(w.renders.every((r) => r.file === STAGED_EXE), 'asked of the staged copy and of nothing else');
   const view = w.host.view();
   assert.equal(view.copy.line, 'Windows daemon copy: 0.4.0 (0123456789ab) staged');
   assert.match(view.tasks[0]?.line ?? '', /^Windows watch task: installed, last run <2026-10-16T08:00:00\.0000000Z>: succeeded$/);
   assert.equal(view.tasks[1]?.line, 'Windows archive task: not installed');
+  assert.equal(view.tasks[2]?.line, 'Windows cleanup task: not installed');
   assert.match(view.dry, /^Windows tasks, dry run: the setting dryRun is on/);
 });
 
@@ -232,7 +234,7 @@ test('three refreshes at once are the flight and ONE more — never three reads,
   const w = world();
   await Promise.all([panelRefresh(w), panelRefresh(w), panelRefresh(w)]);
   assert.equal(w.queries.length, 2);
-  assert.equal(w.renders.length, 4, 'two probes of two renders');
+  assert.equal(w.renders.length, 6, 'two probes of three renders');
 });
 
 test('plan round 6, 8: a read that timed out — the panel says so on each task, and the copy line is still its own', async () => {

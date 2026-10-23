@@ -482,12 +482,17 @@ const WINDOWS_TASKS_VIEW = {
   tasks: [
     { id: 'watch' as const, line: 'Windows watch task: installed, last run <2026-10-16T08:00:00Z>: succeeded', level: 'ok' as const },
     { id: 'archive' as const, line: 'Windows archive task: not installed', level: 'none' as const },
+    { id: 'cleanup' as const, line: 'Windows cleanup task: installed, last run <2026-10-16T08:00:00Z>: succeeded', level: 'ok' as const },
   ],
+  cleanup: { line: 'last cleanup: <2026-10-16T08:00:00Z>, 12 deleted, 3 entries kept in use, 4096 logical bytes', level: 'ok' as const },
   dry: 'Windows tasks, dry run: the setting dryRun is on',
   buttons: [
     { id: 'installWindowsWatchTask' as const, label: 'Install the Windows watch task', enabled: true },
     { id: 'installWindowsArchiveTask' as const, label: 'Install the Windows archive task', enabled: true },
     { id: 'removeWindowsTasks' as const, label: 'Remove the Windows tasks', enabled: false },
+    { id: 'installWindowsCleanupTask' as const, label: 'Install the Windows cleanup task', enabled: true },
+    { id: 'previewWindowsTempCleanup' as const, label: 'Preview the Windows TEMP cleanup', enabled: true },
+    { id: 'runWindowsCleanupTask' as const, label: 'Clean Windows TEMP now', enabled: true },
   ],
 };
 
@@ -514,4 +519,36 @@ test('WR-E2: when the host says nothing (off Windows, or no caller derived it) n
   assert.equal(root.all('p[data-windows-tasks-dry]').length, 0);
   assert.equal(root.all('div[data-windows-tasks]').length, 1);
   assert.equal(buildPanelView(snapshot(goldenOutcomes())).windowsTasks.copy.line, '');
+});
+
+// ---- WR-T3: the last-cleanup line and the three cleanup buttons ----
+
+test('WR-T3: the last-cleanup line is TEXT with its level, between the task lines and the dry line; none when the host derived none', () => {
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, undefined, undefined, WINDOWS_TASKS_VIEW));
+  const box = root.one('div[data-windows-tasks]');
+  const line = box.one('p[data-windows-tasks-cleanup]');
+  assert.equal(line.textContent, WINDOWS_TASKS_VIEW.cleanup.line);
+  assert.equal(line.dataset.level, 'ok');
+  const order = box.children.map((child) => Object.keys(child.dataset).find((key) => key.startsWith('windowsTasks') || key === 'windowsTask') ?? '');
+  const at = (key: string): number => order.indexOf(key);
+  assert.ok(at('windowsTask') >= 0 && at('windowsTask') < at('windowsTasksCleanup'), `the cleanup line comes after the task lines: ${order.join(', ')}`);
+  assert.ok(at('windowsTasksCleanup') < at('windowsTasksDry'), `and before the dry line: ${order.join(', ')}`);
+  const quiet = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, undefined, undefined, { ...WINDOWS_TASKS_VIEW, cleanup: { line: '', level: 'none' as const } })).root;
+  assert.equal(quiet.all('p[data-windows-tasks-cleanup]').length, 0);
+});
+
+test('WR-T3: a hostile word in the cleanup line is shown as characters, never as markup', () => {
+  const hostile = 'last cleanup: </script><img src=x onerror=alert(1)>';
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, undefined, undefined, { ...WINDOWS_TASKS_VIEW, cleanup: { line: hostile, level: 'warn' as const } }));
+  assert.equal(root.one('p[data-windows-tasks-cleanup]').textContent, hostile);
+  assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
+});
+
+test('WR-T3: the three cleanup buttons are drawn, each posting its bare id', () => {
+  const { root, page } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, undefined, undefined, undefined, WINDOWS_TASKS_VIEW));
+  for (const id of ['installWindowsCleanupTask', 'previewWindowsTempCleanup', 'runWindowsCleanupTask']) {
+    const button = root.one(`button[data-windows-tasks-action="${id}"]`);
+    page.click(button);
+    assert.deepEqual(page.posted.at(-1), { type: id });
+  }
 });

@@ -38,6 +38,9 @@ export interface RunLine {
   readonly trigger: string;
   readonly startedAt: string;
   readonly outcome: string;
+  /** WR-T3 (additive): whether the run only previewed, and whether its detail file is there (`present`) to be read by `runs show`. */
+  readonly dryRun?: boolean | undefined;
+  readonly detailState?: string | undefined;
   readonly freedBytes: number | undefined;
   readonly actions: readonly RunLineAction[];
   readonly reason: string;
@@ -68,6 +71,14 @@ function optionalCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 function actionOf(value: unknown): RunLineAction[] {
   return isObject(value) && typeof value.id === 'string' ? [{ id: value.id, status: stringOr(value.status), count: count(value.count), freedBytes: count(value.freedBytes) }] : [];
 }
@@ -84,7 +95,7 @@ function lineOf(value: unknown): RunLine[] {
   }
   const actions = Array.isArray(value.actions) ? value.actions.flatMap(actionOf) : [];
 
-  return [{ runId: runIdOf(value.runId), kind: kindOf(value.kind), trigger: stringOr(value.trigger), startedAt: stringOr(value.startedAt), outcome: stringOr(value.outcome), freedBytes: optionalCount(value.freedBytes), actions, reason: stringOr(value.reason) }];
+  return [{ runId: runIdOf(value.runId), kind: kindOf(value.kind), trigger: stringOr(value.trigger), startedAt: stringOr(value.startedAt), outcome: stringOr(value.outcome), dryRun: optionalBoolean(value.dryRun), detailState: optionalText(value.detailState), freedBytes: optionalCount(value.freedBytes), actions, reason: stringOr(value.reason) }];
 }
 
 /** `runs show <runId> --json`, read. */

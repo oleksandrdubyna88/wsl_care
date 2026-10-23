@@ -59,7 +59,7 @@ test('the fixtures print the folder\'s lines in the script\'s real order: channe
 });
 
 test('the Opus own review M1: GetTasks(1) skips a task this account cannot read, so each EXPECTED task missing from the list is fetched by name — absent only for 0x80070002, else unreadable with the HRESULT', () => {
-  assert.ok(QUERY_SCRIPT.includes("foreach ($name in @('watch','archive','windows-time-guard'))"), 'the expected names, from the constants');
+  assert.ok(QUERY_SCRIPT.includes("foreach ($name in @('watch','archive','cleanup','windows-time-guard'))"), 'the expected names, from the constants');
   assert.ok(QUERY_SCRIPT.includes('$folder.GetTask($name)'), 'fetched by name');
   assert.match(QUERY_SCRIPT, new RegExp(`\\$_\\.Exception\\.HResult -ne ${NOT_FOUND_HRESULT}\\) \\{ 'task=' \\+ \\$name; 'read=unreadable'`), 'a refusal that is not "not found" is that task\'s unreadable section');
   assert.equal(MUTATING.test(QUERY_SCRIPT), false);

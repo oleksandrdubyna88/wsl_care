@@ -29,7 +29,7 @@ function exited(code: number, stdout: string, stderr = ''): ProcessResult {
 }
 
 function client(runner: (r: ProcessRequest) => Promise<ProcessResult>, platform = 'win32', extension = EXTENSION): WindowsCareClient {
-  return new WindowsCareClient({ runner, platform, extension, timeoutMs: () => 20_000, statusTimeoutMs: () => STATUS_MS });
+  return new WindowsCareClient({ runner, platform, extension, timeoutMs: () => 20_000, statusTimeoutMs: () => STATUS_MS, previewTimeoutMs: () => 180_000 });
 }
 
 test('it starts exactly <extension>\\bin\\wsl-care.exe, by absolute path, with --version and the version ceiling — and reads the answer', async () => {

@@ -249,6 +249,7 @@ function windowsClientOf(context: vscode.ExtensionContext, runner: ReturnType<ty
     timeoutMs: () => numbers().versionSeconds * 1000,
     statusTimeoutMs: () => ceilingMs(numbers(), { call: 'windowsStatus' }),
     tasksTimeoutMs: () => numbers().windowsTasksStageSeconds * 1000,
+    previewTimeoutMs: () => ceilingMs(numbers(), { call: 'windowsTempPreview' }),
     ...(localAppData === undefined ? {} : { localAppData }),
   });
 }
@@ -368,7 +369,7 @@ function guardFlow(parts: Parts, op: 'install' | 'remove'): () => void {
 }
 
 /** The three flows of the Windows tasks, as the panel's buttons and the palette commands run them. */
-type TasksFlows = Pick<PanelActions, 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks' | 'runWindowsWatchTask' | 'runWindowsArchiveTask'>;
+type TasksFlows = Pick<PanelActions, 'installWindowsWatchTask' | 'installWindowsArchiveTask' | 'removeWindowsTasks' | 'runWindowsWatchTask' | 'runWindowsArchiveTask' | 'installWindowsCleanupTask' | 'previewWindowsTempCleanup' | 'runWindowsCleanupTask'>;
 
 /** A Windows tasks flow from a button or the palette — its faults logged at the detached edge, never thrown into VS Code. */
 function tasksFlow(parts: Parts, op: Parameters<TasksHost['run']>[0]): () => void {
@@ -382,6 +383,9 @@ function tasksFlowsOf(parts: Parts): TasksFlows {
     removeWindowsTasks: tasksFlow(parts, { kind: 'remove' }),
     runWindowsWatchTask: tasksFlow(parts, { kind: 'run', task: 'watch' }),
     runWindowsArchiveTask: tasksFlow(parts, { kind: 'run', task: 'archive' }),
+    installWindowsCleanupTask: tasksFlow(parts, { kind: 'install', task: 'cleanup' }),
+    previewWindowsTempCleanup: tasksFlow(parts, { kind: 'preview' }),
+    runWindowsCleanupTask: tasksFlow(parts, { kind: 'run', task: 'cleanup' }),
   };
 }
 
@@ -484,6 +488,9 @@ function extraCommands(extras: ReturnType<typeof panelExtras>): vscode.Disposabl
     vscode.commands.registerCommand('wslCare.removeWindowsTasks', extras.removeWindowsTasks),
     vscode.commands.registerCommand('wslCare.runWindowsWatchTask', extras.runWindowsWatchTask),
     vscode.commands.registerCommand('wslCare.runWindowsArchiveTask', extras.runWindowsArchiveTask),
+    vscode.commands.registerCommand('wslCare.installWindowsCleanupTask', extras.installWindowsCleanupTask),
+    vscode.commands.registerCommand('wslCare.previewWindowsTempCleanup', extras.previewWindowsTempCleanup),
+    vscode.commands.registerCommand('wslCare.runWindowsCleanupTask', extras.runWindowsCleanupTask),
   ];
 }
 

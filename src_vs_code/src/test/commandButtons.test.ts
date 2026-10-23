@@ -91,8 +91,9 @@ function postedByPageButtons(): Set<string> {
 
 const WINDOWS_TASKS_STATE: WindowsTasksState = {
   copy: { kind: 'staged', digest: '0123456789abcdef'.repeat(4), renders: {} },
-  tasks: { watch: { kind: 'installed', lastRun: { kind: 'never' } }, archive: { kind: 'notInstalled' } },
+  tasks: { watch: { kind: 'installed', lastRun: { kind: 'never' } }, archive: { kind: 'notInstalled' }, cleanup: { kind: 'installed', lastRun: { kind: 'ran', utc: '2026-10-16T08:00:00Z', result: 0 } } },
   dry: '',
+  cleanupRun: { kind: 'ran', utc: '2026-10-16T08:00:00Z', result: 0 },
 };
 
 const GUARD_OPTIONS: GuardOptions = { setAutomaticStart: true, everyHours: 4, minMinutesBetweenStarts: 10, delaySeconds: 60, timeLimitMinutes: 5 };

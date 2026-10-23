@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "runId": "20261001T210000Z-4242",
+  "state": "interrupted",
+  "run": {
+    "runId": "20261001T210000Z-4242",
+    "trigger": "timer",
+    "startedAt": "2026-10-01T21:00:00+00:00",
+    "endedAt": "2026-10-01T21:02:00+00:00",
+    "outcome": "interrupted",
+    "dryRun": false,
+    "detail": "runs/2026-10-01/20261001T210000Z-4242.json",
+    "detailState": "present",
+    "freedBytes": 4096,
+    "cleanup": false,
+    "actions": [
+      {
+        "id": "A23",
+        "status": "ran",
+        "count": 12,
+        "freedBytes": 4096
+      }
+    ],
+    "kind": "act"
+  },
+  "detailState": "present",
+  "detail": {
+    "kind": "act",
+    "dryRun": false,
+    "dryRunReason": "the setting dryRun is off",
+    "targetUser": {
+      "found": false,
+      "source": "no target user: the Windows binary has none"
+    },
+    "actions": [
+      {
+        "id": "A23",
+        "summary": "the Windows TEMP cleanup: delete your own old scratch entries",
+        "status": "ran",
+        "reason": "ran",
+        "run": {
+          "count": 12,
+          "freedBytes": 4096,
+          "freedBasis": "the logical sizes of the files in the deleted trees",
+          "removed": [],
+          "commands": [],
+          "failure": "the run was interrupted",
+          "succeeded": false,
+          "notRemoved": [
+            {
+              "kind": "directory",
+              "name": "C:\\Users\\user\\AppData\\Local\\Temp\\coai-busy-1",
+              "bytes": 1000,
+              "note": "kept in use: a file in it is open"
+            },
+            {
+              "kind": "directory",
+              "name": "C:\\Users\\user\\AppData\\Local\\Temp\\coai-busy-2",
+              "bytes": 2000,
+              "note": "kept in use: a file in it is open"
+            },
+            {
+              "kind": "directory",
+              "name": "C:\\Users\\user\\AppData\\Local\\Temp\\coai-denied-1",
+              "bytes": 10,
+              "note": "not deleted: access is denied"
+            },
+            {
+              "kind": "directory",
+              "name": "C:\\Users\\user\\AppData\\Local\\Temp\\coai-busy-3",
+              "bytes": 3000,
+              "note": "kept in use: a file in it is open"
+            },
+            {
+              "kind": "directory",
+              "name": "C:\\Users\\user\\AppData\\Local\\Temp\\coai-denied-2",
+              "bytes": 10,
+              "note": "not deleted: access is denied"
+            }
+          ],
+          "notes": [
+            "deleted 12, kept in use 7, not deleted 2"
+          ]
+        }
+      }
+    ],
+    "notes": []
+  }
+}

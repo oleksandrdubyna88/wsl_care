@@ -45,6 +45,14 @@ export const MIN_DAEMON_FOR_ACTIONS = '0.1.0';
  */
 export const BUNDLED_DAEMON = '0.6.0';
 
+/**
+ * The first daemon release whose Windows build holds the cleanup task (WR-T2: `tasks render cleanup`, `tasks preview cleanup`, `tasks run cleanup`). A bundled
+ * daemon older than this answers those words with exit 2 (the wrong side), so while `BUNDLED_DAEMON` is below it the panel turns the three cleanup buttons off
+ * and does not render the cleanup task (`windowsTasks/cleanupGate.ts`). The order of a release: the daemon that carries WR-T2 is released, `BUNDLED_DAEMON` is
+ * bumped to it, the gate opens by itself, and the extension is released after.
+ */
+export const CLEANUP_TASK_SINCE = '0.7.0';
+
 const MINIMUM: readonly [number, number, number] = [0, 1, 0];
 
 const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z.-]+)?$/;

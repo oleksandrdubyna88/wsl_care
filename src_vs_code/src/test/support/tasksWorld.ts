@@ -1,7 +1,7 @@
 import type { ProcessRequest, ProcessResult } from '../../process/runner';
 import { schedulerReadOf, type SchedulerRead } from '../../scheduler/schedulerAnswer';
 import type { WindowsCareClient } from '../../client/WindowsCareClient';
-import { TASKS_REMOVE_TAIL, TASKS_STAGE_TAIL } from '../../client/verbs';
+import { TASKS_PREVIEW_TAIL, TASKS_REMOVE_TAIL, TASKS_STAGE_TAIL, TASK_NAMES, type TaskName } from '../../client/verbs';
 import { recordingTasksUi, newTasksRecorder, type TasksRecorder } from '../../windowsTasks/tasksRecorder';
 import { readPending } from '../../windowsTasks/tasksPending';
 import type { TasksFlowDeps } from '../../windowsTasks/tasksFlow';
@@ -26,10 +26,15 @@ export interface Call {
 
 export interface WorldOptions {
   /** The golden render answer of each task ('watch from the staged copy', …). */
-  readonly renders?: Partial<Record<'watch' | 'archive', string>>;
+  readonly renders?: Partial<Record<TaskName, string>>;
   /** The stage's fixture and exit code (default: `stage-staged.json`, 0). */
   readonly stage?: readonly [string, number][];
   readonly stageRemove?: readonly [string, number][];
+  /** The preview's fixture, exit code and (optional) stderr, in order, the last repeating (default: `preview-cleanup.json`, 0). A fixture name of `''` prints nothing. */
+  readonly preview?: readonly (readonly [string, number] | readonly [string, number, string])[];
+  /** WR-T3: the fixtures the run reads answer — `runs` (the window's history) and `runs show` (one run's detail). */
+  readonly runs?: string;
+  readonly runsShow?: string;
   readonly read?: SchedulerFixture | SchedulerRead;
   readonly client?: ClientOptions;
   readonly engine?: readonly [EngineRead, EngineRead];
@@ -41,6 +46,8 @@ export interface WorldOptions {
   readonly editRender?: (body: Record<string, unknown>) => Record<string, unknown>;
   readonly extensionFolder?: string;
   readonly busyRetryMs?: number;
+  /** The cleanup gate the flow is given: '' (open, the default) or the closed sentence. */
+  readonly cleanupGate?: string;
   /** A daemon call that ENDS in a scripted way (a timeout, say) instead of answering: by its argv joined with spaces. */
   readonly ending?: (argv: string) => ProcessResult | undefined;
 }
@@ -90,7 +97,8 @@ export function tasksWorld(options: WorldOptions = {}): World {
   const logs: string[] = [];
   const nextStage = sequence<readonly [string, number]>(options.stage ?? [['stage-staged.json', 0]]);
   const nextRemove = sequence<readonly [string, number]>(options.stageRemove ?? [['stage-remove-removed.json', 0]]);
-  const renderOf = (task: 'watch' | 'archive'): string => options.renders?.[task] ?? `${task} from the staged copy`;
+  const nextPreview = sequence<readonly [string, number] | readonly [string, number, string]>(options.preview ?? [['preview-cleanup.json', 0]]);
+  const renderOf = (task: TaskName): string => options.renders?.[task] ?? `${task} from the staged copy`;
   const daemon = (request: ProcessRequest): ProcessResult => {
     const argv = request.args.join(' ');
     calls.push({ who: 'daemon', request });
@@ -111,7 +119,19 @@ export function tasksWorld(options: WorldOptions = {}): World {
 
       return exited(code, stageFixture(name));
     }
-    const task = request.args[2] === 'archive' ? 'archive' : 'watch';
+    if (request.args[0] === 'runs') {
+      const show = request.args[1] === 'show';
+      events.push(show ? 'runsShow' : 'runs');
+
+      return exited(0, stageFixture(show ? (options.runsShow ?? 'runs-show-a23-done.json') : (options.runs ?? 'runs-windows-a23.json')));
+    }
+    if (argv === TASKS_PREVIEW_TAIL.join(' ')) {
+      events.push('preview');
+      const [name, code, stderr = ''] = nextPreview();
+
+      return exited(code, name === '' ? '' : stageFixture(name), stderr);
+    }
+    const task = TASK_NAMES.find((name) => name === request.args[2]) ?? 'watch';
     events.push('render');
     const body = renderAnswer(renderOf(task));
 
@@ -131,6 +151,7 @@ export function tasksWorld(options: WorldOptions = {}): World {
     engine: fixedEngine(before, after, events),
     ui: {
       show: (text, task) => { events.push('show'); return ui.show(text, task); },
+      showPreview: (text) => { events.push('showPreview'); return ui.showPreview(text); },
       confirm: (prompt) => { events.push('confirm'); return ui.confirm(prompt); },
       run: async (request, title) => {
         events.push(`run(pending=${pendingNow()})`);
@@ -153,6 +174,7 @@ export function tasksWorld(options: WorldOptions = {}): World {
     afterRun: () => { events.push('query'); },
     extensionFolder: options.extensionFolder ?? EXTENSION.fsPath,
     log: (line) => { logs.push(line); },
+    cleanupGate: options.cleanupGate ?? '',
   };
 
   return {

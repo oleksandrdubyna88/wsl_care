@@ -5,7 +5,7 @@ import { test } from 'node:test';
 
 import { staged, WindowsCareClient } from '../client/WindowsCareClient';
 import type { ProcessResult } from '../process/runner';
-import { FAKE_EXIT, type FakeTasks } from './fake/fakeWsl';
+import { FAKE_EXIT, type FakeTaskAnswer, type FakeTasks } from './fake/fakeWsl';
 import { fakeWorld, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from './support/fakeWorld';
 import { BUNDLED_EXE_FILE, EXTENSION, LOCAL_APP_DATA, renderAnswer, STAGED_DIGEST, STAGED_EXE, stageFixture, STAGING_ROOT, TASKS_SCENARIO } from './support/windowsTasks';
 
@@ -28,7 +28,7 @@ async function within(input: ScenarioInput, body: (world: FakeWorld) => Promise<
 }
 
 function clientOn(world: FakeWorld): WindowsCareClient {
-  return new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
+  return new WindowsCareClient({ runner: world.runner, platform: 'win32', extension: EXTENSION, timeoutMs: () => 20_000, statusTimeoutMs: () => 20_000, previewTimeoutMs: () => 180_000, localAppData: LOCAL_APP_DATA, digestOf: () => Promise.resolve(STAGED_DIGEST) });
 }
 
 function exitOf(result: ProcessResult): { code: number; stdout: string; stderr: string } {
@@ -106,6 +106,7 @@ test('the fake refuses every other argv of the bundled exe — tasks run, a --ti
       ['tasks', 'stage', '--remove', '--json', 'extra'],
       ['tasks', 'render', 'watch', '--json'],
       ['tasks', 'render', 'both', '--json'],
+      ['tasks', 'preview', 'cleanup', '--json'],
       ['tasks'],
       ['status'],
       ['status', '--json', '--detail'],
@@ -132,7 +133,16 @@ test('the fake refuses every other argv of the staged exe — it renders and rea
       ['tasks', 'run', 'watch', '--json'],
       ['tasks', 'render', 'watch'],
       ['tasks', 'render', 'watch', '--json', '--timer'],
-      ['tasks', 'render', 'cleanup', '--json'],
+      ['tasks', 'render', 'cleanup'],
+      ['tasks', 'render', 'both', '--json'],
+      ['tasks', 'preview', 'cleanup'],
+      ['tasks', 'preview', 'watch', '--json'],
+      ['tasks', 'preview', 'archive', '--json'],
+      ['tasks', 'preview', 'cleanup', '--json', '--confirm'],
+      ['tasks', 'preview', 'cleanup', '--confirm', '--json'],
+      ['tasks', 'preview', 'cleanup', '--json', 'extra'],
+      ['tasks', 'preview', '--json'],
+      ['tasks', 'preview', 'cleanup', '--json', '--timer'],
       ['--version'],
       ['status', '--json'],
       ['--timer'],
@@ -178,4 +188,32 @@ test('every call is logged with its argv and the file it was started as — the 
     assert.deepEqual(log, [{ argv: ['tasks', 'stage', '--remove', '--json'], file: BUNDLED_EXE_FILE }]);
     assert.equal(stageFixture('stage-remove-removed.json').outcome, 'removed');
   });
+});
+
+test('WR-T3: the fake answers tasks preview cleanup on the STAGED exe from the fixture, and the cleanup render from the golden — and nothing else of those shapes', async () => {
+  await within(WINDOWS, async (world) => {
+    const client = clientOn(world);
+    const preview = await client.tasksPreview(STAGED_DIGEST);
+    const cleanup = await client.tasksRender('cleanup', STAGED_DIGEST);
+    assert.equal(preview.kind, 'answered');
+    assert.equal(cleanup.kind, 'registrable');
+    assert.deepEqual(world.calls(), ['tasks preview cleanup --json', 'tasks render cleanup --json']);
+    assert.deepEqual(world.files(), [STAGED_EXE, STAGED_EXE]);
+    assert.equal(cleanup.kind === 'registrable' && cleanup.answer.xml, renderAnswer('cleanup from the staged copy').xml, 'the golden, byte for byte');
+    assert.equal(await codeOf(world, BUNDLED_EXE_FILE, ['tasks', 'preview', 'cleanup', '--json']), FAKE_EXIT.refused, 'the bundled exe is not asked to preview');
+  });
+});
+
+test('WR-T3: the preview answer can be scripted by fixture and exit: a refused root, a limited scan, the elevated refusal (81), the wrong side (2)', async () => {
+  const cases: readonly (readonly [FakeTaskAnswer, string])[] = [
+    [{ file: 'preview-cleanup-refused.json', code: 0 }, 'answered'],
+    [{ file: 'preview-cleanup-limited.json', code: 0 }, 'answered'],
+    [{ code: 81, stderr: 'tasks preview cleanup: an elevated (administrator) process is refused (token). Nothing was read.\n' }, 'elevated'],
+    [{ code: 2, stderr: '"wsl-care tasks" is the Windows binary\'s: nothing was done\n' }, 'wrongSide'],
+  ];
+  for (const [answer, kind] of cases) {
+    await within({ ...WINDOWS, tasks: { ...TASKS_SCENARIO, preview: answer } }, async (world) => {
+      assert.equal((await clientOn(world).tasksPreview(STAGED_DIGEST)).kind, kind, JSON.stringify(answer));
+    });
+  }
 });

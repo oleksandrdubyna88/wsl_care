@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.5.0+0123456789abcdef0123456789abcdef01234567",
+  "task": "cleanup",
+  "action": "A23",
+  "root": "C:\\Users\\user\\AppData\\Local\\Temp",
+  "refusal": "",
+  "observeOnly": false,
+  "configurationErrors": [],
+  "olderThanDays": 7,
+  "cutoffUtc": "2026-09-24T21:00:00.0000000Z",
+  "allowGlobs": [
+    "coai-*",
+    "wsl-care-test-*",
+    "stage-*",
+    "mindex-*",
+    "git-commit-*",
+    "docrag-*",
+    "bge-seed-*"
+  ],
+  "scanMaxNodes": 200000,
+  "scanMaxSeconds": 120,
+  "maxItemsPerRun": 5000,
+  "maxPathsPerGroup": 20,
+  "dry": {
+    "dryRun": true,
+    "setting": true,
+    "week": "notStarted",
+    "reason": "the setting dryRun is on; the dry-run week has not started: the first timer or task run starts it"
+  },
+  "pass": {
+    "started": "",
+    "decided": 0,
+    "total": 8,
+    "passesCompleted": 0,
+    "last": "",
+    "inProgress": ""
+  },
+  "counts": {
+    "eligible": 2,
+    "wouldBeEligible": 3,
+    "notAllowed": 3,
+    "young": 2,
+    "excluded": 1,
+    "unknown": 0,
+    "changed": 0,
+    "deferred": 0,
+    "decided": 8,
+    "total": 8
+  },
+  "eligibleBytes": 1300,
+  "basis": "logical bytes of the files in the selected trees (an estimate; never disk space freed)",
+  "excludedByReason": [
+    {
+      "reason": "the folder Claude Code keeps under the temp directory - never cleaned",
+      "count": 1
+    }
+  ],
+  "groups": [
+    {
+      "verdict": "eligible",
+      "pattern": "coai-*",
+      "count": 1,
+      "bytes": 1000,
+      "paths": [
+        "C:\\Users\\user\\AppData\\Local\\Temp\\coai-old-a"
+      ],
+      "more": 0
+    },
+    {
+      "verdict": "eligible",
+      "pattern": "wsl-care-test-*",
+      "count": 1,
+      "bytes": 300,
+      "paths": [
+        "C:\\Users\\user\\AppData\\Local\\Temp\\wsl-care-test-old"
+      ],
+      "more": 0
+    },
+    {
+      "verdict": "wouldBeEligible",
+      "pattern": "othertool-*",
+      "count": 5,
+      "bytes": 4500,
+      "paths": [
+        "C:\\Users\\user\\AppData\\Local\\Temp\\othertool-old"
+      ],
+      "more": 4
+    },
+    {
+      "verdict": "wouldBeEligible",
+      "pattern": "sometool-*",
+      "count": 1,
+      "bytes": 700,
+      "paths": [
+        "C:\\Users\\user\\AppData\\Local\\Temp\\sometool-old"
+      ],
+      "more": 0
+    },
+    {
+      "verdict": "wouldBeEligible",
+      "pattern": "stray*",
+      "count": 1,
+      "bytes": 50,
+      "paths": [
+        "C:\\Users\\user\\AppData\\Local\\Temp\\stray.log"
+      ],
+      "more": 0
+    }
+  ],
+  "groupsNotShown": {
+    "eligible": 0,
+    "wouldBeEligible": 12
+  },
+  "wouldBeEligibleLimited": true
+}

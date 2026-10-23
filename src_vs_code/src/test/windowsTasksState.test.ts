@@ -63,7 +63,7 @@ test('each state row renders: not installed · installed with its last run · di
   const view = viewOf(stateOf([task('watch', { lastRunUtc: '2026-10-16T08:00:00.0000000Z', lastResult: '0' })]));
   assert.equal(lineOf(view, 'archive'), 'Windows archive task: not installed');
   assert.equal(lineOf(view, 'watch'), 'Windows watch task: installed, last run <2026-10-16T08:00:00.0000000Z>: succeeded');
-  assert.deepEqual(view.tasks.map((t) => [t.id, t.level]), [['watch', 'ok'], ['archive', 'none']]);
+  assert.deepEqual(view.tasks.map((t) => [t.id, t.level]), [['watch', 'ok'], ['archive', 'none'], ['cleanup', 'none']]);
 
   assert.equal(lineOf(viewOf(stateOf([task('watch', { enabled: 'False' })])), 'watch'), 'Windows watch task: installed, but disabled in Task Scheduler — install again to enable it');
   assert.equal(lineOf(viewOf(stateOf([task('watch', { state: '4', lastResult: '267009' })])), 'watch'), 'Windows watch task: installed, running (0x41301)');
@@ -116,8 +116,8 @@ test('plan round 9: a task that never ran reads "never run" — never undefined,
 
 test('plan round 1: on a machine never installed (no \\wsl-care folder) every task reads "not installed" — no failure anywhere', () => {
   const view = viewOf(stateOf([], STAGED, 'absent'));
-  assert.deepEqual(view.tasks.map((t) => t.line), ['Windows watch task: not installed', 'Windows archive task: not installed']);
-  assert.deepEqual(view.tasks.map((t) => t.level), ['none', 'none']);
+  assert.deepEqual(view.tasks.map((t) => t.line), ['Windows watch task: not installed', 'Windows archive task: not installed', 'Windows cleanup task: not installed']);
+  assert.deepEqual(view.tasks.map((t) => t.level), ['none', 'none', 'none']);
 });
 
 // ---- plan round 2: not staged ----
@@ -203,7 +203,7 @@ test('the dry line is the daemon\'s own sentence from a render that answered —
 test('plan round 6: a folder this account cannot read is a line on EACH task naming Task Scheduler\'s HRESULT — never an empty section', () => {
   const view = viewOf(stateOf([], STAGED, { unreadable: '0x80070005' }));
   const sentence = 'unreadable — Task Scheduler does not let this account read it (0x80070005) — installed or not cannot be told';
-  assert.deepEqual(view.tasks.map((t) => t.line), [`Windows watch task: ${sentence}`, `Windows archive task: ${sentence}`]);
+  assert.deepEqual(view.tasks.map((t) => t.line), [`Windows watch task: ${sentence}`, `Windows archive task: ${sentence}`, `Windows cleanup task: ${sentence}`]);
 });
 
 test('plan round 6, 8: a read that did not answer is "unknown" with its reason on each task — and a timeout says it timed out and that its PowerShell was ended', () => {

@@ -26,6 +26,7 @@ function realUi(runner: Runner, subscriptions: vscode.Disposable[]): TasksUi {
 
   return {
     show: (text, task) => documents.show(text, `${task}-task`),
+    showPreview: (text) => documents.show(text, 'temp-cleanup', 'preview'),
     confirm: async (prompt) => (await vscode.window.showWarningMessage(prompt.message, { modal: true, detail: prompt.detail }, prompt.confirm)) === prompt.confirm,
     run: (request, title) => Promise.resolve(vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title }, () => runner(request))),
     report: (message, failed) => { void (failed ? vscode.window.showErrorMessage(message) : vscode.window.showInformationMessage(message)); },

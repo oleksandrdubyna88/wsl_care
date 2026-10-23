@@ -1,7 +1,7 @@
 import { firstLine } from '../client/windowsTasks';
 import { tagsOf } from '../powershell/taggedAnswer';
 import type { StagingFolder } from '../client/windowsTasks';
-import type { TaskName } from '../client/verbs';
+import { TASK_NAMES, type TaskName } from '../client/verbs';
 import { byProgram, withUnelevatedStoreNote, type Engine } from '../powershell/engineTypes';
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
@@ -9,6 +9,7 @@ import { OP_EXIT } from '../scheduler/registerScript';
 import { RUN_EXIT } from '../scheduler/runScript';
 import { TASK_FOLDER } from '../scheduler/taskFolder';
 import { noticeText, safeText } from '../text/safeText';
+import { UAC_SENTENCE } from './resultWords';
 import { treeVerdict } from './tasksView';
 
 /**
@@ -17,7 +18,7 @@ import { treeVerdict } from './tasksView';
  * supplied. Pure: the flow decides, this module says.
  */
 
-export type TasksOp = { readonly kind: 'install'; readonly task: TaskName } | { readonly kind: 'run'; readonly task: TaskName } | { readonly kind: 'remove' };
+export type TasksOp = { readonly kind: 'install'; readonly task: TaskName } | { readonly kind: 'run'; readonly task: TaskName } | { readonly kind: 'preview' } | { readonly kind: 'remove' };
 
 /** What a finished operation did, for its sentence. */
 export type DoneSummary =
@@ -34,6 +35,10 @@ export type DoneSummary =
 
 export type TasksOutcome =
   | { readonly kind: 'done'; readonly done: DoneSummary }
+  /** A preview was answered and shown in its read-only tab; `headline` is the one line the notification says (WR-T3). */
+  | { readonly kind: 'previewed'; readonly headline: string }
+  /** The daemon refused the preview because this process is elevated (exit 81): its own reason, told with the UAC sentence. */
+  | { readonly kind: 'elevated'; readonly reason: string }
   /** The modal was declined; an install names the staged copy it leaves behind. */
   | { readonly kind: 'declined'; readonly stagedPath?: string }
   | { readonly kind: 'busy' }
@@ -61,6 +66,8 @@ const SHARED_FAILURES: Readonly<Record<number, FailureWords>> = {
 const FAILURES: { readonly [K in TasksOp['kind']]: Readonly<Record<number, FailureWords>> } = {
   install: { ...SHARED_FAILURES, [OP_EXIT.registerFailed]: () => `Task Scheduler did not register the task (creating the \\${TASK_FOLDER} folder or Register-ScheduledTask failed)` },
   remove: { ...SHARED_FAILURES, [OP_EXIT.unregisterFailed]: () => 'Task Scheduler did not delete a task' },
+  /** A preview starts no PowerShell: nothing of its own to say. */
+  preview: {},
   run: {
     ...SHARED_FAILURES,
     [RUN_EXIT.notRegistered]: () => 'the task is not registered (any more) — install it first',
@@ -89,6 +96,7 @@ const PASSING: { readonly [K in TasksOp['kind']]: Readonly<Record<number, RunSte
   install: {},
   run: { [RUN_EXIT.alreadyRunning]: { step: 'alreadyRunning' } },
   remove: { [OP_EXIT.cleanupFailed]: { step: 'folderStays' } },
+  preview: {},
 };
 
 function passed(op: TasksOp, code: number): RunStep | undefined {
@@ -130,6 +138,7 @@ const SUBJECT: { readonly [K in TasksOp['kind']]: (op: Extract<TasksOp, { kind: 
   install: (op) => `The install of the Windows ${op.task} task`,
   run: (op) => `The start of the Windows ${op.task} task`,
   remove: () => 'The removal of the Windows tasks',
+  preview: () => 'The preview of the Windows TEMP cleanup',
 };
 
 function subject(op: TasksOp): string {
@@ -168,7 +177,7 @@ function untouchedWords(untouched: readonly string[]): string {
 }
 
 function removedSentence(done: Extract<DoneSummary, { op: 'remove' }>, engine: Engine): string {
-  const head = `The Windows tasks are removed — \\${TASK_FOLDER}\\watch, \\${TASK_FOLDER}\\archive, ${folderWords(done.folder)}, and ${copiesWords(done.copies)}.${byProgram(engine)}`;
+  const head = `The Windows tasks are removed — ${TASK_NAMES.map((name) => `\\${TASK_FOLDER}\\${name}`).join(', ')}, ${folderWords(done.folder)}, and ${copiesWords(done.copies)}.${byProgram(engine)}`;
 
   return head + keptWords(done.kept) + untouchedWords(done.untouched);
 }
@@ -183,11 +192,13 @@ const DONE: { readonly [K in DoneSummary['op']]: (done: Extract<DoneSummary, { o
 
 const SENTENCE: { readonly [K in TasksOutcome['kind']]: Sentence<K> } = {
   done: (o, _op, engine) => (DONE[o.done.op] as (d: DoneSummary, e: Engine) => string)(o.done, engine),
+  previewed: (o) => o.headline,
+  elevated: (o) => `The preview of the Windows TEMP cleanup was refused: ${o.reason}. ${UAC_SENTENCE}`,
   alreadyRunning: (o) => `The Windows ${o.task} task is already running (Task Scheduler reports it); nothing new was started — a second instance would be dropped by the task itself (IgnoreNew).`,
   declined: (o) => (o.stagedPath === undefined ? '' : `Nothing was registered. The staged copy stays at ${o.stagedPath}; *Remove the Windows tasks* deletes it.`),
   busy: () => 'An install, removal or start of the Windows tasks is still waiting (its PowerShell, or its stage) — nothing new was started.',
   failed: (o, op, engine) => `${subject(op)} failed: ${o.sentence}.${byProgram(engine)}`,
-  timedOut: (o, op, engine) => `${subject(op)} did not finish within ${Math.round(o.timeoutMs / 1000)} s (${o.setting ?? 'wslCare.timeouts.windowsTasksSeconds'}); ${treeVerdict(o.treeEnded)}. The panel shows what Task Scheduler holds.${byProgram(engine)}`,
+  timedOut: (o, op, engine) => `${subject(op)} did not finish within ${Math.round(o.timeoutMs / 1000)} s (${o.setting ?? 'wslCare.timeouts.windowsTasksSeconds'}); ${treeVerdict(o.treeEnded, op.kind === 'preview' ? 'the daemon' : undefined)}. ${op.kind === 'preview' ? 'No result is shown: a partial scan is never a preview.' : 'The panel shows what Task Scheduler holds.'}${byProgram(engine)}`,
   notStarted: (o, op, engine) => `${subject(op)} could not ${op.kind === 'run' ? 'begin' : 'start'}: ${o.engineStart === true ? withUnelevatedStoreNote(o.reason, engine) : o.reason}.`,
   notRun: (o) => o.sentence,
 };
@@ -199,5 +210,8 @@ export function tasksOutcomeSentence(outcome: TasksOutcome, op: TasksOp, engine:
 
 /** Whether an outcome is reported as a failure (the error notification) rather than as information. */
 export function isFailure(outcome: TasksOutcome): boolean {
-  return outcome.kind === 'failed' || outcome.kind === 'timedOut' || outcome.kind === 'notStarted' || outcome.kind === 'notRun';
+  return FAILURE_KINDS.has(outcome.kind);
 }
+
+/** The outcomes told as an error; busy, declined, already-running, done and previewed are information. */
+const FAILURE_KINDS: ReadonlySet<TasksOutcome['kind']> = new Set(['failed', 'timedOut', 'notStarted', 'notRun', 'elevated']);

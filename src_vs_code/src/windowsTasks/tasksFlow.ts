@@ -1,7 +1,7 @@
 import type { DurableStore } from '../cleanup/journal';
 import { TASK_NAMES, type TaskName } from '../client/verbs';
 import { staged, type WindowsCareClient } from '../client/WindowsCareClient';
-import type { RemoveResult, RenderAnswer, StageResult } from '../client/windowsTasks';
+import type { PreviewResult, RemoveResult, RenderAnswer, StageResult, TempPreviewAnswer } from '../client/windowsTasks';
 import { engineProblem, type EngineSource } from '../powershell/engineSource';
 import { NO_ENGINE, type Engine } from '../powershell/engineTypes';
 import { unelevatedRequest } from '../powershell/unelevatedLauncher';
@@ -11,6 +11,7 @@ import { taskOf, type SchedulerRead, type TaskRead } from '../scheduler/schedule
 import { isFailure, stepOf, tasksOutcomeSentence, type DoneSummary, type RunStep, type TasksOp, type TasksOutcome } from './tasksOutcome';
 import { clearPending, readPending, writePending, type PendingTasksOp } from './tasksPending';
 import { cadenceOf, installPrompt, removePrompt, runPrompt, whatOf, type TasksPrompt } from './tasksPrompts';
+import { previewText } from './previewText';
 import { registrationProblem } from './tasksGuards';
 import { installTaskScript, removeTasksScript, runNowScript } from './tasksScripts';
 
@@ -40,6 +41,8 @@ export { tasksOutcomeSentence, type TasksOp, type TasksOutcome } from './tasksOu
 export interface TasksUi {
   /** Opens `text` read-only — the script the person is about to confirm, byte for byte; `task` names the tab. */
   readonly show: (text: string, task: TaskName) => Promise<void>;
+  /** Opens a preview's report read-only (WR-T3): text the extension rendered itself, never a script. */
+  readonly showPreview: (text: string) => Promise<void>;
   readonly confirm: (prompt: TasksPrompt) => Promise<boolean>;
   /** The ONE unelevated PowerShell, under a progress notification titled `title`. */
   readonly run: (request: ProcessRequest, title: string) => Promise<ProcessResult>;
@@ -47,7 +50,7 @@ export interface TasksUi {
 }
 
 export interface TasksFlowDeps {
-  readonly client: Pick<WindowsCareClient, 'tasksStage' | 'tasksRender' | 'tasksStageRemove' | 'exe'>;
+  readonly client: Pick<WindowsCareClient, 'tasksStage' | 'tasksRender' | 'tasksPreview' | 'tasksStageRemove' | 'exe'>;
   /** The ONE Task Scheduler read's newest answer: the reader's own SID, and what else is in the folder. */
   readonly read: () => SchedulerRead;
   readonly engine: EngineSource;
@@ -68,6 +71,8 @@ export interface TasksFlowDeps {
   readonly extensionFolder: string;
   /** The extension's log: a fault at an edge that must not stop the outcome from being told. */
   readonly log: (line: string) => void;
+  /** '' when the bundled daemon has the cleanup task, else the sentence that says it has not (`cleanupGate.ts`): the flows of that task start nothing. */
+  readonly cleanupGate: string;
 }
 
 const BUSY: TasksOutcome = { kind: 'busy' };
@@ -259,9 +264,47 @@ async function install(task: TaskName, deps: TasksFlowDeps): Promise<TasksOutcom
   return typeof built === 'string' ? told(deps, op, notStarted(built), engine) : installConfirmed(deps, task, ready.copy, ready.answer, engine, built);
 }
 
+// ---- preview ----
+
+/** What each ending of the preview but an answer is, as an outcome: nothing is shown for any of them. */
+const PREVIEW_ENDS: { readonly [K in Exclude<PreviewResult['kind'], 'answered'>]: (result: Extract<PreviewResult, { kind: K }>) => TasksOutcome } = {
+  elevated: (r) => ({ kind: 'elevated', reason: r.reason }),
+  wrongSide: (r) => ({ kind: 'failed', sentence: r.reason }),
+  notStaged: () => notStarted('the staged copy was not there when the preview started; press Preview again'),
+  timedOut: (r) => ({ kind: 'timedOut', timeoutMs: r.timeoutMs, treeEnded: r.treeEnded, setting: 'wslCare.timeouts.windowsTempPreviewSeconds' }),
+  failed: (r) => ({ kind: 'failed', sentence: r.reason }),
+  unavailable: (r) => ({ kind: 'failed', sentence: r.reason }),
+};
+
+/** An answered preview: the report rendered by the extension, opened read-only, then its headline is the one line told. */
+async function previewShown(report: TempPreviewAnswer, deps: TasksFlowDeps): Promise<TasksOutcome> {
+  const { headline, text } = previewText(report);
+  await deps.ui.showPreview(text);
+
+  return { kind: 'previewed', headline };
+}
+
+async function previewRun(copy: StagedCopy, deps: TasksFlowDeps): Promise<TasksOutcome> {
+  const result = await deps.client.tasksPreview(copy.digest);
+
+  return result.kind === 'answered' ? previewShown(result.report, deps) : (PREVIEW_ENDS[result.kind] as (r: PreviewResult) => TasksOutcome)(result);
+}
+
+/**
+ * *Preview the Windows TEMP cleanup*: the stage the install makes (the preview needs a VERIFIED staged copy — R0), then `tasks preview cleanup` on THAT
+ * copy. Read-only and bounded by its own ceiling: no render, no guard, no engine, no modal, no PowerShell and no pending record (nothing to recover
+ * after a reload); the standing record of any window already made `runTasksOp` answer busy. The Task Scheduler read is not asked again: nothing changed.
+ */
+async function preview(deps: TasksFlowDeps): Promise<TasksOutcome> {
+  const copy = await stagedCopy(deps);
+  const outcome = isOutcome(copy) ? copy : await guarded(() => previewRun(copy, deps));
+
+  return told(deps, { kind: 'preview' }, outcome, NO_ENGINE);
+}
+
 // ---- remove ----
 
-/** The tasks in the folder that are not the two Windows tasks — whoever else keeps the folder (the guard's task, when installed). */
+/** The tasks in the folder that are not one of the Windows tasks — whoever else keeps the folder (the guard's task, when installed). */
 function othersIn(read: SchedulerRead): string[] {
   return read.kind === 'read' ? [...read.sections.keys()].filter((name) => !(TASK_NAMES as readonly string[]).includes(name)) : [];
 }
@@ -404,21 +447,31 @@ async function runNow(task: TaskName, deps: TasksFlowDeps): Promise<TasksOutcome
   return told(deps, op, await launched(deps, engine, { op: 'run', task }, 2 * request.timeoutMs, () => runBody(deps, op, engine, request)), engine);
 }
 
+/** Whether `op` is the cleanup task's: its install, its start now, or the preview (which is the cleanup's alone). */
+function isCleanupOp(op: TasksOp): boolean {
+  return op.kind === 'preview' || (op.kind !== 'remove' && op.task === 'cleanup');
+}
+
 /**
  * One operation, end to end: the outcome, told once (the declined install's single notice included). `undefined` is never returned here —
- * the host's "one at a time in this window" answers that case before it gets this far.
+ * the host's "one at a time in this window" answers that case before it gets this far. While the bundled daemon is older than the cleanup task
+ * (`cleanupGate.ts`) the cleanup's own operations start nothing and say why.
  */
 export async function runTasksOp(op: TasksOp, deps: TasksFlowDeps): Promise<TasksOutcome> {
+  if (deps.cleanupGate !== '' && isCleanupOp(op)) {
+    return told(deps, op, notStarted(deps.cleanupGate), NO_ENGINE);
+  }
   if (readPending(deps.durable, deps.nowUtcMs()) !== undefined) {
     return told(deps, op, BUSY, NO_ENGINE);
   }
 
-  switch (op.kind) {
-    case 'install':
-      return install(op.task, deps);
-    case 'run':
-      return runNow(op.task, deps);
-    default:
-      return remove(deps);
-  }
+  return (OPS[op.kind] as (o: TasksOp, d: TasksFlowDeps) => Promise<TasksOutcome>)(op, deps);
 }
+
+/** What each kind of operation runs — a kind added to `TasksOp` does not compile until it is here. */
+const OPS: { readonly [K in TasksOp['kind']]: (op: Extract<TasksOp, { kind: K }>, deps: TasksFlowDeps) => Promise<TasksOutcome> } = {
+  install: (op, deps) => install(op.task, deps),
+  run: (op, deps) => runNow(op.task, deps),
+  preview: (_op, deps) => preview(deps),
+  remove: (_op, deps) => remove(deps),
+};

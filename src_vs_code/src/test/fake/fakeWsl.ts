@@ -127,12 +127,14 @@ export interface FakeTasks {
   readonly folder: string;
   /** The render golden's file. */
   readonly renderGolden: string;
-  /** `tasks render`: the golden entry each task answers (default: the two "from the staged copy" entries), or a scripted exit (2: wrong side, 78: configuration in error). */
-  readonly render?: { readonly watch?: string; readonly archive?: string; readonly exit?: FakeTaskAnswer };
+  /** `tasks render`: the golden entry each task answers (default: the three "from the staged copy" entries), or a scripted exit (2: wrong side, 78: configuration in error). */
+  readonly render?: { readonly watch?: string; readonly archive?: string; readonly cleanup?: string; readonly exit?: FakeTaskAnswer };
   /** `tasks stage --json`; default `stage-staged.json`, exit 0. */
   readonly stage?: FakeTaskAnswer;
   /** `tasks stage --remove --json`; default `stage-remove-removed.json`, exit 0. */
   readonly remove?: FakeTaskAnswer;
+  /** WR-T3: `tasks preview cleanup --json` (the STAGED copy's only); default `preview-cleanup.json`, exit 0. */
+  readonly preview?: FakeTaskAnswer;
 }
 
 /** The root calls' scripted answers (E6.S2); absent, every root call of the closed set answers as the goldens do. */
@@ -464,11 +466,14 @@ function windowsReadReply(scenario: FakeScenario, argv: readonly string[]): Repl
 }
 
 /** The golden entry each task's render answers unless the scenario names another. */
-const DEFAULT_RENDER = { watch: 'watch from the staged copy', archive: 'archive from the staged copy' } as const;
+const DEFAULT_RENDER = { watch: 'watch from the staged copy', archive: 'archive from the staged copy', cleanup: 'cleanup from the staged copy' } as const;
+
+/** The three tasks the fake renders — its OWN list (the fake is held to the plan, not to the product's constant). */
+type FakeTask = keyof typeof DEFAULT_RENDER;
 
 /**
- * `tasks stage --json` and `tasks stage --remove --json` (the BUNDLED exe's) and `tasks render <watch|archive> --json` (the STAGED
- * copy's) — word for word, each on its own exe. `tasks run` is not here: it is the scheduled task's action, never the extension's, and
+ * `tasks stage --json` and `tasks stage --remove --json` (the BUNDLED exe's), `tasks render <watch|archive|cleanup> --json` and
+ * `tasks preview cleanup --json` (the STAGED copy's) — word for word, each on its own exe. `tasks run` is not here: it is the scheduled task's action, never the extension's, and
  * a `--timer` anywhere is refused like every unknown word. Absent a `tasks` scenario every `tasks` argv is refused.
  */
 function tasksReply(scenario: FakeScenario, which: WindowsExe, argv: readonly string[]): Reply | undefined {
@@ -485,6 +490,9 @@ function tasksReply(scenario: FakeScenario, which: WindowsExe, argv: readonly st
   if (which === 'bundled' && sameTail(argv, ['tasks', 'stage', '--remove', '--json'])) {
     return taskAnswer(tasks.folder, tasks.remove ?? { file: 'stage-remove-removed.json', code: 0 });
   }
+  if (which === 'staged' && sameTail(argv, ['tasks', 'preview', 'cleanup', '--json'])) {
+    return taskAnswer(tasks.folder, tasks.preview ?? { file: 'preview-cleanup.json', code: 0 });
+  }
   const task = renderTaskOf(argv);
 
   return which === 'staged' && task !== undefined ? renderReply(tasks, task) : refuseTasks(which, argv, 'not a tasks argv this exe is asked');
@@ -494,11 +502,11 @@ function refuseTasks(which: WindowsExe, argv: readonly string[], why: string): R
   return { code: FAKE_EXIT.refused, stderr: `fake wsl-care.exe (${which}): ${why}: ${JSON.stringify(argv)}\n` };
 }
 
-/** `tasks render <watch|archive> --json` — exactly four words — or not one. */
-function renderTaskOf(argv: readonly string[]): 'watch' | 'archive' | undefined {
+/** `tasks render <watch|archive|cleanup> --json` — exactly four words — or not one. */
+function renderTaskOf(argv: readonly string[]): FakeTask | undefined {
   const [verb, sub, task, json, ...rest] = argv;
 
-  return verb === 'tasks' && sub === 'render' && (task === 'watch' || task === 'archive') && json === '--json' && rest.length === 0 ? task : undefined;
+  return verb === 'tasks' && sub === 'render' && json === '--json' && rest.length === 0 ? (Object.keys(DEFAULT_RENDER) as FakeTask[]).find((name) => name === task) : undefined;
 }
 
 function taskAnswer(folder: string, answer: FakeTaskAnswer): Reply {
@@ -506,7 +514,7 @@ function taskAnswer(folder: string, answer: FakeTaskAnswer): Reply {
 }
 
 /** The render golden's entry — or the scripted exit. */
-function renderReply(tasks: FakeTasks, task: 'watch' | 'archive'): Reply {
+function renderReply(tasks: FakeTasks, task: FakeTask): Reply {
   if (tasks.render?.exit !== undefined) {
     return taskAnswer(tasks.folder, tasks.render.exit);
   }
