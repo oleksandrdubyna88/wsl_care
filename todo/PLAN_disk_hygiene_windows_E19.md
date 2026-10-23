@@ -1,6 +1,6 @@
 # PLAN — E19 "See it": the stories of the first disk-hygiene epic (volume verdicts, the 5-minute Windows reading, the worktree report)
 
-> Status: **in progress, 2026-10-22 — E19.S1 (#156), S2b (#157), S3 (#158) and S4 (#159) built; E19.S2 built (PR pending); E19.S5 not started.** Scope: the stories of epic E19 of
+> Status: **in progress, 2026-10-23 — E19.S1 (#156), S2b (#157), S3 (#158) and S4 (#159) built; E19.S2 built, NOT merged (draft PR #179: CI is red on win-x64, see *E19.S2 — the state at the hand-over*; its coai code round not run); E19.S5 not started.** Scope: the stories of epic E19 of
 > [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (DH-1, DH-1b, DH-3) — read-only, nothing in this epic
 > deletes. Written by the Opus judge per `.agents/conventions/common/subagent-models.md` (epic → stories); no story of E19
 > is a cornerstone (the parent's ledger: `Cornerstones: 2 of 2 — DH-4, DH-6`, both outside this epic).
@@ -209,6 +209,22 @@ coai code round per story; the full test executables and `npm test` before the P
     replaced by a live read). The busy-lock case is in-process only.
   - **Only `contracts/config-keys.json` moved** (regenerated on the Linux leg); the `head` goldens did not change.
   - **Not done here:** the panel's and the bar's use of the Windows binary's reading is E19.S5.
+
+**E19.S2 — the state at the hand-over (2026-10-23).** Built and pushed as draft PR #179 (head `6cd616ef`), NOT merged.
+- **CI is red on `daemon · build · test · aot (win-x64)`, and the PR is the cause.** Two of the new `Cli.Tests/WindowsVolumeStatusTests` fail:
+  - `A_busy_run_lock_writes_no_sample_and_status_reads_live`: "Expected value to be 75 because wsl-care: watch runs in this user's own, NOT elevated process — an elevated (administrator) one is refused …";
+  - `A_failed_sample_write_is_reported_in_the_text_and_the_json_and_the_exit_stays_0`: a `JsonException` on empty output, because the watch refused before it answered.
+
+  The GitHub Windows runner is elevated, so the real Windows watch refuses (`PLAN_windows_runner.md` §3.2). These tests must set the host's privilege seam to "not elevated" (`CliHost.Privilege = new ProcessPrivilege(false, …)`, as `Cli.Tests/ActWindowsTests.cs:21` does), not rely on the real check. Fix it RED first: the same failure is reproducible by making the fake say "elevated".
+- The full Core and Scenarios executables were not run locally (the machine was saturated); CI counts as that run once it is green.
+- **Left:**
+  1. the fix above;
+  2. green CI;
+  3. the coai code round for the story;
+  4. mark the PR ready, and a manual squash-merge only when every check is green and the state is CLEAN.
+
+  After that comes E19.S5 (the bar and panel halves; its brief is attached to PR #179).
+- A WSL leftover stays by rule (no deletion in WSL): `/tmp/testsToDelete-wc-e19-s2-goldens-1`.
 
 ### E19.S3 — the worktree report without git (DH-3, part 1)
 
