@@ -137,6 +137,7 @@ public sealed class WatchRunTests : IDisposable
             ConfigLoader.Load(_tree.Paths, files), new FakeProcessTable().Alive(4242, Now - TimeSpan.FromMinutes(1)), 4242, ActionRegistry.Product, timer)
         {
             Signals = this.Signals,
+            WindowsVolumes = _volumes,
             Wait = (window, _) =>
             {
                 _clock.Advance(window);
@@ -144,6 +145,23 @@ public sealed class WatchRunTests : IDisposable
             },
         };
         return await WatchRun.RunAsync(context, CancellationToken.None);
+    }
+
+    /// <summary>E19.S2: drives a distro could be handed — if it ever asked.</summary>
+    private readonly ScriptedVolumes _volumes = ScriptedVolumes.Machine();
+
+    /// <summary>The distro's watch judges no lettered volume natively (its full run's PowerShell reading does): it never asks the drive table
+    /// and writes no <c>volumes.json</c>, whatever table it was handed.</summary>
+    [Fact]
+    public async Task The_distro_binary_reads_no_windows_volume()
+    {
+        var result = await Watch(advance: false);
+
+        result.Outcome.Should().Be(WatchOutcome.Sampled, result.Reason);
+        _volumes.Calls.Should().Be(0);
+        result.Volumes.Should().BeOfType<VolumeSampleOutcome.NotTaken>();
+        File.Exists(_tree.Paths.Rules.Join(_tree.Paths.StateDirectory, VolumeSampleStore.FileName)).Should().BeFalse();
+        WatchReport.From(result).Volumes.Should().BeNull();
     }
 
     private IReadOnlyList<RunRecord> History() => RunHistory.Read(_tree.Paths, Files).Records;

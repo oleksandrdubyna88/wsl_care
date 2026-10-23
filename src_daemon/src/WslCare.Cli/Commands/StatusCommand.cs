@@ -13,6 +13,7 @@ using WslCare.Core.Mcp;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
 using WslCare.Core.Thresholds;
+using WslCare.Core.Watch;
 using WslCare.Core.Worktrees;
 
 namespace WslCare.Cli.Commands;
@@ -75,12 +76,16 @@ internal static class StatusCommand
         var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait, ledger).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
         var advice = VmmemAdvice.For(sample.Host.Bind(h => h.VmmemWorkingSetBytes), sample.Host.Bind(h => h.Memory), wslConfig, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb));
         var (worktrees, worktreesVerdict) = WorktreesStatus.From(config.TextList(ConfigKeys.Worktrees.Roots), new WorktreeReportStore(windows, host.Files).Read(), WorktreeSettings.From(config), host.Clock.GetUtcNow());
+        // E19.S2: disk.volumeFree from the watch's volumes.json with its real age — or a live native read, saying so. Replaces the carried
+        // full-run verdict of the same id (the distro's reading is the distro's), in its place.
+        var volumes = StatusVolumes.From(new VolumeSampleStore(windows, host.Files), host.WindowsVolumes, config, host.Clock.GetUtcNow());
         return report with
         {
             WindowsMcpServers = WindowsMcpServersReport.From(mcp),
             Host = advice.Length == 0 ? report.Host : report.Host with { VmmemAdvice = advice },
             Worktrees = worktrees,
-            Verdicts = [.. report.Verdicts ?? [], worktreesVerdict],
+            Disk = volumes.Disk,
+            Verdicts = [.. StatusVerdicts.Replaced(report.Verdicts ?? [], [volumes.Verdict]), worktreesVerdict],
         };
     }
 

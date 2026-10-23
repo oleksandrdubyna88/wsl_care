@@ -302,6 +302,15 @@ public sealed class VolumeFreeRulesTests : IDisposable
         VolumeFreeLimits.From(Config()).Should().BeEquivalentTo(new VolumeFreeLimits(30, 10, 10, 3, 8, 100, []));
     }
 
+    /// <summary>E19.S2: how many watch periods the Windows status trusts <c>volumes.json</c> for — a number of the configuration, 3 to start, in 1-12, a
+    /// user key (it moves WHEN a status reads the drives itself, never what is judged).</summary>
+    [Fact]
+    public void The_sample_age_key_is_a_display_key_of_one_to_twelve_periods_starting_at_three()
+    {
+        Int("disk.volumeSampleMaxAgePeriods").Should().Match<ConfigKey.IntKey>(k => k.Min == 1 && k.Max == 12 && !k.Trust.MachineOnly);
+        Config().Int(ConfigKeys.Disk.VolumeSampleMaxAgePeriods).Should().Be(3);
+    }
+
     [Theory]
     [InlineData("d")]
     [InlineData("DD")]

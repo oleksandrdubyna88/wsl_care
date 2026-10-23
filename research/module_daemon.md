@@ -557,8 +557,9 @@ flowchart LR
 - **The wire**: `disk.lettered[{letter, sizeBytes, freeBytes, freePercent, level, judgedBy}]` in the run detail and in `status --json`'s `disk` (same
   `basis`), present even when the virtual disks could not be read; a figure not read is OMITTED (never 0) and its reason rides in `judgedBy`; absent in a
   detail written before E19.S1. The extension reads it for the bar's mark and never parses the verdict's value text.
-- **Not built here**: the 5-minute Windows reading (E19.S2) and its read by the extension (E19.S2b/S5) — until then the figure is as old as the
-  distro's 4-hourly full run.
+- **The Windows binary's own 5-minute reading** (E19.S2, built): the distro's figure is as old as its 4-hourly full run, so the Windows watch also reads
+  the drives natively and the Windows `status` judges THAT — see *The volume sample* in *The Windows watch and the ledger lock* below.
+- **Not built here**: the bar's and the panel's use of the Windows binary's reading (E19.S5).
 
 ## The Windows runner's render (WR-D1 of PLAN_windows_runner.md, 2026-10-11)
 
@@ -724,7 +725,8 @@ sequenceDiagram
 ## The Windows watch and the ledger lock (WR-D4 of PLAN_windows_runner.md, 2026-10-12)
 
 What `tasks run watch` supervises every `mcpWatchdog.periodMinutes`: `wsl-care.exe watch --timer --json`. Until WR-D4 the Windows
-binary refused `watch` (2). It now samples the Windows MCP servers into this user's CPU ledger and sweeps the run records' retention.
+binary refused `watch` (2). It now samples the Windows MCP servers into this user's CPU ledger, (since E19.S2) the lettered volumes into
+`volumes.json` — *The volume sample*, below —, and sweeps the run records' retention.
 Nothing acts yet: A22 (S7b.3 of [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) plugs into its `--timer`
 branch later.
 
@@ -777,6 +779,60 @@ flowchart TD
   ledger (`WindowsCpuLedger.None`): it answers from the window and records nothing, its `cpuBaseline.reason` naming the held lock
   — so no write ever replaces a sample it did not read. A lost sample only makes the next interval longer. An elevated `status`
   (it writes nothing) takes no lock. There is one ledger; the lock file stays on disk, empty, like the run lock's.
+
+### The volume sample (E19.S2 of [PLAN_disk_hygiene_windows_E19.md](../todo/PLAN_disk_hygiene_windows_E19.md), 2026-10-22)
+
+The Windows watch's second reading, taken under the same run lock right after the MCP sample (`WatchRun.Windows.cs` `SampleOnWindowsAsync`): the lettered
+volumes, natively, into `%LOCALAPPDATA%\wsl-care\volumes.json`; the Windows `status` judges `disk.volumeFree` from it with the sample's real age.
+
+```mermaid
+flowchart TD
+    sample["SampleOnWindowsAsync (run lock held)"] --> mcp["WindowsMcpCollector -> mcp-cpu.json"]
+    mcp --> take["VolumeSampleOutcome.Take(IWindowsVolumes, VolumeSampleStore, now)"]
+    take --> read{"IWindowsVolumes.Read()<br/>DriveInfo, no process"}
+    read -- "table unread" --> nw1["NotWritten(reason)<br/>previous file stays"]
+    read -- "table" --> write["VolumeSampleStore.TryWrite<br/>atomic, DeletionScope(state, volumes)"]
+    write -- ok --> w["Written(n, file)"]
+    write -- "IOException / refused" --> nw2["NotWritten(reason)<br/>run goes on"]
+    w --> sweep["RunRetention.TrySweep"]
+    nw1 --> sweep
+    nw2 --> sweep
+    st["wsl-care.exe status"] --> sread{"VolumeSampleStore.Read<br/>age = now - sampledAt"}
+    sread -- "readable, 0 <= age <= periods x periodMinutes" --> judge["VolumeFreeRules.Evaluate over the file<br/>basis {sample, sampledAt, ageSeconds}"]
+    sread -- "missing, unreadable, foreign schema, future, too old" --> live["IWindowsVolumes.Read() (live, writes nothing)<br/>basis {sample, now, 0}; reason: read live by status (...)"]
+    live --> judge2["VolumeFreeRules.Evaluate over the live table"]
+```
+
+- **The seam** (`Collectors/IWindowsVolumes.cs`, `WindowsVolumes.cs`): `Reading<IReadOnlyList<WindowsVolume>> Read()`. The real `WindowsVolumes` is
+  `DriveInfo.GetDrives()` behind `IDrive`: only `Fixed` and `Removable` drives with a letter are volumes; a `Network` drive (and `CDRom`, `Ram`,
+  `NoRootDirectory`, `Unknown`) is dropped by its type and never asked anything (a dead mapped drive can block a read for the network timeout); per
+  drive `IsReady`, `TotalSize`, `AvailableFreeSpace`, `DriveFormat` (as `FileSystem`) and `VolumeLabel`; the disk number is unread ("not read natively").
+  A drive that is not ready, or whose read throws (`IOException`, `UnauthorizedAccessException`), is IN the table with size and free unread and the
+  reason — the rule judges it `unknown`, never `ok`. `CliHost.WindowsVolumesFor(paths)` wires it only for a Windows layout on Windows; the distro's
+  binary and every host a test builds get `UnreadWindowsVolumes` (the same shape as `IWindowsProcessTable`/`IWindowsBoot`), so no test reads the machine's
+  drives except the one explicit Windows leg that asserts shape only.
+- **The file** (`Watch/VolumeSample.cs`): `{schemaVersion, sampledAt, volumes[{letter, fileSystem, label, size, free}]}`, `size`/`free` the status
+  `ByteFigure` (`available`/`bytes`/`reason`, so an unread figure survives as unread). `VolumeSampleStore` is the `WorktreeReportStore` pattern: read
+  with `ReadRegularFile` under `records.maxStateFileBytes`; a missing, unreadable, malformed, half-shaped or foreign-`schemaVersion` file is an
+  unavailable `Reading` WITH the reason ("… has schema 99; this build reads schema 1"), never an empty table; written atomically with
+  `DeletionScope(StateDirectory, "volumes")`; a write that throws `IOException`/`UnauthorizedAccessException` or is refused is a returned reason.
+- **The watch** (`WatchResult.Volumes`, `VolumeSampleOutcome` = `NotTaken | Written(n, file) | NotWritten(reason)`): written inside the run lock, after
+  the MCP sample, stamped with the instant AFTER it; a table that cannot be read writes nothing (an empty list would read as "no volumes"), a write
+  that fails is `NotWritten` — in `watch --json`'s `volumes {written, volumes | reason}`, in the text answer (`; volumes sampled: 2` / `; volumes not
+  sampled (…)`) and as a warning in the log; the ledger, the sweep and the exit code (0) are unaffected. A busy lock and the distro's watch take no sample
+  (`NotTaken`, `volumes` absent).
+- **The status** (`Status/StatusVolumes.cs`, called from `StatusCommand.WithWindowsSide`): window = `disk.volumeSampleMaxAgePeriods` (Display, 1–12,
+  default 3) × `mcpWatchdog.periodMinutes` (5) = 15 min. A readable sample with `0 <= age <= window` is judged by `VolumeFreeRules.Evaluate` with
+  `StatusVerdicts.SampleBasis(sampledAt, now)` = `{source: sample, evaluatedAt: sampledAt, ageSeconds: round(now - sampledAt)}` — the first sample basis with a
+  real age (`StatusVerdicts.Sampled` stamps age 0 by delegating with `now = sampledAt`). Anything else — no file, unreadable, foreign schema, dated in the
+  FUTURE (a clock that moved back must not keep a stale sample young), older than the window — reads `host.WindowsVolumes` live and says so: reason
+  `read live by status (no watch sample within 15 min): <why>; <the rule's reason>`, basis `{sample, now, 0}`. A live read that fails too is `unknown`
+  with both reasons. Status writes nothing. The verdict REPLACES the carried full-run `disk.volumeFree` (`StatusVerdicts.Replaced`, in its place), and
+  `disk` becomes `StatusDisk.OnWindowsWith(assessment, basis)`: still `available: false` ("the distro's full run reads the virtual disks"), plus
+  `lettered[…]` and the same `basis`.
+- **Growth**: one file, ≈ 26 × 0.15 KB, overwritten every period; a killed write leaves the previous file and its age says how old it is. The new key
+  `disk.volumeSampleMaxAgePeriods` is in `ConfigKeys.Numbers`, `default.json`, `contracts/config-keys.json` (regenerated on the Linux leg) and
+  `NumbersAreConfigurationTests`.
 
 ## The Windows runner's archive body (WR-D5 of PLAN_windows_runner.md, 2026-10-14)
 

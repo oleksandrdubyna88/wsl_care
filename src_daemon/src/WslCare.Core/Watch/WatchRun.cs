@@ -46,6 +46,10 @@ public sealed record WatchContext(
 
     /// <summary>Windows' boot counter and unbiased clock (WR-D4): what keys the Windows CPU ledger. The distro's watch never reads it.</summary>
     public IWindowsBoot WindowsBoot { get; init; } = new UnreadWindowsBoot("a watch built by a test reads no Windows boot counter");
+
+    /// <summary>The lettered Windows volumes, read natively (E19.S2): what the Windows watch samples into <c>volumes.json</c>. The distro's
+    /// watch never reads it.</summary>
+    public IWindowsVolumes WindowsVolumes { get; init; } = new UnreadWindowsVolumes("a watch built by a test reads no Windows volumes");
 }
 
 /// <summary>How one watch run ended.</summary>
@@ -73,6 +77,10 @@ public sealed record WatchResult(WatchOutcome Outcome, string Reason, McpCpuBase
 
     /// <summary>The run records' retention sweep, when this watch ran one (one: the Windows watch, WR-D4) — none otherwise.</summary>
     public IReadOnlyList<RetentionReport> Swept { get; init; } = [];
+
+    /// <summary>What the Windows watch did with the volume sample (E19.S2) — <see cref="VolumeSampleOutcome.NotTaken"/> on the distro and
+    /// when the lock was busy. A sample that could not be written is here, and never ends the run.</summary>
+    public VolumeSampleOutcome Volumes { get; init; } = new VolumeSampleOutcome.NotTaken();
 }
 
 /// <summary>
@@ -318,7 +326,9 @@ public static class WatchTries
 /// <param name="Act">The act run A19 made, as <c>act --json</c> answers it; absent when it did not act.</param>
 /// <param name="Retention">The run records' retention sweep (the Windows watch, WR-D4): lines and details removed, problems; absent
 /// when the watch swept nothing (the distro's, whose full run sweeps).</param>
-public sealed record WatchReport(int SchemaVersion, string Outcome, string Reason, bool LedgerRecorded, string? LedgerReason, string? HistoryReason, IReadOnlyList<string> Tried, ActReport? Act, RetentionReport? Retention = null)
+/// <param name="Volumes">The Windows watch's volume sample (E19.S2): whether <c>volumes.json</c> was written, how many volumes it holds, or why
+/// not; absent when the run took no sample (the distro's watch, a busy lock).</param>
+public sealed record WatchReport(int SchemaVersion, string Outcome, string Reason, bool LedgerRecorded, string? LedgerReason, string? HistoryReason, IReadOnlyList<string> Tried, ActReport? Act, RetentionReport? Retention = null, VolumeSampleReport? Volumes = null)
 {
     public static WatchReport From(WatchResult result) => new(
         Core.SchemaVersion.Current,
@@ -334,5 +344,6 @@ public sealed record WatchReport(int SchemaVersion, string Outcome, string Reaso
         result.History.Length == 0 ? null : result.History,
         result.Tried,
         result.Acts.Count == 0 ? null : ActReport.From(result.Acts[0]),
-        result.Swept.Count == 0 ? null : result.Swept[0]);
+        result.Swept.Count == 0 ? null : result.Swept[0],
+        VolumeSampleReport.From(result.Volumes));
 }

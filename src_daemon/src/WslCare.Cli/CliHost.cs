@@ -39,6 +39,11 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// unless <see cref="ForThisMachine"/> wires the real one on Windows; without it every instance is measured across the window.</summary>
     public IWindowsBoot WindowsBoot { get; init; } = new UnreadWindowsBoot("a host built by a test reads no Windows boot counter");
 
+    /// <summary>The lettered Windows volumes, read natively (E19.S2, <c>DriveInfo</c>, no process): what the Windows watch samples into
+    /// <c>volumes.json</c> and the Windows <c>status</c> reads live when that sample is missing or too old. Reads nothing unless
+    /// <see cref="ForThisMachine"/> wires the real one on Windows, so a test's answer never depends on this machine's drives.</summary>
+    public IWindowsVolumes WindowsVolumes { get; init; } = new UnreadWindowsVolumes("a host built by a test reads no Windows volumes");
+
     /// <summary>The current user's SID — the principal a Windows task XML names (WR-D1, <c>tasks render</c>). Empty unless
     /// <see cref="ForThisMachine"/> wires <c>WindowsIdentity.GetCurrent().User</c> in the Windows binary; a test hands its own.</summary>
     public Func<string> UserSid { get; init; } = static () => string.Empty;
@@ -173,6 +178,7 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
             Signals = SignalsFor(paths, files),
             WindowsProcesses = WindowsProcessesFor(paths),
             WindowsBoot = WindowsBootFor(paths),
+            WindowsVolumes = WindowsVolumesFor(paths),
             UserSid = static () => UserSidOfThisProcess(),
             ProcessPath = static () => Environment.ProcessPath ?? string.Empty,
             Supervisor = SupervisorFor(paths),
@@ -238,6 +244,12 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         paths is WindowsHostPaths && OperatingSystem.IsWindows()
             ? new Win32Boot()
             : new UnreadWindowsBoot("the distro's binary keeps the distro's CPU ledger (mcpServers)");
+
+    /// <summary>The real drive table for the Windows binary; none in the distro (its volumes come from its full run's PowerShell reading).</summary>
+    internal static IWindowsVolumes WindowsVolumesFor(IHostPaths paths) =>
+        paths is WindowsHostPaths && OperatingSystem.IsWindows()
+            ? new WindowsVolumes()
+            : new UnreadWindowsVolumes("the distro's binary reads no Windows drive natively (its full run's PowerShell reading judges them)");
 
     /// <summary>The job supervisor of the Windows binary (its unbiased clock is the boot's); none in the distro — the per-user tasks are
     /// Windows'.</summary>

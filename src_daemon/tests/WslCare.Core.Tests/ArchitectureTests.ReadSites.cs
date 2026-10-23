@@ -150,6 +150,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Worktrees/FolderWalk.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata), ["WalkTree"] = (2, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Worktrees/WorktreeScanner.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Worktrees/WorktreeReportStore.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Watch/VolumeSample.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
         ["WslCare.Core/Agents/AgentDiscovery.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Agents/AgentWalk.cs"] = new() { ["WalkTree"] = (2, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Agents/SessionGlob.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },

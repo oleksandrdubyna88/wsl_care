@@ -47,6 +47,7 @@ internal static class WatchCommand
             InterruptCause = host.InterruptCause,
             WindowsProcesses = host.WindowsProcesses,
             WindowsBoot = host.WindowsBoot,
+            WindowsVolumes = host.WindowsVolumes,
         };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = WatchRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult();
@@ -95,6 +96,21 @@ internal static class WatchCommand
         }
 
         LogRetention(log, result.Swept);
+        LogVolumes(log, result.Volumes);
+    }
+
+    /// <summary>The Windows watch's volume sample (E19.S2): how many volumes it holds, or why it could not be written — a warning; the run went on.</summary>
+    private static void LogVolumes(ILogger log, VolumeSampleOutcome volumes)
+    {
+        switch (volumes)
+        {
+            case VolumeSampleOutcome.Written written:
+                log.Information("volume sample: {Volumes} volume(s) written to {File}", written.Volumes, written.File);
+                break;
+            case VolumeSampleOutcome.NotWritten notWritten:
+                log.Warning("the volume sample was not written: {Reason}", notWritten.Reason);
+                break;
+        }
     }
 
     /// <summary>The run records' retention sweep (the Windows watch; none on the distro): what it removed, and every problem as a
@@ -117,8 +133,16 @@ internal static class WatchCommand
         var ledger = result.Ledger.Recorded ? "ledger recorded" : $"ledger not recorded ({result.Ledger.Reason})";
         var history = result.History.Length == 0 ? "history recorded" : $"history not recorded ({result.History})";
         var tried = result.Tried.Count == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"; A19 asked to stop {string.Join(", ", result.Tried)}");
-        return ShownText.Printable($"watch {result.Outcome.ToString().ToLowerInvariant()}: {result.Reason}; {ledger}; {history}{tried}{Retention(result.Swept)}");
+        return ShownText.Printable($"watch {result.Outcome.ToString().ToLowerInvariant()}: {result.Reason}; {ledger}; {history}{tried}{Retention(result.Swept)}{Volumes(result.Volumes)}");
     }
+
+    /// <summary>What the Windows watch did with the volume sample, for the one line (E19.S2) — nothing when it took none (the distro's watch, a busy lock).</summary>
+    private static string Volumes(VolumeSampleOutcome volumes) => volumes switch
+    {
+        VolumeSampleOutcome.Written written => string.Create(CultureInfo.InvariantCulture, $"; volumes sampled: {written.Volumes}"),
+        VolumeSampleOutcome.NotWritten notWritten => $"; volumes not sampled ({notWritten.Reason})",
+        _ => string.Empty,
+    };
 
     /// <summary>What the run records' retention sweep did, for the one line (the coai code round on WR-D4, finding 6) — nothing when
     /// no sweep ran (the distro's watch).</summary>

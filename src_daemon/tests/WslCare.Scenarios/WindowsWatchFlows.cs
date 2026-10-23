@@ -82,6 +82,84 @@ public sealed class WindowsWatchFlows
         home.Calls.Should().BeEmpty("the watch starts no process");
     }
 
+    private static string VolumesFile(ScenarioHome home) => home.Paths.Rules.Join(home.Paths.StateDirectory, "volumes.json");
+
+    /// <summary>A <c>volumes.json</c> as the watch writes it, by hand: D: of 195 GiB with <paramref name="freeGib"/> free, sampled <paramref name="minutesAgo"/> ago.</summary>
+    private static void PlantSample(ScenarioHome home, int minutesAgo, int freeGib)
+    {
+        Directory.CreateDirectory(home.Paths.StateDirectory);
+        var at = DateTimeOffset.UtcNow.AddMinutes(-minutesAgo).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var size = 195L * (1L << 30);
+        var free = freeGib * (1L << 30);
+        File.WriteAllText(VolumesFile(home), $$"""
+            { "schemaVersion": 1, "sampledAt": "{{at}}", "volumes": [ { "letter": "D", "fileSystem": "ReFS", "label": "Data", "size": { "available": true, "bytes": {{size}} }, "free": { "available": true, "bytes": {{free}} } } ] }
+            """);
+    }
+
+    private static Core.Status.StatusReport StatusOf(WslCare.TestSupport.ChildResult result) =>
+        JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.StatusReport)!;
+
+    /// <summary>E19.S2 over the BUILT Windows binary: the watch takes the native volume reading into <c>volumes.json</c> and starts no process for it. This
+    /// is the one flow that reads THIS machine's drives, so it asserts shape alone: the system drive is in the file, with figures that fit.</summary>
+    [Fact]
+    public async Task The_windows_watch_writes_the_volume_sample_without_a_process()
+    {
+        OnTheWindowsLegs();
+        using var home = Home("windows-watch-volumes");
+
+        var result = await home.RunAsync("watch", "--timer", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var report = JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.WatchReport)!;
+        report.Volumes.Should().NotBeNull().And.Match<VolumeSampleReport>(v => v.Written && v.Volumes >= 1, report.Volumes?.Reason);
+        var sample = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(VolumesFile(home)))!.AsObject();
+        sample["schemaVersion"]!.GetValue<int>().Should().Be(1);
+        DateTimeOffset.Parse(sample["sampledAt"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture).Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(5));
+        sample["volumes"]!.AsArray().Select(v => v!["letter"]!.GetValue<string>()).Should().Contain("C");
+        home.Calls.Should().BeEmpty("the watch starts no process");
+    }
+
+    /// <summary>The sample is judged with its real age: a status two minutes after the watch says <c>critical</c> for D: and <c>ageSeconds</c> about 120, from the
+    /// file — the live table (this machine's) is not what it judged.</summary>
+    [Fact]
+    public async Task Status_judges_the_sample_with_its_real_age()
+    {
+        OnWindowsAsTheTestExecutable();
+        using var home = Home("windows-status-sample");
+        PlantSample(home, minutesAgo: 2, freeGib: 5);
+
+        var result = await home.RunAsync("status", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var report = StatusOf(result);
+        var verdict = report.Verdicts!.Single(v => v.Id == "disk.volumeFree");
+        verdict.Level.Should().Be(Core.Thresholds.Level.Critical);
+        verdict.Basis!.Source.Should().Be(Core.Thresholds.VerdictSource.Sample);
+        verdict.Basis.AgeSeconds.Should().BeInRange(100, 400, "two minutes old at the planting, a few seconds of process start on top");
+        report.Disk!.Lettered.Should().ContainSingle().Which.Letter.Should().Be("D");
+        File.ReadAllText(VolumesFile(home)).Should().Contain("\"letter\": \"D\"", "status leaves the watch's sample alone");
+    }
+
+    /// <summary>A sample older than three watch periods is not trusted: status reads the drives itself (this machine's — shape only) and says so.</summary>
+    [Fact]
+    public async Task A_sample_older_than_three_periods_is_replaced_by_a_live_read_and_says_so()
+    {
+        OnWindowsAsTheTestExecutable();
+        using var home = Home("windows-status-old-sample");
+        PlantSample(home, minutesAgo: 30, freeGib: 5);
+
+        var result = await home.RunAsync("status", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var report = StatusOf(result);
+        var verdict = report.Verdicts!.Single(v => v.Id == "disk.volumeFree");
+        verdict.Reason.Should().Contain("read live by status (no watch sample within 15 min)");
+        verdict.Basis!.Source.Should().Be(Core.Thresholds.VerdictSource.Sample);
+        verdict.Basis.AgeSeconds.Should().Be(0);
+        report.Disk!.Lettered.Should().Contain(v => v.Letter == "C", "this machine's system drive, read natively");
+        home.Calls.Should().BeEmpty("a live read starts no process either");
+    }
+
     [Fact]
     public async Task An_elevated_windows_watch_is_refused_with_81_and_writes_nothing()
     {

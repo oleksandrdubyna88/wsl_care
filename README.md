@@ -409,6 +409,13 @@ recorded no distro is mapped, and the reason says how it becomes known. Four ver
   (every four hours by default), so the figure is as old as the run — the bar's tooltip says how old. **The status bar** gains a mark only
   when this verdict is critical: ` · D: low space` and the error colour, the tooltip's first line giving the volume's free space, its share
   and the reading's age; a warn stays in the panel's *Disk* section (*Windows volumes: worst free*), and a mark never lowers the bar's level.
+  **The Windows binary judges it itself, every five minutes (E19.S2).** `wsl-care.exe status` judges the same verdict over the Windows watch's own
+  native reading, `%LOCALAPPDATA%\wsl-care\volumes.json` (see *Watch* below), with the sample's REAL age as its basis
+  (`basis {source: sample, sampledAt, ageSeconds}` — the first sample basis with an age above zero), and fills `disk.lettered` too (the virtual disks stay
+  the distro's: `disk.available` is still false, saying so). When the file is missing, unreadable, of a schema it does not know, dated in the future, or
+  older than `disk.volumeSampleMaxAgePeriods` (1–12, 3) × `mcpWatchdog.periodMinutes` (15 minutes by default), `status` reads the drives itself —
+  natively, no process, and writing nothing — with `basis {source: sample, ageSeconds: 0}` and a reason that starts `read live by status (no watch
+  sample within 15 min)` and says why the sample was not used. A drive it cannot read is `unknown`, never `ok`.
 
 The four older defaults are STARTING VALUES; only one comes from a measurement (research/2026-10-10_disk.md): 20 GiB is under half of
 the 43.7 GiB gap measured on Ubuntu's VHDX (D2/D3), so that measured case warns; 100 GiB is about 4 % of the 2.4 TiB system
@@ -496,6 +503,16 @@ nothing writes no history line; during a dry run it only samples, and the full r
 0 sampled or acted (a failed action is in the act's record), 1 the act could not be recorded, 2 on the Windows binary, 75 another
 run holds the lock, 77 not root. The timer's own full run now waits up to `requests.lockWaitSeconds` (30) for a lock the watch
 holds for its seconds, instead of being lost to the next slot.
+
+**The Windows watch** (`wsl-care.exe watch --timer`, run by the `\wsl-care\watch` task every `mcpWatchdog.periodMinutes`) takes the same lock without
+waiting and samples the Windows MCP servers into the user's own CPU ledger. Since E19.S2 it also reads the lettered volumes **natively** — `DriveInfo`,
+no process — into `%LOCALAPPDATA%\wsl-care\volumes.json` (`{schemaVersion, sampledAt, volumes[{letter, fileSystem, label, size, free}]}`, written
+atomically, overwritten every period, about 26 volumes at the very most): only fixed and removable drives are volumes, a network drive is dropped without
+being asked anything (a mapped drive that is down can block for the whole network timeout), and a drive that is not ready or cannot be read stays in the
+file with its size and free space unread and the reason, never 0. A sample that cannot be written (or a drive table that cannot be listed) is named in the
+answer — `watch --json`'s `volumes {written, volumes | reason}`, and `; volumes sampled: 2` or `; volumes not sampled (reason)` in the text — and never
+ends the run; the previous file stays and its age says how old it is. A watch that finds the lock busy takes no sample and writes nothing, so a `status` in
+between reads the drives live (see *Status*).
 
 ## Tasks render — the Windows runner's task XML (WR-D1)
 

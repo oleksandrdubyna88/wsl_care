@@ -1,6 +1,6 @@
 # PLAN — E19 "See it": the stories of the first disk-hygiene epic (volume verdicts, the 5-minute Windows reading, the worktree report)
 
-> Status: **in progress, 2026-10-15 — E19.S2b built (PR pending); the other stories not started.** Scope: the stories of epic E19 of
+> Status: **in progress, 2026-10-23 — E19.S1 (#156), S2b (#157), S3 (#158) and S4 (#159) built; E19.S2 built, NOT merged (draft PR #179: CI is red on win-x64, see *E19.S2 — the state at the hand-over*; its coai code round not run); E19.S5 not started.** Scope: the stories of epic E19 of
 > [PLAN_disk_hygiene_windows.md](PLAN_disk_hygiene_windows.md) (DH-1, DH-1b, DH-3) — read-only, nothing in this epic
 > deletes. Written by the Opus judge per `.agents/conventions/common/subagent-models.md` (epic → stories); no story of E19
 > is a cornerstone (the parent's ledger: `Cornerstones: 2 of 2 — DH-4, DH-6`, both outside this epic).
@@ -184,6 +184,47 @@ coai code round per story; the full test executables and `npm test` before the P
   `Cli/Commands/StatusCommand.cs`, `Cli/CliHost.cs`, `Json/WslCareJsonContext.cs`, tests in `Core.Tests/Watch`,
   `Cli.Tests/StatusCommandTests.cs`, `Scenarios/WindowsWatchFlows.cs`, docs (`module_daemon.md` *WR-D4* section gains the
   volume sample, README *Watch* and *Status*).
+- **As built (2026-10-22, PR pending).** As briefed, with these deviations and additions:
+  - **A drive seam under the seam.** `WindowsVolumes` takes its drives through `IDrive` (a thin wrapper over `DriveInfo`), so the network-drive,
+    not-ready and throwing-drive cases are scripted without this machine's drives. A `Network` drive is dropped by its `DriveType` ALONE and none of
+    its other properties is ever read (a mapped drive that is down can block for the network timeout). The one test that reads the real
+    drives asserts shape only.
+  - **An unread drive table writes nothing.** A drive LIST that cannot be read (`DriveInfo.GetDrives()` throws) is `NotWritten(reason)` in the
+    watch's answer and leaves the previous file — an empty `volumes[]` would read as "this machine has no volumes". A single drive that cannot be
+    read IS in the file, with its size and free space unread and the reason.
+  - **The wire reuses `ByteFigure`** for `size` and `free` (`{available, bytes, reason}`), so an unread figure survives the file as unread; the file
+    has no `diskNumber` (the native reading never has one), and `ToVolumes()` gives it back "not read natively".
+  - **Future-dated samples are not trusted.** Besides missing, unreadable and older than the window, a sample whose `sampledAt` is later than
+    the status' clock (a clock that moved back) is replaced by a live read, reason "…in the future" — otherwise it would stay young for ever.
+  - **The window is `disk.volumeSampleMaxAgePeriods` × `mcpWatchdog.periodMinutes`** (Display, 1–12, default 3 → 15 min by default); a sample EXACTLY
+    that old is still trusted. The reason of a live read is `read live by status (no watch sample within 15 min): <why>; <the rule's reason>`, and a live
+    read that fails as well is `unknown` with both reasons.
+  - **`StatusVerdicts.SampleBasis(sampledAt, now)`** is the one place a sample basis is built; `Sampled(verdicts, sampledAt)` (age 0) now delegates to
+    the new `Sampled(verdicts, sampledAt, now)`. `disk` on Windows is `StatusDisk.OnWindowsWith(assessment, basis)`: still unavailable for the virtual
+    disks, plus `lettered` and the basis.
+  - **Where the scenarios live.** The seam-level cases are `Core.Tests/Collectors/WindowsVolumesTests`; the file `Core.Tests/Watch/VolumeSampleStoreTests`;
+    the watch `Core.Tests/Watch/WindowsWatchRunTests` (and `WatchRunTests` for the distro); the status, the busy lock and the watch's text/JSON answer
+    `Cli.Tests/WindowsVolumeStatusTests` (a new file rather than `StatusCommandTests`: the Windows layout needs its own host); the built binary
+    `Scenarios/WindowsWatchFlows` (the sample's shape with this machine's real drives; a hand-planted sample judged with its age; an old sample
+    replaced by a live read). The busy-lock case is in-process only.
+  - **Only `contracts/config-keys.json` moved** (regenerated on the Linux leg); the `head` goldens did not change.
+  - **Not done here:** the panel's and the bar's use of the Windows binary's reading is E19.S5.
+
+**E19.S2 — the state at the hand-over (2026-10-23).** Built and pushed as draft PR #179 (head `6cd616ef`), NOT merged.
+- **CI is red on `daemon · build · test · aot (win-x64)`, and the PR is the cause.** Two of the new `Cli.Tests/WindowsVolumeStatusTests` fail:
+  - `A_busy_run_lock_writes_no_sample_and_status_reads_live`: "Expected value to be 75 because wsl-care: watch runs in this user's own, NOT elevated process — an elevated (administrator) one is refused …";
+  - `A_failed_sample_write_is_reported_in_the_text_and_the_json_and_the_exit_stays_0`: a `JsonException` on empty output, because the watch refused before it answered.
+
+  The GitHub Windows runner is elevated, so the real Windows watch refuses (`PLAN_windows_runner.md` §3.2). These tests must set the host's privilege seam to "not elevated" (`CliHost.Privilege = new ProcessPrivilege(false, …)`, as `Cli.Tests/ActWindowsTests.cs:21` does), not rely on the real check. Fix it RED first: the same failure is reproducible by making the fake say "elevated".
+- The full Core and Scenarios executables were not run locally (the machine was saturated); CI counts as that run once it is green.
+- **Left:**
+  1. the fix above;
+  2. green CI;
+  3. the coai code round for the story;
+  4. mark the PR ready, and a manual squash-merge only when every check is green and the state is CLEAN.
+
+  After that comes E19.S5 (the bar and panel halves; its brief is attached to PR #179).
+- A WSL leftover stays by rule (no deletion in WSL): `/tmp/testsToDelete-wc-e19-s2-goldens-1`.
 
 ### E19.S3 — the worktree report without git (DH-3, part 1)
 

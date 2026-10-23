@@ -74,6 +74,7 @@ manual squash-merge on all-green.
     passes through `ShownText.Printable` and a newline or an escape can never forge a preview row or drive the terminal.
   - **The golden moved as expected:** the fixture's compose container and the named volume it holds left A5's
     figures (count 13 → 12, named volumes 6 → 5) and appear in the new note.
+  - Merged 2026-10-22 as #160 (1dfeb6e8).
 
 ### E21.S2 = DH-8 — this repository's test leftovers take the prefix
 
