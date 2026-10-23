@@ -1,6 +1,6 @@
 # PLAN — Windows disk hygiene: a verdict for every lettered volume, the AI-agent worktree report, a build-output cleanup, the `testsToDelete-` sweep, and A5's compose exemption
 
-> Status: **plan only, nothing implemented yet, 2026-10-14 — coai plan round 1: proceed; the owner's answers to Q1–Q4 and the
+> Status: **in progress, 2026-10-23 — E19: S1 (#156), S2b (#157), S3 (#158), S4 (#159) merged, S2 in draft PR #179, S5 not started; E20 not started; E21: S1 (#160) merged, the rest not started. The plan's history: 2026-10-14 — coai plan round 1: proceed; the owner's answers to Q1–Q4 and the
 > own review written in, plan round 2 (§12a); the epics split by Fable, 2026-10-14 (E19–E21, cornerstones DH-4 and DH-6,
 > `## Epics`); the owner's go for E19 on 2026-10-15, for E20 and E21 the same day; stories documents for all three.** Scope: the daemon's disk verdicts (`Thresholds/`), a
 > Windows-side worktree scanner and two Windows-side cleanup actions (`Core/Worktrees/` new, `Core/Actions/`), the Docker
