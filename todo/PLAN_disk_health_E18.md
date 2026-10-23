@@ -1,9 +1,9 @@
 # PLAN — E18 stories: wsl_care consumes the kit, the full view, the slim side bar, Help, accessibility (#87)
 
-> Status: **in progress (2026-10-22)** — the stories document of epic E18 of [PLAN_disk_health.md](PLAN_disk_health.md)
+> Status: **in progress (2026-10-23)** — the stories document of epic E18 of [PLAN_disk_health.md](PLAN_disk_health.md)
 > (§3.4–§3.6 and its E18 table). E18.K1 is done in `dew_flow_vscode_kit` (kit #9 → `655df4de`; **0.2.0 released to
 > GitHub Packages**, release PR #16, run 39481672054 green). This document holds **W0**, **W1a** and **W1b**; W2, W4, W3 and W5
-> are added here, each before its own plan round. **W0 is MERGED (2026-10-21, PR #171 → `main` @ `4d051378`)** — § 6b is its code round, § 9 what shipped differently. **W1a is MERGED (2026-10-22, PR #177 → `main` @ `2bbd8d30`)** — built as one branch in three commits (W1a § 9a), § 10 / § 10a what shipped differently and its review round. **W1b is specified (2026-10-22, § W1b — the full view); its plan round is next.**
+> are added here, each before its own plan round. **W0 is MERGED (2026-10-21, PR #171 → `main` @ `4d051378`)** — § 6b is its code round, § 9 what shipped differently. **W1a is MERGED (2026-10-22, PR #177 → `main` @ `2bbd8d30`)** — built as one branch in three commits (W1a § 9a), § 10 / § 10a what shipped differently and its review round. **W1b is specified (2026-10-22, § W1b — the full view) and its coai plan round passed (session `6fc851ec`, proceed 5/6, folded in at `e1ecf478`); its build has not started (2026-10-23). It waits for kit 0.3.0 (E18.K2, kit draft PR #19) only at W1b-3; W1b-1 and W1b-2 can start now. Before W1b merges, a Fable security check of the pick → target map, the closed wire and the reveal binding must say SHIP.**
 >
 > Related: [module_vs_code.md](../research/module_vs_code.md), [architecture.md](../research/architecture.md), the kit's
 > `research/PLAN_kit_components_storybook.md` (kit `main` @ `1d2681cc`) §4.3 (the DOM port), §4.6 / §4.6a (the DataTable, its reveal contract and the
