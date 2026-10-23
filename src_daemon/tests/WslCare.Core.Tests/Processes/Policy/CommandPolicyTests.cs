@@ -151,7 +151,7 @@ public sealed partial class CommandPolicyTests
             SystemdCommands.Search(since, new JournalScope.Unit("systemd-resolved"), "Clock change detected"),
             SystemdCommands.Search(since, new JournalScope.Kernel(), "page allocation failure|invoked oom-killer"),
             SystemdCommands.Search(since, new JournalScope.Unit("systemd-resolved"), "wsl-care-live-contract-matches-nothing"),
-            HealthCommands.WindowsClock, WindowsDiskCommands.WindowsDisk, HealthCommands.SnapList,
+            HealthCommands.WindowsClock, WindowsDiskCommands.WindowsDisk, DefenderCpuCommands.DefenderCpu, HealthCommands.SnapList,
         ];
         return [.. all];
     }

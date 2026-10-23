@@ -63,6 +63,8 @@ public sealed record WindowsIdentity(Reading<string> Edition, Reading<string> Di
 /// <param name="CommitBytes">Windows' commit charge.</param>
 /// <param name="CommitLimitBytes">Windows' commit limit (it grows with the pagefile).</param>
 /// <param name="CompressionBytes">The Memory Compression process's working set.</param>
+/// <param name="VmmemBytes">E15.S10: the WSL VM's working set as Windows sees it (<c>vmmemWSL</c>) — the same reading the Windows binary's own
+/// status takes, so the full run judges <c>host.vmmem</c> too.</param>
 /// <param name="MalformedLines">Lines the parser could not read — counted and skipped, never fatal.</param>
 public sealed record WindowsDiskFacts(
     Reading<IReadOnlyList<WindowsVirtualDisk>> Distros,
@@ -74,6 +76,7 @@ public sealed record WindowsDiskFacts(
     Reading<long> CommitBytes,
     Reading<long> CommitLimitBytes,
     Reading<long> CompressionBytes,
+    Reading<long> VmmemBytes,
     WindowsIdentity Identity,
     Reading<IReadOnlyList<DisplayAdapter>> Adapters,
     int MalformedLines);

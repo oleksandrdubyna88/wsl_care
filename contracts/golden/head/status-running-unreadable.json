@@ -412,6 +412,26 @@
       }
     },
     {
+      "id": "host.vmmem",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 24 GiB (wslConfig.vmmemAdviceGb)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "host.defenderCpu",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 100 % of one core (thresholds.defenderCoresWarnPercent)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
       "id": "docker.A4",
       "level": "unknown",
       "value": "",
@@ -565,6 +585,13 @@
     "command": "wsl-care config set auto.A21 false"
   },
   "disk": {
+    "available": false,
+    "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+    "basis": {
+      "source": "fullRun"
+    }
+  },
+  "defender": {
     "available": false,
     "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
     "basis": {

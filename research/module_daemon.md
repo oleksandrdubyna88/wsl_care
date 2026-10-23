@@ -84,6 +84,9 @@ flowchart TB
 | `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 | `WindowsDiskCommands`, `WindowsDiskSample` / `WindowsDiskFacts`, `WindowsDiskParsers` | `Core/Health` | the Windows disk script (section below): the second fixed interop script, what it read, its tag parser; `HealthCommands.FixedScripts` is PowerShell's closed set |
 | `PwshProbe`, `PwshEngine` / `InteropEngine` | `Core/Health` | E15.S1b (section below): what the clock probe saw of the MSI PowerShell 7, and the PURE choice of the engine the disk script runs under |
+| `DefenderCpuCommands`, `DefenderParsers`, `DefenderSample`, `DefenderReading` / `DefenderUsage` / `DefenderSpan` / `DefenderWeek`, `DefenderCpu` | `Core/Health` | E15.S10 (section below): the third fixed interop script, its one-line parser, and the PURE two-point rule (usage only between two reads of the same pid AND start marker) and the week |
+| `DefenderCpuLedger` / `DefenderLedgerLine` / `DefenderLedgerRead`, `DefenderCpuRun` / `DefenderOutcome` | `Core/Health` | E15.S10: `{state}/defender-cpu.jsonl` (append, trim by age at the next write, the rewrite's temp file beside the ledger) and the step that measures against its newest line, records, and sums the week |
+| `DefenderReport` / `DefenderReports`, `StatusDefender` | `Core/Collect`, `Core/Status` | E15.S10: the run detail's `defender` section and `status --json`'s `defender` carried from it with its basis |
 
 ## Entry points
 
@@ -136,6 +139,7 @@ has none.
 | the Windows runner's render: `tasks render`, the `windowsTasks.*` keys, `DryRunWindow.Peek` (WR-D1, 2026-10-11) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2–§3.7 |
 | the Windows runner's supervisor: `tasks run`, the Job Object, exit 84 (WR-D3, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.3 |
 | Windows memory pressure: `host.commit` / `host.compression` / `host.vmmem`, `Thresholds/HostRules`, `Health/HostMemoryFacts` (E15.S5, 2026-10-12) | the section below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) *E15.S5 design*, the measurement [2026-10-12_host_memory.md](2026-10-12_host_memory.md) |
+| Windows Defender's CPU recorded every full run: the third fixed script, `defender-cpu.jsonl`, `host.defenderCpu`, `status.defender`; the full run's `host.vmmem` (E15.S10, 2026-10-21) | the section *Windows Defender's CPU, recorded every full run* below; the plan [PLAN_disk_health.md](../todo/PLAN_disk_health.md) *E15.S10 design* and *as built*, the measurement [2026-10-16_defender_cpu_cost.md](2026-10-16_defender_cpu_cost.md) |
 
 | the Windows runner's staged copy: `tasks stage`, `tasks stage --remove`, the sweep (WR-D2, 2026-10-12) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.2, §3.7, §3.10 |
 | the Windows runner's cleanup task and `tasks preview cleanup` (WR-T2, 2026-10-21) | the section below; the plan [PLAN_windows_runner.md](../todo/PLAN_windows_runner.md) §3.12 |
@@ -331,7 +335,8 @@ flowchart LR
   System log's events of `disk`, `stornvme`, `Ntfs`, `volmgr`, `storahci` with ids 7, 11, 51, 129, 153, 157 of the last
   `disk.eventsSinceDays` (60) days, at most `disk.eventsMaxRead` (5000), AGGREGATED inside PowerShell per UTC day, provider,
   id and `HarddiskN` (one line per event was 64 of 75 lines, D10); commit charge and limit
-  (`Win32_PerfRawData_PerfOS_Memory`); the Memory Compression process's working set; EditionID, DisplayVersion,
+  (`Win32_PerfRawData_PerfOS_Memory`); the Memory Compression process's working set; since E15.S10 §B the `vmmemWSL` working set
+  (`vmmem=`, or `vmmem.error=ProcessCommandException` when there is no such process); EditionID, DisplayVersion,
   CurrentBuild.UBR, InstallDate; MachineGuid; the account the script ran as (its SID — interop runs it as the Windows user who
   started the VM, whose hive `HKCU` is; the live contract asserts a user SID and that the running distro is in the Lxss map); each display adapter's problem code, PNP device id and name (for G2). The
   last line is `end=1`.
@@ -365,12 +370,13 @@ flowchart LR
   5.1, unelevated, 2.4–3.3 s warm, 10.7 s cold; 26 lines on the owner's machine. After the code round (2026-10-11): 6.1–6.2 s
   warm, 21.9 s cold under load (73 % of the ceiling), 29 lines. The captured answer, anonymised, is the
   fixture `tests/fixtures/health/windows-disk-2026-10-10`.
-- **The closed set — three members since E15.S1b.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell
+- **The closed set — three members since E15.S1b, four since E15.S10.** `NeverList`'s `powershell` rule refuses every argv naming PowerShell
   (`powershell` or `pwsh`, any path) that is not EXACTLY one of `HealthCommands.FixedScripts`, program AND arguments, under
-  the configuration in force: the clock probe under `powershell.exe`; the disk script under `powershell.exe`; and the SAME
+  the configuration in force: the clock probe under `powershell.exe`; the disk script under `powershell.exe`; the SAME
   disk script under the bare `pwsh.exe` (`WindowsDiskCommands.WindowsDiskUnderPwsh` — `WindowsDisk` with only the program,
-  the name `pwsh-windows-disk` and the summary changed, so both carry one `Arguments` list). A third script, a one-word variant,
-  `-File`, `-EncodedCommand`, a trailing argument, the clock probe under `pwsh.exe`, and the disk script under `pwsh`,
+  the name `pwsh-windows-disk` and the summary changed, so both carry one `Arguments` list); and (E15.S10) the Defender CPU script
+  under `powershell.exe` only (`DefenderCpuCommands.DefenderCpu`, a `CommandTemplate.Fixed` — it has no slot). A fifth script, a one-word variant,
+  `-File`, `-EncodedCommand`, a trailing argument, the clock probe or the Defender script under `pwsh.exe`, and the disk script under `pwsh`,
   `PWSH.EXE` or any path to a pwsh (`/mnt/c/Program Files/…`, `C:\Program Files\…`, a user's `WindowsApps`) are all refused
   (`PowerShellClosedSetTests`). The read templates are not `CommandTemplate.Fixed` (it freezes an argv at first use): their
   one slot, `SlotKind.WindowsDiskScript`, accepts exactly the script the configuration in force builds;
@@ -894,8 +900,10 @@ justified and recorded (plan WR-T2 §14, own review item 8).
 
 ## Windows memory pressure, one rule on both roads (E15.S5, 2026-10-12) — a report
 
-Three host verdicts, judged by ONE pure function over one set of facts, on whichever road has the facts. Read-only: nothing is
-acted on, no new command runs, and the never-list is untouched.
+Three host verdicts (a fourth, `host.defenderCpu`, joined in E15.S10 — its own section below), judged by ONE pure function over one set
+of facts, on whichever road has the facts. Read-only: nothing is acted on, no new command runs, and the never-list is untouched.
+**E15.S10 §B changed one thing here**: the Windows disk script reads `vmmemWSL` now, so the full run judges `host.vmmem` too and the two
+roads are one list again — the diagram and bullets below say so.
 
 ```mermaid
 flowchart LR
@@ -905,23 +913,23 @@ flowchart LR
         procs["Process.GetProcessesByName<br/>(a snapshot; nothing started)"] --> ws["ProcessWorkingSets.Sum<br/>vmmemWSL · Memory Compression"]
     end
     subgraph distro["the distro's full run"]
-        script["Windows disk script (E15.S1)<br/>commit= · compression="] --> wdf["WindowsDiskFacts"]
+        script["Windows disk script (E15.S1)<br/>commit= · compression= · vmmem= (E15.S10)"] --> wdf["WindowsDiskFacts"]
     end
     mem --> probe["HostMemoryFacts.FromProbe"]
     commit --> probe
     ws --> probe
-    wdf --> disk["HostMemoryFacts.FromWindowsDisk<br/>(vmmem unknown)"]
-    probe --> rules["Thresholds/HostRules.Verdicts<br/>commit · compression · vmmem<br/>(PURE)"]
-    disk --> fr["Thresholds/HostRules.FullRunVerdicts<br/>commit · compression<br/>(the same functions)"]
-    rules -- "Windows side only<br/>basis: sample" --> sv["StatusVerdicts.From<br/>a sampled verdict REPLACES<br/>the carried one of the same id;<br/>host.vmmem is appended"]
+    wdf --> disk["HostMemoryFacts.FromWindowsDisk<br/>(vmmem read; only the host RAM unknown)"]
+    probe --> rules["Thresholds/HostRules.Verdicts<br/>commit · compression · vmmem · defenderCpu<br/>(PURE)"]
+    disk --> fr["Thresholds/HostRules.FullRunVerdicts<br/>the same four (the same functions)"]
+    rules -- "Windows side only<br/>basis: sample" --> sv["StatusVerdicts.From<br/>a sampled verdict REPLACES<br/>the carried one of the same id,<br/>in its carried position"]
     fr -- "ThresholdRules.FromFullRun<br/>(after disk.hostFree)" --> detail["run detail verdicts"]
     detail -- "carried, basis: fullRun + age" --> sv
 ```
 
 - **The facts** (`Health/HostMemoryFacts.cs`): `CommitBytes`, `CommitLimitBytes`, `CompressionBytes`, `VmmemBytes`,
   `HostTotalBytes` and the `.wslconfig` audit, each a `Reading`. `FromProbe(HostSample, audit)` is the Windows binary's road;
-  `FromWindowsDisk(WindowsDiskSample, audit)` is the full run's, where vmmem and the host RAM are unknown ("vmmemWSL is read by the
-  Windows binary's status"). `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
+  `FromWindowsDisk(WindowsDiskSample, audit)` is the full run's: commit, compression and — since E15.S10 §B — vmmem from the disk script's
+  lines; only the host's RAM stays unknown (the vmmem advice then names no total). `MEMORYSTATUSEX`'s page-file fields are the smaller of the system's and a job's commit limits; the
   daemon sets no job commit limit (WR-D3's job is kill-on-close only), so they are the system's. The two roads read the same commit quantity: on 2026-10-12 the perf counter and `MEMORYSTATUSEX`
   agreed to 0.01 %.
 - **The readers fail ALONE** (`Collectors/WindowsProbe.cs`, `Collectors/ProcessWorkingSets.cs`). `Memory()` and `Commit()` each
@@ -936,16 +944,19 @@ flowchart LR
   `wslConfig.vmmemAdviceGb`, and its reason IS `VmmemAdvice.For`'s text — the level follows the advice, so they cannot disagree).
   An unread figure is `unknown` with its reason, never `ok`. `VmmemAdvice.For` gained an overload over the host's RAM in bytes;
   the old one delegates to it.
-- **Where each road judges.** The full run: `HostRules.FullRunVerdicts` — `host.commit` and `host.compression` only, by the same
-  functions — is spread into `ThresholdRules.FromFullRun` after the disk verdicts, so the distro's `status` carries those two with
-  `basis: fullRun` and their age. It judges no `host.vmmem` (code round and own review, 2026-10-12): its script reads no vmmem,
-  and a verdict that could only be `unknown` sat in every distro status, the status bar's tooltip and every run's history line.
-  The Windows binary, and ONLY the Windows side (`ProbeSample.Side`; a distro sample that ever carried a host part keeps the
-  carried verdicts): `StatusVerdicts.From` judges `HostRules.Verdicts` (all three) over its own sample with `basis: sample`. A
-  sampled verdict REPLACES the carried full-run verdict of the same id, in that verdict's place — the newer, direct reading wins
-  — and one nothing carried (`host.vmmem`) is appended after the carried ones (after `npm.cache`); a `status` never lists an id
-  twice. `status` reads `.wslconfig` once on Windows and hands the same audit to
-  the advice and to the verdict.
+- **Where each road judges.** The full run: `HostRules.FullRunVerdicts` — `host.commit`, `host.compression`, `host.vmmem` and
+  (E15.S10) `host.defenderCpu`, by the same functions — is spread into `ThresholdRules.FromFullRun` after the disk verdicts, so
+  the distro's `status` carries them with `basis: fullRun` and their age. (Until E15.S10 §B the list was commit and compression only
+  — code round and own review, 2026-10-12: the script read no vmmem, and a verdict that could only be `unknown` sat in every distro
+  status, the status bar's tooltip and every run's history line. Since §B the disk script reads `vmmemWSL`, so the list is whole, and
+  `HostRules.Verdicts` IS `FullRunVerdicts`: one list on both roads.) The Windows binary, and ONLY the Windows side
+  (`ProbeSample.Side`; a distro sample that ever carried a host part keeps the carried verdicts): `StatusVerdicts.From` judges
+  `HostRules.Verdicts` over its own sample with `basis: sample`. A sampled verdict REPLACES the carried full-run verdict of the same
+  id, in that verdict's place — the newer, direct reading wins; `host.vmmem` is carried now, so it moved from "appended after
+  `npm.cache`" to its carried position, right behind `host.compression`, still exactly once; `host.defenderCpu` is NOT sampled on the
+  Windows side at all (security round: `HostRules.Verdicts` judges only commit, compression and vmmem; an unknown stub there REPLACED the carried
+  full-run verdict, so Windows showed unknown always) — it stays CARRIED from the full run, with its run and age. A `status` never lists an id twice. `status` reads `.wslconfig` once on
+  Windows and hands the same audit to the advice and to the verdict.
 - **The keys** (`Config/ConfigKeys.Thresholds.cs`, display trust): `thresholds.hostCommitWarnPercent` (50–99, 80),
   `thresholds.hostCommitCriticalPercent` (51–100, 90), `thresholds.hostCompressionWarnGb` (1–256, 8). A coupled rule in
   `NumberRules` refuses a layer whose critical value is not above its warn value: as with every coupled rule and every invalid
@@ -953,8 +964,102 @@ flowchart LR
   path exists for display keys — a display key out of range in the machine layer is an error too — so this rule follows the
   existing ones (checked in the code round, 2026-10-12). The defaults are PROVISIONAL starting values
   (a heavy afternoon: commit 68.8 %, compression 6.0 GiB, vmmem 18.9 GiB); the full runs' records calibrate them.
-- **Not built here**: a vmmem line in the distro's disk script. With it the full run can judge `host.vmmem` again
-  (`FullRunVerdicts` gains it); it waits for E15.S1b, which changes that script. The status JSON's `host` block is unchanged (the figures travel as verdict values).
+- **Built since (E15.S10 §B, 2026-10-21)**: the vmmem line in the distro's disk script, which was this story's open tail. The status JSON's
+  `host` block is unchanged (the figures travel as verdict values).
+
+## Windows Defender's CPU, recorded every full run (E15.S10, 2026-10-21)
+
+> Plan: [PLAN_disk_health.md](../todo/PLAN_disk_health.md), *E15.S10 design* and *E15.S10 as built*. Measurement:
+> [2026-10-16_defender_cpu_cost.md](2026-10-16_defender_cpu_cost.md). **Read-only: nothing about Defender is changed, nothing is
+> elevated.** The record is the "before" half of E16.S5's saving line, which needs at least 7 days of it before a change.
+
+**Purpose.** Every full run records how much CPU Windows Defender's engine (`MsMpEng`) used since the previous full run — from two reads
+of the SAME process — and judges it (`host.defenderCpu`). A second, separate part (§B) closes E15.S5's open tail: the Windows disk
+script reads `vmmemWSL`, so the full run judges `host.vmmem` too.
+
+```mermaid
+flowchart LR
+    collect["collect (full run, distro only)<br/>HealthCollector.CollectAsync"]
+    disk["Windows disk script<br/>(its own ceiling; now with vmmem=)"]
+    defender["powershell.exe (5.1 only)<br/>DefenderCpuCommands.Script<br/>health.defenderCpuTimeoutSeconds, 15 s"]
+    parse["DefenderParsers.Parse<br/>defender= · defender.none= · defender.error="]
+    ledger[("{state}/defender-cpu.jsonl<br/>DefenderCpuLedger")]
+    run["DefenderCpuRun.Apply<br/>Between(newest line, now) · append · Week"]
+    rule["DefenderCpu.Between / Week<br/>(PURE: same pid AND start marker)"]
+    verdict["HostRules.Defender<br/>host.defenderCpu"]
+    detail["run detail<br/>defender (DefenderReport)"]
+    status["status --json<br/>defender + basis"]
+
+    collect --> disk --> defender --> parse --> run
+    run <--> ledger
+    run --> rule
+    run --> verdict
+    run --> detail
+    detail -- "same file as the verdicts" --> status
+    verdict --> detail
+```
+
+- **The third fixed script** (`Health/DefenderCpuCommands.cs`): the module path pinned first, ONE filtered CIM read of
+  `Win32_PerfRawData_PerfProc_Process` where `Name='MsMpEng'` (a single-quoted filter, its own quotes doubled — no double quote anywhere),
+  printing ONE line — `defender=<PercentProcessorTime>|<Timestamp_Sys100NS>|<IDProcess>|<ElapsedTime>`, `defender.none=` (no such process)
+  or `defender.error=<exception type>` — through the one UTF-8 road (`HealthCommands.Utf8WriteStart … Utf8WriteEnd`). **Windows
+  PowerShell 5.1 only**: CIM is built in, so the reason the disk script runs under the MSI pwsh (the Storage cmdlets, E15.S1b) does not
+  apply, and a pwsh variant would add a fifth member to the closed set for no measured gain. It has NO slot — nothing in it varies. It
+  is `CommandTemplate.Fixed(() => DefenderCpuCommands.DefenderCpu)` in the read templates and the fourth member of
+  `HealthCommands.FixedScripts`. Measured: 1.2–2.1 s cold, 0.36–0.48 s warm (8.1 s for the first read after the WMI provider starts), so
+  the ceiling is `health.defenderCpuTimeoutSeconds` (5–60, **15**, machine-only, lower is safer); `RunBudget` sums every `*TimeoutSeconds`
+  key, so the full run's budget grows by it with no further change.
+- **It runs AFTER the disk script**, once per full run: the disk script is one sample, and a shared ceiling would put both at risk. A
+  stall costs only itself — the Defender sample says `did not answer within 15 s; its process tree was killed`, the disk facts stay
+  (`DefenderCollectTests`, and over the built CLI `DefenderFlows`, a 60 s hang cut at 5 s with the fake's pid gone).
+- **The rule** (`Health/DefenderCpu.cs`, PURE). `DefenderReading(CpuTicks100ns, Timestamp100ns, Pid, StartMarker)`; `Between(previous, now)`
+  gives `DefenderUsage(Cores, Covered)` = ΔCpu / ΔTimestamp (CPU summed over all cores, both in 100 ns, so the ratio IS cores) **only for the
+  same process — the same `Pid` AND the same `StartMarker`**. On this RAW class `ElapsedTime` is the process START instant on the FILETIME
+  clock, constant across reads while `Timestamp_Sys100NS` advances (six measured reads), not an elapsed duration. Windows reuses pids and an
+  engine update restarts MsMpEng without a reboot; the start marker tells them apart. Anything else is a new baseline, never a figure:
+  another pid or the same pid with another start marker (even with a LARGER counter) → "Defender restarted — a new baseline"; a counter
+  that went down; a non-positive interval; a missing read → its own reason. **Deviation from the plan row (recorded):** the row also keyed
+  on "the same boot id" as `McpCpuLedger` does on the distro's boot; MsMpEng lives on WINDOWS, whose boot the distro cannot read cheaply,
+  and the distro's boot changes on every WSL restart while Defender runs on — the absolute start marker already separates one Windows
+  boot's MsMpEng from another's. `Week(spans, now)` sums the spans of the last 7 days clipped to the window (a restart's gap is no span, so
+  adds no covered hours) as core-hours per 168 h, and says it is **extrapolated** when the spans cover fewer hours; no span gives no week,
+  never 0.
+- **The ledger** (`Health/DefenderCpuLedger.cs`, `{state}/defender-cpu.jsonl`): one line per full run — `{ts, cpu, pid, start}` and, when the
+  newest earlier line was the same process, the span `{from, cores}` (`from` = the previous line's `ts`; the span ends at this line's
+  `ts`). Appended through `IFileSystem.AppendLine` (whole lines under the cross-process lock); lines older than
+  `defender.localRetentionDays` (30–1000, **400**, machine-only) are dropped when the file is next written, by `IFileSystem.RewriteLines`
+  — the temp file is made IN `{state}`, beside the ledger, and renamed in place: never in `/tmp`, so the replace never crosses a
+  filesystem (plan round, finding 6; a test holds the path and the scope). The previous reading is the NEWEST line's — a failed read
+  appends nothing, so the next success spans across the missed run. A missing or malformed file is "no baseline", never an error; a
+  line that does not parse (or has a pid or start marker of 0, an instant no clock reads, a span with one member) is skipped, COUNTED
+  (`ledgerNote`: "N lines skipped") and DROPPED by the next write — they are never aged, so they would stay for ever (security round); a torn last line is a write in progress, not damage. A read-only run (`mayRecord` false)
+  measures against the ledger and writes nothing, and says so. **Size, projected:** the timer starts a full run at most once an hour
+  (`timer.periodHours`, 1–24) and a manual `collect` adds a few a day; a line is about 160 bytes (a test serialises the widest line:
+  ≤ 200), so 30 runs a day × 400 days × 160 B ≈ 1.9 MB at the most, about 1.5 MB at one run an hour. The bound is by AGE, not by count.
+  Until E17.S1 takes it over as a statistics record, this file is the only store of the figure.
+- **On the wire.** The run detail gains `defender` (`DefenderReport`): `available`/`reason`, `sampledAt`, `elapsedSeconds`, `coresAverage`,
+  `coveredSeconds`, `coreHoursPerWeek`, `coveredHours`, `extrapolated`, `ledgerNote` — every figure `{available, value | reason}`. A
+  read that did not answer still reports the week the ledger already holds. **`status --json` gains `defender`**, read from the SAME
+  detail file as the verdicts (`FullRunVerdicts` keeps the section as raw JSON and parses it alone, so a broken one costs only itself —
+  one generic `Section<T>` now serves `disk` and `defender`) and carried with its basis (`fullRun`, `runId`, `evaluatedAt`, `ageSeconds`;
+  `RecordedVerdicts.BasisAt` is the one place that is built); on the Windows binary `available: false` ("the distro's full run reads
+  Windows Defender's CPU"). Additive; `schemaVersion` stays 1.
+- **The verdict** (`Thresholds/HostRules`): `host.defenderCpu`, right behind `host.vmmem` in `HostRules.FullRunVerdicts`, so it is spread
+  into `ThresholdRules.FromFullRun` and carried by `status` like the others. Warn when the cores exceed `thresholds.defenderCoresWarnPercent`
+  of ONE core (10–800, **100**, display key); exactly that is ok; `unknown` with the reason when there is no span (the first read, a
+  restart, a failed read, a counter that went down); the Windows binary does not judge it, it carries the distro's. **Deviation
+  from the design (recorded):** the design named `thresholds.defenderCoresWarn` (0.1–8.0, 1.0); every configuration key is a whole number, so
+  the key is in percent of a core. The default stays quiet on the measured 0.76 cores averaged over 36 h on a heavy development day; a
+  sustained full core is the symptom the owner reported. The extension shows nothing new: the `host.` prefix already colours its bar, and
+  the panel's row for Defender is E16.S5's.
+- **§B, the full run's vmmem line.** The disk script gains a `Vmmem` part right behind `Compression`: `Get-Process -Name 'vmmemWSL'`, the
+  working sets summed — the kernel's process snapshot, no handle opened, the reading the Windows binary's `ProcessWorkingSets.Sum` takes;
+  no process throws `ProcessCommandException` and prints `vmmem.error=…`, never 0. (The legacy `vmmem` name is not read: one rule with the
+  Windows binary's `vmmemWSL`, and plain `vmmem` is also other Hyper-V VMs' worker.) `WindowsDiskFacts.VmmemBytes` is parsed like
+  `compression=`; `HostMemoryFacts.FromWindowsDisk` reads it; `HostRules.FullRunVerdicts` judges commit, compression, vmmem and Defender, and
+  `Verdicts` is the same list — see § *Windows memory pressure*. The run detail's `health.windowsDisk.vmmemBytes` records it.
+- **Not here:** the panel row for Defender and the saving line (E16.S5), the statistics record (E17.S1), any change to a Defender setting
+  (this machine is read-only; E16.S5's *Exclude development folders from Defender* is the owner's decision and an elevated one).
 
 ## One redaction rule for every command line (E15.S7, 2026-10-17)
 

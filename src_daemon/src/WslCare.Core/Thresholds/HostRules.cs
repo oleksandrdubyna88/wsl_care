@@ -16,6 +16,9 @@ namespace WslCare.Core.Thresholds;
 /// <item><c>host.vmmem</c>: the WSL VM's working set as Windows sees it; warn above the EXISTING <c>wslConfig.vmmemAdviceGb</c> (one
 /// number for one idea), and its reason IS <see cref="VmmemAdvice"/>'s text, so the advice and the verdict cannot disagree.</item>
 /// </list>
+/// <item><c>host.defenderCpu</c> (E15.S10): Windows Defender's engine (<c>MsMpEng</c>) averaged more than <c>thresholds.defenderCoresWarnPercent</c> % of ONE
+/// core between this full run's read and the previous one's (two reads of the same process, <see cref="DefenderCpu.Between"/>); unknown with the
+/// reason when there is no span (the first read, a restart, a failed read) and on the Windows binary, which cannot read it.</item>
 /// A figure a road did not read is <c>unknown</c> with its reason, never <c>ok</c>. The defaults are PROVISIONAL starting values
 /// (research/2026-10-12_host_memory.md).
 /// </summary>
@@ -29,18 +32,22 @@ public static class HostRules
 
     private const string VmmemReason = "the WSL VM's working set as Windows sees it (vmmemWSL)";
 
-    /// <summary>The Windows binary's road: all three verdicts, over its own sample.</summary>
-    public static IReadOnlyList<Verdict> Verdicts(HostMemoryFacts facts, EffectiveConfig config) =>
-        [.. FullRunVerdicts(facts, config), Vmmem(facts, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb))];
+    private const string DefenderReason = "Windows Defender's engine (MsMpEng): CPU time summed over all cores per second of wall time, between two reads of the same process a full run apart";
 
-    /// <summary>The full run's road: commit and compression only. Its Windows disk script reads no vmmem (E15.S1b may add it), and a
-    /// verdict that could only be <c>unknown</c> would sit in every distro status, the status bar's tooltip and every history line
-    /// (E15.S5 own review). The SAME functions judge both roads.</summary>
-    public static IReadOnlyList<Verdict> FullRunVerdicts(HostMemoryFacts facts, EffectiveConfig config) =>
+    /// <summary>The Windows binary's road, over its own sample: exactly the verdicts a SAMPLE of the Windows host can judge — commit, compression and
+    /// vmmem. <c>host.defenderCpu</c> is NOT here (security round, coai 0): it needs two reads a full run apart, which only the distro's full run has,
+    /// and a stub that said "unknown" would REPLACE the carried full-run verdict in the Windows status, which would then show unknown always.</summary>
+    public static IReadOnlyList<Verdict> Verdicts(HostMemoryFacts facts, EffectiveConfig config) =>
     [
         Commit(facts, config.Int(ConfigKeys.Thresholds.HostCommitWarnPercent), config.Int(ConfigKeys.Thresholds.HostCommitCriticalPercent)),
         Compression(facts.CompressionBytes, config.Int(ConfigKeys.Thresholds.HostCompressionWarnGb)),
+        Vmmem(facts, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb)),
     ];
+
+    /// <summary>The full run's road: the Windows binary's three (the disk script reads vmmem since E15.S10 §B, which closed E15.S5's open tail) and
+    /// Defender's CPU (E15.S10) after them — the same functions over the same facts.</summary>
+    public static IReadOnlyList<Verdict> FullRunVerdicts(HostMemoryFacts facts, EffectiveConfig config) =>
+        [.. Verdicts(facts, config), Defender(facts.Defender, config.Int(ConfigKeys.Thresholds.DefenderCoresWarnPercent))];
 
     private static Verdict Commit(HostMemoryFacts facts, int warnPercent, int criticalPercent)
     {
@@ -85,6 +92,19 @@ public static class HostRules
             var unread => Unknown("host.vmmem", limit, unread.ReasonOrEmpty),
         };
     }
+
+    /// <summary>More than <paramref name="warnPercent"/> % of one core warns; exactly that is ok.</summary>
+    private static Verdict Defender(Reading<DefenderUsage> usage, int warnPercent)
+    {
+        var limit = Invariant($"warn > {warnPercent} % of one core (thresholds.defenderCoresWarnPercent)");
+        return usage switch
+        {
+            Reading<DefenderUsage>.Available { Value: var used } => new("host.defenderCpu", used.Cores > warnPercent / 100.0 ? Level.Warn : Level.Ok, CoresText(used), limit, DefenderReason),
+            var unread => Unknown("host.defenderCpu", limit, unread.ReasonOrEmpty),
+        };
+    }
+
+    private static string CoresText(DefenderUsage used) => Invariant($"{used.Cores:0.00} cores over {used.Covered.TotalHours:0.0} h");
 
     private static Verdict Unknown(string id, string limit, string reason) => new(id, Level.Unknown, string.Empty, limit, reason);
 

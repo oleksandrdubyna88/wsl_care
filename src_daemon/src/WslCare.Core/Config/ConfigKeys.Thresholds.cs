@@ -81,5 +81,11 @@ public static partial class ConfigKeys
         /// <summary>E15.S5: the Memory Compression process's working set above this many GiB warns — <c>host.compression</c>.
         /// Default 8, PROVISIONAL: a heavy afternoon read 6.0 GiB (research/2026-10-12_host_memory.md).</summary>
         public static readonly ConfigKey.IntKey HostCompressionWarnGb = new("thresholds.hostCompressionWarnGb", 1, 256) { Trust = KeyTrust.Display };
+
+        /// <summary>E15.S10: Windows Defender's engine (MsMpEng) using more than this share of ONE core (percent: 100 = one core) between two
+        /// full runs warns — <c>host.defenderCpu</c>. The design named the key in cores (0.1–8.0, default 1.0); a key is a whole number, so it is
+        /// in percent of a core (10–800, default 100). Default 100, PROVISIONAL: 0.76 cores averaged over 36 h on a heavy development day
+        /// stays quiet; a sustained full core is the symptom the owner reported (research/2026-10-16_defender_cpu_cost.md).</summary>
+        public static readonly ConfigKey.IntKey DefenderCoresWarnPercent = new("thresholds.defenderCoresWarnPercent", 10, 800) { Trust = KeyTrust.Display };
     }
 }

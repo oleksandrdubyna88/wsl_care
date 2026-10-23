@@ -25,7 +25,7 @@ public static class StatusDisk
 
     private static DiskReport Carried(RecordedVerdicts run, DateTimeOffset now)
     {
-        var basis = new VerdictBasis(VerdictSource.FullRun, run.RunId.Text, run.EvaluatedAt, Math.Round((now - run.EvaluatedAt).TotalSeconds));
+        var basis = run.BasisAt(now);
         return run.Disk switch
         {
             Reading<DiskReport>.Available { Value: var disk } => disk with { Basis = basis },

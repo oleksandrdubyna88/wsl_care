@@ -55,6 +55,7 @@ internal static class StatusCommand
             McpServers = McpServersReport.From(mcp),
             InteropRelays = host.Paths is LinuxHostPaths ? InteropRelaysReport.From(sample.Vm.Bind(vm => vm.Processes), host.Paths, host.Files, loaded.Config) : null,
             Disk = host.Paths is LinuxHostPaths ? StatusDisk.From(fullRun, now) : StatusDisk.OnWindows,
+            Defender = host.Paths is LinuxHostPaths ? StatusDefender.From(fullRun, now) : StatusDefender.OnWindows,
         };
         report = WithWindowsSide(report, host, sample, hostWslConfig, loaded.Config, cancellationToken);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));

@@ -60,8 +60,25 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     private static Task<CommandOutcome> RunUnderAsync(ICommandRunner runner, InteropEngine engine, CancellationToken cancellationToken) =>
         runner.RunAsync(WindowsDiskCommands.Under(engine).ToRequest(), cancellationToken);
 
-    private static Reading<TimeSpan> Elapsed(CommandOutcome outcome, Reading<WindowsDiskFacts> facts) =>
+    private static Reading<TimeSpan> Elapsed<T>(CommandOutcome outcome, Reading<T> facts) =>
         outcome is CommandOutcome.Exited exited && facts.IsAvailable ? Reading.Of(exited.Elapsed) : Reading.Missing<TimeSpan>(facts.ReasonOrEmpty);
+
+    /// <summary>Why the Windows binary has no Defender sample (E15.S10): the full run in the distro reads it.</summary>
+    public const string DefenderCpuIsTheDistros = "Windows Defender's CPU is read by wsl-care's full run inside the distro, through its third fixed script; wsl-care.exe does not run it";
+
+    /// <summary>
+    /// Windows Defender's engine (E15.S10): the third fixed interop script, once, under its own ceiling — its tree killed past it by the
+    /// runner — parsed by tag. A script that could not start, timed out, exited non-zero or printed no reading leaves THIS sample
+    /// unavailable with that reason and touches nothing else: the disk script has already answered.
+    /// </summary>
+    public static async Task<DefenderSample> MeasureDefenderAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var at = clock.GetUtcNow();
+        var command = DefenderCpuCommands.DefenderCpu;
+        var outcome = await runner.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false);
+        var reading = ToolAnswers.Read(command, outcome).Bind(DefenderParsers.Parse);
+        return new DefenderSample(at, Elapsed(outcome, reading), reading);
+    }
 
     private const string ClockChange = "Clock change detected";
     /// <summary>The kernel's words for a failed allocation (plan §4.1) — also A2's event (E3.S3).</summary>
@@ -79,6 +96,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             return HealthSample.Unavailable(since, WindowsSide, ClockUnavailable(WindowsIsTheReference), home, Reading.Of(AuditWslConfig(file))) with
             {
                 WindowsDisk = WindowsDiskSample.Unavailable(clock.GetUtcNow(), WindowsDiskIsTheDistros),
+                Defender = DefenderSample.Unavailable(clock.GetUtcNow(), DefenderCpuIsTheDistros),
             };
         }
 
@@ -89,6 +107,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         // the engine the clock probe's look chose (PwshEngine), the MSI pwsh placed under this distro's automount root.
         var engine = PwshEngine.Choose(clockSample);
         var disk = await MeasureWindowsDiskAsync(commands, clock, engine, cancellationToken).ConfigureAwait(false);
+        var defender = await MeasureDefenderAsync(commands, clock, cancellationToken).ConfigureAwait(false);
         var uptime = ProcText.Read(files, $"{linux.ProcRoot}/uptime").Bind(HealthParsers.Uptime);
         var jumpsBack = await TimeJumpsBackAsync(uptime, cancellationToken).ConfigureAwait(false);
         var failedUnits = (await RunAsync(SystemdCommands.FailedUnits, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.FailedUnits);
@@ -119,6 +138,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             ClockJudgement = ClockStandings.Judge(clockSample, reference, ClockReferences.ToleranceSeconds),
             TimeJumpsBack = jumpsBack,
             WindowsDisk = disk,
+            Defender = defender,
             JournalReadAt = Reading.Of(journalReadAt),
         };
     }

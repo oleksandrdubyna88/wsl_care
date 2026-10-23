@@ -408,6 +408,8 @@ public static class CollectRun
         var ledger = Mcp.McpCpuLedgerPlace.ForCollect(c.Paths, mayRecord, $"{ReadOnlyNote}: the MCP servers' CPU is measured across the window");
         var mcp = await Mcp.McpSampling.SampleAsync(c.Paths, c.Files, c.Clock, c.Wait, ledger, sample, c.Loaded.Config, cancellationToken).ConfigureAwait(false);
         var health = await new HealthCollector(c.Commands, c.Files, c.Paths, c.Clock).CollectAsync(since, cancellationToken).ConfigureAwait(false);
+        // E15.S10: Defender's CPU between this run's read and the previous run's, recorded in the ledger once (a run that may not record only measures).
+        var defender = DefenderCpuRun.Apply(c.Paths, c.Files, health.Defender, mayRecord);
         var folders = c.Paths is LinuxHostPaths linux && FolderSizes.Due(last.Folders, started)
             ? await new FolderSizes(c.Files, c.Commands, c.Clock).MeasureAsync(linux, cancellationToken).ConfigureAwait(false)
             : null;
@@ -420,7 +422,7 @@ public static class CollectRun
         var starts = Coverage.Last24h(new ContainerStartsStore(c.Paths, c.Files).ReadAll(), c.Clock.GetUtcNow());
         var disk = Disk(c, health, sample, docker, newestFirst);
         var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders, Agents = agents, VirtualDisks = disk is Reading<DiskFacts>.Available { Value: var facts } ? facts.Sizes : null };
-        IReadOnlyList<Verdict> verdicts = [.. ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow) with { Disk = disk }, c.Loaded.Config), .. McpVerdicts.From(mcp, c.Loaded.Config)];
+        IReadOnlyList<Verdict> verdicts = [.. ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow) with { Disk = disk, Defender = defender.Usage }, c.Loaded.Config), .. McpVerdicts.From(mcp, c.Loaded.Config)];
         var ended = c.Clock.GetUtcNow();
         var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, [], RunKind.Collect) { Slow = slow }, .. newestFirst], ended);
         var folderReport = FoldersReports.From(foldersNow, foldersBefore, folders is not null);
@@ -448,6 +450,7 @@ public static class CollectRun
             ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
             Settled = c.Settled is { } settled ? RunSettledReport.From(settled) : null,
             Disk = DiskReports.From(disk, VolumeFreeRules.From(health, c.Loaded.Config)),
+            Defender = DefenderReports.From(health.Defender, defender),
         };
     }
 

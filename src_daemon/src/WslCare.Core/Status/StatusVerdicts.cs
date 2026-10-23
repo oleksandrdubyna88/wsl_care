@@ -13,6 +13,13 @@ public sealed record RecordedVerdicts(Records.RunId RunId, DateTimeOffset Evalua
     /// <summary>E15.S2: the run's disk section (virtual disks and their hosting volumes), read from the SAME detail file — or why
     /// there is none (a detail written before E15.S2).</summary>
     public Reading<Collect.DiskReport> Disk { get; init; } = Reading.Missing<Collect.DiskReport>("not read");
+
+    /// <summary>E15.S10: the run's Defender section, read from the SAME detail file — or why there is none (a detail written before
+    /// E15.S10).</summary>
+    public Reading<Collect.DefenderReport> Defender { get; init; } = Reading.Missing<Collect.DefenderReport>("not read");
+
+    /// <summary>The basis a figure carried from this run has at <paramref name="now"/>: the full run, which run, when it ended, how old it is.</summary>
+    public VerdictBasis BasisAt(DateTimeOffset now) => new(VerdictSource.FullRun, RunId.Text, EvaluatedAt, Math.Round((now - EvaluatedAt).TotalSeconds));
 }
 
 /// <summary>
@@ -78,7 +85,7 @@ public static class StatusVerdicts
 
     private static Verdict Recorded(Verdict unread, RecordedVerdicts run, DateTimeOffset now)
     {
-        var basis = new VerdictBasis(VerdictSource.FullRun, run.RunId.Text, run.EvaluatedAt, Math.Round((now - run.EvaluatedAt).TotalSeconds));
+        var basis = run.BasisAt(now);
         return run.Verdicts.FirstOrDefault(v => v.Id == unread.Id) is { } recorded
             ? recorded with { Basis = basis }
             : Unknown(unread, $"the newest full run ({run.RunId}) recorded no {unread.Id} verdict", basis);

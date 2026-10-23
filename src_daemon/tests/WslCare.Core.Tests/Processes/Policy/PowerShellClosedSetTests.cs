@@ -33,6 +33,7 @@ public sealed class PowerShellClosedSetTests
         Broken(Clock).Should().BeNull();
         Broken(Disk).Should().BeNull("the Windows disk script is the second member of the closed set");
         Broken(WindowsDiskCommands.WindowsDiskUnderPwsh.Argv).Should().BeNull("the same script under the MSI pwsh is the third");
+        Broken(DefenderCpuCommands.DefenderCpu.Argv).Should().BeNull("the Defender CPU script (E15.S10) is the fourth");
         foreach (var command in HealthCommands.FixedScripts)
         {
             var verdict = CommandPolicy.Product.Review(command.ToRequest());
@@ -41,12 +42,73 @@ public sealed class PowerShellClosedSetTests
     }
 
     /// <summary>E15.S1b: THREE members — the clock probe (always Windows PowerShell 5.1), the disk script under 5.1, and the SAME
-    /// disk script under the MSI pwsh 7. pwsh never gets the clock probe.</summary>
+    /// disk script under the MSI pwsh 7. pwsh never gets the clock probe. E15.S10: a FOURTH — the Defender CPU script, under 5.1 only
+    /// (it needs no module, so a pwsh variant would add a fifth member for no measured gain).</summary>
     [Fact]
-    public void The_closed_set_is_the_clock_probe_and_the_windows_disk_script_under_each_engine_and_nothing_else()
+    public void The_closed_set_is_the_clock_probe_the_windows_disk_script_under_each_engine_and_the_defender_script_and_nothing_else()
     {
-        HealthCommands.FixedScripts.Select(c => c.Name).Should().Equal(HealthCommands.WindowsClock.Name, WindowsDiskCommands.Name, WindowsDiskCommands.PwshName);
-        HealthCommands.FixedScripts.Select(c => c.Executable).Should().Equal([HealthCommands.PowerShell, HealthCommands.PowerShell, HealthCommands.Pwsh], "the clock probe runs under 5.1 only; the disk script under either engine");
+        HealthCommands.FixedScripts.Select(c => c.Name).Should().Equal(HealthCommands.WindowsClock.Name, WindowsDiskCommands.Name, WindowsDiskCommands.PwshName, DefenderCpuCommands.Name);
+        HealthCommands.FixedScripts.Select(c => c.Executable).Should().Equal([HealthCommands.PowerShell, HealthCommands.PowerShell, HealthCommands.Pwsh, HealthCommands.PowerShell], "the clock probe and the Defender script run under 5.1 only; the disk script under either engine");
+    }
+
+    [Fact]
+    public void The_defender_script_passes_with_its_exact_arguments_and_the_product_policy_allows_it()
+    {
+        var defender = DefenderCpuCommands.DefenderCpu;
+
+        Broken(defender.Argv).Should().BeNull();
+        var verdict = CommandPolicy.Product.Review(defender.ToRequest());
+        verdict.Should().Be(CommandVerdict.Allowed, (verdict as CommandVerdict.Refused)?.Reason ?? defender.Name);
+    }
+
+    /// <summary>E15.S10 RED 7: the set admits exactly the new script, and a ONE-WORD variant is still refused — also the variant that a
+    /// PREFIX match would let through (the real script, then more).</summary>
+    [Theory]
+    [InlineData("MsMpEng", "MsMpEng2")]
+    [InlineData("MsMpEng", "explorer")]
+    [InlineData("Win32_PerfRawData_PerfProc_Process", "Win32_Process")]
+    [InlineData("Get-CimInstance", "Invoke-CimMethod")]
+    public void A_one_word_variant_of_the_defender_script_is_refused(string word, string other)
+    {
+        var changed = DefenderCpuCommands.Script.Replace(word, other, StringComparison.Ordinal);
+        changed.Should().NotBe(DefenderCpuCommands.Script, "the word is in the script");
+
+        Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", changed]).Should().Be("powershell");
+        CommandPolicy.Product.Review(new CommandRequest([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", changed], Ceiling))
+            .Should().BeOfType<CommandVerdict.Refused>().Which.Reason.Should().Contain("never-list (powershell:");
+    }
+
+    [Fact]
+    public void The_defender_script_with_a_statement_appended_is_refused_a_prefix_match_would_let_it_through()
+    {
+        var longer = DefenderCpuCommands.Script + "; Get-Date";
+
+        longer.Should().StartWith(DefenderCpuCommands.Script);
+        Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", longer]).Should().Be("powershell");
+        CommandPolicy.Product.Review(new CommandRequest([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", longer], Ceiling))
+            .Should().BeOfType<CommandVerdict.Refused>().Which.Reason.Should().Contain("never-list (powershell:");
+    }
+
+    [Fact]
+    public void The_defender_script_cut_short_is_refused()
+    {
+        var shorter = DefenderCpuCommands.Script[..^10];
+
+        Broken([HealthCommands.PowerShell, "-NoProfile", "-NonInteractive", "-Command", shorter]).Should().Be("powershell");
+    }
+
+    [Fact]
+    public void The_defender_script_with_a_trailing_argument_is_refused_a_prefix_of_the_argv_is_not_the_argv()
+    {
+        Broken([.. DefenderCpuCommands.DefenderCpu.Argv, "-File", @"C:\x\defender.ps1"]).Should().Be("powershell");
+        Broken([.. DefenderCpuCommands.DefenderCpu.Argv, "extra"]).Should().Be("powershell");
+    }
+
+    [Fact]
+    public void The_defender_script_under_pwsh_or_any_other_program_is_refused()
+    {
+        Broken([HealthCommands.Pwsh, .. DefenderCpuCommands.DefenderCpu.Arguments]).Should().Be("powershell", "the Defender script runs under Windows PowerShell 5.1 only");
+        Broken(["/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe", .. DefenderCpuCommands.DefenderCpu.Arguments]).Should().Be("powershell");
     }
 
     [Fact]
@@ -170,7 +232,7 @@ public sealed class PowerShellClosedSetTests
     {
         var rule = NeverList.Rules.Single(r => r.Id == "powershell");
 
-        rule.Description.Should().Contain("closed set").And.Contain("clock probe").And.Contain("Windows disk script").And.Contain("pwsh.exe");
+        rule.Description.Should().Contain("closed set").And.Contain("clock probe").And.Contain("Windows disk script").And.Contain("Defender CPU script").And.Contain("pwsh.exe");
     }
 
     private static EffectiveConfig Config(string machine)

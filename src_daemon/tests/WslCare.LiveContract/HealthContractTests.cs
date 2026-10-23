@@ -157,6 +157,38 @@ public sealed class HealthContractTests
         (facts.Reliability.IsAvailable || facts.Reliability.ReasonOrEmpty.Contains("elevation", StringComparison.Ordinal)).Should().BeTrue(facts.Reliability.ReasonOrEmpty);
     }
 
+    /// <summary>E15.S10: the third fixed script through WSL interop, exactly as the full run starts it (through the product's policy,
+    /// which admits it only as a member of the closed set), parsed by the product's parser: Defender's engine answers one reading whose
+    /// process id and start marker are positive, or says it is not running — never a malformed line. Two reads a moment apart are the
+    /// SAME process, so the two-point rule does not call the second a restart.</summary>
+    [Fact]
+    public async Task The_defender_cpu_script_answers_one_reading_the_parser_reads_from_inside_the_distro()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Live.Unavailable("the Defender script is the distro's (WSL interop to powershell.exe); this binary runs on Windows");
+        }
+
+        var command = DefenderCpuCommands.DefenderCpu;
+        var first = await Live.RunAsync(command);
+        if (first is CommandOutcome.FailedToStart failed)
+        {
+            Live.Unavailable($"powershell.exe is not reachable (no WSL interop here): {failed.Reason}");
+        }
+
+        var reading = ToolAnswers.Read(command, first).Bind(DefenderParsers.Parse);
+        if (reading.ReasonOrEmpty == DefenderParsers.NotRunning)
+        {
+            Live.Unavailable("MsMpEng is not running on this machine (another product replaced Defender)");
+        }
+
+        var one = Available(reading);
+        one.Pid.Should().BePositive();
+        one.StartMarker.Should().BePositive("on the raw class ElapsedTime is the process start instant");
+        var second = Available(ToolAnswers.Read(command, await Live.RunAsync(command)).Bind(DefenderParsers.Parse));
+        DefenderCpu.Between(one, second).ReasonOrEmpty.Should().NotBe(DefenderCpu.Restarted, "two reads a moment apart are the same process");
+    }
+
     [Fact]
     public async Task Timesyncd_status_answers_a_last_ntp_offset_the_parser_reads()
     {

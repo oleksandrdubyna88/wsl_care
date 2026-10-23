@@ -14,6 +14,12 @@ public static partial class ConfigKeys
         /// 2026-10-10 from Windows PowerShell 5.1, unelevated: 2.4–4.4 s warm, 10.7 s cold. Default 30.</summary>
         public static readonly ConfigKey.IntKey WindowsDiskTimeoutSeconds = new("health.windowsDiskTimeoutSeconds", 5, 120) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
+        /// <summary>E15.S10: the third fixed interop script, Defender's CPU counters (only the full run starts it, after the disk script,
+        /// under this ceiling of its own so a stalled read costs only itself). Measured 2026-10-16 from Windows PowerShell 5.1: 1.2–2.1 s
+        /// cold, 0.36–0.48 s warm, 8.1 s for the first read after the WMI provider starts (research/2026-10-16_defender_cpu_cost.md).
+        /// Default 15.</summary>
+        public static readonly ConfigKey.IntKey DefenderCpuTimeoutSeconds = new("health.defenderCpuTimeoutSeconds", 5, 60) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
         /// <summary>snap list --all. Default 30.</summary>
         public static readonly ConfigKey.IntKey SnapTimeoutSeconds = new("health.snapTimeoutSeconds", 5, 30) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 

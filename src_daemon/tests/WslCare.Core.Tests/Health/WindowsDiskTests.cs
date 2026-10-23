@@ -7,6 +7,7 @@ using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Health;
+using WslCare.Core.Status;
 using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Health;
@@ -83,6 +84,70 @@ public sealed class WindowsDiskTests
         adapters.Select(a => Value(a.ProblemCode)).Should().Equal(0, 22);
         adapters[1].Name.Should().Be("AMD Radeon AI PRO R9700");
         adapters[1].PnpDeviceId.Should().StartWith(@"PCI\VEN_1002&DEV_7551");
+    }
+
+    // ----- E15.S10 §B: the vmmem line (E15.S5's open tail) -----
+
+    /// <summary>The kernel's process snapshot, no handle opened, the same reading the Windows binary's <c>ProcessWorkingSets.Sum</c> takes:
+    /// the working sets of every process named <c>vmmemWSL</c>, summed — as a <c>long</c> (security round, Fable 6: <c>Measure-Object -Sum</c> answers a Double in Windows PowerShell 5.1, and a Double above 1e15 prints as <c>1E+15</c>, as <c>ProcessWorkingSets.Sum</c> casts too). No such process throws <c>ProcessCommandException</c> under
+    /// <c>-ErrorAction Stop</c>, and the error line is the answer — never a 0.</summary>
+    private const string VmmemSnippet =
+        "try { $p=@(Get-Process -Name 'vmmemWSL' -ErrorAction Stop); $o.Add('vmmem='+[string][long](($p | Measure-Object WorkingSet64 -Sum).Sum)) } catch { $o.Add('vmmem.error='+$_.Exception.GetType().Name) }";
+
+    [Fact]
+    public void The_script_reads_the_vmmem_working_set_after_memory_compression_and_before_the_identity()
+    {
+        var script = WindowsDiskCommands.Script;
+
+        script.Should().Contain(VmmemSnippet);
+        script.IndexOf("'vmmem=", StringComparison.Ordinal).Should().BeGreaterThan(script.IndexOf("'compression=", StringComparison.Ordinal)).And.BeLessThan(script.IndexOf("'windows.edition=", StringComparison.Ordinal));
+        WindowsDiskCommands.VmmemTag.Should().Be("vmmem=");
+        WindowsDiskCommands.VmmemErrorTag.Should().Be("vmmem.error=");
+    }
+
+    [Fact]
+    public void The_captured_answer_carries_a_vmmem_line_and_it_reads_as_bytes()
+    {
+        var facts = Parse(WindowsDiskFixture.Answer);
+
+        facts.MalformedLines.Should().Be(0);
+        Value(facts.VmmemBytes).Should().Be(13_421_772_800, "an invented, plausible working set (12.5 GiB) added to the capture, which SOURCE.txt says");
+    }
+
+    [Fact]
+    public void A_missing_vmmem_process_prints_the_error_line_and_is_unavailable_with_the_reason_never_zero()
+    {
+        var facts = Parse(Without(WindowsDiskCommands.VmmemTag).Replace("end=1", "vmmem.error=ProcessCommandException\nend=1", StringComparison.Ordinal));
+
+        facts.VmmemBytes.IsAvailable.Should().BeFalse();
+        facts.VmmemBytes.ReasonOrEmpty.Should().Contain("vmmemWSL").And.Contain("ProcessCommandException");
+        facts.MalformedLines.Should().Be(0, "the script printing its error line is an answer, not damage");
+    }
+
+    [Fact]
+    public void A_vmmem_figure_the_script_did_not_print_is_unavailable_with_the_reason()
+    {
+        var facts = Parse(Without(WindowsDiskCommands.VmmemTag));
+
+        facts.VmmemBytes.ReasonOrEmpty.Should().Contain("vmmem");
+        Value(facts.CompressionBytes).Should().BePositive("one missing figure leaves the others readable");
+    }
+
+    [Fact]
+    public void A_vmmem_value_that_is_not_a_number_is_unavailable_and_counted()
+    {
+        var facts = Parse(Without(WindowsDiskCommands.VmmemTag).Replace("end=1", "vmmem=twelve\nend=1", StringComparison.Ordinal));
+
+        facts.VmmemBytes.IsAvailable.Should().BeFalse();
+        facts.MalformedLines.Should().Be(1);
+    }
+
+    [Fact]
+    public void The_run_detail_records_the_vmmem_figure_beside_commit_and_compression()
+    {
+        var report = WslCare.Core.Collect.WindowsDiskReports.From(new WindowsDiskSample(WindowsDiskFixture.CapturedAt, Reading.Of(TimeSpan.FromSeconds(3)), WindowsDiskParsers.Parse(WindowsDiskFixture.Answer, MaxRead, SinceDays)));
+
+        report.VmmemBytes.Should().Be(new ByteFigure(true, 13_421_772_800, null));
     }
 
     [Theory]

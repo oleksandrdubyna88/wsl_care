@@ -111,6 +111,8 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Docker/DockerHygiene.cs"] = new() { ["ReadNoFollowFile"] = (1, ReadClass.WindowsProfile) },
         ["WslCare.Core/Docker/VolumeSeen.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/Events/ContainerStartsStore.cs"] = new() { ["ListFiles"] = (3, ReadClass.RootState), ["ReadFile"] = (2, ReadClass.RootState) },
+        // E15.S10: {state}/defender-cpu.jsonl — root's own ledger of the Defender readings, appended by the full run and read back as root's state by the owner-checked reader (security round, Fable 3), as the MCP ledger's root place is.
+        ["WslCare.Core/Health/DefenderCpuLedger.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Folders/FolderSizes.cs"] = new() { ["MeasureTree"] = (1, ReadClass.TargetHomeMetadata) },
         // PLAN_boot_settle.md: the settle step reads /proc/uptime (the kernel's, no account's file).
         ["WslCare.Core/Collect/RunSettle.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },

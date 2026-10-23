@@ -27,6 +27,10 @@ public sealed record ThresholdInputs(
     /// <summary>E15.S2: the virtual disks and their hosting volumes, judged ONCE per run (<see cref="VirtualDisks"/>) — the run detail
     /// and the verdicts project the same facts; unavailable when the run did not read them.</summary>
     public Reading<DiskFacts> Disk { get; init; } = Reading.Missing<DiskFacts>("not read");
+
+    /// <summary>E15.S10: what Windows Defender's engine used since the previous full run (<see cref="DefenderCpu.Between"/>), made by
+    /// <see cref="DefenderCpuRun"/> once per run; unavailable, with the reason, when the run did not read it.</summary>
+    public Reading<DefenderUsage> Defender { get; init; } = Reading.Missing<DefenderUsage>("not read");
 }
 
 /// <summary>
@@ -148,7 +152,7 @@ public static class ThresholdRules
         Discard(inputs.Health),
         .. DiskRules.Evaluate(inputs.Disk, config),
         VolumeFreeRules.From(inputs.Health, config).Verdict,
-        .. HostRules.FullRunVerdicts(HostMemoryFacts.FromWindowsDisk(inputs.Health.WindowsDisk, inputs.Health.WslConfig), config),
+        .. HostRules.FullRunVerdicts(HostMemoryFacts.FromWindowsDisk(inputs.Health.WindowsDisk, inputs.Health.WslConfig) with { Defender = inputs.Defender }, config),
         DockerVolumes(inputs.Rows, config),
         Above("docker.A6Unused", RowBytes(inputs.Rows, "A6Unused"), config.Int(ConfigKeys.Images.UnusedMaxGb) * Gb, Gb, "GB", "unused tagged images reclaimable (images.unusedMaxGb)"),
         Above("docker.buildCache", inputs.BuildCacheBytes, config.Int(ConfigKeys.BuildCache.MaxGb) * Gb, Gb, "GB", "build cache (buildCache.maxGb, A7's cap)"),

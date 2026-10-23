@@ -7,12 +7,12 @@ Source:   the owner's machine (research/2026-10-10_disk.md D1-D5, D10), 2026-10-
           Read-only: nothing was elevated, enabled, compacted or changed. Wall time 3.3 s (the first run of the day: 10.7 s).
 
 Files:
-  powershell-windows-disk.out   the script's stdout (26 lines, LF, the last one end=1): three distros' virtual disks,
+  powershell-windows-disk.out   the script's stdout (27 lines since E15.S10 section B added the vmmem line, LF, the last one end=1): three distros' virtual disks,
                                 Docker's data disk, four volumes (C:, D:, F: on disk 0, the NVMe; E: on disk 1, the USB
                                 keyboard's storage function), two physical disks, the reliability counters REFUSED
                                 (CimException, unelevated - D4), 63 storage events in four groups (all disk 11 on
                                 Harddisk1 - the keyboard, not the NVMe), commit 103.4 / 145.6 GiB, Memory Compression
-                                9.9 GiB, the edition / version / build / install date, the machine id, two display adapters
+                                9.9 GiB, vmmemWSL 12.5 GiB (invented, see below), the edition / version / build / install date, the machine id, two display adapters
                                 (the integrated one working, the discrete one with problem code 22 - disabled)
   captured-at.txt               the instant the script was started (UTC, to the second)
 
@@ -21,3 +21,5 @@ Redacted, by hand, and nothing else changed:
   - the Ubuntu-26.04 distro's folder GUID -> {00000000-0000-4000-8000-000000000001}
   - machine.guid -> 00000000-0000-4000-8000-000000000002
   - windows.account (added with E15.S1's plan round; the line was not in the capture) -> S-1-5-21-0-0-0-1001
+  - vmmem (added with E15.S10 section B, 2026-10-21; the capture predates the line - the script did not read vmmemWSL then) -> an INVENTED, plausible
+    value: 13421772800 B, 12.5 GiB, right behind compression=; no private data

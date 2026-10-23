@@ -971,8 +971,9 @@ flowchart TB
 **The never-list** (`NeverList.Rules`, each a named rule with a known instance in `CommandPolicyTests`): a control
 character in any argument; a SHELL in any form (`sh`, `bash`, `dash`, `zsh`, …, `cmd` — plan §15c #3, no shell
 anywhere, so not only `-c` / `-ic`); PowerShell with anything but an EXACT member of its closed set,
-`HealthCommands.FixedScripts` — the Windows clock probe (E2.S3) and, since E15.S1, the Windows disk script, program and
-arguments alike, no slot ([module_daemon.md](module_daemon.md) § *The Windows disk script*); an interpreter given inline code (`python -c`, `perl -e`, `node -e`, `awk`, …);
+`HealthCommands.FixedScripts` — the Windows clock probe (E2.S3), since E15.S1 the Windows disk script (since E15.S1b also under the
+bare `pwsh.exe`) and since E15.S10 the Defender CPU script (under `powershell.exe` only), program and
+arguments alike, no slot ([module_daemon.md](module_daemon.md) § *The Windows disk script*, § *Windows Defender's CPU*); an interpreter given inline code (`python -c`, `perl -e`, `node -e`, `awk`, …);
 `git worktree prune`; `docker system prune` in ANY form; `docker volume prune` in any form; `vm.drop_caches` with any
 value but `1`, and any argument naming `/proc/sys/vm/drop_caches`; `sysctl` loading a file (`-p`, `--load`,
 `--system`); `wsl --shutdown` / `--terminate` / `--unregister`; deleting or moving by command (`rm`, `rmdir`, `unlink`,
@@ -1066,7 +1067,8 @@ state unreadable (since 2026-10-03) · 130 interrupted.
 
 - The never-list is broader than §5 (every shell, every delete-by-command, every `docker system prune`, every command
   wrapper, every argument path under a protected folder), and PowerShell is allowed only as the clock probe's literal
-  argv — the one interpreter E2 already started (since E15.S1 a closed set of two: the clock probe and the disk script).
+  argv — the one interpreter E2 already started (since E15.S1 a closed set of two: the clock probe and the disk script; since E15.S1b a
+  third member, the disk script under the MSI pwsh; since E15.S10 a fourth, the Defender CPU script).
 - The action ids include `A5Testcontainers` and `A6Unused` (plan §5 gives A5 and A6 two switches each); an id is its
   `auto` key, so the registry and the switches cannot drift.
 - ~~The timer pass is not scheduled yet: `collect` (the timer's target) does not run the engine; E3.S3 wires it with
@@ -1438,11 +1440,21 @@ E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `da
     detail, through a narrow DTO (`RunDetailVerdicts`: the head and `thresholds`), normalising null strings (C# doctrine
     §4a). `status` reads `history.jsonl` once for the slow parts and the verdicts (`LastFullRun.From`).
   - **E15.S5, Windows memory pressure** ([module_daemon.md](module_daemon.md) § *Windows memory pressure*): the full run judges
-    `host.commit` and `host.compression` from the Windows disk script (no `host.vmmem`: the script reads no vmmem), so the
-    distro's `status` carries those two from the full run. On the Windows binary ONLY, `StatusVerdicts.From` judges the `host.*`
-    rule (`HostRules`) over its OWN sample; a sampled verdict REPLACES the carried full-run verdict of the same id in its place,
-    and one nothing carried (`host.vmmem`) is appended after the carried ones, so no id is listed twice. The extension's status
-    bar colours on `host.*` ([module_vs_code.md](module_vs_code.md)).
+    `host.commit` and `host.compression` from the Windows disk script, so the distro's `status` carries them from the full run.
+    On the Windows binary ONLY, `StatusVerdicts.From` judges the `host.*` rule (`HostRules`) over its OWN sample; a sampled verdict
+    REPLACES the carried full-run verdict of the same id in its place, so no id is listed twice. The extension's status bar colours
+    on `host.*` ([module_vs_code.md](module_vs_code.md)).
+  - **E15.S10, Defender's CPU and the full run's vmmem** ([module_daemon.md](module_daemon.md) § *Windows Defender's CPU, recorded
+    every full run*): additive, `schemaVersion` still 1. (1) Two new ids ride the carried list: the Windows disk script reads
+    `vmmemWSL` now, so the full run judges **`host.vmmem`** (and the Windows binary's sampled one REPLACES the carried one at its
+    carried position — it is no longer appended after `npm.cache`), and a third fixed script reads Defender's engine, so the full run
+    judges **`host.defenderCpu`** right behind it (`unknown` with the reason on the first read and after a restart; warn above `thresholds.defenderCoresWarnPercent` of one core; the Windows binary judges NO Defender verdict — `HostRules.Verdicts` is commit, compression and vmmem — so its status CARRIES the distro's). (2) `status --json` gains **`defender`**, read from the SAME
+    detail file as the verdicts and carried with its `basis` exactly as `disk` is: `{available, reason, sampledAt,
+    coresAverage, coveredSeconds, coreHoursPerWeek, coveredHours, extrapolated, ledgerNote, basis}`, every figure `{available, value |
+    reason}` (the script's own `elapsedSeconds` is in the run detail only); the Windows binary answers `available: false` ("the distro's full run reads Windows Defender's CPU"). (3) The run detail
+    gains `defender` and `health.windowsDisk.vmmemBytes`. (4) Three keys join `contracts/config-keys.json`:
+    `health.defenderCpuTimeoutSeconds` (machine-only), `defender.localRetentionDays` (machine-only),
+    `thresholds.defenderCoresWarnPercent` (display). The record behind the figure is `{state}/defender-cpu.jsonl`, one line per full run.
   - **E15.S7, the shown command line** ([module_daemon.md](module_daemon.md) § *One redaction rule for every command line*):
     additive, `schemaVersion` still 1, `commandLine` stays. Every `vm.processes.top[]` / `mntWalkers[]` row gains `program`,
     `argumentsShown` and `argumentsTotal` after `commandLine`; `mcpServers.instances[].owner` gains `program` and `argumentsShown`.

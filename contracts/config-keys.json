@@ -1704,6 +1704,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "thresholds.defenderCoresWarnPercent",
+      "shape": "int",
+      "min": 10,
+      "max": 800,
+      "default": 100,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "processes.topCount",
       "shape": "int",
       "min": 0,
@@ -2542,6 +2555,32 @@
       "max": 120,
       "default": 30,
       "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "health.defenderCpuTimeoutSeconds",
+      "shape": "int",
+      "min": 5,
+      "max": 60,
+      "default": 15,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "defender.localRetentionDays",
+      "shape": "int",
+      "min": 30,
+      "max": 1000,
+      "default": 400,
+      "safeDirection": "higher",
       "rootEffective": true,
       "tightenOnlyForRoot": false,
       "machineOnly": true,
