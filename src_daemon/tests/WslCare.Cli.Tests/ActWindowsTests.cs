@@ -30,8 +30,12 @@ public sealed class ActWindowsTests
         Directory.CreateDirectory(windows.Paths.TempDirectory);
         var old = Path.Combine(windows.Paths.TempDirectory, "coai-old");
         Directory.CreateDirectory(old);
-        Directory.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-30));
-        Directory.SetCreationTimeUtc(old, DateTime.UtcNow.AddDays(-30));
+
+        // Dated from the host's own clock, never the real one: the host's "now" is FixedTimeProvider.DefaultNow, and a folder
+        // dated from DateTime.UtcNow stopped being older than it on 2026-11-01 (the test then previewed 0 objects).
+        var aMonthBefore = FixedTimeProvider.DefaultNow.UtcDateTime.AddDays(-30);
+        Directory.SetLastWriteTimeUtc(old, aMonthBefore);
+        Directory.SetCreationTimeUtc(old, aMonthBefore);
 
         var (exit, stdout, stderr) = CliRun.Over(Host(windows, elevated: false), "act", "A23", "--preview");
 
